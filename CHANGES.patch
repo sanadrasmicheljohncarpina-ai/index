@@ -1,0 +1,430 @@
+diff --git a/dean/dean_evaluate.php b/dean/dean_evaluate.php
+index 0ecb5b4..5d4e6cb 100644
+--- a/dean/dean_evaluate.php
++++ b/dean/dean_evaluate.php
+@@ -1,33 +1,29 @@
+ <?php
+ // dean/dean_evaluate.php
+-// NEW FILE — this page did not exist before. The old "Evaluate"/"View"
+-// links on dean_evaluation.php pointed at ea_questionnaire_route($tab,
+-// $id), a function in shared/ea_personnel_service.php that built a
+-// broken URL (localhost//index/dean/dean_evaluate.php?form=...&user_id=)
+-// pointing at a page that had never been built. dean_evaluation.php now
+-// links straight here instead: dean_evaluate.php?tab=&user_id=[&view=1].
++// The per-person evaluation form for the Dean portal. Reached from
++// dean_evaluation.php via ?tab=<faculty|staff|executive_assistant>&user_id=.
+ //
+-// ── QUESTIONNAIRE CONTENT IS A PLACEHOLDER ──────────────────────────
+-// There's no questionnaire/question-bank table visible anywhere in the
+-// files I've seen, so the rating categories below are a reasonable
+-// generic set per role, defined right in this file (see $QUESTION_SETS).
+-// If your system already has real questionnaire content somewhere
+-// (a questions table, a per-role template, etc.) swap $QUESTION_SETS
+-// for a query against that instead of using this hardcoded list — the
+-// rest of the page (save/view logic) doesn't care where the questions
+-// came from.
++// ── QUESTIONS COME FROM THE REAL QUESTIONNAIRE DB ────────────────────
++// Previously this page had its own hardcoded $QUESTION_SETS array (five
++// generic questions per role, baked into this file, not editable from
++// any admin screen). That's been removed. Questions now come from the
++// same questionnaire_forms/questionnaire_questions tables
++// principal_evaluate.php reads, keyed by the same eval_type values
++// (supervisor_to_teacher / supervisor_to_staff / supervisor_to_ea) — a
++// "supervisor evaluates a Teacher/Staff/EA" form is the same form
++// whether the supervisor is a Principal (Basic Ed) or a Dean (College),
++// so both portals now show identical, centrally-authored questions.
+ //
+-// ── STORAGE ──────────────────────────────────────────────────────────
+-// Submitting writes ONE row to evaluation_tracker (eval_type='dean',
+-// eval_bucket = 'Faculty'|'Staff'|'Executive Assistant', level='college',
+-// status='submitted', score = average of the question ratings,
+-// evaluator_id = the Dean, target_user_id = the person being evaluated,
+-// period_id = current period, comment, submitted_at) plus one row per
+-// question in evaluation_answers (tracker_id, category, question, score)
+-// so a category breakdown can be built later the same way
+-// dean_results.php expects it. Confirm evaluation_answers' real column
+-// names against your schema — this is the same placeholder table name
+-// used (and flagged) in dean_results.php.
++// ── STORAGE ────────────────────────────────────────────────────────
++// Submitting now writes into the same tables/columns
++// principal_evaluate.php uses — one evaluation_tracker row (evaluator_id
++// = the Dean, target_user_id, eval_bucket, level='college', form_id,
++// form_type = form title, period_id, score = average of rating answers,
++// remarks, eval_type, status='submitted') plus one questionnaire_answers
++// row per question (tracker_id, question_id, answer_text, answer_score).
++// The old Dean-only eval_type='dean' + evaluation_answers(category,
++// question, score) pairing is gone — nothing else in the codebase read
++// from it, so this was safe to retire.
+ 
+ session_set_cookie_params([
+     'lifetime' => 0,
+@@ -40,7 +36,7 @@ session_set_cookie_params([
+ session_start();
+ require_once 'db.php';
+ require_once dirname(__DIR__) . '/shared/system_settings_service.php';
+-require_once dirname(__DIR__) . '/shared/ea_personnel_service.php'; // for COLLEGE_LEVELS
++require_once dirname(__DIR__) . '/shared/ea_personnel_service.php';
+ 
+ // ── AUTH GUARD ────────────────────────────────────────────
+ if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'dean') {
+@@ -92,44 +88,36 @@ if ($targetId <= 0) {
+ }
+ $viewOnly = isset($_GET['view']);
+ 
+-// form_type: evaluation_tracker.form_type is NOT NULL with no default.
+-// Only one real sample value existed in the DB when this was checked
+-// ('staff_peer'), suggesting a <role>_<relationship> convention. These
+-// dean-submission values follow that pattern as a best guess — rename
+-// if your team has an established convention for Dean-initiated forms.
++// eval_type: SAME real questionnaire pipeline principal_evaluate.php uses
++// (questionnaire_forms + questionnaire_questions), not a Dean-only
++// hardcoded set. A "supervisor evaluates a Teacher/Staff/EA" form is the
++// same form regardless of whether the supervisor is a Principal (Basic
++// Ed) or a Dean (College) — reusing it here means both portals show the
++// same authored questions, and an admin only has to maintain the
++// question bank in one place.
+ $tabConfig = [
+-    'faculty'              => ['role' => 'teacher',     'bucket' => 'Faculty',              'label' => 'Teacher',              'form_type' => 'faculty_dean'],
+-    'staff'                => ['role' => 'staff',        'bucket' => 'Staff',                'label' => 'Staff',                'form_type' => 'staff_dean'],
+-    'executive_assistant'  => ['role' => 'superadmin', 'bucket' => 'Executive Assistant',  'label' => 'Executive Assistant',  'form_type' => 'executive_assistant_dean'],
++    'faculty'              => ['role' => 'teacher',     'bucket' => 'Faculty',              'label' => 'Teacher',              'eval_type' => 'supervisor_to_teacher'],
++    'staff'                => ['role' => 'staff',        'bucket' => 'Staff',                'label' => 'Staff',                'eval_type' => 'supervisor_to_staff'],
++    'executive_assistant'  => ['role' => 'superadmin', 'bucket' => 'Executive Assistant',  'label' => 'Executive Assistant',  'eval_type' => 'supervisor_to_ea'],
+ ];
+ $cfg = $tabConfig[$tab];
+-
+-// Generic per-role question set. Category is used for the eventual
+-// per-category breakdown; question is the actual prompt text shown.
+-$QUESTION_SETS = [
+-    'faculty' => [
+-        ['key' => 'q1', 'category' => 'Teaching Effectiveness', 'question' => 'Delivers instruction clearly and effectively.'],
+-        ['key' => 'q2', 'category' => 'Communication',          'question' => 'Communicates expectations and feedback clearly.'],
+-        ['key' => 'q3', 'category' => 'Professionalism',        'question' => 'Demonstrates professionalism and preparedness.'],
+-        ['key' => 'q4', 'category' => 'Punctuality',            'question' => 'Is punctual and reliable in fulfilling duties.'],
+-        ['key' => 'q5', 'category' => 'Overall Effectiveness',  'question' => 'Overall, is effective in this role.'],
+-    ],
+-    'staff' => [
+-        ['key' => 'q1', 'category' => 'Job Performance',   'question' => 'Performs assigned duties competently and reliably.'],
+-        ['key' => 'q2', 'category' => 'Communication',     'question' => 'Communicates clearly with colleagues and stakeholders.'],
+-        ['key' => 'q3', 'category' => 'Professionalism',   'question' => 'Demonstrates professionalism in the workplace.'],
+-        ['key' => 'q4', 'category' => 'Punctuality',       'question' => 'Is punctual and dependable.'],
+-        ['key' => 'q5', 'category' => 'Overall Rating',    'question' => 'Overall, meets expectations for this role.'],
+-    ],
+-    'executive_assistant' => [
+-        ['key' => 'q1', 'category' => 'Administrative Support', 'question' => 'Provides effective administrative support.'],
+-        ['key' => 'q2', 'category' => 'Communication',          'question' => 'Communicates clearly and promptly.'],
+-        ['key' => 'q3', 'category' => 'Responsiveness',         'question' => 'Responds to requests in a timely manner.'],
+-        ['key' => 'q4', 'category' => 'Professionalism',        'question' => 'Demonstrates professionalism at all times.'],
+-        ['key' => 'q5', 'category' => 'Overall Support',        'question' => 'Overall, provides strong support in this role.'],
+-    ],
+-];
+-$questions = $QUESTION_SETS[$tab];
++$evalType = $cfg['eval_type'];
++
++// ── LOAD FORM + QUESTIONS FROM THE DB (not hardcoded) ────────────────
++$formStmt = $mysqli->prepare("SELECT id, title FROM questionnaire_forms WHERE eval_type=? AND is_active=1 LIMIT 1");
++$formStmt->bind_param("s", $evalType);
++$formStmt->execute();
++$form = $formStmt->get_result()->fetch_assoc();
++$formStmt->close();
++
++$questions = [];
++if ($form) {
++    $qstmt = $mysqli->prepare("SELECT id, question_no, question, type, max_score, is_required FROM questionnaire_questions WHERE form_id=? ORDER BY question_no ASC, id ASC");
++    $qstmt->bind_param("i", $form['id']);
++    $qstmt->execute();
++    $questions = $qstmt->get_result()->fetch_all(MYSQLI_ASSOC);
++    $qstmt->close();
++}
+ 
+ // ── GLOBAL SYSTEM SETTINGS ──────────────────────────────────────────
+ $settings = get_system_settings($mysqli);
+@@ -139,6 +127,26 @@ $hasPeriod       = $period_id_int > 0;
+ $evalOpen        = $settings['is_open_for_submission'];
+ const HIGHER_ED_LABEL = 'Higher Education';
+ 
++// No active form configured for this eval_type at all — same message
++// principal_evaluate.php shows, rather than pretending questions exist.
++if (!$form) {
++    $mysqli->close();
++    ?>
++    <!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
++    <title>PBI — Form Not Configured</title>
++    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
++    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
++    <style>body{min-height:100vh;background:#0A192F;font-family:'DM Sans',sans-serif;color:#E0E6F0;display:flex;align-items:center;justify-content:center;} .box{max-width:480px;text-align:center;padding:30px;} a{color:#9C85F0;}</style>
++    </head><body>
++    <div class="box">
++        <p>No active <?= htmlspecialchars($cfg['label']) ?> evaluation form is configured yet. Contact your administrator.</p>
++        <p><a href="dean_evaluation.php?tab=<?= urlencode($tab) ?>">Back to Evaluation</a></p>
++    </div>
++    </body></html>
++    <?php
++    exit;
++}
++
+ // ── DEAN PROFILE (for sidebar) ─────────────────────────────
+ $stmt = $mysqli->prepare("SELECT full_name, designation, photo FROM users WHERE id = ? LIMIT 1");
+ $stmt->bind_param("i", $deanId);
+@@ -147,27 +155,16 @@ $me = $stmt->get_result()->fetch_assoc();
+ $stmt->close();
+ $photo_src = !empty($me['photo']) ? UPLOAD_URL . $me['photo'] : UPLOAD_URL . 'pbi_logo';
+ 
+-// ── TARGET PERSON (must be approved/active and in the Dean's College
+-//    scope, same EXISTS/user_year_levels check every other Dean page
+-//    uses for teacher/staff; the EA role has no college-year-level
+-//    concept, so it's just approved+active) ──────────────────────────
+-$collegePh = implode(',', array_fill(0, count(COLLEGE_LEVELS), '?'));
+-$collegeTypes = str_repeat('s', count(COLLEGE_LEVELS));
+-
+-if ($cfg['role'] === 'superadmin') {
+-    $target = safe_rows($mysqli, "
+-        SELECT id, full_name, photo, designation FROM users
+-        WHERE id=? AND role=? AND is_active=1 AND account_status='approved'
+-        LIMIT 1
+-    ", "is", [$targetId, $cfg['role']]);
+-} else {
+-    $target = safe_rows($mysqli, "
+-        SELECT id, full_name, photo, department, designation FROM users u
+-        WHERE id=? AND role=? AND is_active=1 AND account_status='approved'
+-          AND EXISTS (SELECT 1 FROM user_year_levels uyl WHERE uyl.user_id = u.id AND uyl.year_level IN ($collegePh))
+-        LIMIT 1
+-    ", "is" . $collegeTypes, array_merge([$targetId, $cfg['role']], COLLEGE_LEVELS));
+-}
++// ── TARGET PERSON (must be approved/active — same criteria as the EA's
++//    Manage Registrations roster: role + account_status='approved' +
++//    is_active=1. No College/user_year_levels gate, so anyone who shows
++//    up in ea_get_faculty()/ea_get_staff() can actually be opened here
++//    too, instead of 404ing on people missing a year-level assignment.) ─
++$target = safe_rows($mysqli, "
++    SELECT id, full_name, photo, department, designation FROM users
++    WHERE id=? AND role=? AND is_active=1 AND account_status='approved'
++    LIMIT 1
++", "is", [$targetId, $cfg['role']]);
+ $target = $target[0] ?? null;
+ 
+ if (!$structureActive || !$target) {
+@@ -179,29 +176,39 @@ if (!$structureActive || !$target) {
+ $targetRoleLabel = $cfg['label'];
+ 
+ // ── EXISTING SUBMISSION THIS PERIOD? ────────────────────────────────
++// Keyed by eval_type now (supervisor_to_teacher/staff/ea) instead of the
++// old eval_type='dean' silo, so this lives in the same pool of
++// submissions principal_evaluate.php writes to — one evaluation_tracker
++// row per (evaluator, target, eval_type, period), same as everywhere else.
+ $existing = null;
+ if ($hasPeriod) {
+     $rows = safe_rows($mysqli, "
+         SELECT id, score, remarks AS comment, submitted_at FROM evaluation_tracker
+-        WHERE eval_type='dean' AND eval_bucket=? AND level='college'
+-          AND status IN ('submitted','approved')
++        WHERE eval_type=? AND status IN ('submitted','approved')
+           AND evaluator_id=? AND target_user_id=? AND period_id=?
+         LIMIT 1
+-    ", "siii", [$cfg['bucket'], $deanId, $targetId, $period_id_int]);
++    ", "siii", [$evalType, $deanId, $targetId, $period_id_int]);
+     $existing = $rows[0] ?? null;
+ }
+ $existingAnswers = [];
+ if ($existing) {
+     $existingAnswers = safe_rows($mysqli, "
+-        SELECT category, question, score FROM evaluation_answers
+-        WHERE tracker_id=?
+-        ORDER BY id
++        SELECT qq.question AS question, qa.answer_text, qa.answer_score AS score
++        FROM questionnaire_answers qa
++        INNER JOIN questionnaire_questions qq ON qq.id = qa.question_id
++        WHERE qa.tracker_id=?
++        ORDER BY qq.question_no ASC, qq.id ASC
+     ", "i", [$existing['id']]);
+ }
+ 
+ $readOnly = $viewOnly || $existing !== null || !$evalOpen || !$hasPeriod;
+ 
+ // ── HANDLE SUBMISSION ────────────────────────────────────────────────
++// Mirrors principal_evaluate.php's submission logic: q_<question_id>
++// fields, rating/yes_no/text types, average computed from rating answers
++// only, written into the same evaluation_tracker + questionnaire_answers
++// tables (not the old Dean-only evaluation_tracker/evaluation_answers
++// pairing).
+ $error = '';
+ $saved = false;
+ 
+@@ -209,50 +216,82 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$readOnly) {
+     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== ($_SESSION['csrf_token'] ?? '')) {
+         $error = 'Session expired. Please refresh and try again.';
+     } else {
+-        $ratings = [];
++        $answers = [];
++        $scoreSum = 0; $scoreCount = 0;
+         $valid = true;
++
+         foreach ($questions as $q) {
+-            $val = (int)($_POST[$q['key']] ?? 0);
+-            if ($val < 1 || $val > 5) { $valid = false; break; }
+-            $ratings[$q['key']] = $val;
++            $field = 'q_' . $q['id'];
++            $val = trim($_POST[$field] ?? '');
++
++            if ($q['is_required'] && $val === '') { $valid = false; break; }
++
++            if ($q['type'] === 'rating') {
++                $score = (int)$val;
++                $max = (int)round((float)($q['max_score'] ?? 5));
++                if ($val === '' && !$q['is_required']) {
++                    $answers[] = ['question_id' => $q['id'], 'answer_text' => null, 'answer_score' => null];
++                    continue;
++                }
++                if ($score < 1 || $score > $max) { $valid = false; break; }
++                $answers[] = ['question_id' => $q['id'], 'answer_text' => null, 'answer_score' => $score];
++                $scoreSum += $score;
++                $scoreCount++;
++            } else {
++                $answers[] = ['question_id' => $q['id'], 'answer_text' => $val, 'answer_score' => null];
++            }
+         }
++
+         $comment = trim($_POST['comment'] ?? '');
+ 
+         if (!$valid) {
+-            $error = 'Please rate every question from 1 to 5 before submitting.';
++            $error = 'Please answer every required question before submitting.';
+         } else {
+-            $avgScore = round(array_sum($ratings) / count($ratings), 2);
++            $avgScore = $scoreCount > 0 ? round($scoreSum / $scoreCount, 2) : null;
+ 
+             try {
+                 $mysqli->begin_transaction();
+ 
+                 $stmt = $mysqli->prepare("
+                     INSERT INTO evaluation_tracker
+-                        (eval_type, eval_bucket, level, status, score, remarks, evaluator_id, target_user_id, period_id, form_type, submitted_at)
+-                    VALUES ('dean', ?, 'college', 'submitted', ?, ?, ?, ?, ?, ?, NOW())
++                        (evaluator_id, target_user_id, eval_bucket, level, form_type, form_id, period_id, score, remarks, eval_type, status, submitted_at)
++                    VALUES (?,?,?,'college',?,?,?,?,?,?, 'submitted', NOW())
+                 ");
+                 $bucket = $cfg['bucket'];
+-                $formType = $cfg['form_type'];
+-                $stmt->bind_param("sdsiiis", $bucket, $avgScore, $comment, $deanId, $targetId, $period_id_int, $formType);
++                $formTitle = $form['title'];
++                $formId = (int)$form['id'];
++                $stmt->bind_param(
++                    "iissiidss",
++                    $deanId, $targetId, $bucket, $formTitle, $formId, $period_id_int, $avgScore, $comment, $evalType
++                );
+                 $stmt->execute();
+                 $trackerId = $mysqli->insert_id;
+                 $stmt->close();
+ 
+-                $stmt = $mysqli->prepare("
+-                    INSERT INTO evaluation_answers (tracker_id, category, question, score) VALUES (?, ?, ?, ?)
+-                ");
+-                foreach ($questions as $q) {
+-                    $cat = $q['category']; $ques = $q['question']; $score = $ratings[$q['key']];
+-                    $stmt->bind_param("issi", $trackerId, $cat, $ques, $score);
+-                    $stmt->execute();
++                if (!empty($answers)) {
++                    $ains = $mysqli->prepare("INSERT INTO questionnaire_answers (tracker_id, question_id, answer_text, answer_score) VALUES (?,?,?,?)");
++                    foreach ($answers as $a) {
++                        $ains->bind_param("iisd", $trackerId, $a['question_id'], $a['answer_text'], $a['answer_score']);
++                        $ains->execute();
++                    }
++                    $ains->close();
+                 }
+-                $stmt->close();
+ 
+                 $mysqli->commit();
+                 $saved = true;
+                 $readOnly = true;
+                 $existing = ['id' => $trackerId, 'score' => $avgScore, 'comment' => $comment, 'submitted_at' => date('Y-m-d H:i:s')];
+-                $existingAnswers = array_map(fn($q) => ['category' => $q['category'], 'question' => $q['question'], 'score' => $ratings[$q['key']]], $questions);
++                $answersByQid = [];
++                foreach ($answers as $a) { $answersByQid[$a['question_id']] = $a; }
++                $existingAnswers = [];
++                foreach ($questions as $q) {
++                    $a = $answersByQid[$q['id']] ?? null;
++                    $existingAnswers[] = [
++                        'question'     => $q['question'],
++                        'answer_text'  => $a['answer_text'] ?? null,
++                        'score'        => $a['answer_score'] ?? null,
++                    ];
++                }
+             } catch (mysqli_sql_exception $e) {
+                 $mysqli->rollback();
+                 $error = 'Could not save this evaluation. Please try again.';
+@@ -373,38 +412,65 @@ include __DIR__ . '/includes/dean_sidebar.php';
+         <?php if ($readOnly && $existing): ?>
+             <div class="q-block">
+                 <div class="summary-score">
+-                    <span class="num"><?= htmlspecialchars((string)$existing['score']) ?></span>
+-                    <span class="of">/ 5.00 overall</span>
++                    <span class="num"><?= $existing['score'] !== null ? htmlspecialchars((string)$existing['score']) : '—' ?></span>
++                    <span class="of">overall</span>
+                 </div>
+                 <div class="person-meta">Submitted <?= htmlspecialchars(date('M j, Y g:i A', strtotime($existing['submitted_at']))) ?></div>
+             </div>
+             <?php foreach ($existingAnswers as $a): ?>
+             <div class="q-block">
+-                <div class="q-cat"><?= htmlspecialchars($a['category']) ?></div>
+                 <div class="q-text"><?= htmlspecialchars($a['question']) ?></div>
+-                <div class="rating-readonly"><span class="stars"><?= str_repeat('★', (int)$a['score']) . str_repeat('☆', 5 - (int)$a['score']) ?></span> <?= (int)$a['score'] ?>/5</div>
++                <?php if ($a['score'] !== null): ?>
++                <div class="rating-readonly"><span class="stars"><?= str_repeat('★', (int)$a['score']) . str_repeat('☆', max(0, 5 - (int)$a['score'])) ?></span> <?= (int)$a['score'] ?></div>
++                <?php elseif ($a['answer_text'] !== null && $a['answer_text'] !== ''): ?>
++                <div class="comment-readonly"><?= htmlspecialchars($a['answer_text']) ?></div>
++                <?php else: ?>
++                <div class="comment-readonly">No answer provided.</div>
++                <?php endif; ?>
+             </div>
+             <?php endforeach; ?>
+             <div class="comment-block">
+                 <label>Comment</label>
+                 <p class="comment-readonly"><?= $existing['comment'] !== '' ? htmlspecialchars($existing['comment']) : 'No written comment.' ?></p>
+             </div>
++        <?php elseif (empty($questions)): ?>
++            <div class="q-block">
++                <p class="comment-readonly">No questions have been added to this form yet.</p>
++            </div>
+         <?php else: ?>
+             <form method="POST" action="dean_evaluate.php?tab=<?= urlencode($tab) ?>&user_id=<?= (int)$target['id'] ?>">
+                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+ 
+-                <?php foreach ($questions as $q): ?>
++                <?php foreach ($questions as $i => $q): $field = 'q_' . $q['id']; ?>
+                 <div class="q-block">
+-                    <div class="q-cat"><?= htmlspecialchars($q['category']) ?></div>
+-                    <div class="q-text"><?= htmlspecialchars($q['question']) ?></div>
++                    <div class="q-text"><?= $i + 1 ?>. <?= htmlspecialchars($q['question']) ?><?= $q['is_required'] ? ' *' : '' ?></div>
++
++                    <?php if ($q['type'] === 'rating'):
++                        $max = (int)round((float)($q['max_score'] ?? 5)); ?>
+                     <div class="rating-row">
+-                        <?php for ($i = 1; $i <= 5; $i++): ?>
++                        <?php for ($n = 1; $n <= $max; $n++): ?>
+                         <div class="rating-opt">
+-                            <input type="radio" name="<?= htmlspecialchars($q['key']) ?>" id="<?= htmlspecialchars($q['key']) ?>_<?= $i ?>" value="<?= $i ?>" required>
+-                            <label for="<?= htmlspecialchars($q['key']) ?>_<?= $i ?>"><?= $i ?></label>
++                            <input type="radio" name="<?= htmlspecialchars($field) ?>" id="<?= htmlspecialchars($field) ?>_<?= $n ?>" value="<?= $n ?>" <?= $q['is_required'] ? 'required' : '' ?>>
++                            <label for="<?= htmlspecialchars($field) ?>_<?= $n ?>"><?= $n ?></label>
+                         </div>
+                         <?php endfor; ?>
+                     </div>
++
++                    <?php elseif ($q['type'] === 'yes_no'): ?>
++                    <div class="rating-row">
++                        <div class="rating-opt">
++                            <input type="radio" name="<?= htmlspecialchars($field) ?>" id="<?= htmlspecialchars($field) ?>_yes" value="Yes" <?= $q['is_required'] ? 'required' : '' ?>>
++                            <label for="<?= htmlspecialchars($field) ?>_yes">Yes</label>
++                        </div>
++                        <div class="rating-opt">
++                            <input type="radio" name="<?= htmlspecialchars($field) ?>" id="<?= htmlspecialchars($field) ?>_no" value="No" <?= $q['is_required'] ? 'required' : '' ?>>
++                            <label for="<?= htmlspecialchars($field) ?>_no">No</label>
++                        </div>
++                    </div>
++
++                    <?php else: /* text or fallback */ ?>
++                    <textarea name="<?= htmlspecialchars($field) ?>" class="comment-block-textarea" style="width:100%;min-height:80px;background:rgba(10,25,47,.7);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:var(--light);font-size:13.5px;font-family:'DM Sans',sans-serif;padding:12px;" <?= $q['is_required'] ? 'required' : '' ?>></textarea>
++                    <?php endif; ?>
+                 </div>
+                 <?php endforeach; ?>
+ 

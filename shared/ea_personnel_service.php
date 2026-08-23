@@ -61,46 +61,20 @@ function ea_rows(mysqli $mysqli, string $sql, string $types, array $params): arr
     return $rows;
 }
 
-/** Faculty = role='teacher', approved+active, scoped to College via
- *  user_year_levels. "Program" isn't in the schema for teacher/staff
- *  (course is student-only) — left null pending confirmation. */
+/** Faculty = role='teacher', approved+active — same criteria as the EA's
+ *  Manage Registrations roster (admin/manage_privileged_accounts.php):
+ *  role='teacher' AND account_status='approved' AND is_active=1. No
+ *  College/user_year_levels gate — a teacher the EA has approved should
+ *  show up here even if no year level has been assigned to them yet.
+ *  "Program" isn't in the schema for teacher/staff (course is
+ *  student-only) — left null pending confirmation. */
 function ea_get_faculty(mysqli $mysqli, int $periodId): array {
-    $ph = implode(',', array_fill(0, count(COLLEGE_LEVELS), '?'));
-
-    // College teachers are period/semester-specific. The teacher's
-    // assigned_period is maintained by the EA in the personnel registry;
-    // only teachers assigned to the currently active evaluation period's
-    // semester should appear in the EA/Dean college faculty roster.
-    $semester = null;
-    if ($periodId > 0) {
-        $periodStmt = $mysqli->prepare("SELECT semester FROM evaluation_periods WHERE id = ? LIMIT 1");
-        if ($periodStmt) {
-            $periodStmt->bind_param('i', $periodId);
-            $periodStmt->execute();
-            $periodRow = $periodStmt->get_result()->fetch_assoc();
-            $periodStmt->close();
-            $semester = $periodRow['semester'] ?? null;
-        }
-    }
-
-    $whereSemester = '';
-    $types = str_repeat('s', count(COLLEGE_LEVELS));
-    $params = COLLEGE_LEVELS;
-
-    if ($semester !== null && $semester !== '') {
-        $whereSemester = " AND u.assigned_period = ?";
-        $types .= 's';
-        $params[] = $semester;
-    }
-
     return ea_rows($mysqli, "
         SELECT DISTINCT u.id, u.full_name, u.photo, u.department, u.designation AS position, NULL AS program
         FROM users u
         WHERE u.role = 'teacher' AND u.account_status = 'approved' AND u.is_active = 1
-          AND EXISTS (SELECT 1 FROM user_year_levels uyl WHERE uyl.user_id = u.id AND uyl.year_level IN ($ph))
-          $whereSemester
         ORDER BY u.full_name ASC
-    ", $types, $params);
+    ", '', []);
 }
 
 /** Staff = approved and active staff; no College year-level requirement. */

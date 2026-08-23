@@ -79,24 +79,17 @@ $eaToEvaluate      = 0;
 $agg_total = 0; $agg_done = 0; $agg_pending = 0; $agg_completion = 0;
 
 if ($structureActive) {
-    // ── FETCH APPROVED TEACHER/STAFF WITHIN BASIC EDUCATION SCOPE ───────
-    // NOTE: filtered by whether the Super Admin has assigned this person a
-    // Grade level within the Principal's scope via the "Assign Year
-    // Level(s)" action (manage_privileged_accounts.php) — which writes to
-    // the user_year_levels table. This is NOT filtered by users.academic_level:
-    // that column exists (self-healing schema) but nothing ever writes to
-    // it, so every row has it as NULL. user_year_levels is the one place
-    // Teacher/Staff scope assignment is actually recorded.
-    $scopeYearLevels = array_map(fn($g) => "Grade {$g}", $scopeGrades);
-    $scopeYearLevelsIn = esc_list($mysqli, $scopeYearLevels);
+    // ── FETCH APPROVED TEACHER/STAFF ─────────────────────────────────
+    // Same criteria as the EA's Manage Registrations roster
+    // (admin/manage_privileged_accounts.php): role IN ('teacher','staff')
+    // AND account_status='approved' AND is_active=1. No Grade/
+    // user_year_levels gate — a teacher or staff member the EA has
+    // approved should appear here for evaluation even if no Grade level
+    // has been assigned to them yet via "Assign Year Level(s)".
     $ures = $mysqli->prepare("
         SELECT id, full_name, designation, photo, role, secondary_role, department
         FROM users
         WHERE role IN ('teacher','staff') AND is_active=1 AND account_status='approved'
-          AND EXISTS (
-              SELECT 1 FROM user_year_levels uyl
-              WHERE uyl.user_id = users.id AND uyl.year_level IN ($scopeYearLevelsIn)
-          )
         ORDER BY full_name ASC
     ");
     $ures->execute();
@@ -401,9 +394,6 @@ html_head_open('PBI — Principal Evaluations');
             <input type="text" name="q" value="<?= htmlspecialchars($search) ?>" placeholder="Search by name or department..."/>
             <i class="fa-solid fa-magnifying-glass"></i>
         </div>
-        <a class="export-btn" href="<?= principal_eval_qs(['export' => 'csv']) ?>">
-            <i class="fa-solid fa-download"></i> Export List
-        </a>
     </form>
 
     <!-- ROSTER TABLE -->

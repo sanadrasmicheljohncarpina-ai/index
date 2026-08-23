@@ -42,20 +42,16 @@ if ($requestedBucket === 'Executive Assistant') {
     $target = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 } else {
-    // NOTE: scoped via user_year_levels (what "Assign Year Level(s)" on the
-    // accounts page actually writes to), NOT users.academic_level — that
-    // column exists but nothing populates it, so filtering on it excludes
-    // everyone. Same fix as principal_evaluations.php's roster query.
-    $scopeYearLevels = array_map(fn($g) => "Grade {$g}", $scopeGrades);
-    $scopeYearLevelsIn = esc_list($mysqli, $scopeYearLevels);
+    // Same criteria as the EA's Manage Registrations roster and
+    // principal_evaluations.php's roster query: role IN ('teacher','staff')
+    // AND account_status='approved' AND is_active=1. No Grade/
+    // user_year_levels gate, so anyone visible in the roster can actually
+    // be opened here instead of hitting "not found" for missing a Grade
+    // assignment.
     $stmt = $mysqli->prepare("
         SELECT id, full_name, designation, photo, role, secondary_role
         FROM users
         WHERE id=? AND role IN ('teacher','staff') AND is_active=1 AND account_status='approved'
-          AND EXISTS (
-              SELECT 1 FROM user_year_levels uyl
-              WHERE uyl.user_id = users.id AND uyl.year_level IN ($scopeYearLevelsIn)
-          )
         LIMIT 1
     ");
     $stmt->bind_param("i", $tid);
