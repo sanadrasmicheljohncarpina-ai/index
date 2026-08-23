@@ -13,7 +13,7 @@ $toast = '';
 
 // ── SAVE TOGGLES ───────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_permissions'])) {
-    $features = ['user_management','questionnaire','personnel_registry','documents','reports_analytics','eval_periods'];
+    $features = ['user_management','questionnaire','personnel_registry','reports_analytics','eval_periods'];
     $stmt = $mysqli->prepare("UPDATE admin_permissions SET admin_can_edit = ? WHERE feature_key = ?");
     foreach ($features as $key) {
         $val = isset($_POST['perm_' . $key]) ? 1 : 0;
@@ -30,7 +30,7 @@ $toast = $_SESSION['perm_toast'] ?? ''; unset($_SESSION['perm_toast']);
 
 // ── FETCH CURRENT STATE ──────────────────────────────────────────
 $perms = [];
-$res = $mysqli->query("SELECT feature_key, feature_label, admin_can_edit FROM admin_permissions ORDER BY id");
+$res = $mysqli->query("SELECT feature_key, feature_label, admin_can_edit FROM admin_permissions WHERE feature_key <> 'documents' ORDER BY id");
 if ($res) while ($row = $res->fetch_assoc()) $perms[] = $row;
 ?>
 <!DOCTYPE html>
@@ -42,7 +42,7 @@ if ($res) while ($row = $res->fetch_assoc()) $perms[] = $row;
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
-:root{--dark:#0A192F;--mid:#172A45;--inner:#0F1F3D;--accent:#2B6CB0;--hover:#4C78B8;--teal:#0D9488;--light:#E0E6F0;--muted:#A0B3C6;--danger:#F05454;--border:rgba(255,255,255,0.08);--radius:10px;--shadow:0 4px 20px rgba(0,0,0,0.35);}
+:root{--dark:#F8FAFC;--mid:#FFFFFF;--inner:#F1F5F9;--accent:#2B6CB0;--hover:#4C78B8;--teal:#0D9488;--light:#0F172A;--muted:#475569;--danger:#F05454;--border:rgba(15,23,42,.12);--radius:10px;--shadow:0 4px 20px rgba(15,23,42,.10);}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);min-height:100vh;padding:28px;}
 .toast{background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);color:#86efac;border-radius:8px;padding:12px 18px;font-size:13px;margin-bottom:20px;display:flex;align-items:center;gap:8px;}
@@ -67,6 +67,66 @@ input:checked + .slider:before{transform:translateX(24px);}
 .btn-save:hover{background:var(--hover);}
 .back-link{display:inline-flex;align-items:center;gap:8px;color:var(--muted);text-decoration:none;font-size:13px;margin-bottom:20px;transition:color .2s;}
 .back-link:hover{color:var(--light);}
+
+/* Admin Module light design system — matches the dashboard */
+:root{
+  --page-bg:#FFFFFF; --card-bg:#FFFFFF; --card-border:#E2E8F0;
+  --inner:#F4F7FB; --text-dark:#172033; --text-dim:#475569;
+  --light:#172033; --muted:#475569; --dark:#FFFFFF; --mid:#FFFFFF;
+  --border:#E2E8F0; --accent:#3B82F6; --blue:#3B82F6;
+  --gold:#D97706; --gold-h:#F59E0B; --teal:#0D9488; --violet:#7C3AED;
+  --danger:#DC2626; --success:#059669; --radius:12px;
+  --card-shadow:0 2px 4px rgba(15,23,42,.05),0 6px 16px rgba(15,23,42,.06);
+}
+html{background:#fff;color-scheme:light;}
+body{background:#fff !important;color:#172033 !important;}
+a{color:inherit;}
+.page-header h1,.page-title,.et-title,.section-title{color:#172033 !important;}
+.page-header p,.page-sub,.et-sub,.et-updated,.muted,.hint{color:#475569 !important;}
+input,select,textarea{background:#fff !important;color:#172033 !important;border-color:#CBD5E1 !important;}
+button{font-family:inherit;}
+.table-wrap,.content-panel,.create-panel,.period-card,.stat-card,.sector-card,.person-row,
+.sum-card,.standing-panel,.eval-card,.eval-banner,.info-banner,.section,.shell .section,
+.history-card,.gl-card,.amber-card,.green-card,.red-card{
+  background:#fff !important;border-color:#E2E8F0 !important;box-shadow:0 2px 4px rgba(15,23,42,.04),0 6px 16px rgba(15,23,42,.05) !important;
+}
+.sector-tabs,.eval-switcher,.tabs,.level-tabs,.status-tabs{
+  background:#fff !important;border-color:#E2E8F0 !important;box-shadow:0 2px 4px rgba(15,23,42,.04) !important;
+}
+.sector-tab,.eval-tab,.tab,.level-tab,.status-tab{color:#475569 !important;}
+.sector-tab:hover,.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover{color:#172033 !important;background:#F4F7FB !important;}
+thead tr{background:#F8FAFC !important;}
+tbody tr:hover{background:#F8FAFC !important;}
+.btn-cancel,.btn-icon,.btn-back{background:#fff !important;color:#172033 !important;border-color:#CBD5E1 !important;}
+.empty-state,.empty-cta{color:#475569 !important;}
+::-webkit-scrollbar-track{background:#fff;}
+::-webkit-scrollbar-thumb{background:#CBD5E1;border:2px solid #fff;}
+body{padding:28px !important;}
+
+/* ── SHARP LIGHT ADMIN UI ── */
+html { background:#F8FAFC; }
+body {
+  color:#0F172A !important;
+  background:#F8FAFC !important;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+h1,h2,h3,h4,h5,h6 { color:#0F172A; letter-spacing:-.01em; }
+p, .subtitle, .description, .helper, .muted, small { color:#475569; }
+label, th { color:#334155; font-weight:600; }
+td { color:#0F172A; }
+input, select, textarea {
+  color:#0F172A;
+  background:#FFFFFF;
+  border-color:#CBD5E1;
+}
+input::placeholder, textarea::placeholder { color:#94A3B8; }
+.card, .panel, .section, .table-card, .content-card {
+  border-color:#CBD5E1;
+  box-shadow:0 4px 14px rgba(15,23,42,.07);
+}
+button, .btn { font-weight:700; }
+a { color:inherit; }
 </style>
 </head>
 <body>
@@ -98,7 +158,6 @@ input:checked + .slider:before{transform:translateX(24px);}
             'user_management'    => 'fa-users',
             'questionnaire'      => 'fa-file-signature',
             'personnel_registry' => 'fa-id-card-clip',
-            'documents'          => 'fa-folder-open',
             'reports_analytics'  => 'fa-chart-line',
             'eval_periods'       => 'fa-calendar-check',
         ];

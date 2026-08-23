@@ -13,7 +13,7 @@
  *
  * ── System Audits box (feed_full) ──────────────────────────────────────────
  * Only ever contains two kinds of entries:
- *   - type=role_change → meta "Admin Engine"     (a user changed their OWN
+ *   - type=role_change → meta "Admin Module"     (a user changed their OWN
  *                         role from their own dashboard — role_change_log)
  *   - type=audit       → meta "System Automator" (evaluation submissions —
  *                         who submitted, plus a running total — pulled live
@@ -22,6 +22,15 @@
  * they only show up in the bell dropdown (feed), not the audit box.
  */
 session_start();
+
+// This endpoint is polled by the dashboard every 10 seconds. Never allow a
+// PHP warning/notice or a database exception to turn the response into HTML,
+// because the browser would then fail JSON parsing and leave the dashboard's
+// loading row on screen forever.
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+ob_start();
+
 require_once 'db.php';
 
 // Guard — only authenticated admins
@@ -30,12 +39,28 @@ if (
     !in_array($_SESSION['role'] ?? '', ['admin', 'superadmin', 'registrar'])
 ) {
     http_response_code(403);
-    echo json_encode(['error' => 'Unauthorized']);
-    exit;
+    dashboard_json(['error' => 'Unauthorized']);
 }
 
-header('Content-Type: application/json');
-header('Cache-Control: no-store');
+header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+
+function dashboard_query($mysqli, $sql) {
+    try {
+        return $mysqli->query($sql);
+    } catch (Throwable $e) {
+        error_log('dashboard_counts query failed: ' . $e->getMessage());
+        return false;
+    }
+}
+
+function dashboard_json($payload) {
+    if (ob_get_length()) {
+        ob_clean();
+    }
+    echo json_encode($payload, JSON_INVALID_UTF8_SUBSTITUTE);
+    exit;
+}
 
 /* ── Mark as read (bell "Mark all read" button) ─────────────────────────── */
 if (isset($_GET['mark_read'])) {
@@ -60,7 +85,7 @@ $rows = [
     ['evals_submitted', "SELECT COUNT(*) AS c FROM evaluation_tracker WHERE status IN ('submitted','approved','archived')"],
 ];
 foreach ($rows as [$key, $sql]) {
-    $r = $mysqli->query($sql);
+    $r = dashboard_query($mysqli, $sql);
     if ($r) $counts[$key] = (int)($r->fetch_assoc()['c'] ?? 0);
 }
 $counts['total']         = $counts['teacher'] + $counts['staff'] + $counts['students'];
@@ -71,14 +96,14 @@ $counts['faculty_staff'] = $counts['teacher'] + $counts['staff']; // for the "Te
 // this is what powers the bell dropdown.
 //
 // $auditFeed holds ONLY role_change + audit entries — this is what powers the
-// two-column "System Audits" box on the dashboard (System Automator / Admin Engine).
+// two-column "System Audits" box on the dashboard (System Automator / Admin Module).
 
 $feed = [];
 
-/* ── 1. role_change_log → "Admin Engine" (self-service role changes) ── */
-$rclExists = $mysqli->query("SHOW TABLES LIKE 'role_change_log'");
+/* ── 1. role_change_log → "Admin Module" (self-service role changes) ── */
+$rclExists = dashboard_query($mysqli, "SHOW TABLES LIKE 'role_change_log'");
 if ($rclExists && $rclExists->num_rows > 0) {
-    $q = $mysqli->query("
+    $q = dashboard_query($mysqli, "
         SELECT rcl.user_id, rcl.old_role, rcl.new_role,
                rcl.old_designation, rcl.new_designation,
                rcl.changed_at, u.full_name
@@ -99,7 +124,7 @@ if ($rclExists && $rclExists->num_rows > 0) {
                 'id'       => 'rcl_' . $row['user_id'] . '_' . $ts,
                 'type'     => 'role_change',
                 'text'     => htmlspecialchars($row['full_name']) . ' updated their role from ' . htmlspecialchars($oldLabel) . ' → ' . htmlspecialchars($newLabel),
-                'meta'     => 'Admin Engine',
+                'meta'     => 'Admin Module',
                 'time'     => $ago,
                 'ts'       => $ts,
                 'color'    => '#f59e0b',
@@ -120,7 +145,7 @@ if (!in_array($levelFilter, $validLevels, true)) $levelFilter = '';
 /* ── 2. evaluation_tracker → "System Automator" (evaluation submissions) ── */
 // Individual submission events: who submitted, and what kind of evaluation.
 $levelClause = $levelFilter ? " AND et.level = '" . $mysqli->real_escape_string($levelFilter) . "'" : "";
-$evSubQ = $mysqli->query("
+$evSubQ = dashboard_query($mysqli, "
     SELECT et.id, et.eval_bucket, et.form_type, et.status, et.submitted_at, et.level,
            u.full_name AS student_name
     FROM evaluation_tracker et
@@ -151,7 +176,7 @@ if ($evSubQ) {
 }
 
 // Rolling total-submitted summary entry — surfaces the running count you asked for.
-$totalSubQ = $mysqli->query("
+$totalSubQ = dashboard_query($mysqli, "
     SELECT COUNT(*) AS c, MAX(submitted_at) AS latest
     FROM evaluation_tracker
     WHERE status IN ('submitted','approved','archived')" . $levelClause . "
@@ -176,7 +201,7 @@ if ($totalSubQ) {
 }
 
 /* ── 3. Synthetic from users → bell dropdown only, NOT the audit box ── */
-$q = $mysqli->query("SELECT full_name, role, created_at FROM users ORDER BY created_at DESC LIMIT 5");
+$q = dashboard_query($mysqli, "SELECT full_name, role, created_at FROM users ORDER BY created_at DESC LIMIT 5");
 if ($q) {
     while ($row = $q->fetch_assoc()) {
         $ts = strtotime($row['created_at']);
@@ -199,7 +224,7 @@ usort($feed, fn($a, $b) => $b['ts'] - $a['ts']);
 // Bell dropdown: top 6 of EVERYTHING (role changes, submissions, new registrations).
 $feedShort = array_slice($feed, 0, 6);
 
-// System Audits box: ONLY role_change ("Admin Engine") + audit ("System Automator"),
+// System Audits box: ONLY role_change ("Admin Module") + audit ("System Automator"),
 // new_user registrations are deliberately left out here.
 $auditFeed = array_values(array_filter($feed, fn($e) => in_array($e['type'], ['role_change', 'audit'])));
 $auditFeed = array_slice($auditFeed, 0, 12);
@@ -208,11 +233,11 @@ $auditFeed = array_slice($auditFeed, 0, 12);
 $unreadRoleChanges = 0;
 if ($rclExists && $rclExists->num_rows > 0) {
     $lastSeen = $_SESSION['rcl_last_seen'] ?? 0;
-    $q = $mysqli->query("SELECT COUNT(*) AS c FROM role_change_log WHERE UNIX_TIMESTAMP(changed_at) > " . (int)$lastSeen);
+    $q = dashboard_query($mysqli, "SELECT COUNT(*) AS c FROM role_change_log WHERE UNIX_TIMESTAMP(changed_at) > " . (int)$lastSeen);
     if ($q) $unreadRoleChanges = (int)($q->fetch_assoc()['c'] ?? 0);
 }
 
-echo json_encode([
+dashboard_json([
     'counts'              => $counts,
     'feed'                => $feedShort,
     'feed_full'           => $auditFeed,
@@ -234,10 +259,10 @@ function _formatRole(string $role, ?string $designation): string {
     return ucfirst($role);
 }
 function _formatLevel(?string $level): string {
-    return match ($level) {
-        'junior_high' => 'Junior High',
-        'senior_high' => 'Senior High',
-        'college'     => 'College',
-        default       => '',
-    };
+    switch ($level) {
+        case 'junior_high': return 'Junior High';
+        case 'senior_high': return 'Senior High';
+        case 'college':     return 'College';
+        default:            return '';
+    }
 }

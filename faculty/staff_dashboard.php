@@ -11,6 +11,7 @@
         session_start();
         require_once 'db.php';
         require_once '../shared/eligibility.php';
+        require_once '../shared/ea_personnel_service.php';
         // ── AUTH GUARD ────────────────────────────────────────────────
         if (empty($_SESSION['user_id']) || $_SESSION['role'] !== 'staff') {
             header("Location: faculty_login.php"); exit;
@@ -20,6 +21,8 @@
         $full_name   = $_SESSION['full_name']   ?? 'Staff';
         $designation = $_SESSION['designation'] ?? 'Staff';
         $page        = $_GET['page'] ?? 'dashboard';
+        if ($page === 'peer') $page = 'ea_eval';
+        if ($page === 'peer_eval') $page = 'ea_eval_form';
 
         // ── CSRF TOKEN ────────────────────────────────────────────────
         if (empty($_SESSION['csrf_token'])) {
@@ -187,6 +190,44 @@
         $pr = $mysqli->query("SELECT * FROM evaluation_periods WHERE is_active=1 LIMIT 1");
         if ($pr) $period = $pr->fetch_assoc();
 
+        // ── STAFF -> EXECUTIVE ASSISTANT EVALUATION ─────────────────────
+        // Staff members may evaluate the Executive Assistant only in the
+        // Staff evaluation workspace. The target is resolved from the live
+        // database through the same EA personnel helper used by Dean/Principal.
+        $ea_list = ea_get_executive_assistants($mysqli, (int)($period['id'] ?? 0));
+        $ea_target = $ea_list[0] ?? null;
+        if ($ea_target && isset($_GET['tid'])) {
+            $requestedEaId = (int)$_GET['tid'];
+            foreach ($ea_list as $candidate) {
+                if ((int)$candidate['id'] === $requestedEaId) { $ea_target = $candidate; break; }
+            }
+        }
+        $ea_form = null;
+        $ea_questions = [];
+        $ea_already_done = false;
+        if (in_array($page, ['ea_eval','ea_eval_form'], true) && $ea_target) {
+            $eaFormStmt = $mysqli->prepare("SELECT id, title FROM questionnaire_forms WHERE eval_type='supervisor_to_ea' AND is_active=1 ORDER BY id DESC LIMIT 1");
+            if ($eaFormStmt) {
+                $eaFormStmt->execute();
+                $ea_form = $eaFormStmt->get_result()->fetch_assoc();
+                $eaFormStmt->close();
+            }
+            if ($ea_form) {
+                $q = $mysqli->prepare("SELECT id, question_no, question, type, max_score, is_required FROM questionnaire_questions WHERE form_id=? ORDER BY question_no, id");
+                $q->bind_param('i', $ea_form['id']);
+                $q->execute();
+                $ea_questions = $q->get_result()->fetch_all(MYSQLI_ASSOC);
+                $q->close();
+            }
+            if ($period) {
+                $d = $mysqli->prepare("SELECT id FROM evaluation_tracker WHERE evaluator_id=? AND target_user_id=? AND period_id=? AND eval_type='supervisor_to_ea' AND status='submitted' LIMIT 1");
+                $d->bind_param('iii', $user_id, $ea_target['id'], $period['id']);
+                $d->execute();
+                $ea_already_done = (bool)$d->get_result()->fetch_assoc();
+                $d->close();
+            }
+        }
+
         // ── MY EVALUATION RESULTS ─────────────────────────────────────
         // Reads from evaluation_tracker + questionnaire_answers (student evaluations of this staff)
         $my_avg    = null;
@@ -296,6 +337,66 @@
         $idxChk = $mysqli->query("SHOW INDEX FROM evaluation_tracker WHERE Key_name = 'uniq_eval_submission'");
         if ($idxChk && $idxChk->num_rows === 0) {
             $mysqli->query("ALTER TABLE evaluation_tracker ADD UNIQUE INDEX uniq_eval_submission (evaluator_id, target_user_id, eval_type, period_id)");
+        }
+
+        // ── SUBMIT STAFF -> EXECUTIVE ASSISTANT EVALUATION ───────────
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_ea_evaluation'])) {
+            if (!csrf_check()) {
+                $_SESSION['toast_error'] = "Your session expired or the request could not be verified. Please try again.";
+                header("Location: staff_dashboard.php?page=ea_eval"); exit;
+            }
+            $tid = (int)($_POST['target_id'] ?? 0);
+            $target = null;
+            foreach ($ea_list as $candidate) {
+                if ((int)$candidate['id'] === $tid) { $target = $candidate; break; }
+            }
+            $ratings = $_POST['ratings'] ?? [];
+            $comments = trim($_POST['comments'] ?? '');
+            $errors = [];
+            if (!$period || !$target || !$ea_form || empty($ea_questions)) {
+                $errors[] = 'The Executive Assistant evaluation is not currently available.';
+            } elseif ($ea_already_done) {
+                $errors[] = 'You have already evaluated the Executive Assistant for this period.';
+            } else {
+                foreach ($ea_questions as $q) {
+                    if (($q['type'] ?? 'rating') === 'rating') {
+                        $score = isset($ratings[$q['id']]) ? (int)$ratings[$q['id']] : 0;
+                        $max = (int)($q['max_score'] ?? 5);
+                        if ($score < 1 || $score > $max) { $errors[] = 'Please answer every required rating question.'; break; }
+                    }
+                }
+            }
+            if (!$errors) {
+                $sum=0.0; $count=0;
+                foreach ($ea_questions as $q) {
+                    if (($q['type'] ?? 'rating') === 'rating') { $sum += (float)$ratings[$q['id']]; $count++; }
+                }
+                $overallScore = $count ? round($sum / $count, 2) : null;
+                $mysqli->begin_transaction();
+                try {
+                    $ins=$mysqli->prepare("INSERT INTO evaluation_tracker (evaluator_id,target_user_id,form_id,period_id,score,remarks,eval_type,status,submitted_at) VALUES (?,?,?,?,?,?,'supervisor_to_ea','submitted',NOW())");
+                    $formId=(int)$ea_form['id']; $periodId=(int)$period['id'];
+                    $ins->bind_param('iiiids',$user_id,$tid,$formId,$periodId,$overallScore,$comments);
+                    $ins->execute(); $trackerId=$mysqli->insert_id; $ins->close();
+                    $ans=$mysqli->prepare("INSERT INTO questionnaire_answers (tracker_id,question_id,answer_score,submitted_at) VALUES (?,?,?,NOW())");
+                    foreach ($ea_questions as $q) {
+                        if (($q['type'] ?? 'rating') === 'rating') {
+                            $qid=(int)$q['id']; $score=(int)$ratings[$qid];
+                            $ans->bind_param('iii',$trackerId,$qid,$score); $ans->execute();
+                        }
+                    }
+                    $ans->close(); $mysqli->commit();
+                    $_SESSION['toast']='Executive Assistant evaluation submitted successfully.';
+                    header('Location: staff_dashboard.php?page=ea_eval'); exit;
+                } catch (Throwable $e) {
+                    $mysqli->rollback();
+                    error_log('[staff_dashboard] submit EA evaluation failed for evaluator=' . $user_id . ': ' . $e->getMessage());
+                    $_SESSION['toast_error']='Unable to submit the Executive Assistant evaluation. Please try again.';
+                    header('Location: staff_dashboard.php?page=ea_eval'); exit;
+                }
+            }
+            $_SESSION['toast_error']=implode(' ',$errors);
+            header('Location: staff_dashboard.php?page=ea_eval_form&tid=' . $tid); exit;
         }
 
         // ── PEER EVALUATION ───────────────────────────────────────────
@@ -511,12 +612,6 @@ $tracker_id = $mysqli->insert_id; $trk->close();
             header("Location: staff_dashboard.php?page=peer&group=" . urlencode($submitted_group)); exit;
         }
 
-        // ── DOCUMENTS ─────────────────────────────────────────────────
-        $documents = [];
-        if ($page === 'documents') {
-            $docs = $mysqli->query("SELECT * FROM documents WHERE visibility IN ('Staff','All') AND is_archived=0 ORDER BY uploaded_at DESC");
-            if ($docs) $documents = $docs->fetch_all(MYSQLI_ASSOC);
-        }
 
         // ── RECENT SUBMISSIONS ────────────────────────────────────────
         $recent_subs = [];
@@ -849,15 +944,6 @@ $tracker_id = $mysqli->insert_id; $trk->close();
         .btn-submit{background:var(--teal);color:#fff;border:none;padding:12px 30px;border-radius:var(--radius);font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:8px;font-family:'DM Sans',sans-serif;}
         .btn-submit:hover{background:var(--teal-hover);transform:translateY(-1px);}
 
-        /* DOCUMENTS */
-        .doc-item{background:var(--inner);border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin-bottom:10px;display:flex;align-items:center;gap:14px;transition:background .15s;}
-        .doc-item:hover{background:rgba(43,108,176,.08);}
-        .doc-icon{width:40px;height:40px;border-radius:8px;background:rgba(43,108,176,.2);display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:18px;flex-shrink:0;}
-        .doc-name{font-size:14px;font-weight:600;color:#fff;}
-        .doc-meta{font-size:12px;color:var(--muted);}
-        .doc-dl{margin-left:auto;background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;transition:background .2s;white-space:nowrap;}
-        .doc-dl:hover{background:var(--hover);}
-
         /* RESPONSIVE */
         @media(max-width:900px){.sidebar{transform:translateX(-100%);}.sidebar.open{transform:translateX(0);}.top-nav{left:0;}.main{margin-left:0;}.hamburger{display:block;}}
         @media(max-width:600px){.main{padding:16px;}.stats-grid{grid-template-columns:1fr 1fr;}.students-grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr));}.scale-legend{top:0;}.star-btn{min-width:60px;}.custom-role-row{flex-direction:column;}.role-chips{gap:6px;}.peer-select-row{flex-direction:column;}.btn-proceed-peer{width:100%;justify-content:center;}}
@@ -916,17 +1002,13 @@ $tracker_id = $mysqli->insert_id; $trk->close();
                 <a href="staff_dashboard.php?page=my_results" class="nav-link <?= $page==='my_results'?'active':'' ?>">
                     <i class="fa-solid fa-chart-bar"></i> My Results
                 </a>
-                <a href="staff_dashboard.php?page=peer" class="nav-link <?= in_array($page,['peer','peer_eval'])?'active':'' ?>">
-                    <i class="fa-solid fa-users-viewfinder"></i> Peer Evaluation
-                    <?php if (!empty($peers_all) && $page==='peer'): ?>
-                    <span class="badge"><?= count($peers_all) - count($done_peers) ?></span>
+                <a href="staff_dashboard.php?page=ea_eval" class="nav-link <?= in_array($page,['ea_eval','ea_eval_form'])?'active':'' ?>">
+                    <i class="fa-solid fa-user-tie"></i> EA Evaluation
+                    <?php if (!empty($ea_list) && $page==='ea_eval'): ?>
+                    <span class="badge"><?= count($ea_list) ?></span>
                     <?php endif; ?>
                 </a>
 
-                <div class="nav-section-label">Resources</div>
-                <a href="staff_dashboard.php?page=documents" class="nav-link <?= $page==='documents'?'active':'' ?>">
-                    <i class="fa-solid fa-folder-open"></i> Documents
-                </a>
             </nav>
 
             <div class="sidebar-footer">
@@ -991,7 +1073,7 @@ $tracker_id = $mysqli->insert_id; $trk->close();
                 </button>
                 <div class="nav-page-title">
                     <?php
-                    $titles = ['dashboard'=>'Dashboard','profile'=>'My Profile & Role','my_results'=>'My Evaluation Results','peer'=>'Peer Evaluation','peer_eval'=>'Evaluate Peer','documents'=>'Documents'];
+                    $titles = ['dashboard'=>'Dashboard','profile'=>'My Profile & Role','my_results'=>'My Evaluation Results','ea_eval'=>'EA Evaluation','ea_eval_form'=>'Evaluate Executive Assistant'];
                     echo $titles[$page] ?? 'Dashboard';
                     ?>
                 </div>
@@ -1279,6 +1361,189 @@ $tracker_id = $mysqli->insert_id; $trk->close();
             <?php endwhile; $allStmt->close(); endif; ?>
         </div>
 
+        <!-- ══════════ EXECUTIVE ASSISTANT EVALUATION ══════════ -->
+        <?php elseif ($page === 'ea_eval'): ?>
+        <style>
+            .ea-eval-wrap{display:flex;flex-direction:column;gap:18px;}
+            .ea-tab-row{display:flex;align-items:center;gap:8px;}
+            .ea-tab{display:inline-flex;align-items:center;gap:10px;padding:14px 22px;border-radius:12px 12px 0 0;background:rgba(124,58,237,.18);color:#fff;border:1px solid rgba(124,58,237,.32);border-bottom-color:transparent;font-weight:700;}
+            .ea-tab .count{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:22px;padding:0 7px;border-radius:999px;background:rgba(255,255,255,.13);font-size:11px;}
+            .ea-toolbar{background:rgba(15,35,68,.86);border:1px solid var(--border);border-radius:14px;padding:18px 22px;display:flex;align-items:end;gap:18px;box-shadow:var(--shadow);}
+            .ea-search{flex:1;}
+            .ea-toolbar label{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px;}
+            .ea-search-input-wrap{position:relative;}
+            .ea-search-input{width:100%;height:46px;background:#102247;border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:0 44px 0 14px;color:#fff;outline:none;}
+            .ea-search-input:focus{border-color:rgba(124,58,237,.65);box-shadow:0 0 0 3px rgba(124,58,237,.12);}
+            .ea-search-icon{position:absolute;right:14px;top:50%;transform:translateY(-50%);color:#9ca3af;}
+            .ea-export-btn{height:46px;display:inline-flex;align-items:center;gap:9px;padding:0 16px;border-radius:10px;border:1px solid rgba(124,58,237,.42);background:rgba(124,58,237,.16);color:#c4b5fd;font-weight:700;cursor:pointer;}
+            .ea-table-card{overflow:hidden;background:rgba(15,35,68,.82);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);}
+            .ea-table{width:100%;border-collapse:collapse;table-layout:fixed;}
+            .ea-table th{background:#0f2043;color:#9fb2d1;text-align:left;padding:15px 18px;font-size:11px;text-transform:uppercase;letter-spacing:.9px;}
+            .ea-table td{padding:16px 18px;border-top:1px solid rgba(255,255,255,.06);color:#eef3ff;font-size:13px;vertical-align:middle;}
+            .ea-table tr:hover{background:rgba(124,58,237,.05);}
+            .ea-profile{display:flex;align-items:center;gap:14px;}
+            .ea-avatar{width:44px;height:44px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,.12);background:#243b68;display:flex;align-items:center;justify-content:center;color:#c4b5fd;flex:0 0 44px;}
+            .ea-name{font-weight:700;color:#fff;}
+            .ea-sub{font-size:11px;color:var(--muted);margin-top:3px;}
+            .ea-role-pill{display:inline-flex;align-items:center;padding:5px 10px;border-radius:999px;background:rgba(124,58,237,.16);color:#c4b5fd;border:1px solid rgba(124,58,237,.24);font-weight:700;font-size:11px;}
+            .ea-status{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;background:rgba(148,163,184,.12);color:#cbd5e1;font-weight:700;font-size:11px;}
+            .ea-status.done{background:rgba(74,222,128,.13);color:#86efac;}
+            .ea-evaluate-btn{display:inline-flex;align-items:center;gap:8px;padding:9px 15px;border-radius:9px;background:#7c3aed;color:#fff;text-decoration:none;font-weight:700;border:1px solid rgba(255,255,255,.08);}
+            .ea-evaluate-btn:hover{background:#6d28d9;}
+            .ea-evaluate-btn.done{background:rgba(34,197,94,.12);color:#86efac;border-color:rgba(34,197,94,.2);cursor:default;}
+            .ea-table-footer{padding:14px 18px;color:#9fb2d1;font-size:12px;border-top:1px solid rgba(255,255,255,.06);}
+            @media(max-width:900px){.ea-toolbar{align-items:stretch;flex-direction:column}.ea-table{min-width:980px}.ea-table-card{overflow-x:auto}.ea-toolbar .ea-export-btn{align-self:flex-start}}
+        </style>
+
+        <div class="ea-eval-wrap">
+            <div class="ea-tab-row">
+                <div class="ea-tab"><i class="fa-solid fa-user-tie"></i> Executive Assistant <span class="count"><?= count($ea_list) ?></span></div>
+            </div>
+
+            <div class="ea-toolbar">
+                <div class="ea-search">
+                    <label for="eaSearch">Search</label>
+                    <div class="ea-search-input-wrap">
+                        <input id="eaSearch" class="ea-search-input" type="search" placeholder="Search by name or department..." autocomplete="off">
+                        <i class="fa-solid fa-magnifying-glass ea-search-icon"></i>
+                    </div>
+                </div>
+                <button type="button" class="ea-export-btn" id="eaExportBtn"><i class="fa-solid fa-download"></i> Export List</button>
+            </div>
+
+            <div class="ea-table-card">
+                <table class="ea-table" id="eaEvalTable">
+                    <thead>
+                        <tr>
+                            <th style="width:28%">Profile &amp; Full Name</th>
+                            <th style="width:16%">Position</th>
+                            <th style="width:17%">Role</th>
+                            <th style="width:16%">Evaluation Status</th>
+                            <th style="width:13%">Last Evaluation Date</th>
+                            <th style="width:10%">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php if (empty($ea_list)): ?>
+                        <tr><td colspan="6"><div class="empty-state"><i class="fa-solid fa-user-tie"></i><p>No active Executive Assistant account is available.</p></div></td></tr>
+                    <?php else: ?>
+                        <?php foreach ($ea_list as $ea): ?>
+                            <?php
+                            $done = false; $last_eval = null;
+                            if ($period) {
+                                $chk=$mysqli->prepare("SELECT submitted_at FROM evaluation_tracker WHERE evaluator_id=? AND target_user_id=? AND period_id=? AND eval_type='supervisor_to_ea' AND status='submitted' ORDER BY submitted_at DESC LIMIT 1");
+                                $chk->bind_param('iii',$user_id,$ea['id'],$period['id']);
+                                $chk->execute();
+                                $doneRow=$chk->get_result()->fetch_assoc();
+                                if ($doneRow) { $done=true; $last_eval=$doneRow['submitted_at']; }
+                                $chk->close();
+                            }
+                            $search_blob = strtolower(trim(($ea['full_name'] ?? '').' '.($ea['position'] ?? '').' Executive Assistant'));
+                            ?>
+                            <tr data-search="<?= htmlspecialchars($search_blob, ENT_QUOTES) ?>">
+                                <td>
+                                    <div class="ea-profile">
+                                        <?php if (!empty($ea['photo'])): ?>
+                                            <img class="ea-avatar" src="../image/<?= htmlspecialchars($ea['photo']) ?>" alt="<?= htmlspecialchars($ea['full_name']) ?>">
+                                        <?php else: ?>
+                                            <div class="ea-avatar"><i class="fa-solid fa-user-tie"></i></div>
+                                        <?php endif; ?>
+                                        <div><div class="ea-name"><?= htmlspecialchars($ea['full_name']) ?></div><div class="ea-sub">Executive Assistant</div></div>
+                                    </div>
+                                </td>
+                                <td><?= htmlspecialchars($ea['position'] ?: '—') ?></td>
+                                <td><span class="ea-role-pill">Executive Assistant</span></td>
+                                <td><span class="ea-status <?= $done ? 'done' : '' ?>"><i class="fa-solid <?= $done ? 'fa-circle-check' : 'fa-hourglass-half' ?>"></i><?= $done ? 'Evaluated' : 'Not Started' ?></span></td>
+                                <td><?= $last_eval ? htmlspecialchars(date('M d, Y g:i A', strtotime($last_eval))) : '—' ?></td>
+                                <td>
+                                    <?php if ($done): ?>
+                                        <span class="ea-evaluate-btn done"><i class="fa-solid fa-check"></i> Evaluated</span>
+                                    <?php else: ?>
+                                        <a class="ea-evaluate-btn" href="staff_dashboard.php?page=ea_eval_form&tid=<?= (int)$ea['id'] ?>"><i class="fa-solid fa-pen"></i> Evaluate</a>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                    </tbody>
+                </table>
+                <div class="ea-table-footer" id="eaFooter">Showing <?= count($ea_list) ?> executive assistant member<?= count($ea_list) === 1 ? '' : 's' ?></div>
+            </div>
+        </div>
+
+        <script>
+        (function(){
+            const input=document.getElementById('eaSearch');
+            const table=document.getElementById('eaEvalTable');
+            const footer=document.getElementById('eaFooter');
+            if(input && table){
+                const rows=[...table.querySelectorAll('tbody tr[data-search]')];
+                const update=()=>{
+                    const q=input.value.trim().toLowerCase(); let visible=0;
+                    rows.forEach(r=>{const show=!q || (r.dataset.search||'').includes(q); r.style.display=show?'':'none'; if(show) visible++;});
+                    if(footer) footer.textContent='Showing '+visible+' executive assistant member'+(visible===1?'':'s');
+                };
+                input.addEventListener('input',update);
+            }
+            const exp=document.getElementById('eaExportBtn');
+            if(exp){exp.addEventListener('click',()=>{
+                const table=document.getElementById('eaEvalTable');
+                if(!table) return;
+                const lines=[['Full Name','Position','Role','Evaluation Status','Last Evaluation Date']];
+                table.querySelectorAll('tbody tr[data-search]').forEach(r=>{
+                    if(r.style.display==='none') return;
+                    const c=r.children;
+                    lines.push([c[0].innerText.trim().replace(/\s+/g,' '),c[1].innerText.trim(),c[2].innerText.trim(),c[3].innerText.trim(),c[4].innerText.trim()]);
+                });
+                const csv=lines.map(a=>a.map(v=>'"'+v.replace(/"/g,'""')+'"').join(',')).join('\n');
+                const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}), url=URL.createObjectURL(blob), a=document.createElement('a');
+                a.href=url; a.download='executive-assistant-evaluation-list.csv'; a.click(); URL.revokeObjectURL(url);
+            });}
+        })();
+        </script>
+
+        <?php elseif ($page === 'ea_eval_form'): ?>
+        <a href="staff_dashboard.php?page=ea_eval" class="back-link"><i class="fa-solid fa-arrow-left"></i> Back to EA Evaluation</a>
+        <div class="section-card">
+            <?php if (!$ea_target): ?>
+                <div class="empty-state"><i class="fa-solid fa-user-tie"></i><p>Executive Assistant not found.</p></div>
+            <?php elseif (!$ea_form || empty($ea_questions)): ?>
+                <div class="empty-state"><i class="fa-solid fa-clipboard-question"></i><p>The Executive Assistant evaluation questionnaire has not been configured yet.</p></div>
+            <?php elseif ($ea_already_done): ?>
+                <div class="empty-state"><i class="fa-solid fa-circle-check"></i><p>You have already evaluated the Executive Assistant for this period.</p></div>
+            <?php else: ?>
+                <div class="section-card-title"><i class="fa-solid fa-user-tie" style="color:var(--teal)"></i> Evaluate <?= htmlspecialchars($ea_target['full_name']) ?></div>
+                <p style="font-size:13px;color:var(--muted);margin-bottom:22px;">Executive Assistant evaluation • responses are confidential.</p>
+                <form method="POST" action="staff_dashboard.php?page=ea_eval_form&tid=<?= (int)$ea_target['id'] ?>">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
+                    <input type="hidden" name="target_id" value="<?= (int)$ea_target['id'] ?>">
+                    <input type="hidden" name="submit_ea_evaluation" value="1">
+                    <?php foreach ($ea_questions as $q): ?>
+                    <div class="q-card">
+                        <div class="q-no">Question <?= (int)$q['question_no'] ?></div>
+                        <div class="q-text"><?= htmlspecialchars($q['question']) ?></div>
+                        <?php if (($q['type'] ?? 'rating') === 'rating'): ?>
+                        <div class="star-group" id="ea_grp_<?= (int)$q['id'] ?>">
+                            <?php $labels=[5=>'Always',4=>'Often',3=>'Sometimes',2=>'Rarely',1=>'Never']; for($r=5;$r>=1;$r--): ?>
+                            <button type="button" class="star-btn" data-val="<?= $r ?>" onclick="eaRate(<?= (int)$q['id'] ?>,<?= $r ?>)"><span class="sb-num"><?= $r ?></span><span class="sb-txt"><?= $labels[$r] ?></span></button>
+                            <?php endfor; ?>
+                        </div>
+                        <input type="hidden" name="ratings[<?= (int)$q['id'] ?>]" id="ea_r_<?= (int)$q['id'] ?>" required>
+                        <?php endif; ?>
+                    </div>
+                    <?php endforeach; ?>
+                    <div class="comments-card">
+                        <div style="font-size:13px;font-weight:700;color:var(--teal-hover);margin-bottom:10px;"><i class="fa-solid fa-comment-dots"></i> Comments &amp; Suggestions <span style="font-size:11px;color:var(--muted);font-weight:500">(optional)</span></div>
+                        <textarea class="comments-box" name="comments" placeholder="Share your thoughts about the Executive Assistant's performance…"></textarea>
+                    </div>
+                    <div class="submit-row">
+                        <span style="font-size:13px;color:var(--muted);"><i class="fa-solid fa-circle-info" style="color:#60a5fa;margin-right:5px"></i>Rate each question 1 (Never) to 5 (Always).</span>
+                        <button type="submit" class="btn-submit" onclick="return checkEaAll()"><i class="fa-solid fa-paper-plane"></i> Submit Evaluation</button>
+                    </div>
+                </form>
+            <?php endif; ?>
+        </div>
+
         <!-- ══════════ PEER EVALUATION — STEP 1: CHOOSE DESIGNATION ══════════ -->
         <?php elseif ($page === 'peer' && $peer_group === null): ?>
 
@@ -1429,34 +1694,8 @@ $tracker_id = $mysqli->insert_id; $trk->close();
             <?= htmlspecialchars($peer_group_error ?: "Selected user does not exist, is inactive, or is not a valid Staff account. Please choose someone from the list.") ?>
         </div>
 
-        <!-- ══════════ DOCUMENTS ══════════ -->
-        <?php elseif ($page === 'documents'): ?>
-
-        <div class="section-card">
-            <div class="section-card-title"><i class="fa-solid fa-folder-open" style="color:var(--accent)"></i> Staff Documents</div>
-            <?php if (empty($documents)): ?>
-            <div class="empty-state"><i class="fa-solid fa-folder-open"></i><p>No documents uploaded for Staff yet.</p></div>
-            <?php else: foreach ($documents as $d):
-                $icons = ['pdf'=>'fa-file-pdf','doc'=>'fa-file-word','docx'=>'fa-file-word','xls'=>'fa-file-excel','xlsx'=>'fa-file-excel','ppt'=>'fa-file-powerpoint','pptx'=>'fa-file-powerpoint'];
-                $ext   = strtolower(pathinfo($d['file_path']??'', PATHINFO_EXTENSION));
-                $icon  = $icons[$ext] ?? 'fa-file';
-            ?>
-            <div class="doc-item">
-                <div class="doc-icon"><i class="fa-solid <?= $icon ?>"></i></div>
-                <div>
-                    <div class="doc-name"><?= htmlspecialchars($d['title']) ?></div>
-                    <div class="doc-meta"><?= htmlspecialchars($d['category']??'') ?> · <?= date('M d, Y', strtotime($d['uploaded_at'])) ?></div>
-                </div>
-                <?php if (!empty($d['file_path'])): ?>
-                <a class="doc-dl" href="<?= htmlspecialchars($d['file_path']) ?>" target="_blank" download>
-                    <i class="fa-solid fa-download"></i> Download
-                </a>
-                <?php endif; ?>
-            </div>
-            <?php endforeach; endif; ?>
-        </div>
-
         <?php endif; ?>
+
         </main>
 
         <script>
@@ -1465,6 +1704,17 @@ $tracker_id = $mysqli->insert_id; $trk->close();
             document.getElementById('roleInput').value = name;
             document.querySelectorAll('.role-chip').forEach(c => c.classList.remove('is-current'));
             event.target.classList.add('is-current');
+        }
+
+        function eaRate(qid, val) {
+            document.querySelectorAll(`#ea_grp_${qid} .star-btn`).forEach(b => b.classList.toggle('sel', parseInt(b.dataset.val) === val));
+            const input=document.getElementById(`ea_r_${qid}`);
+            if (input) input.value=val;
+        }
+        function checkEaAll() {
+            const missing=[...document.querySelectorAll('input[id^=ea_r_][required]')].some(i => !i.value);
+            if (missing) { alert('Please rate every question before submitting.'); return false; }
+            return true;
         }
 
         // Star rating for peer eval

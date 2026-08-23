@@ -75,6 +75,19 @@ $uploadDir = '../image/';
             justify-content: center;
         }
         .form-wrapper { width: 100%; max-width: 770px; }
+
+        /* Printed evaluation forms use compact single spacing. */
+        @media print {
+            @page { margin: 12mm; }
+            body { display:block; padding:0; background:#fff; font-size:12px; line-height:1; }
+            .form-wrapper { width:100%; max-width:none; }
+            .form-header-card, .form-block { box-shadow:none !important; padding:12px !important; margin-bottom:8px !important; line-height:1 !important; }
+            .form-header-card h1 { margin-bottom:6px !important; line-height:1 !important; font-size:20px !important; }
+            .user-identity-strip, .required-notice, .block-title, .block-subtitle, .scale-info-box { line-height:1 !important; margin-bottom:6px !important; }
+            .section-highlight-banner { margin:-12px -12px 8px !important; padding:7px 12px !important; line-height:1 !important; }
+            input, select, textarea, label, button { line-height:1 !important; }
+            .no-print { display:none !important; }
+        }
         
         /* Form Banner Branding Accent Container */
         .form-header-card {
@@ -206,7 +219,32 @@ $uploadDir = '../image/';
 
         /* Hide radio inputs under layout framework wrappers */
         .hidden-radio { position: absolute; opacity: 0; width: 0; height: 0; }
-    </style>
+    
+/* ── SHARP LIGHT ADMIN UI ── */
+html { background:#F8FAFC; }
+body {
+  color:#0F172A !important;
+  background:#F8FAFC !important;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+h1,h2,h3,h4,h5,h6 { color:#0F172A; letter-spacing:-.01em; }
+p, .subtitle, .description, .helper, .muted, small { color:#475569; }
+label, th { color:#334155; font-weight:600; }
+td { color:#0F172A; }
+input, select, textarea {
+  color:#0F172A;
+  background:#FFFFFF;
+  border-color:#CBD5E1;
+}
+input::placeholder, textarea::placeholder { color:#94A3B8; }
+.card, .panel, .section, .table-card, .content-card {
+  border-color:#CBD5E1;
+  box-shadow:0 4px 14px rgba(15,23,42,.07);
+}
+button, .btn { font-weight:700; }
+a { color:inherit; }
+</style>
 </head>
 <body>
 

@@ -602,9 +602,9 @@ foreach ($valid_roles as $r) { $roleTotals[$r] = array_sum($countGrid[$r]); }
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
 :root{
-  --page-bg:#19365A;--card-bg:#1F3E64;--inner:#16304F;--card-border:#2E4F74;
-  --text-dark:#EAF0F9;--text-dim:#9FB2C9;--track-bg:#2E4F74;
-  --page-text-dark:#EAF0F9;--page-text-dim:#9FB2C9;
+  --page-bg:#F8FAFC;--card-bg:#FFFFFF;--inner:#F1F5F9;--card-border:#CBD5E1;
+  --text-dark:#0F172A;--text-dim:#475569;--track-bg:#CBD5E1;
+  --page-text-dark:#0F172A;--page-text-dim:#475569;
   --radius:10px;--card-shadow:0 1px 2px rgba(15,23,42,.04),0 4px 12px rgba(15,23,42,.05);
   --accent:#3B82F6;--accent-bg:rgba(59,130,246,.07);--accent-border:rgba(59,130,246,.22);--hover:#5B9BFA;
   --teal:#0D9488;--teal-bg:rgba(13,148,136,.14);--teal-border:rgba(13,148,136,.32);
@@ -642,7 +642,7 @@ body{font-family:'Inter',sans-serif;background:var(--page-bg);color:var(--text-d
 .sector-tab{padding:9px 20px;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;transition:all .22s;background:transparent;color:var(--text-dim);display:flex;align-items:center;gap:7px;text-decoration:none;font-family:'Inter',sans-serif;}
 .sector-tab.active{background:var(--accent);color:#fff;}
 .sector-tab:not(.active):hover{color:var(--text-dark);background:rgba(255,255,255,.05);}
-.tab-badge{background:rgba(255,255,255,.08);border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700;color:var(--text-dim);}
+.tab-badge{background:rgba(15,23,42,.12);border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700;color:var(--text-dim);}
 .sector-tab.active .tab-badge{background:rgba(255,255,255,.28);color:#fff;}
 .tab-badge.pending-badge{background:var(--amber-bg);color:var(--amber);}
 
@@ -676,7 +676,11 @@ tbody td{padding:14px 16px;font-size:14px;vertical-align:middle;}
 .user-name{font-weight:600;color:var(--text-dark);}
 .user-username{font-size:12px;color:var(--text-dim);}
 .year-level-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:var(--accent-bg);color:#93C5FD;}
-.year-level-pill.pill-jhs{background:var(--accent-bg);color:#93C5FD;}
+.year-level-pill.pill-jhs{
+    background:rgba(40,105,196,.13) !important;
+    color:#4B91FF !important;
+    border:1px solid #2869C4 !important;
+}
 .year-level-pill.pill-shs{background:var(--pink-bg);color:var(--pink);}
 .year-level-pill.pill-col{background:var(--teal-bg);color:var(--teal);}
 .status-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;}
@@ -735,12 +739,12 @@ tbody td{padding:14px 16px;font-size:14px;vertical-align:middle;}
 .yl-check input{width:auto;}
 .yl-group-label{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);margin:10px 0 6px;font-weight:700;}
 
-.bulk-bar{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;padding:12px 18px;display:none;align-items:center;gap:12px;box-shadow:0 24px 64px rgba(0,0,0,.35);z-index:150;flex-wrap:wrap;justify-content:center;}
+.bulk-bar{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;padding:12px 18px;display:none;align-items:center;gap:12px;box-shadow:0 24px 64px rgba(15,23,42,.10);z-index:150;flex-wrap:wrap;justify-content:center;}
 .bulk-bar.show{display:flex;}
 .bulk-bar span{font-size:13px;font-weight:600;color:var(--text-dark);white-space:nowrap;}
 .bulk-bar select{background:var(--inner);border:1px solid var(--card-border);border-radius:8px;padding:8px 12px;color:var(--text-dark);font-size:13px;font-family:'Inter',sans-serif;}
 .bulk-btn{padding:8px 16px;border:none;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;display:inline-flex;align-items:center;gap:6px;}
-.bulk-btn.approve{background:var(--success);color:#16304F;}
+.bulk-btn.approve{background:var(--success);color:#F1F5F9;}
 .bulk-btn.block{background:var(--danger);color:#fff;}
 .bulk-btn.neutral{background:var(--accent);color:#fff;}
 .bulk-btn.clear{background:transparent;border:1px solid var(--card-border);color:var(--text-dim);}
@@ -748,6 +752,84 @@ tbody td{padding:14px 16px;font-size:14px;vertical-align:middle;}
 
 @media(max-width:860px){body{padding:20px 14px;}}
 @media(max-width:560px){.sector-tabs,.status-tabs{width:100%;}.sector-tab{flex:1;justify-content:center;padding:8px;font-size:12px;}.bulk-bar{width:calc(100% - 32px);}.yl-grid{grid-template-columns:1fr;}}
+
+/* Admin Module light design system — matches the dashboard */
+:root{
+  --page-bg:#FFFFFF; --card-bg:#FFFFFF; --card-border:#E2E8F0;
+  --inner:#F4F7FB; --text-dark:#172033; --text-dim:#475569;
+  --light:#172033; --muted:#475569; --dark:#FFFFFF; --mid:#FFFFFF;
+  --border:#E2E8F0; --accent:#3B82F6; --blue:#3B82F6;
+  --gold:#D97706; --gold-h:#F59E0B; --teal:#0D9488; --violet:#7C3AED;
+  --danger:#DC2626; --success:#059669; --radius:12px;
+  --card-shadow:0 2px 4px rgba(15,23,42,.05),0 6px 16px rgba(15,23,42,.06);
+}
+html{background:#fff;color-scheme:light;}
+body{background:#fff !important;color:#172033 !important;}
+a{color:inherit;}
+.page-header h1,.page-title,.et-title,.section-title{color:#172033 !important;}
+.page-header p,.page-sub,.et-sub,.et-updated,.muted,.hint{color:#475569 !important;}
+input,select,textarea{background:#fff !important;color:#172033 !important;border-color:#CBD5E1 !important;}
+button{font-family:inherit;}
+.table-wrap,.content-panel,.create-panel,.period-card,.stat-card,.sector-card,.person-row,
+.sum-card,.standing-panel,.eval-card,.eval-banner,.info-banner,.section,.shell .section,
+.history-card,.gl-card,.amber-card,.green-card,.red-card{
+  background:#fff !important;border-color:#E2E8F0 !important;box-shadow:0 2px 4px rgba(15,23,42,.04),0 6px 16px rgba(15,23,42,.05) !important;
+}
+.sector-tabs,.eval-switcher,.tabs,.level-tabs,.status-tabs{
+  background:#fff !important;border-color:#E2E8F0 !important;box-shadow:0 2px 4px rgba(15,23,42,.04) !important;
+}
+.sector-tab,.eval-tab,.tab,.level-tab,.status-tab{color:#475569 !important;}
+.sector-tab:hover,.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover{color:#172033 !important;background:#F4F7FB !important;}
+thead tr{background:#F8FAFC !important;}
+tbody tr:hover{background:#F8FAFC !important;}
+.btn-cancel,.btn-icon,.btn-back{background:#fff !important;color:#172033 !important;border-color:#CBD5E1 !important;}
+.empty-state,.empty-cta{color:#475569 !important;}
+::-webkit-scrollbar-track{background:#fff;}
+::-webkit-scrollbar-thumb{background:#CBD5E1;border:2px solid #fff;}
+
+body{padding:28px !important;}
+.page-header{padding:22px 26px !important;}
+.status-tab.active,.sector-tab.active{background:#3B82F6 !important;color:#fff !important;}
+.info-banner{background:#EFF6FF !important;color:#475569 !important;}
+
+
+/* ── SHARP LIGHT ADMIN UI ── */
+html { background:#F8FAFC; }
+body {
+  color:#0F172A !important;
+  background:#F8FAFC !important;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+h1,h2,h3,h4,h5,h6 { color:#0F172A; letter-spacing:-.01em; }
+p, .subtitle, .description, .helper, .muted, small { color:#475569; }
+label, th { color:#334155; font-weight:600; }
+td { color:#0F172A; }
+input, select, textarea {
+  color:#0F172A;
+  background:#FFFFFF;
+  border-color:#CBD5E1;
+}
+input::placeholder, textarea::placeholder { color:#94A3B8; }
+.card, .panel, .section, .table-card, .content-card {
+  border-color:#CBD5E1;
+  box-shadow:0 4px 14px rgba(15,23,42,.07);
+}
+button, .btn { font-weight:700; }
+a { color:inherit; }
+
+/* Persistent role and registration-status icon coding */
+.role-executive_assistant > i{color:#0F9E9A !important;}
+.role-school_head > i{color:#D97706 !important;}
+.role-principal > i{color:#2563EB !important;}
+.role-dean > i{color:#7C3AED !important;}
+.role-teacher > i{color:#16A34A !important;}
+.role-staff > i{color:#0F9E9A !important;}
+.role-student > i{color:#2563EB !important;}
+.status-pending > i{color:#D97706 !important;}
+.status-approved > i{color:#16A34A !important;}
+.status-blocked > i{color:#EF4444 !important;}
+
 </style>
 </head>
 <body>
@@ -780,7 +862,7 @@ tbody td{padding:14px 16px;font-size:14px;vertical-align:middle;}
 <div class="sector-tabs">
     <?php foreach ($valid_roles as $r):
         $pendingN = $countGrid[$r]['pending']; ?>
-    <a class="sector-tab <?= $viewRole===$r?'active':'' ?>" href="manage_privileged_accounts.php?role=<?= $r ?>&status=<?= $viewStatus ?>">
+    <a class="sector-tab role-<?= htmlspecialchars($r, ENT_QUOTES, 'UTF-8') ?> <?= $viewRole===$r?'active':'' ?>" href="manage_privileged_accounts.php?role=<?= $r ?>&status=<?= $viewStatus ?>">
         <i class="fa-solid <?= $role_icons[$r] ?>"></i> <?= $role_labels[$r] ?>
         <span class="tab-badge <?= $pendingN > 0 ? 'pending-badge' : '' ?>"><?= $pendingN > 0 ? $pendingN : $roleTotals[$r] ?></span>
     </a>
@@ -789,7 +871,7 @@ tbody td{padding:14px 16px;font-size:14px;vertical-align:middle;}
 
 <div class="status-tabs">
     <?php foreach ($valid_statuses as $s): ?>
-    <a class="status-tab <?= $viewStatus===$s?'active':'' ?>" data-s="<?= $s ?>" href="manage_privileged_accounts.php?role=<?= $viewRole ?>&status=<?= $s ?>">
+    <a class="status-tab status-<?= htmlspecialchars($s, ENT_QUOTES, 'UTF-8') ?> <?= $viewStatus===$s?'active':'' ?>" data-s="<?= $s ?>" href="manage_privileged_accounts.php?role=<?= $viewRole ?>&status=<?= $s ?>">
         <i class="fa-solid <?= $status_icons[$s] ?>"></i> <?= $status_labels[$s] ?>
         <span class="tab-badge"><?= $countGrid[$viewRole][$s] ?></span>
     </a>

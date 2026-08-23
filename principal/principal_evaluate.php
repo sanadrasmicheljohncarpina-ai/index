@@ -25,7 +25,7 @@ if ($tid <= 0) {
 // ── LOAD TARGET ────────────────────────────────────────────
 // Teacher/Staff are scoped to Basic Education via user_year_levels (the
 // year levels a Super Admin has assigned them). Executive Assistant is NOT
-// scoped that way — it's the admin role itself, evaluable regardless of
+// scoped that way — it's the Super Admin account displayed as Executive Assistant, evaluable regardless of
 // grade level, so it needs its own lookup path.
 $requestedBucket = $_GET['bucket'] ?? null;
 if (!in_array($requestedBucket, ['Teacher', 'Staff', 'Executive Assistant'], true)) $requestedBucket = null;
@@ -110,7 +110,7 @@ if (!$target) {
 // — that's what lets the same person be evaluated once as Teacher and
 // separately as Staff. Falls back to primary role if no bucket was passed
 // (e.g. a bookmarked/direct link).
-if ($target['role'] === 'executive_assistant') {
+if ($target['role'] === 'superadmin') {
     $bucket = 'Executive Assistant';
 } elseif ($requestedBucket === 'Staff' && $target['secondary_role'] === 'staff') {
     $bucket = 'Staff';

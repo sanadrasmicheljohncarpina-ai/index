@@ -79,18 +79,18 @@ $hasPeriod     = $period_id_int > 0;
 
 const HIGHER_ED_LABEL = 'Higher Education';
 
-// NOTE ON eval_type/eval_bucket VALUES BELOW:
-// These follow the same 'evaluation_tracker' shape used throughout the
-// Dean module (eval_type='student', eval_bucket='Faculty', level='college'
-// for student→teacher rows). Results received BY the Dean presumably use
-// a distinct eval_bucket (e.g. 'Dean') with eval_type='teacher' since the
-// evaluator here is a Teacher, not a student. This is a placeholder
-// convention — confirm the exact eval_type/eval_bucket values your
-// evaluation_tracker actually uses for Teacher → Dean submissions and
-// adjust the WHERE clauses below to match (search for "Dean" as a
-// target_user_id with target role 'dean').
-const DEAN_RESULT_EVAL_TYPE   = 'teacher';
-const DEAN_RESULT_EVAL_BUCKET = 'Dean';
+// NOTE ON eval_type/evaluation_context (confirmed against student_dashboard.php
+// and admin/questionnaire.php, not assumed):
+// Students evaluate the active Dean via the normal Student Evaluation flow —
+// eval_type='student', evaluation_context='school_head' — same tracker row
+// shape as Student→Teacher, just a different evaluation_context and a
+// target_user_id that points at the Dean's own account. The question set is
+// per-person (Principal/Dean are "per_user_targets" in questionnaire.php), so
+// answers join through user_questions via questionnaire_answers.user_question_id,
+// with question_source='user' — the same source admin_analytics.php's sheet
+// view already reads for Staff/Principal/Dean questions.
+const SCHOOL_HEAD_EVAL_TYPE = 'student';
+const SCHOOL_HEAD_CONTEXT   = 'school_head';
 
 $overallAvg = null;
 $responseCount = 0;
@@ -101,67 +101,77 @@ $history = [];
 if ($hasPeriod) {
     // ── OVERALL AVERAGE (this period) ───────────────────────────────
     $overallAvgRaw = safe_scalar($mysqli, "
-        SELECT AVG(score) v FROM evaluation_tracker
-        WHERE eval_type=? AND eval_bucket=? AND status IN ('submitted','approved')
-          AND target_user_id=? AND period_id=?
-    ", "ssii", [DEAN_RESULT_EVAL_TYPE, DEAN_RESULT_EVAL_BUCKET, $deanId, $period_id_int]);
+        SELECT AVG(qa.answer_score) v
+        FROM evaluation_tracker et
+        INNER JOIN questionnaire_answers qa ON qa.tracker_id = et.id
+        WHERE et.eval_type=? AND et.evaluation_context=? AND et.status IN ('submitted','approved')
+          AND et.target_user_id=? AND et.period_id=?
+    ", "ssii", [SCHOOL_HEAD_EVAL_TYPE, SCHOOL_HEAD_CONTEXT, $deanId, $period_id_int]);
     $overallAvg = $overallAvgRaw !== null ? round((float)$overallAvgRaw, 2) : null;
 
     $responseCount = (int)(safe_scalar($mysqli, "
-        SELECT COUNT(*) c FROM evaluation_tracker
-        WHERE eval_type=? AND eval_bucket=? AND status IN ('submitted','approved')
-          AND target_user_id=? AND period_id=?
-    ", "ssii", [DEAN_RESULT_EVAL_TYPE, DEAN_RESULT_EVAL_BUCKET, $deanId, $period_id_int]) ?? 0);
+        SELECT COUNT(DISTINCT et.id) c
+        FROM evaluation_tracker et
+        WHERE et.eval_type=? AND et.evaluation_context=? AND et.status IN ('submitted','approved')
+          AND et.target_user_id=? AND et.period_id=?
+    ", "ssii", [SCHOOL_HEAD_EVAL_TYPE, SCHOOL_HEAD_CONTEXT, $deanId, $period_id_int]) ?? 0);
 
     // ── CATEGORY BREAKDOWN ───────────────────────────────────────────
-    // Assumes a per-question/category table (e.g. evaluation_answers)
-    // keyed by category name + score, scoped to this dean/period. Adjust
-    // the table/column names to match your actual questionnaire schema.
     $categoryBreakdown = safe_rows($mysqli, "
-        SELECT category, AVG(score) avg_score, COUNT(*) n
-        FROM evaluation_answers ea
-        INNER JOIN evaluation_tracker et ON et.id = ea.tracker_id
-        WHERE et.eval_type=? AND et.eval_bucket=? AND et.status IN ('submitted','approved')
-          AND et.target_user_id=? AND et.period_id=?
-        GROUP BY category
-        ORDER BY category
-    ", "ssii", [DEAN_RESULT_EVAL_TYPE, DEAN_RESULT_EVAL_BUCKET, $deanId, $period_id_int]);
+        SELECT uq.category, AVG(qa.answer_score) avg_score, COUNT(*) n
+        FROM questionnaire_answers qa
+        INNER JOIN user_questions uq ON uq.id = qa.user_question_id
+        INNER JOIN evaluation_tracker et ON et.id = qa.tracker_id
+        WHERE et.eval_type=? AND et.evaluation_context=? AND et.status IN ('submitted','approved')
+          AND et.target_user_id=? AND et.period_id=? AND qa.question_source='user'
+        GROUP BY uq.category
+        ORDER BY uq.category
+    ", "ssii", [SCHOOL_HEAD_EVAL_TYPE, SCHOOL_HEAD_CONTEXT, $deanId, $period_id_int]);
     foreach ($categoryBreakdown as &$c) { $c['avg_score'] = round((float)$c['avg_score'], 2); }
     unset($c);
 
     // ── TREND (average rating per period, most recent periods) ──────
     // Scoped to this dean across all periods, not just the active one.
+    // evaluation_periods' real columns are period_label/school_year/semester
+    // (confirmed via shared/system_settings_service.php) — not
+    // academic_term/academic_year, which don't exist on that table.
     $trend = safe_rows($mysqli, "
-        SELECT ep.academic_term, ep.academic_year, AVG(et.score) avg_score
+        SELECT ep.period_label, AVG(qa.answer_score) avg_score
         FROM evaluation_tracker et
         INNER JOIN evaluation_periods ep ON ep.id = et.period_id
-        WHERE et.eval_type=? AND et.eval_bucket=? AND et.status IN ('submitted','approved')
+        INNER JOIN questionnaire_answers qa ON qa.tracker_id = et.id
+        WHERE et.eval_type=? AND et.evaluation_context=? AND et.status IN ('submitted','approved')
           AND et.target_user_id=?
-        GROUP BY et.period_id, ep.academic_term, ep.academic_year
+        GROUP BY et.period_id, ep.period_label
         ORDER BY ep.id ASC
         LIMIT 12
-    ", "ssi", [DEAN_RESULT_EVAL_TYPE, DEAN_RESULT_EVAL_BUCKET, $deanId]);
+    ", "ssi", [SCHOOL_HEAD_EVAL_TYPE, SCHOOL_HEAD_CONTEXT, $deanId]);
     foreach ($trend as &$t) { $t['avg_score'] = round((float)$t['avg_score'], 2); }
     unset($t);
 
     // ── ANONYMOUS RESPONSE HISTORY ────────────────────────────────
-    // Deliberately selects ONLY score + comment + submission order.
-    // No evaluator_id, name, or any evaluator-identifying column is
-    // selected — do not add one.
+    // Deliberately selects ONLY tracker id (for per-tracker avg + ordering),
+    // comment, and submission order. No evaluator_id, name, or any
+    // evaluator-identifying column is selected — do not add one.
     $rawHistory = safe_rows($mysqli, "
-        SELECT score, remarks AS comment, submitted_at
-        FROM evaluation_tracker
-        WHERE eval_type=? AND eval_bucket=? AND status IN ('submitted','approved')
-          AND target_user_id=? AND period_id=?
-        ORDER BY submitted_at ASC
-    ", "ssii", [DEAN_RESULT_EVAL_TYPE, DEAN_RESULT_EVAL_BUCKET, $deanId, $period_id_int]);
+        SELECT et.id, et.remarks AS comment, et.submitted_at, ep.period_label, ep.semester, ep.school_year,
+               (SELECT AVG(qa2.answer_score) FROM questionnaire_answers qa2 WHERE qa2.tracker_id = et.id) AS score
+        FROM evaluation_tracker et
+        LEFT JOIN evaluation_periods ep ON ep.id = et.period_id
+        WHERE et.eval_type=? AND et.evaluation_context=? AND et.status IN ('submitted','approved')
+          AND et.target_user_id=? AND et.period_id=?
+        ORDER BY et.submitted_at ASC
+    ", "ssii", [SCHOOL_HEAD_EVAL_TYPE, SCHOOL_HEAD_CONTEXT, $deanId, $period_id_int]);
 
     $n = 1;
     foreach ($rawHistory as $r) {
         $history[] = [
-            'label'   => 'Evaluation #' . $n,
-            'score'   => $r['score'] !== null ? round((float)$r['score'], 2) : null,
-            'comment' => $r['comment'] ?: '',
+            '_tracker_id'      => (int)$r['id'],
+            'label'            => 'Evaluation #' . $n,
+            'score'            => $r['score'] !== null ? round((float)$r['score'], 2) : null,
+            'comment'          => $r['comment'] ?: '',
+            'submitted_at_label' => $r['submitted_at'] ? date('M d, Y g:i A', strtotime($r['submitted_at'])) : 'Unknown date',
+            'period_label'     => (!empty($r['school_year']) && !empty($r['semester'])) ? ($r['school_year'].' · '.$r['semester']) : ($r['period_label'] ?? $r['semester'] ?? ''),
         ];
         $n++;
     }
@@ -180,7 +190,7 @@ $mysqli->close();
 <style>
 :root{--dark:#0A192F;--mid:#172A45;--inner:#0F1F3D;--violet:#7C5FD9;--violet-h:#9C85F0;--violet-dark:#5F45B8;--light:#E0E6F0;--muted:#A0B3C6;--radius:10px;--shadow:0 8px 32px rgba(0,0,0,0.45);--danger:#f05454;--good:#10B981;}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-body{min-height:100vh;background:var(--dark);font-family:'DM Sans',sans-serif;color:var(--light);display:flex;}
+body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,.82)),url('../background.png') center center / cover no-repeat fixed;background-color:var(--dark);font-family:'DM Sans',sans-serif;color:var(--light);display:flex;}
 
 .sidebar{width:250px;flex-shrink:0;background:rgba(23,42,69,.9);border-right:1px solid rgba(255,255,255,.08);min-height:100vh;padding:28px 20px;display:flex;flex-direction:column;}
 .sb-profile{text-align:center;margin-bottom:26px;}
@@ -235,6 +245,9 @@ body{min-height:100vh;background:var(--dark);font-family:'DM Sans',sans-serif;co
 
 .empty-note{color:var(--muted);font-size:13px;font-style:italic;}
 
+
+.view-evals-btn{width:100%;display:flex;align-items:center;gap:10px;background:rgba(124,95,217,.12);border:1px solid rgba(124,95,217,.28);color:#d8cffd;padding:12px 14px;border-radius:10px;font:600 13px ''DM Sans'',sans-serif;cursor:pointer;}
+.view-evals-btn i:last-child{margin-left:auto;transition:transform .2s}.received-item{display:flex;justify-content:space-between;gap:14px;align-items:center;background:var(--inner);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:14px 16px;margin-bottom:10px;cursor:pointer}.received-item:hover{border-color:rgba(124,95,217,.35)}.received-anon{font-size:13px;font-weight:700;color:#fff}.received-anon i{color:var(--muted);margin-right:5px}.received-meta{font-size:11px;color:var(--muted);margin-top:4px}.received-right{display:flex;flex-direction:column;align-items:flex-end;gap:8px}.received-score{font-size:12px;font-weight:800;color:#bdebd9;background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.25);padding:4px 10px;border-radius:18px}.details-btn{background:rgba(13,148,136,.12);border:1px solid rgba(13,148,136,.28);color:#5eead4;font-size:11px;font-weight:700;padding:6px 12px;border-radius:18px;cursor:pointer}.eval-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:500;display:none;align-items:center;justify-content:center;padding:20px}.eval-modal-overlay.open{display:flex}.eval-modal{background:var(--mid);border:1px solid rgba(255,255,255,.08);border-radius:16px;width:100%;max-width:720px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,.6)}.eval-modal-header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid rgba(255,255,255,.08)}.eval-modal-title{font-family:'Rajdhani',sans-serif;font-size:21px;font-weight:700;color:#fff}.eval-modal-title i{color:#9C85F0;margin-right:8px}.eval-modal-close{background:none;border:none;color:var(--muted);font-size:19px;cursor:pointer}.eval-modal-body{padding:22px;overflow:auto}.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px}.info-grid>div{background:var(--inner);border:1px solid rgba(255,255,255,.05);border-radius:10px;padding:12px 14px}.info-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:5px}.info-value{font-size:13px;color:#fff;font-weight:600}.info-value i{color:var(--muted);margin-right:4px}.score-big{color:#5eead4}.modal-section-title{font-size:14px;color:#fff;margin:18px 0 10px}.cat-row-modal{display:flex;align-items:center;gap:10px;margin:9px 0}.cat-name-modal{width:170px;font-size:12px;color:var(--light);flex-shrink:0}.cat-bar{flex:1;height:7px;background:rgba(255,255,255,.08);border-radius:6px;overflow:hidden}.cat-bar>div{height:100%;background:linear-gradient(90deg,#5f45b8,#9c85f0);border-radius:6px}.cat-score-modal{width:42px;text-align:right;font-size:12px;font-weight:700;color:#fff}.q-result{background:var(--inner);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:13px 15px;margin-bottom:8px}.q-no{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:4px}.q-text{font-size:13px;color:#fff;font-weight:600;line-height:1.5}.q-score{margin-top:7px;font-size:12px;color:var(--muted)}.q-score span{margin-left:7px;font-weight:700}.dean-star{color:rgba(255,255,255,.16);margin-right:2px}.dean-star.filled{color:#facc15}.comment-modal{background:var(--inner);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:14px;color:var(--light);font-size:13px;line-height:1.6;font-style:italic}.comment-modal.empty{color:var(--muted);font-style:normal}.loading-eval{padding:50px 10px;text-align:center;color:var(--muted);font-size:13px}.loading-eval i{margin-right:8px}
 @media(max-width:768px){body{flex-direction:column;}.sidebar{width:100%;min-height:auto;}.cat-name{width:120px;}}
 </style>
 </head>
@@ -324,7 +337,52 @@ include __DIR__ . '/includes/dean_sidebar.php';
         <?php endif; ?>
     </div>
 
+    <!-- FACULTY-STYLE EVALUATIONS RECEIVED -->
+    <div class="section">
+        <h2><i class="fa-solid fa-clock-rotate-left"></i> Evaluations Received</h2>
+        <button type="button" class="view-evals-btn" id="deanViewEvalsBtn" onclick="toggleDeanEvals()">
+            <i class="fa-solid fa-eye"></i> View Evaluations Received
+            <i class="fa-solid fa-chevron-down" id="deanEvalsCaret"></i>
+        </button>
+        <div id="deanEvalsList" style="display:none;margin-top:14px;">
+            <?php if (empty($history)): ?>
+                <div class="empty-note">No evaluations have been received yet.</div>
+            <?php else: ?>
+                <?php foreach ($history as $idx => $h): ?>
+                    <div class="received-item" onclick="openDeanEvalDetails(<?= (int)$h['_tracker_id'] ?>)">
+                        <div>
+                            <div class="received-anon"><i class="fa-solid fa-eye-slash"></i> Anonymous Evaluator</div>
+                            <div class="received-meta"><?= htmlspecialchars($h['submitted_at_label']) ?><?= !empty($h['period_label']) ? ' · '.htmlspecialchars($h['period_label']) : '' ?></div>
+                        </div>
+                        <div class="received-right">
+                            <span class="received-score"><?= $h['score'] !== null ? htmlspecialchars((string)$h['score']).' / 5' : '—' ?></span>
+                            <button type="button" class="details-btn" onclick="event.stopPropagation();openDeanEvalDetails(<?= (int)$h['_tracker_id'] ?>)">View Details <i class="fa-solid fa-chevron-right"></i></button>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </div>
+    </div>
+
     <?php endif; ?>
 </main>
+
+<div class="eval-modal-overlay" id="deanEvalModal">
+  <div class="eval-modal">
+    <div class="eval-modal-header"><div class="eval-modal-title"><i class="fa-solid fa-star"></i> Evaluation Details</div><button class="eval-modal-close" onclick="closeDeanEvalDetails()"><i class="fa-solid fa-xmark"></i></button></div>
+    <div class="eval-modal-body" id="deanEvalBody"><div class="empty-note">Loading evaluation…</div></div>
+  </div>
+</div>
+
+<script>
+function toggleDeanEvals(){const l=document.getElementById('deanEvalsList'),c=document.getElementById('deanEvalsCaret');const open=l.style.display!=='none';l.style.display=open?'none':'block';c.style.transform=open?'':'rotate(180deg)';}
+function escDean(v){if(v===null||v===undefined)return '';const d=document.createElement('div');d.textContent=v;return d.innerHTML;}
+function starsDean(score){let h='';for(let i=1;i<=5;i++)h+=`<i class="fa-solid fa-star dean-star ${i<=score?'filled':''}"></i>`;return h;}
+function openDeanEvalDetails(id){const m=document.getElementById('deanEvalModal'),b=document.getElementById('deanEvalBody');b.innerHTML='<div class="loading-eval"><i class="fa-solid fa-spinner fa-spin"></i> Loading evaluation…</div>';m.classList.add('open');document.body.style.overflow='hidden';fetch('get_my_evaluation_details.php?tracker_id='+encodeURIComponent(id)).then(r=>r.json()).then(d=>{if(!d.ok){b.innerHTML='<div class="loading-eval"><i class="fa-solid fa-triangle-exclamation"></i>'+escDean(d.error||'Unable to load this evaluation.')+'</div>';return;}let h=`<div class="info-grid"><div><div class="info-label">Evaluator</div><div class="info-value"><i class="fa-solid fa-eye-slash"></i> Anonymous Evaluator</div></div><div><div class="info-label">Period</div><div class="info-value">${escDean(d.period_label||'—')}</div></div><div><div class="info-label">Submitted</div><div class="info-value">${escDean(d.submitted_at||'—')}</div></div><div><div class="info-label">Overall Score</div><div class="info-value score-big">${Number(d.overall_score||0).toFixed(2)} / 5</div></div></div>`;if(d.categories?.length){h+='<h3 class="modal-section-title">Performance by Category</h3>';d.categories.forEach(c=>{const pct=Math.round((c.avg/5)*100);h+=`<div class="cat-row-modal"><div class="cat-name-modal">${escDean(c.category)}</div><div class="cat-bar"><div style="width:${pct}%"></div></div><div class="cat-score-modal">${Number(c.avg).toFixed(2)}</div></div>`})}if(d.questions?.length){h+='<h3 class="modal-section-title">Question-by-Question Results</h3>';d.questions.forEach((q,i)=>{h+=`<div class="q-result"><div class="q-no">Question ${i+1}</div><div class="q-text">${escDean(q.question_text)}</div><div class="q-score">${starsDean(q.score)} <span>Score: ${q.score} / 5</span></div></div>`})}h+='<h3 class="modal-section-title">Comments / Feedback</h3>';h+=d.comment?`<div class="comment-modal">“${escDean(d.comment)}”</div>`:'<div class="comment-modal empty">No written feedback was provided.</div>';b.innerHTML=h;}).catch(()=>{b.innerHTML='<div class="loading-eval"><i class="fa-solid fa-triangle-exclamation"></i>Something went wrong loading this evaluation.</div>';});}
+function closeDeanEvalDetails(){document.getElementById('deanEvalModal').classList.remove('open');document.body.style.overflow='';}
+document.getElementById('deanEvalModal').addEventListener('click',function(e){if(e.target===this)closeDeanEvalDetails();});
+</script>
+</body>
+</html>
 </body>
 </html>

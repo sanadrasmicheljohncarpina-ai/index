@@ -7,7 +7,7 @@ $UPLOAD_DIR = defined('UPLOAD_DIR') ? UPLOAD_DIR : '../image/';
 $UPLOAD_URL = defined('UPLOAD_URL') ? UPLOAD_URL : '../image/';
 
 $viewSector = $_GET['sector'] ?? 'Faculty';
-$sectorRole = $viewSector === 'Staff' ? 'staff' : 'faculty';
+$sectorRole = $viewSector === 'Staff' ? 'staff' : 'teacher';
 
 // Suggestion list only — admin can still type any custom designation
 $desig_options = [
@@ -78,13 +78,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'assig
 // ── ADD PERSONNEL ────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_personnel') {
 $full_name  = $mysqli->real_escape_string(trim($_POST['full_name']));
-$role       = in_array($_POST['role'] ?? '', ['faculty','staff']) ? $_POST['role'] : 'faculty';
+$role       = ($_POST['role'] ?? '') === 'staff' ? 'staff' : 'teacher';
 $department = $mysqli->real_escape_string(trim($_POST['department'] ?? ''));
 
-    $raw_desig = $_POST['designation'] ?? $desig_options[$role][0];
+    $raw_desig = $_POST['designation'] ?? ($role === 'staff' ? $desig_options['staff'][0] : $desig_options['faculty'][0]);
     $tags = array_filter(array_map('trim', explode(',', $raw_desig)), fn($t) => $t !== '');
     $tags = array_values(array_unique($tags));
-    if (empty($tags)) $tags = [$desig_options[$role][0]];
+    if (empty($tags)) $tags = [($role === 'staff' ? $desig_options['staff'][0] : $desig_options['faculty'][0])];
     $designation = $mysqli->real_escape_string(implode(', ', $tags));
 
     $photo_file = '';
@@ -113,14 +113,17 @@ $stmt->bind_param("ssssss", $full_name, $username, $role, $department, $designat
         $_SESSION['toast_error'] = "Failed to add: " . $stmt->error;
     }
     $stmt->close();
-    header("Location: add_personnels.php?sector=" . urlencode($viewSector)); exit;
+    // Redirect to the tab matching the role just added (not necessarily the
+    // tab the form was opened from), so the new entry is visible right away.
+    $landingSector = $role === 'staff' ? 'Staff' : 'Faculty';
+    header("Location: add_personnels.php?sector=" . urlencode($landingSector)); exit;
 }
 
 // ── EDIT PERSONNEL ───────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_personnel') {
 $uid        = intval($_POST['user_id']);
 $full_name  = $mysqli->real_escape_string(trim($_POST['full_name']));
-$role       = in_array($_POST['role'] ?? '', ['faculty','staff']) ? $_POST['role'] : 'faculty';
+$role       = ($_POST['role'] ?? '') === 'staff' ? 'staff' : 'teacher';
 $department = $mysqli->real_escape_string(trim($_POST['department'] ?? ''));
     $raw_desig = $_POST['designation'] ?? '';
     $tags = array_filter(array_map('trim', explode(',', $raw_desig)), fn($t) => $t !== '');
@@ -153,7 +156,10 @@ $stmt->bind_param("ssssi", $full_name, $role, $department, $designation, $uid);
     $stmt->execute();
     $stmt->close();
     $_SESSION['toast'] = "'$full_name' updated successfully.";
-    header("Location: add_personnels.php?sector=" . urlencode($viewSector)); exit;
+    // Same reasoning as on add: land on the tab matching the (possibly
+    // changed) role, so the entry doesn't appear to have "disappeared".
+    $landingSector = $role === 'staff' ? 'Staff' : 'Faculty';
+    header("Location: add_personnels.php?sector=" . urlencode($landingSector)); exit;
 }
 
 // Personnel created directly by the EA are trusted records, not self-registered
@@ -161,6 +167,9 @@ $stmt->bind_param("ssssi", $full_name, $role, $department, $designation, $uid);
 $mysqli->query("UPDATE users SET account_status='approved' WHERE source='admin_nologin' AND (account_status IS NULL OR account_status <> 'approved')");
 
 // ── FETCH DATA ───────────────────────────────────────────────
+// Scoped to the active tab's role ($sectorRole: 'teacher' for Faculty tab,
+// 'staff' for Staff tab) — previously this always fetched role='teacher'
+// regardless of tab, so Staff entries never appeared.
 $stmt = $mysqli->prepare("SELECT * FROM users WHERE source='admin_nologin' AND role=? ORDER BY full_name ASC");
 $stmt->bind_param("s", $sectorRole);
 $stmt->execute();
@@ -168,10 +177,10 @@ $entries = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
 
 $counts = [];
-foreach (['Faculty'=>'faculty','Staff'=>'staff'] as $label => $r) {
-    $cr = $mysqli->query("SELECT COUNT(*) as c FROM users WHERE source='admin_nologin' AND role='$r'");
-    $counts[$label] = $cr->fetch_assoc()['c'] ?? 0;
-}
+$facultyCount = $mysqli->query("SELECT COUNT(*) as c FROM users WHERE source='admin_nologin' AND role IN ('teacher','faculty')");
+$staffCount   = $mysqli->query("SELECT COUNT(*) as c FROM users WHERE source='admin_nologin' AND role='staff'");
+$counts['Faculty'] = $facultyCount ? ($facultyCount->fetch_assoc()['c'] ?? 0) : 0;
+$counts['Staff']   = $staffCount ? ($staffCount->fetch_assoc()['c'] ?? 0) : 0;
 
 $activeCount   = count(array_filter($entries, fn($u) => $u['is_active']));
 $inactiveCount = count($entries) - $activeCount;
@@ -182,6 +191,7 @@ $toast_error = $_SESSION['toast_error'] ?? ''; unset($_SESSION['toast_error']);
 // ── SECTOR THEME (Faculty = blue, mirrors "Teacher" from the
 //    questionnaire page; Staff = purple, mirrors "Staff" there) ──
 $is_staff_sector = ($viewSector === 'Staff');
+$desigKey = $is_staff_sector ? 'staff' : 'faculty';
 $sector_color    = $is_staff_sector ? '#7C3AED' : '#3B82F6';
 $sector_bg       = $is_staff_sector ? 'rgba(124,58,237,.07)' : 'rgba(59,130,246,.07)';
 $sector_border   = $is_staff_sector ? 'rgba(124,58,237,.22)' : 'rgba(59,130,246,.22)';
@@ -196,8 +206,8 @@ $sector_border   = $is_staff_sector ? 'rgba(124,58,237,.22)' : 'rgba(59,130,246,
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
 :root{
-  --page-bg:#19365A;--card-bg:#1F3E64;--card-border:#2E4F74;
-  --text-dark:#EAF0F9;--text-dim:#9FB2C9;--track-bg:#2E4F74;
+  --page-bg:#F8FAFC;--card-bg:#FFFFFF;--card-border:#CBD5E1;
+  --text-dark:#0F172A;--text-dim:#475569;--track-bg:#CBD5E1;
   --radius:10px;--card-shadow:0 1px 2px rgba(15,23,42,.04),0 4px 12px rgba(15,23,42,.05);
   --danger:#DC2626;--danger-bg:rgba(220,38,38,.08);--danger-border:rgba(220,38,38,.22);
   --success:#059669;--success-bg:rgba(5,150,105,.1);--success-border:rgba(5,150,105,.25);
@@ -320,7 +330,7 @@ tbody td{padding:14px 16px;font-size:14px;vertical-align:middle;}
 .photo-preview.visible{display:block;}
 .modal-actions{display:flex;gap:10px;margin-top:24px;}
 .btn-cancel{flex:1;padding:10px;background:var(--page-bg);border:1px solid var(--card-border);border-radius:var(--radius);color:var(--text-dark);font-size:14px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;}
-.btn-cancel:hover{background:#2E4F74;}
+.btn-cancel:hover{background:#CBD5E1;}
 .btn-submit{flex:2;padding:10px;background:var(--sector);border:none;border-radius:var(--radius);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;display:flex;align-items:center;justify-content:center;gap:7px;}
 .btn-submit:hover{opacity:.88;}
 .btn-confirm-del{flex:1;padding:10px;background:var(--danger);border:none;border-radius:var(--radius);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;}
@@ -328,6 +338,74 @@ tbody td{padding:14px 16px;font-size:14px;vertical-align:middle;}
 
 @media(max-width:860px){.hide-sm{display:none;}body{padding:20px 14px;}.form-grid{grid-template-columns:1fr;}.page-header{flex-direction:column;align-items:stretch;}}
 @media(max-width:560px){.sector-tabs{width:100%;}.sector-tab{flex:1;justify-content:center;padding:9px 8px;font-size:12px;}.tag-input-wrap{min-width:0;}}
+
+/* Admin Module light design system — matches the dashboard */
+:root{
+  --page-bg:#FFFFFF; --card-bg:#FFFFFF; --card-border:#E2E8F0;
+  --inner:#F4F7FB; --text-dark:#172033; --text-dim:#475569;
+  --light:#172033; --muted:#475569; --dark:#FFFFFF; --mid:#FFFFFF;
+  --border:#E2E8F0; --accent:#3B82F6; --blue:#3B82F6;
+  --gold:#D97706; --gold-h:#F59E0B; --teal:#0D9488; --violet:#7C3AED;
+  --danger:#DC2626; --success:#059669; --radius:12px;
+  --card-shadow:0 2px 4px rgba(15,23,42,.05),0 6px 16px rgba(15,23,42,.06);
+}
+html{background:#fff;color-scheme:light;}
+body{background:#fff !important;color:#172033 !important;}
+a{color:inherit;}
+.page-header h1,.page-title,.et-title,.section-title{color:#172033 !important;}
+.page-header p,.page-sub,.et-sub,.et-updated,.muted,.hint{color:#475569 !important;}
+input,select,textarea{background:#fff !important;color:#172033 !important;border-color:#CBD5E1 !important;}
+button{font-family:inherit;}
+.table-wrap,.content-panel,.create-panel,.period-card,.stat-card,.sector-card,.person-row,
+.sum-card,.standing-panel,.eval-card,.eval-banner,.info-banner,.section,.shell .section,
+.history-card,.gl-card,.amber-card,.green-card,.red-card{
+  background:#fff !important;border-color:#E2E8F0 !important;box-shadow:0 2px 4px rgba(15,23,42,.04),0 6px 16px rgba(15,23,42,.05) !important;
+}
+.sector-tabs,.eval-switcher,.tabs,.level-tabs,.status-tabs{
+  background:#fff !important;border-color:#E2E8F0 !important;box-shadow:0 2px 4px rgba(15,23,42,.04) !important;
+}
+.sector-tab,.eval-tab,.tab,.level-tab,.status-tab{color:#475569 !important;}
+.sector-tab:hover,.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover{color:#172033 !important;background:#F4F7FB !important;}
+thead tr{background:#F8FAFC !important;}
+tbody tr:hover{background:#F8FAFC !important;}
+.btn-cancel,.btn-icon,.btn-back{background:#fff !important;color:#172033 !important;border-color:#CBD5E1 !important;}
+.empty-state,.empty-cta{color:#475569 !important;}
+::-webkit-scrollbar-track{background:#fff;}
+::-webkit-scrollbar-thumb{background:#CBD5E1;border:2px solid #fff;}
+
+body{padding:28px !important;}
+
+
+/* ── SHARP LIGHT ADMIN UI ── */
+html { background:#F8FAFC; }
+body {
+  color:#0F172A !important;
+  background:#F8FAFC !important;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+h1,h2,h3,h4,h5,h6 { color:#0F172A; letter-spacing:-.01em; }
+p, .subtitle, .description, .helper, .muted, small { color:#475569; }
+label, th { color:#334155; font-weight:600; }
+td { color:#0F172A; }
+input, select, textarea {
+  color:#0F172A;
+  background:#FFFFFF;
+  border-color:#CBD5E1;
+}
+input::placeholder, textarea::placeholder { color:#94A3B8; }
+.card, .panel, .section, .table-card, .content-card {
+  border-color:#CBD5E1;
+  box-shadow:0 4px 14px rgba(15,23,42,.07);
+}
+button, .btn { font-weight:700; }
+a { color:inherit; }
+
+/* Persistent icon coding */
+.btn-add > i{color:#FFFFFF !important;}
+.sector-tab:has(.fa-chalkboard-user) > i{color:#2563EB !important;}
+.sector-tab:has(.fa-briefcase) > i{color:#7C3AED !important;}
+
 </style>
 </head>
 <body>
@@ -378,7 +456,7 @@ tbody td{padding:14px 16px;font-size:14px;vertical-align:middle;}
     </select>
     <select class="filter-select" id="desigFilter" onchange="filterTable()">
         <option value="all">All Designations</option>
-        <?php foreach ($desig_options[$sectorRole] as $d): ?>
+        <?php foreach ($desig_options[$desigKey] as $d): ?>
         <option value="<?= strtolower($d) ?>"><?= $d ?></option>
         <?php endforeach; ?>
     </select>
@@ -529,7 +607,7 @@ tbody td{padding:14px 16px;font-size:14px;vertical-align:middle;}
             <div class="fg">
                 <label>Role / Sector</label>
                 <select name="role" id="addRoleSelect">
-                    <option value="faculty" <?= $sectorRole==='faculty'?'selected':'' ?>>Faculty</option>
+                    <option value="teacher" <?= $sectorRole==='teacher'?'selected':'' ?>>Faculty</option>
                     <option value="staff"   <?= $sectorRole==='staff'?'selected':'' ?>>Staff</option>
                 </select>
             </div>
@@ -599,7 +677,7 @@ tbody td{padding:14px 16px;font-size:14px;vertical-align:middle;}
             <div class="fg">
                 <label>Role / Sector</label>
                 <select name="role" id="editRoleSelect">
-                    <option value="faculty">Faculty</option>
+                    <option value="teacher">Faculty</option>
                     <option value="staff">Staff</option>
                 </select>
             </div>

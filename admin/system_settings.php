@@ -10,12 +10,12 @@
 <style>
   :root{
     --bg:          #0A1628;
-    --surface:     #121F38;
-    --surface-2:   #16233F;
-    --surface-3:   #1B294A;
-    --border:      rgba(255,255,255,0.08);
-    --border-strong: rgba(255,255,255,0.16);
-    --text:        #F5F7FB;
+    --surface:     #FFFFFF;
+    --surface-2:   #F8FAFC;
+    --surface-3:   #F1F5F9;
+    --border:      rgba(15,23,42,.12);
+    --border-strong: rgba(15,23,42,.18);
+    --text:        #0F172A;
     --text-muted:  #8291B3;
     --text-faint:  #5C6B8A;
     --blue:        #3B6FE0;
@@ -334,6 +334,72 @@
   ::-webkit-scrollbar{ width: 10px; }
   ::-webkit-scrollbar-thumb{ background: var(--surface-3); border-radius: 999px; }
   ::-webkit-scrollbar-track{ background: transparent; }
+
+/* Admin Module light design system — matches the dashboard */
+:root{
+  --page-bg:#FFFFFF; --card-bg:#FFFFFF; --card-border:#E2E8F0;
+  --inner:#F4F7FB; --text-dark:#172033; --text-dim:#475569;
+  --light:#172033; --muted:#475569; --dark:#FFFFFF; --mid:#FFFFFF;
+  --border:#E2E8F0; --accent:#3B82F6; --blue:#3B82F6;
+  --gold:#D97706; --gold-h:#F59E0B; --teal:#0D9488; --violet:#7C3AED;
+  --danger:#DC2626; --success:#059669; --radius:12px;
+  --card-shadow:0 2px 4px rgba(15,23,42,.05),0 6px 16px rgba(15,23,42,.06);
+}
+html{background:#fff;color-scheme:light;}
+body{background:#fff !important;color:#172033 !important;}
+a{color:inherit;}
+.page-header h1,.page-title,.et-title,.section-title{color:#172033 !important;}
+.page-header p,.page-sub,.et-sub,.et-updated,.muted,.hint{color:#475569 !important;}
+input,select,textarea{background:#fff !important;color:#172033 !important;border-color:#CBD5E1 !important;}
+button{font-family:inherit;}
+.table-wrap,.content-panel,.create-panel,.period-card,.stat-card,.sector-card,.person-row,
+.sum-card,.standing-panel,.eval-card,.eval-banner,.info-banner,.section,.shell .section,
+.history-card,.gl-card,.amber-card,.green-card,.red-card{
+  background:#fff !important;border-color:#E2E8F0 !important;box-shadow:0 2px 4px rgba(15,23,42,.04),0 6px 16px rgba(15,23,42,.05) !important;
+}
+.sector-tabs,.eval-switcher,.tabs,.level-tabs,.status-tabs{
+  background:#fff !important;border-color:#E2E8F0 !important;box-shadow:0 2px 4px rgba(15,23,42,.04) !important;
+}
+.sector-tab,.eval-tab,.tab,.level-tab,.status-tab{color:#475569 !important;}
+.sector-tab:hover,.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover{color:#172033 !important;background:#F4F7FB !important;}
+thead tr{background:#F8FAFC !important;}
+tbody tr:hover{background:#F8FAFC !important;}
+.btn-cancel,.btn-icon,.btn-back{background:#fff !important;color:#172033 !important;border-color:#CBD5E1 !important;}
+.empty-state,.empty-cta{color:#475569 !important;}
+::-webkit-scrollbar-track{background:#fff;}
+::-webkit-scrollbar-thumb{background:#CBD5E1;border:2px solid #fff;}
+
+body{background:#fff !important;}
+.shell{max-width:none !important;margin:0 !important;padding:28px !important;}
+.section{background:#fff !important;}
+.maint-banner{background:#FFFBEB !important;color:#92400E !important;border-color:#FDE68A !important;}
+.control-option,.toggle-row{background:#F8FAFC !important;border-color:#E2E8F0 !important;}
+
+
+/* ── SHARP LIGHT ADMIN UI ── */
+html { background:#F8FAFC; }
+body {
+  color:#0F172A !important;
+  background:#F8FAFC !important;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+h1,h2,h3,h4,h5,h6 { color:#0F172A; letter-spacing:-.01em; }
+p, .subtitle, .description, .helper, .muted, small { color:#475569; }
+label, th { color:#334155; font-weight:600; }
+td { color:#0F172A; }
+input, select, textarea {
+  color:#0F172A;
+  background:#FFFFFF;
+  border-color:#CBD5E1;
+}
+input::placeholder, textarea::placeholder { color:#94A3B8; }
+.card, .panel, .section, .table-card, .content-card {
+  border-color:#CBD5E1;
+  box-shadow:0 4px 14px rgba(15,23,42,.07);
+}
+button, .btn { font-weight:700; }
+a { color:inherit; }
 </style>
 </head>
 <body>

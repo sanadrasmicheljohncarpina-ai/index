@@ -108,14 +108,14 @@ PBI.confirm = function (msg) {
             font-family:'DM Sans',sans-serif;
         `;
         overlay.innerHTML = `
-            <div style="background:#172A45;border:1px solid rgba(255,255,255,.09);
+            <div style="background:#FFFFFF;border:1px solid rgba(15,23,42,.12);
                         border-radius:14px;padding:28px 26px;max-width:400px;width:100%;
-                        box-shadow:0 20px 60px rgba(0,0,0,.6);">
-                <p style="font-size:14px;color:#E0E6F0;line-height:1.6;margin-bottom:22px;">${msg}</p>
+                        box-shadow:0 20px 60px rgba(15,23,42,.12);">
+                <p style="font-size:14px;color:#0F172A;line-height:1.6;margin-bottom:22px;">${msg}</p>
                 <div style="display:flex;gap:10px;">
                     <button id="pbi-no"
-                        style="flex:1;padding:10px;background:#0F1F3D;border:1px solid rgba(255,255,255,.08);
-                               border-radius:8px;color:#E0E6F0;font-size:14px;font-weight:600;cursor:pointer;">
+                        style="flex:1;padding:10px;background:#F8FAFC;border:1px solid rgba(15,23,42,.12);
+                               border-radius:8px;color:#0F172A;font-size:14px;font-weight:600;cursor:pointer;">
                         Cancel
                     </button>
                     <button id="pbi-yes"
@@ -240,14 +240,14 @@ PBI.confirm = function (msg) {
             font-family:'DM Sans',sans-serif;
         `;
         overlay.innerHTML = `
-            <div style="background:#172A45;border:1px solid rgba(255,255,255,.09);
+            <div style="background:#FFFFFF;border:1px solid rgba(15,23,42,.12);
                         border-radius:14px;padding:28px 26px;max-width:400px;width:100%;
-                        box-shadow:0 20px 60px rgba(0,0,0,.6);">
-                <p style="font-size:14px;color:#E0E6F0;line-height:1.6;margin-bottom:22px;">${msg}</p>
+                        box-shadow:0 20px 60px rgba(15,23,42,.12);">
+                <p style="font-size:14px;color:#0F172A;line-height:1.6;margin-bottom:22px;">${msg}</p>
                 <div style="display:flex;gap:10px;">
                     <button id="pbi-no"
-                        style="flex:1;padding:10px;background:#0F1F3D;border:1px solid rgba(255,255,255,.08);
-                               border-radius:8px;color:#E0E6F0;font-size:14px;font-weight:600;cursor:pointer;">
+                        style="flex:1;padding:10px;background:#F8FAFC;border:1px solid rgba(15,23,42,.12);
+                               border-radius:8px;color:#0F172A;font-size:14px;font-weight:600;cursor:pointer;">
                         Cancel
                     </button>
                     <button id="pbi-yes"

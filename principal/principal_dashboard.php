@@ -312,7 +312,7 @@ $scopeLabel = $myLevel === 'both' ? 'Junior High & Senior High' : ($myLevel === 
 <style>
 :root{--dark:#0A192F;--mid:#172A45;--inner:#0F1F3D;--amber:#d99a2b;--amber-h:#f0b84d;--amber-dark:#b8801f;--light:#E0E6F0;--muted:#A0B3C6;--radius:10px;--shadow:0 8px 32px rgba(0,0,0,0.45);--danger:#f05454;--good:#10B981;}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-body{min-height:100vh;background:var(--dark);font-family:'DM Sans',sans-serif;color:var(--light);display:flex;}
+body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,.82)),url('../background.png') center center / cover no-repeat fixed;background-color:var(--dark);font-family:'DM Sans',sans-serif;color:var(--light);display:flex;}
 
 /* SIDEBAR */
 .sidebar{width:250px;flex-shrink:0;background:rgba(23,42,69,.9);border-right:1px solid rgba(255,255,255,.08);min-height:100vh;padding:28px 20px;display:flex;flex-direction:column;}
@@ -515,6 +515,9 @@ table.data tr:last-child td{border-bottom:none;}
         <div class="stat-card"><i class="fa-solid fa-hourglass-half"></i><div class="num"><?= $pendingEvaluations ?></div><div class="label">Pending Evaluations</div></div>
         </a>
         <div class="stat-card"><i class="fa-solid fa-file-lines"></i><div class="num"><?= $reportsGenerated ?></div><div class="label">Reports Generated</div></div>
+        <a href="principal_results.php" style="text-decoration:none;color:inherit;">
+        <div class="stat-card"><i class="fa-solid fa-star"></i><div class="num">View</div><div class="label">Your Evaluation Results</div></div>
+        </a>
     </div>
 
     <?php if ($teacherCount === 0 && $staffCount === 0): ?>
@@ -654,6 +657,7 @@ table.data tr:last-child td{border-bottom:none;}
             <h2><i class="fa-solid fa-bolt"></i> Quick Actions</h2>
             <div class="qa-btns">
                 <a href="principal_reports.php"><i class="fa-solid fa-file-lines"></i> View Reports</a>
+            <a href="principal_results.php"><i class="fa-solid fa-star-half-stroke"></i> View My Results</a>
                 <a href="principal_evaluation_tracker.php"><i class="fa-solid fa-gauge-high"></i> Monitor Progress</a>
                 <a href="principal_evaluations.php"><i class="fa-solid fa-satellite-dish"></i> Open Evaluation</a>
             </div>

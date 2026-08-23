@@ -548,12 +548,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_levels'])) {
     header("Location: faculty_dashboard.php?page=profile"); exit;
 }
 
-// ── DOCUMENTS ─────────────────────────────────────────────────
-$documents = [];
-if ($page === 'documents') {
-    $docs = $mysqli->query("SELECT * FROM system_documents WHERE visibility IN ('Faculty','All') ORDER BY uploaded_at DESC");
-    if ($docs) $documents = $docs->fetch_all(MYSQLI_ASSOC);
-}
 
 // ── RECENT SUBMISSIONS ────────────────────────────────────────
 // faculty_dashboard.php — recent_subs
@@ -816,13 +810,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .photo-preview-circle img{width:100%;height:100%;object-fit:cover;}
 .photo-upload-btn{display:inline-flex;align-items:center;gap:7px;background:rgba(13,148,136,.13);border:1px solid rgba(13,148,136,.35);color:var(--teal-hover);padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;}
 .photo-upload-hint{font-size:11px;color:var(--muted);margin-top:5px;}
-.doc-item{background:var(--inner);border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin-bottom:8px;display:flex;align-items:center;gap:14px;transition:background .15s;}
-.doc-item:hover{background:rgba(43,108,176,.07);}
-.doc-icon{width:40px;height:40px;border-radius:8px;background:rgba(43,108,176,.18);display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:17px;flex-shrink:0;}
-.doc-name{font-size:14px;font-weight:600;color:#fff;}
-.doc-meta{font-size:12px;color:var(--muted);margin-top:2px;}
-.doc-dl{margin-left:auto;background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;transition:background .2s;white-space:nowrap;}
-.doc-dl:hover{background:var(--hover);}
 .no-period-warn{background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.18);border-radius:10px;padding:16px 20px;margin-bottom:18px;display:flex;gap:10px;align-items:center;font-size:13px;color:#fcd34d;}
 
 /* ── PEER EVAL — STEP 1: DESIGNATION SELECT ── */
@@ -958,10 +945,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
             <?php endif; ?>
         </a>
 
-        <div class="nav-section-label">Resources</div>
-        <a href="faculty_dashboard.php?page=documents" class="nav-link <?= $page==='documents'?'active':'' ?>">
-            <i class="fa-solid fa-folder-open"></i> Documents
-        </a>
     </nav>
 
     <div class="sidebar-footer">
@@ -1024,7 +1007,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
             <i class="fa-solid fa-bars"></i>
         </button>
         <div class="nav-page-title">
-            <?php $titles=['dashboard'=>'Dashboard','profile'=>'My Profile & Role','my_results'=>'My Results','peer'=>'Peer Evaluation','peer_eval'=>'Evaluate Peer','documents'=>'Documents'];
+            <?php $titles=['dashboard'=>'Dashboard','profile'=>'My Profile & Role','my_results'=>'My Results','peer'=>'Peer Evaluation','peer_eval'=>'Evaluate Peer'];
             echo $titles[$page] ?? 'Dashboard'; ?>
         </div>
     </div>
@@ -1452,31 +1435,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
     <?= htmlspecialchars($peer_group_error ?: "Selected user does not exist, is inactive, or is not a valid Teacher/Staff account. Please choose someone from the list.") ?>
 </div>
 
-<?php elseif ($page === 'documents'): ?>
-
-<div class="section-card">
-    <div class="section-title"><i class="fa-solid fa-folder-open" style="color:var(--accent)"></i> Faculty Documents</div>
-    <?php if (empty($documents)): ?>
-    <div class="empty-state"><i class="fa-solid fa-folder-open"></i><p>No documents uploaded for Faculty yet.</p></div>
-    <?php else: foreach ($documents as $d):
-        $ext      = strtolower(pathinfo($d['storage_name'] ?? '', PATHINFO_EXTENSION));
-        $icon_map = ['pdf'=>'fa-file-pdf','doc'=>'fa-file-word','docx'=>'fa-file-word','xls'=>'fa-file-excel','xlsx'=>'fa-file-excel','ppt'=>'fa-file-powerpoint','pptx'=>'fa-file-powerpoint'];
-        $icon     = $icon_map[$ext] ?? 'fa-file-lines';
-    ?>
-    <div class="doc-item">
-        <div class="doc-icon"><i class="fa-solid <?= $icon ?>"></i></div>
-        <div>
-            <div class="doc-name"><?= htmlspecialchars($d['display_name'] ?? $d['title'] ?? '') ?></div>
-            <div class="doc-meta"><?= htmlspecialchars($d['category']??'') ?> · <?= date('M d, Y', strtotime($d['uploaded_at'])) ?></div>
-        </div>
-        <a class="doc-dl" href="../admin/stored_docs/<?= htmlspecialchars($d['storage_name'] ?? '') ?>" target="_blank" download>
-            <i class="fa-solid fa-download"></i> Download
-        </a>
-    </div>
-    <?php endforeach; endif; ?>
-</div>
-
 <?php endif; ?>
+
 </main>
 
 <script>

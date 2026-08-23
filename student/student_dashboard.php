@@ -40,7 +40,7 @@ $student_year_level = $phRow['year_level'] ?? null;
 // Mirrors admin/questionnaire.php's 3-bucket model exactly:
 //   - Teacher     -> shared pool in `evaluation_questions` (target_type='Teacher')
 //   - Staff       -> PER-PERSON questions in `user_questions`
-//   - Multi-Role  -> shared pool in `evaluation_questions`
+//   - Multi-Role  -> PER-PERSON questions in `user_questions`
 //
 // NOTE: admin/questionnaire.php's actual bucket name is 'Teacher', not
 // 'Faculty' -- $system_categories there is ['Teacher','Staff','Multi-Role'],
@@ -63,8 +63,8 @@ $student_year_level = $phRow['year_level'] ?? null;
 // separate "Multi-Role" category instead, scoped to only the matching
 // year level(s) -- see the GROUP INTO STUDENT-FACING CATEGORIES block
 // further down for the actual rule, and get_questions below for why
-// Multi-Role people get the Multi-Role questionnaire exclusively
-// (not the ordinary per-person Staff one).
+// Multi-Role people get their own per-person Multi-Role questionnaire
+// exclusively (not the ordinary per-person Staff one).
 $token_to_target = [
     'Teacher'         => 'Teacher',
     'Faculty'         => 'Teacher',
@@ -190,15 +190,57 @@ function hasAnyYearLevelAssignment($mysqli, $target_id) {
     return $has_any;
 }
 
+function hasUserQuestionSet($mysqli, $target_id, $target_type, $eval_type = 'student') {
+    $stmt = $mysqli->prepare(
+        "SELECT 1 FROM user_questions WHERE user_id=? AND target_type=? AND eval_type=? LIMIT 1"
+    );
+    $stmt->bind_param('iss', $target_id, $target_type, $eval_type);
+    $stmt->execute();
+    $has = (bool)$stmt->get_result()->fetch_row();
+    $stmt->close();
+    return $has;
+}
+
+function isCollegeEducationLevel($education_level) {
+    $v = strtolower(trim((string)$education_level));
+    return in_array($v, [
+        'college',
+        'higher education',
+        'college / university',
+        'college/university'
+    ], true);
+}
+
+/**
+ * College Teacher evaluations are semester-specific.  When the current
+ * student is a College student, a Teacher is eligible only when the
+ * Teacher's assigned_period matches the active evaluation period's
+ * semester.  Non-college student flows keep the existing year-level rule.
+ */
+function teacherMatchesActiveSemester($mysqli, $target_id, $student_level, $active_period_semester) {
+    if (!isCollegeEducationLevel($student_level)) return true;
+    if ($active_period_semester === null || trim((string)$active_period_semester) === '') return false;
+
+    $stmt = $mysqli->prepare("SELECT assigned_period FROM users WHERE id=? LIMIT 1");
+    $stmt->bind_param('i', $target_id);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    return $row
+        && trim((string)($row['assigned_period'] ?? '')) === trim((string)$active_period_semester);
+}
+
 function canStudentEvaluateTarget(
     $mysqli,
     $student_level,
     $student_year_level,
     $target_id,
-    $evaluation_context = ''
+    $evaluation_context = '',
+    $active_period_semester = null
 ) {
     $stmt = $mysqli->prepare(
-        "SELECT role, secondary_role, designation, is_active
+        "SELECT role, secondary_role, designation, assigned_period, is_active
          FROM users
          WHERE id=?
          LIMIT 1"
@@ -250,12 +292,15 @@ function canStudentEvaluateTarget(
                 && hasAnyYearLevelAssignment($mysqli, $target_id)
             );
 
-        return [
-            $has_multi_role,
-            $has_multi_role
-                ? null
-                : 'This person is not configured for a Multi-Role evaluation.'
-        ];
+        if (!$has_multi_role) {
+            return [false, 'This person is not configured for a Multi-Role evaluation.'];
+        }
+
+        if (!hasUserQuestionSet($mysqli, $target_id, 'Multi-Role', 'student')) {
+            return [false, 'No Multi-Role questions have been assigned to this person yet.'];
+        }
+
+        return [true, null];
     }
 
     /*
@@ -265,6 +310,19 @@ function canStudentEvaluateTarget(
         return [
             false,
             'This person is not configured for a Teacher evaluation.'
+        ];
+    }
+
+    // College Teachers are tied to the active evaluation semester.  This
+    // prevents a Teacher assigned to 2nd Semester from being evaluated by
+    // a College student while the active period is 1st Semester (and vice
+    // versa).  Staff and Multi-Role contexts are intentionally unaffected.
+    if ($evaluation_context === 'teacher'
+        && $has_teacher
+        && !teacherMatchesActiveSemester($mysqli, $target_id, $student_level, $active_period_semester)) {
+        return [
+            false,
+            'This teacher is not assigned to the current evaluation semester.'
         ];
     }
 
@@ -346,8 +404,9 @@ function canStudentEvaluateTarget(
 // ── ACTIVE EVALUATION PERIOD ──────────────────────────────────
 // Fetched once up front so the Dashboard, Guidelines, and the submit
 // handler below all agree on whether evaluations are currently open.
-$activePeriodRow = $mysqli->query("SELECT id FROM evaluation_periods WHERE is_active=1 LIMIT 1")->fetch_assoc();
+$activePeriodRow = $mysqli->query("SELECT id, semester FROM evaluation_periods WHERE is_active=1 LIMIT 1")->fetch_assoc();
 $period_is_open  = (bool)$activePeriodRow;
+$active_period_semester = $activePeriodRow['semester'] ?? null;
 $ctxCol=$mysqli->query("SHOW COLUMNS FROM evaluation_tracker LIKE 'evaluation_context'");
 if ($ctxCol && $ctxCol->num_rows===0) {
     $mysqli->query("ALTER TABLE evaluation_tracker ADD COLUMN evaluation_context VARCHAR(30) NOT NULL DEFAULT 'teacher'");
@@ -374,12 +433,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_evaluation']))
     // rows, ever) is always eligible; Principal/Dean is a singleton
     // bypass -- so a manually changed target_id can never slip through
     // with a person the student isn't actually authorized to evaluate.
-    [$eligible, $eligibility_result] = ($target_id > 0) ? canStudentEvaluateTarget($mysqli,$student_level,$student_year_level,$target_id,$evaluation_context) : [false,null];
+    [$eligible, $eligibility_result] = ($target_id > 0) ? canStudentEvaluateTarget($mysqli,$student_level,$student_year_level,$target_id,$evaluation_context,$active_period_semester) : [false,null];
     $ctxStmt=$mysqli->prepare("SELECT role,secondary_role,designation FROM users WHERE id=? AND is_active=1 LIMIT 1");
     $ctxStmt->bind_param('i',$target_id); $ctxStmt->execute(); $ctxRow=$ctxStmt->get_result()->fetch_assoc(); $ctxStmt->close();
     $has_teacher_context=$ctxRow && ec_has_teacher_function($ctxRow);
     $has_staff_context=$ctxRow && ec_has_staff_function($ctxRow);
-    $has_multi_context=$ctxRow && userHasAdditionalRole($ctxRow);
+    $has_multi_context=$ctxRow && (userHasAdditionalRole($ctxRow) || ($has_staff_context && hasAnyYearLevelAssignment($mysqli,$target_id)));
     $context_allowed=($evaluation_context==='teacher'&&$has_teacher_context)||($evaluation_context==='staff'&&$has_staff_context)||($evaluation_context==='multi_role'&&$has_multi_context)||($evaluation_context==='school_head'&&$ctxRow&&in_array($ctxRow['role'],['principal','dean'],true));
 
     if ($target_id <= 0) {
@@ -510,12 +569,9 @@ $ins->close();
 // ── FETCH QUESTIONS FOR A TARGET (AJAX) ──────────────────────
 // Reads from the SAME source(s) the admin actually writes to for this
 // person's resolved bucket:
-//   - Multi-Role -> evaluation_questions (shared pool, target_type='Multi-Role')
-//                   ONLY -- a Staff-role user with an active teaching
-//                   assignment (>=1 user_year_levels row) gets the
-//                   Multi-Role questionnaire exclusively, not the
-//                   ordinary per-person Staff questionnaire, mirroring
-//                   the Multi-Role display category below.
+//   - Multi-Role -> user_questions (per-person, target_type='Multi-Role')
+//                   ONLY. Each Multi-Role person receives exactly the
+//                   questions assigned to that person in Questionnaire.
 //   - Staff      -> user_questions (per-person, keyed by user_id)
 //   - Teacher    -> evaluation_questions (shared pool, target_type='Teacher')
 if (isset($_GET['get_questions'])) {
@@ -566,7 +622,8 @@ $has_assignment = hasAnyYearLevelAssignment($mysqli, $target_id);
 $is_multi_role = userHasAdditionalRole($userRow) || ($has_staff_context && $has_assignment);
         if ($requested_context === 'multi_role') {
             if (!$is_multi_role) throw new Exception('This person is not configured for a Multi-Role evaluation.');
-            $q=$mysqli->prepare("SELECT id,question_text,category,'evaluation' AS question_source FROM evaluation_questions WHERE target_type='Multi-Role' AND eval_type='student' ORDER BY category,id");
+            $q=$mysqli->prepare("SELECT id,question_text,category,'user' AS question_source FROM user_questions WHERE user_id=? AND target_type='Multi-Role' AND eval_type='student' ORDER BY category,sort_order,id");
+            $q->bind_param('i',$target_id);
             $q->execute(); $questions=$q->get_result()->fetch_all(MYSQLI_ASSOC); $q->close();
             if (empty($questions)) throw new Exception('No Multi-Role questions have been set up yet.');
             echo json_encode(['success'=>true,'questions'=>$questions]); exit;
@@ -644,7 +701,7 @@ $is_multi_role = userHasAdditionalRole($userRow) || ($has_staff_context && $has_
 // guessing their category.  This is the authoritative student visibility rule.
 $grouped = ['Faculty'=>['Teacher'=>[],'Staff'=>[]], 'Multi-Role'=>[]];
 
-$ures = $mysqli->query("SELECT id, full_name, designation, photo, role, secondary_role
+$ures = $mysqli->query("SELECT id, full_name, designation, photo, role, secondary_role, assigned_period
                         FROM users
                         WHERE role IN ('teacher','staff','faculty')
                           AND is_active=1
@@ -653,6 +710,11 @@ $ures = $mysqli->query("SELECT id, full_name, designation, photo, role, secondar
 if (!$ures) throw new Exception('Failed to load evaluation personnel: '.$mysqli->error);
 
 $level_variants = normalizeLevelVariants($student_level);
+$multi_role_question_counts = [];
+$mrq = $mysqli->query("SELECT user_id, COUNT(*) AS total FROM user_questions WHERE target_type='Multi-Role' AND eval_type='student' GROUP BY user_id");
+if ($mrq) {
+    while ($r = $mrq->fetch_assoc()) $multi_role_question_counts[(int)$r['user_id']] = (int)$r['total'];
+}
 foreach ($ures->fetch_all(MYSQLI_ASSOC) as $u) {
 $has_teacher = ec_has_teacher_function($u);
 $has_staff   = ec_has_staff_function($u);
@@ -662,8 +724,12 @@ $is_multi    = ec_has_additional_role($u) || ($has_staff && $has_assign);
         ? isMatchedViaAssignment($mysqli, (int)$u['id'], $level_variants, $student_year_level)
         : false;
 
-    // Base Teacher context: only assigned year levels.
-    if ($has_teacher && $base_match) {
+    // Base Teacher context: only assigned year levels.  For College
+    // students, the Teacher must also belong to the active evaluation
+    // semester.  This is the display-side counterpart to the server-side
+    // eligibility check above.
+    $semester_match = teacherMatchesActiveSemester($mysqli, (int)$u['id'], $student_level, $active_period_semester);
+    if ($has_teacher && $base_match && $semester_match) {
         $grouped['Faculty']['Teacher'][] = $u;
     }
 
@@ -674,10 +740,13 @@ $is_multi    = ec_has_additional_role($u) || ($has_staff && $has_assign);
     }
 
     // Multi-Role context: additional responsibility is independent of the
-    // person's teaching assignment and therefore visible across applicable
-    // student year levels.  This is the critical rule for Teacher/Staff +
-    // additional role when the base assignment does not match this student.
+    // person's teaching assignment and therefore visible to students across
+    // year levels.  Visibility is NOT dependent on whether the admin has
+    // already assigned questions.  A person with zero assigned questions is
+    // still shown, but their Evaluate button is disabled with a clear
+    // 'No questionnaire assigned' state.
     if ($is_multi) {
+        $u['_multi_role_question_count'] = $multi_role_question_counts[(int)$u['id']] ?? 0;
         $grouped['Multi-Role'][] = $u;
     }
 }
@@ -1291,11 +1360,22 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
                     <?php endif; ?>
 
                     <?php if (!$is_done): ?>
+                    <?php
+                    $mr_no_questions = ($context === 'multi_role' && (int)($p['_multi_role_question_count'] ?? 0) === 0);
+                    ?>
+                    <?php if ($mr_no_questions): ?>
+                    <button type="button" class="eval-btn" disabled
+                        title="No Multi-Role questionnaire has been assigned to this person yet"
+                        style="opacity:.55;cursor:not-allowed;">
+                        <i class="fa-solid fa-clipboard-question"></i> No Questionnaire Assigned
+                    </button>
+                    <?php else: ?>
                     <button type="button" class="eval-btn" onclick="openEvalFromData(this)"
                         <?= !$period_is_open ? 'disabled title="No evaluation period is currently open"' : '' ?>
                         data-eval='<?= htmlspecialchars($eval_args, ENT_QUOTES) ?>'>
                         <i class="fa-solid fa-star-half-stroke"></i> Evaluate
                     </button>
+                    <?php endif; ?>
                     <?php endif; ?>
                 </div>
                 <?php

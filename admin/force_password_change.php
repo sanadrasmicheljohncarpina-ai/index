@@ -31,7 +31,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $dest = match($_SESSION['role'] ?? '') {
             'superadmin'           => 'admin_dashboard.php',
             'admin'                => 'admin_dashboard.php',
-            'executive_assistant'  => 'executive_dashboard.php',
             'school_head'          => 'school_head_dashboard.php',
             'faculty', 'staff'     => 'staff_dashboard.php',
             'student'              => 'student_dashboard.php',

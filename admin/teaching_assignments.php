@@ -17,7 +17,7 @@ mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', ['admin','superadmin'])) {
     header("Location: admin_login.php"); exit;
 }
-echo "<div style='padding:40px;font-family:sans-serif;color:#E0E6F0;background:#0A192F;min-height:100vh;'>Teaching Assignment management is being rebuilt. Contact the system administrator for manual assignment changes in the meantime.</div>";
+echo "<div style='padding:40px;font-family:sans-serif;color:#0F172A;background:#F8FAFC;min-height:100vh;'>Teaching Assignment management is being rebuilt. Contact the system administrator for manual assignment changes in the meantime.</div>";
 exit;
 
 $student_id   = $_SESSION['user_id'];
@@ -427,10 +427,10 @@ $pct              = $total_evaluatees > 0 ? round(($total_done / $total_evaluate
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <style>
 :root{
-    --dark:#0A192F;--mid:#172A45;--inner:#0F1F3D;
+    --dark:#F8FAFC;--mid:#FFFFFF;--inner:#F1F5F9;
     --gold:#D97706;--gold-h:#F59E0B;
-    --light:#E0E6F0;--muted:#A0B3C6;
-    --border:rgba(255,255,255,0.08);--radius:10px;
+    --light:#0F172A;--muted:#475569;
+    --border:rgba(15,23,42,.12);--radius:10px;
     --sidebar-w:230px;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -530,7 +530,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .progress-wrap{background:var(--mid);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;margin-bottom:28px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
 .progress-label{font-size:13px;color:var(--muted);white-space:nowrap;}
 .progress-label span{color:var(--gold-h);font-weight:700;}
-.progress-bar-bg{flex:1;min-width:120px;height:8px;background:rgba(255,255,255,.08);border-radius:20px;overflow:hidden;}
+.progress-bar-bg{flex:1;min-width:120px;height:8px;background:rgba(15,23,42,.12);border-radius:20px;overflow:hidden;}
 .progress-bar-fill{height:100%;background:linear-gradient(90deg,var(--gold),var(--gold-h));border-radius:20px;transition:width .4s ease;}
 .progress-pct{font-size:12px;font-weight:700;color:var(--gold-h);white-space:nowrap;}
 .alert{border-radius:8px;padding:12px 16px;font-size:13px;margin-bottom:20px;display:flex;align-items:center;gap:8px;}
@@ -541,8 +541,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 /* ── CATEGORY CARDS ── */
 .category-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:16px;margin-bottom:10px;}
 .cat-btn{background:var(--mid);border:1px solid var(--border);border-radius:14px;padding:24px 18px 20px;text-align:center;cursor:pointer;transition:all .22s;position:relative;user-select:none;}
-.cat-btn:hover{transform:translateY(-3px);box-shadow:0 6px 20px rgba(0,0,0,.35);}
-.cat-btn.active{transform:translateY(-3px);box-shadow:0 6px 20px rgba(0,0,0,.35);}
+.cat-btn:hover{transform:translateY(-3px);box-shadow:0 6px 20px rgba(15,23,42,.10);}
+.cat-btn.active{transform:translateY(-3px);box-shadow:0 6px 20px rgba(15,23,42,.10);}
 .cat-btn.all-done{opacity:.55;}
 .cat-icon{font-size:32px;margin-bottom:11px;}
 .cat-name{font-family:'Rajdhani',sans-serif;font-size:18px;font-weight:700;color:#fff;margin-bottom:3px;}
@@ -652,6 +652,76 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
     .progress-wrap{flex-direction:column;align-items:flex-start;gap:8px;}
     .history-meta{align-items:flex-start;width:100%;}
 }
+
+/* Admin Module light design system — matches the dashboard */
+:root{
+  --page-bg:#FFFFFF; --card-bg:#FFFFFF; --card-border:#E2E8F0;
+  --inner:#F4F7FB; --text-dark:#172033; --text-dim:#475569;
+  --light:#172033; --muted:#475569; --dark:#FFFFFF; --mid:#FFFFFF;
+  --border:#E2E8F0; --accent:#3B82F6; --blue:#3B82F6;
+  --gold:#D97706; --gold-h:#F59E0B; --teal:#0D9488; --violet:#7C3AED;
+  --danger:#DC2626; --success:#059669; --radius:12px;
+  --card-shadow:0 2px 4px rgba(15,23,42,.05),0 6px 16px rgba(15,23,42,.06);
+}
+html{background:#fff;color-scheme:light;}
+body{background:#fff !important;color:#172033 !important;}
+a{color:inherit;}
+.page-header h1,.page-title,.et-title,.section-title{color:#172033 !important;}
+.page-header p,.page-sub,.et-sub,.et-updated,.muted,.hint{color:#475569 !important;}
+input,select,textarea{background:#fff !important;color:#172033 !important;border-color:#CBD5E1 !important;}
+button{font-family:inherit;}
+.table-wrap,.content-panel,.create-panel,.period-card,.stat-card,.sector-card,.person-row,
+.sum-card,.standing-panel,.eval-card,.eval-banner,.info-banner,.section,.shell .section,
+.history-card,.gl-card,.amber-card,.green-card,.red-card{
+  background:#fff !important;border-color:#E2E8F0 !important;box-shadow:0 2px 4px rgba(15,23,42,.04),0 6px 16px rgba(15,23,42,.05) !important;
+}
+.sector-tabs,.eval-switcher,.tabs,.level-tabs,.status-tabs{
+  background:#fff !important;border-color:#E2E8F0 !important;box-shadow:0 2px 4px rgba(15,23,42,.04) !important;
+}
+.sector-tab,.eval-tab,.tab,.level-tab,.status-tab{color:#475569 !important;}
+.sector-tab:hover,.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover{color:#172033 !important;background:#F4F7FB !important;}
+thead tr{background:#F8FAFC !important;}
+tbody tr:hover{background:#F8FAFC !important;}
+.btn-cancel,.btn-icon,.btn-back{background:#fff !important;color:#172033 !important;border-color:#CBD5E1 !important;}
+.empty-state,.empty-cta{color:#475569 !important;}
+::-webkit-scrollbar-track{background:#fff;}
+::-webkit-scrollbar-thumb{background:#CBD5E1;border:2px solid #fff;}
+
+body{background:#fff !important;color:#172033 !important;}
+.topnav{background:#fff !important;border-bottom:1px solid #E2E8F0 !important;box-shadow:0 2px 8px rgba(15,23,42,.05);}
+.nav-logo,.profile-avatar,.profile-dd-avatar{border-color:#7C3AED !important;}
+.profile-name,.profile-dd-name,.profile-dd-btn{color:#172033 !important;}
+.profile-dd-role,.profile-caret,.profile-dd-btn i{color:#475569 !important;}
+.profile-dropdown{background:#fff !important;border-color:#E2E8F0 !important;box-shadow:0 12px 40px rgba(15,23,42,.12) !important;}
+.profile-dd-btn:hover{background:#F4F7FB !important;}
+.app-shell{background:#fff !important;}
+.gl-card,.history-card{background:#fff !important;}
+
+
+/* ── SHARP LIGHT ADMIN UI ── */
+html { background:#F8FAFC; }
+body {
+  color:#0F172A !important;
+  background:#F8FAFC !important;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+h1,h2,h3,h4,h5,h6 { color:#0F172A; letter-spacing:-.01em; }
+p, .subtitle, .description, .helper, .muted, small { color:#475569; }
+label, th { color:#334155; font-weight:600; }
+td { color:#0F172A; }
+input, select, textarea {
+  color:#0F172A;
+  background:#FFFFFF;
+  border-color:#CBD5E1;
+}
+input::placeholder, textarea::placeholder { color:#94A3B8; }
+.card, .panel, .section, .table-card, .content-card {
+  border-color:#CBD5E1;
+  box-shadow:0 4px 14px rgba(15,23,42,.07);
+}
+button, .btn { font-weight:700; }
+a { color:inherit; }
 </style>
 </head>
 <body>

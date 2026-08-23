@@ -20,10 +20,9 @@
  *   - Student college status uses `education_level = 'college'`, NOT
  *     the `year_level` pattern-matching used elsewhere in
  *     manage_privileged_accounts.php for its own filter UI.
- *   - "Executive Assistant" means role='executive_assistant'
- *     specifically (the main/system-admin-facing account type) — NOT
- *     'superadmin', which gates the admin page itself and is never
- *     evaluated.
+ *   - "Executive Assistant" is the designation of the current
+ *     Super Admin account. It is NOT a separate users.role value; the
+ *     database role remains 'superadmin'.
  *   - "Included/visible in evaluation" has no dedicated column yet;
  *     account_status='approved' AND is_active=1 stands in for it.
  *
@@ -38,22 +37,6 @@
  *     students) — left null pending confirmation of where Faculty
  *     program assignment lives.
  *
- *   - ⚠ ROLE MISMATCH FOR EXECUTIVE ASSISTANT (found while fixing the
- *     dean_evaluate.php routing bug — not yet resolved, needs a human
- *     to confirm against the real DB): this file's ea_get_executive_
- *     assistants() below queries WHERE role = 'executive_assistant'.
- *     But dean_evaluate.php's $tabConfig for the 'executive_assistant'
- *     tab looks the target person up with role = 'system_admin', and
- *     dean_evaluation.php has a comment claiming EA accounts are
- *     "stored with role='system_admin'". Only one of these can match
- *     the actual users.role column. If the true value is
- *     'system_admin', ea_get_executive_assistants() below is silently
- *     returning zero rows (or the wrong rows) today. If the true value
- *     is 'executive_assistant', then dean_evaluate.php's target lookup
- *     for that tab will always 404 with "Person not found" even after
- *     the routing fix. Check the real column value and make both files
- *     agree — this doc-comment shouldn't be treated as the tiebreaker,
- *     since it's the same kind of unverified claim as the other file's.
  * ══════════════════════════════════════════════════════════════════════
  */
 
@@ -83,13 +66,41 @@ function ea_rows(mysqli $mysqli, string $sql, string $types, array $params): arr
  *  (course is student-only) — left null pending confirmation. */
 function ea_get_faculty(mysqli $mysqli, int $periodId): array {
     $ph = implode(',', array_fill(0, count(COLLEGE_LEVELS), '?'));
+
+    // College teachers are period/semester-specific. The teacher's
+    // assigned_period is maintained by the EA in the personnel registry;
+    // only teachers assigned to the currently active evaluation period's
+    // semester should appear in the EA/Dean college faculty roster.
+    $semester = null;
+    if ($periodId > 0) {
+        $periodStmt = $mysqli->prepare("SELECT semester FROM evaluation_periods WHERE id = ? LIMIT 1");
+        if ($periodStmt) {
+            $periodStmt->bind_param('i', $periodId);
+            $periodStmt->execute();
+            $periodRow = $periodStmt->get_result()->fetch_assoc();
+            $periodStmt->close();
+            $semester = $periodRow['semester'] ?? null;
+        }
+    }
+
+    $whereSemester = '';
+    $types = str_repeat('s', count(COLLEGE_LEVELS));
+    $params = COLLEGE_LEVELS;
+
+    if ($semester !== null && $semester !== '') {
+        $whereSemester = " AND u.assigned_period = ?";
+        $types .= 's';
+        $params[] = $semester;
+    }
+
     return ea_rows($mysqli, "
         SELECT DISTINCT u.id, u.full_name, u.photo, u.department, u.designation AS position, NULL AS program
         FROM users u
         WHERE u.role = 'teacher' AND u.account_status = 'approved' AND u.is_active = 1
           AND EXISTS (SELECT 1 FROM user_year_levels uyl WHERE uyl.user_id = u.id AND uyl.year_level IN ($ph))
+          $whereSemester
         ORDER BY u.full_name ASC
-    ", str_repeat('s', count(COLLEGE_LEVELS)), COLLEGE_LEVELS);
+    ", $types, $params);
 }
 
 /** Staff = approved and active staff; no College year-level requirement. */
@@ -103,13 +114,9 @@ function ea_get_staff(mysqli $mysqli, int $periodId): array {
         ORDER BY u.full_name ASC
     ", '', []);
 }
-/** Executive Assistant = role='executive_assistant' specifically (the
- *  main/system-admin account type) — not 'superadmin'. No College
- *  scoping; EAs aren't attached to a division.
- *
- *  ⚠ See the role-mismatch note in the file header — verify this
- *  role value against dean_evaluate.php's $tabConfig before relying
- *  on either. */
+/** Executive Assistant = the current Super Admin account (role='superadmin').
+ *  "Executive Assistant" is the designation shown in the UI, not a
+ *  separate database role. No College scoping; the account is system-wide. */
 function ea_get_executive_assistants(mysqli $mysqli, int $periodId): array {
     return ea_rows($mysqli, "
         SELECT id, full_name, photo, designation AS position, role AS system_role

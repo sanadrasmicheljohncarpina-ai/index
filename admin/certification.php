@@ -9,7 +9,7 @@ x<?php
 //         never block generation — they're optional and self-directed.
 // Score:  final_rating = average(student_avg, peer_avg) if peer data
 //         exists, otherwise just student_avg.
-// Authority: System Admin, or Executive Assistant if granted access
+// Authority: System Admin, or the current Super Admin (displayed as Executive Assistant) if granted access
 //         via admin_permissions (see permissions.php from earlier).
 //
 // ── ASSUMPTIONS ABOUT YOUR SCHEMA (adjust if your column names differ) ──
@@ -26,23 +26,16 @@ x<?php
 session_start();
 require_once 'db.php';
 
-if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', ['admin','superadmin','executive_assistant'])) {
+if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', ['admin','superadmin'])) {
     header("Location: admin_login.php"); exit;
 }
 
 // If this admin is the second-tier Admin (not superadmin) and not the
-// exec assistant, respect the same feature-gate pattern used elsewhere.
+// Executive Assistant, respect the same feature-gate pattern used elsewhere.
 if ($_SESSION['role'] === 'admin') {
     require_once 'permissions.php';
     if (!admin_can_edit($mysqli, 'reports_analytics')) {
         die("You don't have access to this feature. Ask a Super Admin to enable it.");
-    }
-}
-if ($_SESSION['role'] === 'executive_assistant') {
-    $pres = $mysqli->query("SELECT admin_can_edit FROM admin_permissions WHERE feature_key='reports_analytics' LIMIT 1");
-    $row  = $pres ? $pres->fetch_assoc() : null;
-    if (!$row || !$row['admin_can_edit']) {
-        die("You don't have access to this feature yet. Ask the System Admin to enable it.");
     }
 }
 
@@ -170,11 +163,11 @@ if (($_GET['view'] ?? '') === 'certificate' && isset($_GET['target_id']) && isse
 <title>Certificate of Rating — <?= htmlspecialchars($person['full_name']) ?></title>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
-body{font-family:'DM Sans',sans-serif;background:#0A192F;color:#E0E6F0;padding:40px;display:flex;justify-content:center;}
+body{font-family:'DM Sans',sans-serif;background:#F8FAFC;color:#0F172A;padding:40px;display:flex;justify-content:center;}
 .cert{background:#fff;color:#111;max-width:760px;width:100%;padding:60px;border:6px double #2B6CB0;text-align:center;}
-.cert h1{font-family:'Rajdhani',sans-serif;font-size:26px;letter-spacing:2px;color:#0A192F;margin-bottom:6px;}
+.cert h1{font-family:'Rajdhani',sans-serif;font-size:26px;letter-spacing:2px;color:#F8FAFC;margin-bottom:6px;}
 .cert .sub{font-size:12px;color:#666;margin-bottom:32px;text-transform:uppercase;letter-spacing:1.5px;}
-.cert .name{font-family:'Rajdhani',sans-serif;font-size:32px;font-weight:700;margin:24px 0 6px;color:#0A192F;}
+.cert .name{font-family:'Rajdhani',sans-serif;font-size:32px;font-weight:700;margin:24px 0 6px;color:#F8FAFC;}
 .cert .desig{font-size:14px;color:#555;margin-bottom:28px;}
 .cert .score{font-family:'Rajdhani',sans-serif;font-size:56px;font-weight:700;color:<?= scoreColor($cert['final_rating']) ?>;}
 .cert .adj{font-size:18px;font-weight:600;margin-bottom:28px;}
@@ -182,6 +175,66 @@ body{font-family:'DM Sans',sans-serif;background:#0A192F;color:#E0E6F0;padding:4
 .no-print{margin-top:20px;text-align:center;}
 .btn{background:#2B6CB0;color:#fff;border:none;padding:10px 22px;border-radius:6px;cursor:pointer;font-size:13px;}
 @media print{.no-print{display:none}body{background:#fff;padding:0}}
+
+/* Admin Module light design system — matches the dashboard */
+:root{
+  --page-bg:#FFFFFF; --card-bg:#FFFFFF; --card-border:#E2E8F0;
+  --inner:#F4F7FB; --text-dark:#172033; --text-dim:#475569;
+  --light:#172033; --muted:#475569; --dark:#FFFFFF; --mid:#FFFFFF;
+  --border:#E2E8F0; --accent:#3B82F6; --blue:#3B82F6;
+  --gold:#D97706; --gold-h:#F59E0B; --teal:#0D9488; --violet:#7C3AED;
+  --danger:#DC2626; --success:#059669; --radius:12px;
+  --card-shadow:0 2px 4px rgba(15,23,42,.05),0 6px 16px rgba(15,23,42,.06);
+}
+html{background:#fff;color-scheme:light;}
+body{background:#fff !important;color:#172033 !important;}
+a{color:inherit;}
+.page-header h1,.page-title,.et-title,.section-title{color:#172033 !important;}
+.page-header p,.page-sub,.et-sub,.et-updated,.muted,.hint{color:#475569 !important;}
+input,select,textarea{background:#fff !important;color:#172033 !important;border-color:#CBD5E1 !important;}
+button{font-family:inherit;}
+.table-wrap,.content-panel,.create-panel,.period-card,.stat-card,.sector-card,.person-row,
+.sum-card,.standing-panel,.eval-card,.eval-banner,.info-banner,.section,.shell .section,
+.history-card,.gl-card,.amber-card,.green-card,.red-card{
+  background:#fff !important;border-color:#E2E8F0 !important;box-shadow:0 2px 4px rgba(15,23,42,.04),0 6px 16px rgba(15,23,42,.05) !important;
+}
+.sector-tabs,.eval-switcher,.tabs,.level-tabs,.status-tabs{
+  background:#fff !important;border-color:#E2E8F0 !important;box-shadow:0 2px 4px rgba(15,23,42,.04) !important;
+}
+.sector-tab,.eval-tab,.tab,.level-tab,.status-tab{color:#475569 !important;}
+.sector-tab:hover,.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover{color:#172033 !important;background:#F4F7FB !important;}
+thead tr{background:#F8FAFC !important;}
+tbody tr:hover{background:#F8FAFC !important;}
+.btn-cancel,.btn-icon,.btn-back{background:#fff !important;color:#172033 !important;border-color:#CBD5E1 !important;}
+.empty-state,.empty-cta{color:#475569 !important;}
+::-webkit-scrollbar-track{background:#fff;}
+::-webkit-scrollbar-thumb{background:#CBD5E1;border:2px solid #fff;}
+body{padding:28px !important;}
+
+/* ── SHARP LIGHT ADMIN UI ── */
+html { background:#F8FAFC; }
+body {
+  color:#0F172A !important;
+  background:#F8FAFC !important;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+h1,h2,h3,h4,h5,h6 { color:#0F172A; letter-spacing:-.01em; }
+p, .subtitle, .description, .helper, .muted, small { color:#475569; }
+label, th { color:#334155; font-weight:600; }
+td { color:#0F172A; }
+input, select, textarea {
+  color:#0F172A;
+  background:#FFFFFF;
+  border-color:#CBD5E1;
+}
+input::placeholder, textarea::placeholder { color:#94A3B8; }
+.card, .panel, .section, .table-card, .content-card {
+  border-color:#CBD5E1;
+  box-shadow:0 4px 14px rgba(15,23,42,.07);
+}
+button, .btn { font-weight:700; }
+a { color:inherit; }
 </style></head><body>
 <div class="cert">
     <h1>Certificate of Rating</h1>
@@ -197,7 +250,7 @@ body{font-family:'DM Sans',sans-serif;background:#0A192F;color:#E0E6F0;padding:4
         Issued by <?= htmlspecialchars($issuer['full_name'] ?? 'Unknown') ?> on <?= date('F d, Y', strtotime($cert['issued_at'])) ?>
     </div>
 </div>
-<div class="no-print"><button class="btn" onclick="window.print()">Print / Save PDF</button> <a href="admin_dashboard.php" class="btn" style="background:#172A45;display:inline-block;text-decoration:none;">Back to Dashboard</a></div>
+<div class="no-print"><button class="btn" onclick="window.print()">Print / Save PDF</button> <a href="admin_dashboard.php" class="btn" style="background:#FFFFFF;color:#0F172A;display:inline-block;text-decoration:none;">Back to Dashboard</a></div>
 </body></html>
 <?php exit; }
 
@@ -213,7 +266,7 @@ if ($res) $people = $res->fetch_all(MYSQLI_ASSOC);
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
-:root{--dark:#0A192F;--mid:#172A45;--inner:#0F1F3D;--gold-h:#F59E0B;--light:#E0E6F0;--muted:#A0B3C6;--border:rgba(255,255,255,.08);}
+:root{--dark:#F8FAFC;--mid:#FFFFFF;--inner:#F1F5F9;--gold-h:#F59E0B;--light:#0F172A;--muted:#475569;--border:rgba(15,23,42,.12);}
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);padding:28px;}
 .page-title{font-family:'Rajdhani',sans-serif;font-size:26px;font-weight:700;margin-bottom:4px;}
@@ -228,13 +281,38 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .name{font-weight:700;font-size:14px;}
 .desig{font-size:12px;color:var(--muted);}
 .bar-wrap{width:160px;}
-.bar-bg{height:6px;background:rgba(255,255,255,.08);border-radius:3px;overflow:hidden;}
+.bar-bg{height:6px;background:rgba(15,23,42,.12);border-radius:3px;overflow:hidden;}
 .bar-fill{height:100%;border-radius:3px;}
 .pct{font-size:12px;color:var(--muted);margin-top:4px;}
 .btn{padding:9px 16px;border-radius:8px;font-size:12px;font-weight:700;border:none;cursor:pointer;text-decoration:none;display:inline-block;}
 .btn-generate{background:#2B6CB0;color:#fff;}
 .btn-disabled{background:var(--inner);color:var(--muted);border:1px solid var(--border);cursor:not-allowed;}
 .btn-view{background:rgba(74,222,128,.15);color:#4ade80;border:1px solid rgba(74,222,128,.3);}
+
+/* ── SHARP LIGHT ADMIN UI ── */
+html { background:#F8FAFC; }
+body {
+  color:#0F172A !important;
+  background:#F8FAFC !important;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+h1,h2,h3,h4,h5,h6 { color:#0F172A; letter-spacing:-.01em; }
+p, .subtitle, .description, .helper, .muted, small { color:#475569; }
+label, th { color:#334155; font-weight:600; }
+td { color:#0F172A; }
+input, select, textarea {
+  color:#0F172A;
+  background:#FFFFFF;
+  border-color:#CBD5E1;
+}
+input::placeholder, textarea::placeholder { color:#94A3B8; }
+.card, .panel, .section, .table-card, .content-card {
+  border-color:#CBD5E1;
+  box-shadow:0 4px 14px rgba(15,23,42,.07);
+}
+button, .btn { font-weight:700; }
+a { color:inherit; }
 </style></head><body>
 <a href="admin_dashboard.php" class="back-btn"><i class="fa-solid fa-arrow-left"></i> Back to Dashboard</a>
 <div class="page-title">Certification of Ratings</div>
