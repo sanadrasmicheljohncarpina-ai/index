@@ -261,31 +261,31 @@ foreach ($questions as $q) { $questionGroups[$q['category'] ?: 'General'][] = $q
 <title>Evaluate <?= e($target['full_name']) ?> — PBI</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
-:root{--bg:#102238;--panel:#18314e;--panel2:#203d5f;--inner:#0F1F3D;--line:#315273;--text:#edf4fb;--muted:#aebfd0;--purple:#8b5cf6;--purple-dark:#6d3fd6;--green:#34d399;--shadow:0 8px 32px rgba(0,0,0,.35)}
+:root{--bg:#F8FAFC;--panel:#FFFFFF;--panel2:#EFF6FF;--inner:#F8FAFC;--line:#CBD5E1;--text:#172033;--muted:#475569;--purple:#3B82F6;--purple-dark:#2563EB;--green:#059669;--shadow:0 2px 4px rgba(15,23,42,.04),0 6px 16px rgba(15,23,42,.06)}
 *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif}
-.top{height:74px;background:#203d5f;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 34px;gap:26px;position:sticky;top:0;z-index:5}
-.brand{font-weight:800;letter-spacing:.4px;flex:1}.brand i{color:var(--purple);margin-right:9px}
+.top{height:74px;background:#FFFFFF;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 34px;gap:26px;position:sticky;top:0;z-index:5}
+.brand{font-weight:800;letter-spacing:.4px;flex:1;color:var(--text)}.brand i{color:var(--purple);margin-right:9px}
 .account{color:var(--muted);font-size:13px}
 .wrap{max-width:820px;margin:auto;padding:34px}
-.back-link{color:var(--text);font-size:13.5px;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:8px;margin-bottom:20px;background:var(--panel2);border:1px solid var(--line);padding:10px 16px;border-radius:9px}
-.back-link:hover{border-color:#4a6d92;background:var(--panel)}
+.back-link{color:var(--text);font-size:13.5px;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:8px;margin-bottom:20px;background:var(--panel);border:1px solid var(--line);padding:10px 16px;border-radius:9px}
+.back-link:hover{border-color:#93C5FD;background:var(--panel2)}
 .person-card{display:flex;align-items:center;gap:16px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;box-shadow:var(--shadow);margin-bottom:22px}
 .person-photo{width:60px;height:60px;border-radius:50%;object-fit:cover;background:var(--inner);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:22px}
-.person-name{font-size:20px;font-weight:800;color:#fff}
+.person-name{font-size:20px;font-weight:800;color:var(--text)}
 .person-meta{font-size:12.5px;color:var(--muted);margin-top:2px}
-.badge{display:inline-block;margin-top:6px;color:#c4b5fd;font-size:11.5px;background:rgba(139,92,246,.14);padding:4px 10px;border-radius:99px;font-weight:700}
+.badge{display:inline-block;margin-top:6px;color:var(--purple);font-size:11.5px;background:#EFF6FF;padding:4px 10px;border-radius:99px;font-weight:700}
 .alert{border-radius:10px;padding:13px 16px;font-size:13.5px;margin-bottom:18px;display:flex;align-items:center;gap:8px}
 .alert-error{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.25);color:#ffb4b4}
-.alert-info{background:rgba(139,92,246,.1);border:1px solid rgba(139,92,246,.3);color:#c4b5fd}
+.alert-info{background:#EFF6FF;border:1px solid #BFDBFE;color:#2563EB}
 .q-block{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;box-shadow:var(--shadow);margin-bottom:16px}
-.q-cat{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#c4b5fd;margin-bottom:6px}
+.q-cat{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--purple);margin-bottom:6px}
 .q-text{font-size:14.5px;color:var(--text);margin-bottom:14px}
 .rating-row{display:flex;gap:10px}
 .rating-opt{flex:1;text-align:center}
 .rating-opt input{display:none}
 .rating-opt label{display:block;padding:10px 0;border-radius:8px;border:1px solid var(--line);background:var(--inner);color:var(--muted);font-size:13px;font-weight:700;cursor:pointer}
 .rating-opt input:checked + label{background:var(--purple);border-color:var(--purple);color:#fff}
-.rating-opt label:hover{border-color:#c4b5fd}
+.rating-opt label:hover{border-color:#93C5FD}
 .rating-readonly{display:flex;align-items:center;gap:6px}
 .rating-readonly .stars{color:#c4b5fd}
 .comment-block{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;box-shadow:var(--shadow);margin-bottom:22px}
@@ -296,7 +296,7 @@ foreach ($questions as $q) { $questionGroups[$q['category'] ?: 'General'][] = $q
 .btn-submit{padding:13px 26px;background:var(--purple);border:none;border-radius:10px;color:#fff;font-size:14.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
 .btn-submit:hover{background:var(--purple-dark)}
 .summary-score{display:flex;align-items:baseline;gap:8px;margin-bottom:4px}
-.summary-score .num{font-size:32px;font-weight:800;color:#fff}
+.summary-score .num{font-size:32px;font-weight:800;color:var(--text)}
 .summary-score .of{font-size:13px;color:var(--muted)}
 @media(max-width:900px){.top{padding:0 18px}.wrap{padding:20px}.rating-row{flex-wrap:wrap}.rating-opt{min-width:50px}}
 </style>
@@ -348,7 +348,7 @@ foreach ($questions as $q) { $questionGroups[$q['category'] ?: 'General'][] = $q
         <p class="comment-readonly"><?= $existingTracker['remarks'] !== '' ? e($existingTracker['remarks']) : 'No written comment.' ?></p>
     </div>
 <?php elseif (!$questions): ?>
-    <div class="alert alert-info"><i class="fa-solid fa-circle-info"></i> No EA questions have been assigned yet. Configure them in <a style="color:#c4b5fd" href="questionnaire.php?eval_type=ea">Manage Questions</a>.</div>
+    <div class="alert alert-info"><i class="fa-solid fa-circle-info"></i> No EA questions have been assigned yet. Refresh this page to seed the default question set, or edit <code>$eaQuestionSets</code> in <code>ea_evaluate.php</code> to customize it — the "Manage Questions" screen doesn't support EA question sets yet.</div>
 <?php else: ?>
     <form method="post">
         <?php foreach ($questionGroups as $cat => $qs): foreach ($qs as $i => $q): ?>

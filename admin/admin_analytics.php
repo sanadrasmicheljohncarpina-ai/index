@@ -70,9 +70,9 @@ if (!in_array($activeEval, ['student','multi_role','peer','schoolhead'])) $activ
 // "School Head" is Dean + Principal combined — both evaluate teacher/staff
 // performance, but each writes evaluation_tracker rows under its own
 // eval_type value (dean submissions: 'dean'; principal submissions:
-// 'supervisor_to_teacher' / 'supervisor_to_staff' / 'supervisor_to_ea').
+// 'supervisor_to_teacher' / 'supervisor_to_staff' / 'upward_to_ea').
 // This groups all four under one admin-facing tab.
-$schoolheadTypes = ['dean','supervisor_to_teacher','supervisor_to_staff','supervisor_to_ea'];
+$schoolheadTypes = ['dean','supervisor_to_teacher','supervisor_to_staff','upward_to_ea'];
 
 // Build SQL literals only from a closed set of server-defined values.
 // This avoids unquoted identifiers such as `student` ever reaching MySQL
@@ -891,7 +891,7 @@ $res = $mysqli->query("
     LEFT JOIN questionnaire_answers qa ON qa.tracker_id=et.id
     LEFT JOIN analytics_archive aa ON aa.target_user_id=u.id
     WHERE $whereRole AND u.is_active=1
-      AND (aa.id IS NULL OR $activeEval='multi_role')
+      AND (aa.id IS NULL OR " . ($activeEval === 'multi_role' ? '1=1' : '0=1') . ")
     GROUP BY u.id
     ORDER BY avg_score DESC, u.full_name ASC
 ");

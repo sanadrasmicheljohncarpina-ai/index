@@ -206,7 +206,10 @@
         $ea_questions = [];
         $ea_already_done = false;
         if (in_array($page, ['ea_eval','ea_eval_form'], true) && $ea_target) {
-            $eaFormStmt = $mysqli->prepare("SELECT id, title FROM questionnaire_forms WHERE eval_type='supervisor_to_ea' AND is_active=1 ORDER BY id DESC LIMIT 1");
+            // 'upward_to_ea': Staff evaluating the EA (Super Admin, the
+            // highest-privilege role) is an upward review, not a
+            // supervisor-to-subordinate one — see principal_evaluate.php.
+            $eaFormStmt = $mysqli->prepare("SELECT id, title FROM questionnaire_forms WHERE eval_type='upward_to_ea' AND is_active=1 ORDER BY id DESC LIMIT 1");
             if ($eaFormStmt) {
                 $eaFormStmt->execute();
                 $ea_form = $eaFormStmt->get_result()->fetch_assoc();
@@ -220,7 +223,7 @@
                 $q->close();
             }
             if ($period) {
-                $d = $mysqli->prepare("SELECT id FROM evaluation_tracker WHERE evaluator_id=? AND target_user_id=? AND period_id=? AND eval_type='supervisor_to_ea' AND status='submitted' LIMIT 1");
+                $d = $mysqli->prepare("SELECT id FROM evaluation_tracker WHERE evaluator_id=? AND target_user_id=? AND period_id=? AND eval_type='upward_to_ea' AND status='submitted' LIMIT 1");
                 $d->bind_param('iii', $user_id, $ea_target['id'], $period['id']);
                 $d->execute();
                 $ea_already_done = (bool)$d->get_result()->fetch_assoc();
@@ -374,7 +377,7 @@
                 $overallScore = $count ? round($sum / $count, 2) : null;
                 $mysqli->begin_transaction();
                 try {
-                    $ins=$mysqli->prepare("INSERT INTO evaluation_tracker (evaluator_id,target_user_id,form_id,period_id,score,remarks,eval_type,status,submitted_at) VALUES (?,?,?,?,?,?,'supervisor_to_ea','submitted',NOW())");
+                    $ins=$mysqli->prepare("INSERT INTO evaluation_tracker (evaluator_id,target_user_id,form_id,period_id,score,remarks,eval_type,status,submitted_at) VALUES (?,?,?,?,?,?,'upward_to_ea','submitted',NOW())");
                     $formId=(int)$ea_form['id']; $periodId=(int)$period['id'];
                     $ins->bind_param('iiiids',$user_id,$tid,$formId,$periodId,$overallScore,$comments);
                     $ins->execute(); $trackerId=$mysqli->insert_id; $ins->close();
@@ -1431,7 +1434,7 @@ $tracker_id = $mysqli->insert_id; $trk->close();
                             <?php
                             $done = false; $last_eval = null;
                             if ($period) {
-                                $chk=$mysqli->prepare("SELECT submitted_at FROM evaluation_tracker WHERE evaluator_id=? AND target_user_id=? AND period_id=? AND eval_type='supervisor_to_ea' AND status='submitted' ORDER BY submitted_at DESC LIMIT 1");
+                                $chk=$mysqli->prepare("SELECT submitted_at FROM evaluation_tracker WHERE evaluator_id=? AND target_user_id=? AND period_id=? AND eval_type='upward_to_ea' AND status='submitted' ORDER BY submitted_at DESC LIMIT 1");
                                 $chk->bind_param('iii',$user_id,$ea['id'],$period['id']);
                                 $chk->execute();
                                 $doneRow=$chk->get_result()->fetch_assoc();

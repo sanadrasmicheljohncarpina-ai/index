@@ -52,14 +52,23 @@ require_once '../shared/EvaluationContextService.php';
     // category name already exists under Staff) are dropped rather than
     // left orphaned. Idempotent: after the first run there is nothing left
     // tagged 'Non-Teaching Staff', so this is a cheap no-op afterwards.
-    $mysqli->query("UPDATE IGNORE user_questions SET target_type='Staff' WHERE target_type='Non-Teaching Staff'");
-    $mysqli->query("DELETE FROM user_questions WHERE target_type='Non-Teaching Staff'");
-    $mysqli->query("UPDATE IGNORE user_question_categories SET target_type='Staff' WHERE target_type='Non-Teaching Staff'");
-    $mysqli->query("DELETE FROM user_question_categories WHERE target_type='Non-Teaching Staff'");
-    $mysqli->query("UPDATE IGNORE question_categories SET target_type='Staff' WHERE target_type='Non-Teaching Staff'");
-    $mysqli->query("DELETE FROM question_categories WHERE target_type='Non-Teaching Staff'");
-    $mysqli->query("UPDATE IGNORE evaluation_questions SET target_type='Staff' WHERE target_type='Non-Teaching Staff'");
-    $mysqli->query("DELETE FROM evaluation_questions WHERE target_type='Non-Teaching Staff'");
+    //
+    // Scoped to eval_type NOT IN ('ea'): admin/ea_evaluate.php deliberately
+    // seeds user_questions rows with target_type='Non-Teaching Staff' AND
+    // eval_type='ea' (the EA's own question set for evaluating Non-Teaching
+    // Staff — a real, current feature, unrelated to the retired Student/
+    // Peer 'Non-Teaching Staff' tab this migration targets). Without this
+    // guard, simply opening this page renamed those rows to target_type=
+    // 'Staff' while leaving eval_type='ea' — invisible to ea_evaluate.php's
+    // lookup, which then re-seeded fresh duplicate defaults on every visit.
+    $mysqli->query("UPDATE IGNORE user_questions SET target_type='Staff' WHERE target_type='Non-Teaching Staff' AND eval_type != 'ea'");
+    $mysqli->query("DELETE FROM user_questions WHERE target_type='Non-Teaching Staff' AND eval_type != 'ea'");
+    $mysqli->query("UPDATE IGNORE user_question_categories SET target_type='Staff' WHERE target_type='Non-Teaching Staff' AND eval_type != 'ea'");
+    $mysqli->query("DELETE FROM user_question_categories WHERE target_type='Non-Teaching Staff' AND eval_type != 'ea'");
+    $mysqli->query("UPDATE IGNORE question_categories SET target_type='Staff' WHERE target_type='Non-Teaching Staff' AND eval_type != 'ea'");
+    $mysqli->query("DELETE FROM question_categories WHERE target_type='Non-Teaching Staff' AND eval_type != 'ea'");
+    $mysqli->query("UPDATE IGNORE evaluation_questions SET target_type='Staff' WHERE target_type='Non-Teaching Staff' AND eval_type != 'ea'");
+    $mysqli->query("DELETE FROM evaluation_questions WHERE target_type='Non-Teaching Staff' AND eval_type != 'ea'");
 
     // ── SEED DEFAULT CATEGORIES (shared pool) ────────────────────
     $cat_count = $mysqli->query("SELECT COUNT(*) as c FROM question_categories WHERE eval_type='student' AND target_type IN ('Teacher','Staff')")->fetch_assoc()['c'];

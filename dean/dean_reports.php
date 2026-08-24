@@ -92,9 +92,9 @@ if (!in_array($activeEval, ['student','multi_role','peer','schoolhead'])) $activ
 // "School Head" is Dean + Principal combined — both evaluate teacher/staff
 // performance, but each writes evaluation_tracker rows under its own
 // eval_type value (dean submissions: 'dean'; principal submissions:
-// 'supervisor_to_teacher' / 'supervisor_to_staff' / 'supervisor_to_ea').
+// 'supervisor_to_teacher' / 'supervisor_to_staff' / 'upward_to_ea').
 // This groups all four under one admin-facing tab.
-$schoolheadTypes    = ['dean','supervisor_to_teacher','supervisor_to_staff','supervisor_to_ea'];
+$schoolheadTypes    = ['dean','supervisor_to_teacher','supervisor_to_staff','upward_to_ea'];
 $schoolheadTypesSql = "'" . implode("','", array_map([$mysqli,'real_escape_string'], $schoolheadTypes)) . "'";
 $evalTypeSql = match ($activeEval) {
     // Multi-Role is primarily identified by the explicit evaluation_context.

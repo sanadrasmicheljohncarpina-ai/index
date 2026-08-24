@@ -175,6 +175,7 @@ if ($summaryRes) {
 ?>
 
 <style>
+@import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
 .et-wrap{width:100%;box-sizing:border-box;color:#f5f8ff;font-family:Arial,Helvetica,sans-serif;padding:18px 22px 30px;background:#F8FAFC;border-radius:0;min-height:100%;}
 .et-head{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:18px}.et-title{display:flex;align-items:center;gap:10px;font-size:18px;font-weight:700}.et-title-icon{width:34px;height:34px;border:1px solid #3478d1;border-radius:8px;display:grid;place-items:center;color:#3d91ff}.et-sub{font-size:12px;color:#aebfd6;margin-top:6px}.et-updated{font-size:12px;color:#c2d0e2;white-space:nowrap;padding-top:8px}.et-updated span{color:#4e9cff;margin-right:5px}.et-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px}.et-card{background:#21466f;border:1px solid #315b87;border-radius:12px;padding:18px 20px;box-sizing:border-box}.et-card-top{display:flex;justify-content:space-between;align-items:center}.et-card-label{font-size:11px;text-transform:uppercase;color:#b7c6d8;font-weight:700;letter-spacing:.5px}.et-card-number{font-size:30px;font-weight:700;margin-top:8px}.et-card-icon{width:36px;height:36px;border:1px solid #3175cc;border-radius:8px;display:grid;place-items:center;color:#4c98ff}.et-card-line{height:1px;background:#315b87;margin:15px 0 11px}.et-card-foot{font-size:12px;color:#c0cee0}.et-card-foot b{font-weight:400}.et-card-foot .done{color:#8dc0ff}.et-card-foot .sep{margin:0 8px;color:#667f9c}.et-controls{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}.et-levels{display:flex;gap:8px;flex-wrap:wrap}.et-btn{border:1px solid #315b87;background:#21466f;color:#cbd8e8;border-radius:8px;padding:10px 15px;font-size:12px;text-decoration:none;display:inline-block}.et-btn.active{background:#3283ef;border-color:#3283ef;color:white}.et-right{display:flex;gap:8px;align-items:center}.et-select,.et-search{border:1px solid #315b87;background:#21466f;color:#dce6f2;border-radius:8px;padding:10px 12px;font-size:12px;outline:none}.et-search{width:230px}.et-table{border:1px solid #315b87;background:#21466f;border-radius:12px;overflow:hidden}.et-table table{width:100%;border-collapse:collapse;table-layout:fixed}.et-table th{height:48px;text-align:left;padding:0 20px;font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:#9fb2c9;background:#20456e;border-bottom:1px solid #315b87}.et-table td{padding:15px 20px;border-bottom:1px solid #315b87;font-size:13px;color:#edf3fb;vertical-align:middle}.et-table tr:last-child td{border-bottom:0}.et-student{display:flex;align-items:center;gap:12px}.et-avatar{width:38px;height:38px;border-radius:50%;background:#183b62;border:1px solid #315b87;display:grid;place-items:center;overflow:hidden;flex:none}.et-avatar img{width:100%;height:100%;object-fit:cover}.et-avatar svg{width:17px;height:17px;fill:#9eb5ce}.et-name{font-weight:700}.et-mini{font-size:10px;color:#8fa7c0;margin-top:4px}.et-level-pill{display:inline-block;padding:5px 11px;border-radius:14px;font-size:11px;font-weight:600;border:1px solid}.lvl-col{color:#31d6c2;border-color:#198f8c;background:rgba(25,143,140,.13)}.lvl-jhs{color:#4b91ff;border-color:#2869c4;background:rgba(40,105,196,.13)}.lvl-shs{color:#ff3fa5;border-color:#a62975;background:rgba(166,41,117,.12)}.et-status{display:inline-block;padding:7px 12px;border-radius:15px;font-size:10px;font-weight:700}.st-completed{color:#52e49a;background:#123d2b}.st-progress{color:#f4ad21;background:#4b3509}.st-start{color:#b4c2d3;background:#18314d}.et-progress{display:flex;align-items:center;gap:10px}.et-progress-text{min-width:28px;font-size:11px;color:#dce6f2}.et-bar{height:6px;background:#142b45;border-radius:8px;overflow:hidden;flex:1;min-width:90px}.et-fill{height:100%;border-radius:8px;background:#ffab1f}.et-arrow{font-size:22px;color:#a5b9d0;text-align:right}.et-empty{padding:40px;text-align:center;color:#9fb2c9}.et-note{font-size:10px;color:#8098b3;margin-top:8px}@media(max-width:900px){.et-cards{grid-template-columns:1fr}.et-controls{align-items:stretch;flex-direction:column}.et-right{width:100%}.et-search{width:100%}.et-table{overflow-x:auto}.et-table table{min-width:900px}}
 
@@ -221,7 +222,33 @@ tbody tr:hover{background:#F8FAFC !important;}
 .et-table td{border-color:#E2E8F0 !important;color:#334155 !important;}
 .et-search,.et-select{background:#fff !important;color:#172033 !important;border-color:#CBD5E1 !important;}
 .et-empty{background:#F8FAFC !important;color:#475569 !important;border-color:#E2E8F0 !important;}
-.et-progress{background:#E2E8F0 !important;}
+.et-progress{background:transparent !important;}
+
+/* Student Tracker — readable light surfaces with color-coded visual cues. */
+.et-title-icon{background:#EFF6FF;border-color:#93C5FD !important;color:#2563EB !important;}
+.et-card{border-top:3px solid #3B82F6 !important;}
+.et-card-junior_high{border-top-color:#3B82F6 !important;}
+.et-card-senior_high{border-top-color:#7C3AED !important;}
+.et-card-college{border-top-color:#0D9488 !important;}
+.et-card-icon{background:#EFF6FF;border-color:#BFDBFE !important;color:#3B82F6 !important;}
+.et-card-senior_high .et-card-icon{background:#F5F3FF;border-color:#DDD6FE !important;color:#7C3AED !important;}
+.et-card-college .et-card-icon{background:#F0FDFA;border-color:#99F6E4 !important;color:#0D9488 !important;}
+.et-card-line{background:#E2E8F0 !important;}
+.et-card-foot{color:#475569 !important;}
+.et-card-foot .done{color:#059669 !important;font-weight:700;}
+.et-card-foot .sep{color:#94A3B8 !important;}
+.et-btn{background:#FFFFFF !important;border-color:#CBD5E1 !important;color:#334155 !important;font-weight:700;}
+.et-btn:hover{background:#EFF6FF !important;border-color:#93C5FD !important;color:#2563EB !important;}
+.et-btn.active{background:#3B82F6 !important;border-color:#3B82F6 !important;color:#FFFFFF !important;}
+.et-avatar{background:#EFF6FF !important;border-color:#BFDBFE !important;}
+.et-avatar svg{fill:#3B82F6 !important;}
+.et-level-pill{font-weight:700;}
+.st-start{color:#475569 !important;background:#F1F5F9 !important;}
+.st-progress{color:#B45309 !important;background:#FFFBEB !important;}
+.st-completed{color:#047857 !important;background:#ECFDF5 !important;}
+.et-bar{background:#E2E8F0 !important;}
+.et-fill{background:#3B82F6 !important;}
+.et-arrow{color:#3B82F6 !important;font-weight:700;}
 
 
 /* ── SHARP LIGHT ADMIN UI ── */

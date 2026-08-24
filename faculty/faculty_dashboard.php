@@ -192,8 +192,8 @@ function eval_type_label($eval_type, $peer_group = null) {
         case 'faculty_peer':          return 'Peer Evaluation' . ($peer_group ? ' (' . $peer_group . ')' : '');
         case 'school_head':           return 'School Head Evaluation';
         case 'supervisor_to_teacher':
-        case 'supervisor_to_staff':
-        case 'supervisor_to_ea':      return 'Supervisor Evaluation';
+        case 'supervisor_to_staff':                              return 'Supervisor Evaluation';
+        case 'upward_to_ea':                                     return 'Executive Assistant Review';
         default:                      return ucwords(str_replace('_', ' ', $eval_type ?: 'Evaluation'));
     }
 }

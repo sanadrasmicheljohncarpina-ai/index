@@ -48,6 +48,15 @@ function display_role($role) {
     return $map[$role] ?? ucfirst($role);
 }
 
+// Executive Assistants and Admins share this workspace.  The interface stays
+// the same because their tools overlap, while the displayed context reflects
+// the account that is currently signed in.
+$isExecutiveAssistant = ($_SESSION['role'] ?? '') === 'superadmin';
+$workspaceTitle = $isExecutiveAssistant ? 'Executive Assistant Workspace' : 'Administrative Workspace';
+$workspaceSubtitle = $isExecutiveAssistant
+    ? 'Manage assigned evaluation operations, personnel, and reporting.'
+    : 'Manage evaluation operations, personnel, and reporting.';
+
 // Live counts
 $totalUsers  = 0; $activeEvals = 0;
 $eq = $mysqli->query("SELECT COUNT(*) as c FROM evaluation_tracker"); if ($eq) $activeEvals = (int)$eq->fetch_assoc()['c'];
@@ -409,7 +418,7 @@ $HEALTH_ITEMS = [
         box-shadow:0 0 8px rgba(59,130,246,.6);
         overflow:hidden;display:flex;align-items:center;justify-content:center;
         background:var(--blue-accent);flex-shrink:0;
-        font-size:16px;font-weight:700;color:#172033;letter-spacing:.5px;
+        font-size:16px;font-weight:700;color:#FFFFFF;letter-spacing:.5px;
         transition:box-shadow .2s,border-color .2s;
     }
     .brand-avatar:hover{box-shadow:0 0 14px rgba(59,130,246,.9);border-color:#2563EB;}
@@ -420,7 +429,7 @@ $HEALTH_ITEMS = [
         width:16px;height:16px;border-radius:50%;
         background:var(--blue-accent);border:2px solid #FFFFFF;
         display:flex;align-items:center;justify-content:center;
-        font-size:8px;color:#172033;pointer-events:none;
+        font-size:8px;color:#FFFFFF;pointer-events:none;
     }
 
     .brand-text{display:flex;flex-direction:column;gap:2px;}
@@ -440,14 +449,14 @@ $HEALTH_ITEMS = [
     .profile-dropdown.show{opacity:1;visibility:visible;transform:translateY(0);}
     .pd-head{
         padding:16px 16px 14px;display:flex;align-items:center;gap:11px;
-        background:linear-gradient(135deg,rgba(59,130,246,.2),rgba(22,48,79,.3));
-        border-bottom:1px solid rgba(255,255,255,.07);
+        background:linear-gradient(135deg,#EFF6FF,#F8FAFC);
+        border-bottom:1px solid #DBEAFE;
     }
     .pd-head-avatar{
         width:46px;height:46px;border-radius:50%;overflow:hidden;flex-shrink:0;
         border:2px solid var(--blue-accent);
         background:var(--blue-accent);display:flex;align-items:center;justify-content:center;
-        font-size:16px;font-weight:700;color:#172033;
+        font-size:16px;font-weight:700;color:#FFFFFF;
     }
     .pd-head-avatar img{width:100%;height:100%;object-fit:cover;display:block;}
     .pd-head-name{font-size:13px;font-weight:700;color:#172033;line-height:1.3;}
@@ -476,13 +485,8 @@ $HEALTH_ITEMS = [
     .indicator{position:absolute;top:0;left:0;width:0;height:100%;background:var(--indicator-bg);border-radius:var(--radius);transition:transform .3s cubic-bezier(.25,.46,.45,.94),width .3s cubic-bezier(.25,.46,.45,.94);z-index:0;opacity:0;pointer-events:none;}
     .nav-item{display:flex;align-items:center;justify-content:center;gap:9px;color:#172033;font-size:13.5px;font-weight:650;padding:9px 15px;margin:0;border-radius:var(--radius);transition:all .2s ease;position:relative;z-index:1;white-space:nowrap;}
     .nav-item .icon{width:16px;text-align:center;font-size:15px;transition:color .2s ease,transform .2s ease;}
-    /* Distinct icon colors keep the light navigation lively while the labels stay dark and highly readable. */
-    #link-dashboard .icon{color:#2563EB;} /* Dashboard */
-    #link-reports .icon{color:#7C3AED;} /* Questionnaire */
-    [id="link-add Users"] .icon{color:#0F766E;} /* Add Personnel */
-    #link-analytics .icon{color:#059669;} /* Reports & Analytics */
-    #link-registrations .icon{color:#D97706;} /* Manage Registrations */
-    #link-tracker .icon{color:#4F46E5;} /* Evaluation Tracker */
+    /* One primary color keeps navigation, icons, and controls cohesive on the white workspace. */
+    .nav-item .icon{color:var(--blue-accent);}
     .nav-item:hover{color:#0F172A;background:#F1F5FF;}
     .nav-item:hover .icon{transform:translateY(-1px);}
     .nav-item.active{color:#172033;font-weight:750;background:#E8F0FE;}
@@ -507,41 +511,41 @@ $HEALTH_ITEMS = [
 
     /* ── NOTIFICATION BELL ── */
     .notif-wrap{position:relative;display:flex;align-items:center;margin-left:4px;}
-    .notif-btn{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:15px;cursor:pointer;transition:all .2s;position:relative;}
-    .notif-btn:hover,.notif-btn.has-unread{color:#EBCB8B;border-color:rgba(235,203,139,.4);background:rgba(235,203,139,.08);}
+    .notif-btn{width:36px;height:36px;border-radius:50%;background:#F8FAFC;border:1px solid #E2E8F0;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:15px;cursor:pointer;transition:all .2s;position:relative;}
+    .notif-btn:hover,.notif-btn.has-unread{color:var(--blue-accent);border-color:#BFDBFE;background:#EFF6FF;}
     .notif-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;border-radius:9px;background:#BF616A;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px;border:2px solid #FFFFFF;opacity:0;transform:scale(0);transition:opacity .2s,transform .2s;pointer-events:none;}
     .notif-badge.show{opacity:1;transform:scale(1);}
 
     /* Notification panel — fixed so it never breaks layout */
     .notif-dropdown{
         position:fixed;top:70px;right:16px;width:320px;
-        background:var(--blue-mid);border:1px solid rgba(255,255,255,.1);
-        border-radius:14px;box-shadow:0 16px 48px rgba(0,0,0,.6);
+        background:#FFFFFF;border:1px solid #E2E8F0;
+        border-radius:14px;box-shadow:0 16px 48px rgba(15,23,42,.14);
         opacity:0;visibility:hidden;transform:translateY(-8px);
         transition:all .25s cubic-bezier(.22,1,.36,1);z-index:9998;overflow:hidden;
     }
     .notif-dropdown.show{opacity:1;visibility:visible;transform:translateY(0);}
-    .notif-header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.07);}
+    .notif-header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #E2E8F0;}
     .notif-header-title{font-size:13px;font-weight:700;color:#172033;display:flex;align-items:center;gap:7px;}
     .notif-mark-read{font-size:11px;color:var(--blue-accent);cursor:pointer;font-weight:600;background:none;border:none;font-family:'Inter',sans-serif;padding:0;}
     .notif-list{max-height:360px;overflow-y:auto;}
     .notif-list::-webkit-scrollbar{width:4px;}
-    .notif-list::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:4px;}
-    .notif-list::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.22);}
-    .notif-item{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-bottom:1px solid rgba(255,255,255,.05);position:relative;transition:background .15s;}
+    .notif-list::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:4px;}
+    .notif-list::-webkit-scrollbar-thumb:hover{background:#94A3B8;}
+    .notif-item{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-bottom:1px solid #F1F5F9;position:relative;transition:background .15s;}
     .notif-item:last-child{border-bottom:none;}
-    .notif-item:hover{background:rgba(255,255,255,.03);}
+    .notif-item:hover{background:#F8FAFC;}
     .notif-item.unread{background:rgba(59,130,246,.08);}
     .notif-item.unread::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--blue-accent);border-radius:0 2px 2px 0;}
     .notif-icon{width:30px;height:30px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;margin-top:1px;}
-    .notif-text{font-size:12px;color:var(--light);line-height:1.45;margin-bottom:3px;word-break:break-word;}
+    .notif-text{font-size:12px;color:var(--text-dark);line-height:1.45;margin-bottom:3px;word-break:break-word;}
     .notif-meta{font-size:11px;color:var(--muted);}
     .notif-dot{width:6px;height:6px;border-radius:50%;background:#81A1C1;flex-shrink:0;margin-top:4px;}
     .notif-empty{text-align:center;padding:32px 16px;color:var(--muted);font-size:13px;}
     .notif-empty i{font-size:28px;display:block;margin-bottom:8px;opacity:.2;}
-    .notif-footer{padding:9px 14px;border-top:1px solid rgba(255,255,255,.07);text-align:center;font-size:11px;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:8px;}
-    .live-dot{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#A3BE8C;font-weight:600;padding:2px 8px;border-radius:20px;background:rgba(163,190,140,.08);border:1px solid rgba(163,190,140,.2);}
-    .live-dot::before{content:'';width:6px;height:6px;border-radius:50%;background:#A3BE8C;display:inline-block;animation:livePulse 2s ease-in-out infinite;}
+    .notif-footer{padding:9px 14px;border-top:1px solid #E2E8F0;text-align:center;font-size:11px;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:8px;}
+    .live-dot{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#059669;font-weight:600;padding:2px 8px;border-radius:20px;background:#ECFDF5;border:1px solid #A7F3D0;}
+    .live-dot::before{content:'';width:6px;height:6px;border-radius:50%;background:#059669;display:inline-block;animation:livePulse 2s ease-in-out infinite;}
     @keyframes livePulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.8)}}
     @keyframes countFlash{0%{color:#172033}50%{color:#475569}100%{color:#172033}}
     .count-updated{animation:countFlash .6s ease;}
@@ -679,8 +683,10 @@ $HEALTH_ITEMS = [
 
     /* ── DASHBOARD (light card theme) ── */
     .pbi-dashboard-container{padding:30px 4px;}
+    .pbi-dashboard-heading{margin:0 0 30px;}
+    .pbi-dashboard-kicker{display:flex;align-items:center;gap:7px;margin:0 0 7px;color:var(--blue-accent);font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;}
     .pbi-system-title{font-size:24px;font-weight:700;margin:0 0 5px;color:var(--text-dark);}
-    .pbi-system-subtitle{font-size:14px;color:var(--text-dim);margin:0 0 30px;}
+    .pbi-system-subtitle{font-size:14px;color:var(--text-dim);margin:0;}
     /* ── STAT CARDS (top row) ── */
     .pbi-stats-row{display:flex;gap:18px;margin-bottom:22px;flex-wrap:wrap;}
     .pbi-stat-card{background:var(--card-bg);border:1px solid var(--card-border);border-top:3px solid var(--blue-accent);border-radius:12px;padding:18px 20px;flex:1;min-width:180px;position:relative;overflow:hidden;box-shadow:var(--card-shadow);transition:transform .2s ease,box-shadow .2s ease;}
@@ -739,7 +745,7 @@ $HEALTH_ITEMS = [
     .pbi-card{background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;padding:22px;min-width:200px;box-shadow:var(--card-shadow);flex:1;}
     .pbi-card-title{font-size:13px;font-weight:600;color:var(--text-dim);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px;}
     .pbi-card-value{font-size:32px;font-weight:700;color:var(--text-dark);}
-    .pbi-dashboard-grid{display:grid;grid-template-columns:2fr 1fr;gap:25px;}
+    .pbi-dashboard-grid{display:grid;grid-template-columns:1fr;gap:25px;}
     .pbi-section-box{border:1px solid var(--card-border);padding:20px;border-radius:12px;background:var(--card-bg);box-shadow:var(--card-shadow);}
     .pbi-section-heading{font-size:18px;font-weight:600;margin:0;color:var(--text-dark);}
     .pbi-section-head-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
@@ -835,7 +841,7 @@ $HEALTH_ITEMS = [
     }
     .pbi-dashboard-grid{
         width:100%;
-        grid-template-columns:minmax(0,2fr) minmax(300px,1fr);
+        grid-template-columns:1fr;
         gap:18px;
     }
     .pbi-section-box{
@@ -898,6 +904,7 @@ a { color:inherit; }
         <li><a href="#" id="link-registrations" onclick="showPage('registrations',this);return false;" class="nav-item"><i class="fa-solid fa-user-lock icon"></i> <span>Manage Registrations</span></a></li>
         <?php endif; ?>
         <li><a href="#" id="link-tracker" onclick="showPage('tracker',this);return false;" class="nav-item"><i class="fa-solid fa-user-check icon"></i> <span>Evaluation Tracker</span></a></li>
+        <li><a href="#" id="link-ea-eval" onclick="showPage('ea_eval',this);return false;" class="nav-item"><i class="fa-solid fa-user-tie icon"></i> <span><?= $isExecutiveAssistant ? 'My Evaluations' : 'EA Evaluations' ?></span></a></li>
     </ul>
 
     <!-- RIGHT: bell, divider, avatar + name + clock -->
@@ -1358,6 +1365,11 @@ a { color:inherit; }
 <div class="page-content">
     <div id="dashboard" class="page">
         <div class="pbi-dashboard-container">
+            <header class="pbi-dashboard-heading">
+                <p class="pbi-dashboard-kicker"><i class="fa-solid fa-shield-halved"></i> <?= htmlspecialchars(display_role($_SESSION['role'] ?? 'admin')) ?></p>
+                <h1 class="pbi-system-title"><?= htmlspecialchars($workspaceTitle) ?></h1>
+                <p class="pbi-system-subtitle"><?= htmlspecialchars($workspaceSubtitle) ?></p>
+            </header>
 
             <!-- ── STAT CARDS ── -->
             <div class="pbi-stats-row">
@@ -1472,75 +1484,6 @@ a { color:inherit; }
                         </table>
                     </div>
                 </div>
-                <div class="pbi-section-box">
-                    <h2 class="pbi-section-heading" style="margin-bottom:16px;">Quick Actions</h2>
-                    <div class="pbi-actions-stack">
-                        <button class="pbi-action-btn" onclick="openSettings('system')">
-                            <span class="pbi-action-icon"><i class="fa-solid fa-calendar-check"></i></span>
-                            <span class="pbi-action-text">
-                                <span class="pbi-action-title">Open Evaluation Period</span>
-                                <span class="pbi-action-sub">Open or close the evaluation period</span>
-                            </span>
-                            <i class="fa-solid fa-chevron-right"></i>
-                        </button>
-                        <button class="pbi-action-btn" onclick="showPage('personnel',document.getElementById('link-add Users'))">
-                            <span class="pbi-action-icon"><i class="fa-solid fa-user-plus"></i></span>
-                            <span class="pbi-action-text">
-                                <span class="pbi-action-title">Add New Employee</span>
-                                <span class="pbi-action-sub">Register a new faculty, staff or student</span>
-                            </span>
-                            <i class="fa-solid fa-chevron-right"></i>
-                        </button>
-                        <a class="pbi-action-btn" href="ea_evaluation.php">
-                            <span class="pbi-action-icon" style="background:#F1EBFE;color:#7C3AED;"><i class="fa-solid fa-user-check"></i></span>
-                            <span class="pbi-action-text">
-                                <span class="pbi-action-title">School Head &amp; Staff Evaluation</span>
-                                <span class="pbi-action-sub">EA evaluation for Dean, Principal &amp; non-teaching staff</span>
-                            </span>
-                            <i class="fa-solid fa-chevron-right"></i>
-                        </a>
-                        <button class="pbi-action-btn" onclick="showPage('personnel',document.getElementById('link-add Users'))">
-                            <span class="pbi-action-icon"><i class="fa-solid fa-file-import"></i></span>
-                            <span class="pbi-action-text">
-                                <span class="pbi-action-title">Import Users</span>
-                                <span class="pbi-action-sub">Import users in bulk (Excel/CSV)</span>
-                            </span>
-                            <i class="fa-solid fa-chevron-right"></i>
-                        </button>
-                        <button class="pbi-action-btn" onclick="showPage('analytics',document.getElementById('link-analytics'))">
-                            <span class="pbi-action-icon"><i class="fa-solid fa-chart-simple"></i></span>
-                            <span class="pbi-action-text">
-                                <span class="pbi-action-title">Generate Reports</span>
-                                <span class="pbi-action-sub">Generate summary or detailed reports</span>
-                            </span>
-                            <i class="fa-solid fa-chevron-right"></i>
-                        </button>
-                        <?php if (($_SESSION['role'] ?? '') === 'superadmin'): ?>
-                        <a class="pbi-action-btn" href="teaching_assignments.php">
-                            <span class="pbi-action-icon" style="background:#E4F7F0;color:#059669;"><i class="fa-solid fa-chalkboard-user"></i></span>
-                            <span class="pbi-action-text">
-                                <span class="pbi-action-title">Manage Teaching Assignments</span>
-                                <span class="pbi-action-sub">Assign teachers &amp; staff to sections</span>
-                            </span>
-                            <i class="fa-solid fa-chevron-right"></i>
-                        </a>
-                        <?php endif; ?>
-                        <div class="pbi-dropdown-container">
-                            <div class="pbi-action-btn" onclick="toggleRoleMenu()">
-                                <span class="pbi-action-icon" style="background:#F1EBFE;color:#7C3AED;"><i class="fa-solid fa-shuffle"></i></span>
-                                <span class="pbi-action-text">
-                                    <span class="pbi-action-title">Switch System Role</span>
-                                    <span class="pbi-action-sub">Change how you're viewing the system</span>
-                                </span>
-                                <i class="fa-solid fa-caret-down"></i>
-                            </div>
-                            <div class="pbi-dropdown-menu" id="quick-role-menu">
-                                <a href="#" class="pbi-dropdown-item" onclick="switchRole('admin');return false;"><i class="fa-solid fa-user-shield"></i> Master Admin View</a>
-                                <a href="#" class="pbi-dropdown-item" onclick="switchRole('evaluator');return false;"><i class="fa-solid fa-users-viewfinder"></i> Exit to Gateway Portal</a>
-                            </div>
-                        </div>
-                    </div>
-                </div>
             </div>
         </div>
     </div>
@@ -1550,6 +1493,7 @@ a { color:inherit; }
     <div id="analytics"     class="page"><iframe src="admin_analytics.php"            class="iframe-box"></iframe></div>
     <div id="registrations" class="page"><iframe src="manage_privileged_accounts.php" class="iframe-box" id="registrationsFrame"></iframe></div>
     <div id="tracker"       class="page"><iframe src="evaluation_tracker.php"        class="iframe-box"></iframe></div>
+    <div id="ea_eval"       class="page"><iframe src="ea_evaluation.php"             class="iframe-box"></iframe></div>
 </div>
 
 <script>
