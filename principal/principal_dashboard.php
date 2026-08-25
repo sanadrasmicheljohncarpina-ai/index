@@ -429,8 +429,6 @@ table.data tr:last-child td{border-bottom:none;}
 <main class="main">
     <div class="page-header">
         <div>
-            <div class="page-title">Welcome, <?= htmlspecialchars(explode(',', $me['full_name'] ?? 'Principal')[0]) ?></div>
-            <div class="page-sub">Pandan Bay Institute — <?= htmlspecialchars($scopeLabel) ?> Oversight</div>
         </div>
         <div class="period-badge <?= htmlspecialchars($settings['status']['cls']) ?>">
             <i class="fa-solid fa-calendar-check"></i>
@@ -520,119 +518,6 @@ table.data tr:last-child td{border-bottom:none;}
         </a>
     </div>
 
-    <?php if ($teacherCount === 0 && $staffCount === 0): ?>
-    <div class="stub-note">
-        <i class="fa-solid fa-plug-circle-exclamation"></i>
-        No approved &amp; active Teacher or Staff accounts found for your scope — check <code>account_status</code>/<code>is_active</code> and grade-level/year-level assignment in Manage Privileged Accounts.
-    </div>
-    <?php elseif (!$hasPeriod): ?>
-    <div class="stub-note">
-        <i class="fa-solid fa-clock-rotate-left"></i>
-        Rosters are live, but there's no active evaluation period from System &amp; Period settings yet — completion and participation figures stay at 0% until one is opened.
-    </div>
-    <?php endif; ?>
-
-    <!-- GRADE-LEVEL ANALYTICS -->
-    <div class="section">
-        <h2><i class="fa-solid fa-layer-group"></i> Grade-Level Analytics</h2>
-        <table class="data">
-            <thead><tr><th>Grade</th><th>Evaluation Completion</th><th>Participation Rate</th><th>Submission Progress</th><th>Average Performance</th></tr></thead>
-            <tbody>
-            <?php foreach ($gradeStats as $g): ?>
-                <tr>
-                    <td>Grade <?= htmlspecialchars($g['grade']) ?></td>
-                    <td style="min-width:140px;">
-                        <div class="bar-wrap"><div class="bar-fill" style="width:<?= $g['completion'] ?>%"></div></div>
-                        <span style="font-size:11px;color:var(--muted);"><?= $g['completion'] ?>%</span>
-                    </td>
-                    <td><?= $g['participation'] ?>%</td>
-                    <td><?= $g['submitted'] ?> / <?= $g['students'] ?> students</td>
-                    <td><?= $g['avg_performance'] !== null ? $g['avg_performance'] : '<span class="empty-note">N/A</span>' ?></td>
-                </tr>
-            <?php endforeach; ?>
-            </tbody>
-        </table>
-    </div>
-
-    <!-- TEACHER OVERVIEW -->
-    <div class="section">
-        <h2><i class="fa-solid fa-chalkboard-user"></i> Teacher Overview</h2>
-        <div class="two-col">
-            <div>
-                <h3 style="font-size:13px;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.4px;">Top Performing Teachers</h3>
-                <ul class="mini-list">
-                    <?php if (empty($topTeachers)): ?>
-                        <li class="empty-note">No rating data available yet.</li>
-                    <?php else: foreach ($topTeachers as $t): ?>
-                        <li><span class="name"><?= htmlspecialchars($t['name']) ?></span><span class="val"><?= $t['avg'] ?></span></li>
-                    <?php endforeach; endif; ?>
-                </ul>
-                <h3 style="font-size:13px;color:var(--muted);margin:18px 0 10px;text-transform:uppercase;letter-spacing:.4px;">Teachers Requiring Attention</h3>
-                <ul class="mini-list">
-                    <?php if (empty($attentionTeachers)): ?>
-                        <li class="empty-note">None below threshold.</li>
-                    <?php else: foreach ($attentionTeachers as $t): ?>
-                        <li><span class="name"><?= htmlspecialchars($t['name']) ?></span><span class="val" style="color:#fca5a5;"><?= $t['avg'] ?></span></li>
-                    <?php endforeach; endif; ?>
-                </ul>
-            </div>
-            <div>
-                <h3 style="font-size:13px;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.4px;">Teachers with Pending Evaluations</h3>
-                <ul class="mini-list">
-                    <?php if (empty($pendingTeachers)): ?>
-                        <li class="empty-note">Everyone has at least one evaluation submitted.</li>
-                    <?php else: foreach ($pendingTeachers as $t): ?>
-                        <li><span class="name"><?= htmlspecialchars($t['name']) ?></span><span class="pill warn">Pending</span></li>
-                    <?php endforeach; endif; ?>
-                </ul>
-                <h3 style="font-size:13px;color:var(--muted);margin:18px 0 10px;text-transform:uppercase;letter-spacing:.4px;">Overall Teacher Completion</h3>
-                <div class="bar-wrap"><div class="bar-fill" style="width:<?= $evaluationCompletion ?>%"></div></div>
-                <span style="font-size:12px;color:var(--muted);"><?= $evaluationCompletion ?>% of <?= $teacherCount ?> teachers evaluated</span>
-            </div>
-        </div>
-    </div>
-
-    <!-- STAFF OVERVIEW -->
-    <div class="section">
-        <h2><i class="fa-solid fa-users"></i> School Staff Overview</h2>
-        <div class="tracker-grid">
-            <div class="tracker-item"><div class="big"><?= $staffCompletion ?>%</div><div class="lbl">Staff Evaluation Completion</div></div>
-            <div class="tracker-item"><div class="big"><?= $staffCount ?></div><div class="lbl">Staff Under Review</div></div>
-            <div class="tracker-item"><div class="big"><?= $staffPending ?></div><div class="lbl">Pending Evaluations</div></div>
-        </div>
-    </div>
-
-    <!-- EVALUATION TRACKER -->
-    <div class="section" id="tracker">
-        <h2 style="justify-content:space-between;">
-            <span><i class="fa-solid fa-satellite-dish"></i> Evaluation Tracker — Live Monitoring</span>
-            <a href="principal_evaluation_tracker.php" style="font-size:12px;font-weight:600;color:var(--amber-h);text-decoration:none;">Open full tracker <i class="fa-solid fa-arrow-right"></i></a>
-        </h2>
-        <?php if ($hasPeriod): ?>
-        <div class="tracker-grid">
-            <div class="tracker-item"><div class="big"><?= $daysRemaining !== null ? $daysRemaining : '—' ?></div><div class="lbl">Days Remaining</div></div>
-            <div class="tracker-item"><div class="big"><?= $evaluationCompletion ?>%</div><div class="lbl">Teachers Completed</div></div>
-            <div class="tracker-item"><div class="big"><?= $studentParticipation ?>%</div><div class="lbl">Students Submitted</div></div>
-            <div class="tracker-item"><div class="big"><?= $staffCompletion ?>%</div><div class="lbl">Staff Completed</div></div>
-        </div>
-        <?php else: ?>
-        <p class="empty-note">No active evaluation period right now.</p>
-        <?php endif; ?>
-    </div>
-
-    <!-- REPORTS -->
-    <div class="section">
-        <h2><i class="fa-solid fa-chart-line"></i> Reports &amp; Analytics</h2>
-        <div class="report-btns">
-            <a href="principal_reports.php?type=teacher_performance"><i class="fa-solid fa-file-lines"></i> Teacher Performance Summary</a>
-            <a href="principal_reports.php?type=grade_comparison"><i class="fa-solid fa-scale-balanced"></i> Grade-Level Comparison</a>
-            <a href="principal_reports.php?type=school_summary"><i class="fa-solid fa-school"></i> School Evaluation Summary</a>
-            <a href="principal_reports.php?type=student_participation"><i class="fa-solid fa-user-graduate"></i> Student Participation Report</a>
-            <a href="principal_reports.php?type=staff_performance"><i class="fa-solid fa-users"></i> Staff Performance Report</a>
-            <a href="principal_reports.php?type=completion"><i class="fa-solid fa-clipboard-check"></i> Evaluation Completion Report</a>
-        </div>
-    </div>
-
     <?php else: ?>
     <div class="section">
         <h2><i class="fa-solid fa-circle-info"></i> <?= BASIC_ED_LABEL ?> Analytics</h2>
@@ -643,24 +528,14 @@ table.data tr:last-child td{border-bottom:none;}
     </div>
     <?php endif; ?>
 
-    <!-- NOTIFICATIONS + QUICK ACTIONS -->
-    <div class="two-col">
-        <div class="section">
-            <h2><i class="fa-solid fa-bell"></i> Notifications</h2>
-            <ul class="notif-list">
-                <?php foreach ($notifications as $n): ?>
-                    <li><i class="fa-solid fa-circle-exclamation"></i> <?= htmlspecialchars($n) ?></li>
-                <?php endforeach; ?>
-            </ul>
-        </div>
-        <div class="section">
-            <h2><i class="fa-solid fa-bolt"></i> Quick Actions</h2>
-            <div class="qa-btns">
-                <a href="principal_reports.php"><i class="fa-solid fa-file-lines"></i> View Reports</a>
+    <!-- QUICK ACTIONS -->
+    <div class="section">
+        <h2><i class="fa-solid fa-bolt"></i> Quick Actions</h2>
+        <div class="qa-btns">
+            <a href="principal_evaluations.php"><i class="fa-solid fa-clipboard-check"></i> Go to Evaluation</a>
+            <a href="principal_evaluation_tracker.php"><i class="fa-solid fa-satellite-dish"></i> Open Evaluation Tracker</a>
             <a href="principal_results.php"><i class="fa-solid fa-star-half-stroke"></i> View My Results</a>
-                <a href="principal_evaluation_tracker.php"><i class="fa-solid fa-gauge-high"></i> Monitor Progress</a>
-                <a href="principal_evaluations.php"><i class="fa-solid fa-satellite-dish"></i> Open Evaluation</a>
-            </div>
+            <a href="principal_reports.php"><i class="fa-solid fa-file-lines"></i> Generate Reports</a>
         </div>
     </div>
 

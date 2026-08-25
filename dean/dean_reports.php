@@ -85,17 +85,25 @@ if (isset($_GET['restore_id'])) {
 
 $toast = $_SESSION['toast'] ?? ''; unset($_SESSION['toast']);
 
-// ── ACTIVE EVAL TYPE ──────────────────────────────────────────
-$activeEval = $_GET['eval_type'] ?? 'student';
-if (!in_array($activeEval, ['student','multi_role','peer','schoolhead'])) $activeEval = 'student';
+// ── DASHBOARD QUICK-REPORT LINKS ────────────────────────────────
+// dean_dashboard.php's "Reports & Analytics" buttons link here with a
+// ?type= value (college_summary, faculty_performance, department_comparison,
+// program_analytics, accreditation_support) instead of ?eval_type=/&group=.
+// Map each to the closest matching tab/group here so the button actually
+// lands somewhere relevant instead of always opening the default Student tab.
+$typeDefaults = [
+    'faculty_performance'   => ['eval_type' => 'student', 'group' => 'Teacher'],
+    'college_summary'       => ['eval_type' => 'student', 'group' => 'All'],
+    'department_comparison' => ['eval_type' => 'student', 'group' => 'All'],
+    'program_analytics'     => ['eval_type' => 'student', 'group' => 'All'],
+    'accreditation_support' => ['eval_type' => 'student', 'group' => 'All'],
+];
+$typeDefault = $typeDefaults[$_GET['type'] ?? ''] ?? null;
 
-// "School Head" is Dean + Principal combined — both evaluate teacher/staff
-// performance, but each writes evaluation_tracker rows under its own
-// eval_type value (dean submissions: 'dean'; principal submissions:
-// 'supervisor_to_teacher' / 'supervisor_to_staff' / 'upward_to_ea').
-// This groups all four under one admin-facing tab.
-$schoolheadTypes    = ['dean','supervisor_to_teacher','supervisor_to_staff','upward_to_ea'];
-$schoolheadTypesSql = "'" . implode("','", array_map([$mysqli,'real_escape_string'], $schoolheadTypes)) . "'";
+// ── ACTIVE EVAL TYPE ──────────────────────────────────────────
+$activeEval = $_GET['eval_type'] ?? ($typeDefault['eval_type'] ?? 'student');
+if (!in_array($activeEval, ['student','multi_role','peer'])) $activeEval = 'student';
+
 $evalTypeSql = match ($activeEval) {
     // Multi-Role is primarily identified by the explicit evaluation_context.
     // The EXISTS fallback also recognizes older submissions that were saved
@@ -113,7 +121,11 @@ $evalTypeSql = match ($activeEval) {
               AND uqm.eval_type = 'student'
         )
     )",
-    'schoolhead' => "et.eval_type IN ($schoolheadTypesSql)",
+    // Peer-to-Peer submissions are written under eval_type='faculty_peer'
+    // (faculty_dashboard.php) or 'staff_peer' (staff_dashboard.php), plus
+    // the legacy 'peer' value from older submissions. All three must be
+    // matched or the Peer-to-Peer tab shows no data — mirrors the EA page.
+    'peer' => "et.eval_type IN ('peer','faculty_peer','staff_peer')",
     default => "et.eval_type='" . $mysqli->real_escape_string($activeEval) . "'"
 };
 $evalTypePlainSql = match ($activeEval) {
@@ -128,7 +140,7 @@ $evalTypePlainSql = match ($activeEval) {
               AND uqm.eval_type = 'student'
         )
     )",
-    'schoolhead' => "eval_type IN ($schoolheadTypesSql)",
+    'peer' => "eval_type IN ('peer','faculty_peer','staff_peer')",
     default => "eval_type='" . $mysqli->real_escape_string($activeEval) . "'"
 };
 
@@ -137,7 +149,7 @@ $view       = $_GET['view']       ?? 'list';
 $target_id  = intval($_GET['target_id']  ?? 0);
 $student_id = intval($_GET['student_id'] ?? 0);  // evaluator for peer
 $tracker_id = intval($_GET['tracker_id'] ?? 0);
-$groupFilter = $_GET['group'] ?? 'All';
+$groupFilter = $_GET['group'] ?? ($typeDefault['group'] ?? 'All');
 if (!in_array($groupFilter, ['All','Teacher','Staff'])) $groupFilter = 'All';
 
 // ── HELPERS ───────────────────────────────────────────────────
@@ -159,14 +171,14 @@ function scoreColor($s) {
 }
 
 // Eval type UI config
-$evalLabel      = $activeEval === 'peer' ? 'Peer-to-Peer Evaluation' : ($activeEval === 'schoolhead' ? 'School Head Evaluation' : ($activeEval === 'multi_role' ? 'Multi-Role Evaluation' : 'Student Evaluation'));
-$evalColor      = $activeEval === 'peer' ? '#7C3AED' : ($activeEval === 'schoolhead' ? '#D97706' : ($activeEval === 'multi_role' ? '#F59E0B' : '#3B82F6'));   // purple / gold / blue
-$evalColorBg    = $activeEval === 'peer' ? 'rgba(124,58,237,.08)' : ($activeEval === 'schoolhead' ? 'rgba(217,119,6,.08)' : ($activeEval === 'multi_role' ? 'rgba(245,158,11,.08)' : 'rgba(59,130,246,.08)'));
-$evalColorBorder= $activeEval === 'peer' ? 'rgba(124,58,237,.25)' : ($activeEval === 'schoolhead' ? 'rgba(217,119,6,.25)' : ($activeEval === 'multi_role' ? 'rgba(245,158,11,.25)' : 'rgba(59,130,246,.25)'));
-$evalIcon       = $activeEval === 'peer' ? 'fa-people-arrows' : ($activeEval === 'schoolhead' ? 'fa-user-tie' : ($activeEval === 'multi_role' ? 'fa-people-group' : 'fa-graduation-cap'));
+$evalLabel      = $activeEval === 'peer' ? 'Peer-to-Peer Evaluation' : ($activeEval === 'multi_role' ? 'Multi-Role Evaluation' : 'Student Evaluation');
+$evalColor      = $activeEval === 'peer' ? '#7C3AED' : ($activeEval === 'multi_role' ? '#F59E0B' : '#3B82F6');
+$evalColorBg    = $activeEval === 'peer' ? 'rgba(124,58,237,.08)' : ($activeEval === 'multi_role' ? 'rgba(245,158,11,.08)' : 'rgba(59,130,246,.08)');
+$evalColorBorder= $activeEval === 'peer' ? 'rgba(124,58,237,.25)' : ($activeEval === 'multi_role' ? 'rgba(245,158,11,.25)' : 'rgba(59,130,246,.25)');
+$evalIcon       = $activeEval === 'peer' ? 'fa-people-arrows' : ($activeEval === 'multi_role' ? 'fa-people-group' : 'fa-graduation-cap');
 // Label for "who evaluated"
-$evaluatorNoun  = $activeEval === 'peer' ? 'colleague' : ($activeEval === 'schoolhead' ? 'school head' : 'student');
-$evaluatorNounP = $activeEval === 'peer' ? 'colleagues' : ($activeEval === 'schoolhead' ? 'school heads' : 'students');
+$evaluatorNoun  = $activeEval === 'peer' ? 'colleague' : 'student';
+$evaluatorNounP = $activeEval === 'peer' ? 'colleagues' : 'students';
 // In evaluation_tracker: student_id = the evaluator (student or peer teacher)
 // eval_type filters which set we show
 
@@ -1108,13 +1120,15 @@ $whereRole = $groupFilter==='Teacher' ? "u.role='teacher'" : ($groupFilter==='St
 $people = [];
 $res = $mysqli->query("
     SELECT u.id, u.full_name, u.designation, u.photo, u.role,
+           aa.archived_at,
            COUNT(DISTINCT et.id) AS total_responses,
            AVG(qa.answer_score)  AS avg_score
     FROM users u
     JOIN evaluation_tracker et ON et.target_user_id=u.id AND $evalTypeSql
     LEFT JOIN questionnaire_answers qa ON qa.tracker_id=et.id
     LEFT JOIN analytics_archive aa ON aa.target_user_id=u.id
-    WHERE $whereRole AND u.is_active=1 AND aa.id IS NULL AND $reportScopeSql
+    WHERE $whereRole AND u.is_active=1 AND $reportScopeSql
+      AND (aa.id IS NULL OR " . ($activeEval === 'multi_role' ? '1=1' : '0=1') . ")
     GROUP BY u.id
     ORDER BY avg_score DESC, u.full_name ASC
 ");
@@ -1175,7 +1189,7 @@ $multiRoleEvalCount = $mysqli->query("SELECT COUNT(DISTINCT et.id) AS c
               AND uqm.eval_type = 'student'
         )
     ) AND $reportScopeSql")->fetch_assoc()['c'] ?? 0;
-$peerEvalCount    = $mysqli->query("SELECT COUNT(DISTINCT et.id) as c FROM evaluation_tracker et JOIN users u ON u.id=et.target_user_id WHERE et.eval_type='peer' AND $reportScopeSql")->fetch_assoc()['c'] ?? 0;
+$peerEvalCount    = $mysqli->query("SELECT COUNT(DISTINCT et.id) as c FROM evaluation_tracker et JOIN users u ON u.id=et.target_user_id WHERE et.eval_type IN ('peer','faculty_peer','staff_peer') AND $reportScopeSql")->fetch_assoc()['c'] ?? 0;
 
 $staffDesigCounts = [];
 $sdq = $mysqli->query("SELECT designation, COUNT(*) as c FROM users u WHERE u.role='staff' AND u.is_active=1 AND $reportScopeSql GROUP BY designation ORDER BY designation");
@@ -1449,6 +1463,7 @@ a { color:inherit; }
     $color = scoreColor($avg);
     $cls   = $avg === null ? '' : ($avg >= 4 ? 'good' : ($avg >= 3 ? 'mid' : 'poor'));
     $isFac = $p['role'] === 'teacher';
+    $isArchived = !empty($p['archived_at']);
 ?>
 <div class="person-row" data-desig="<?= htmlspecialchars($p['designation']) ?>">
     <div class="person-header">
@@ -1463,6 +1478,9 @@ a { color:inherit; }
                         <?= $activeEval==='multi_role' ? 'Multi-Role' : ($isFac?'Teacher':'Staff') ?>
                     </span>
                     <span class="desig-pill"><?= htmlspecialchars($p['designation']) ?></span>
+                    <?php if ($isArchived && $activeEval === 'multi_role'): ?>
+                    <span class="desig-pill" style="background:rgba(100,116,139,.10);color:#64748B;border-color:rgba(100,116,139,.25);"><i class="fa-solid fa-box-archive"></i> Archived</span>
+                    <?php endif; ?>
                     <span style="font-size:12px;color:var(--muted)"><?= $p['total_responses'] ?> <?= $evaluatorNoun ?><?= $p['total_responses']!=1?'s':'' ?> evaluated</span>
                 </div>
             </div>
@@ -1483,9 +1501,15 @@ a { color:inherit; }
             <i class="fa-solid fa-chevron-right arrow-icon"></i>
         </a>
         <div class="person-actions">
+            <?php if ($isArchived && $activeEval === 'multi_role'): ?>
+            <a class="btn-archive" href="?restore_id=<?= $p['id'] ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>&view=archived" style="text-decoration:none;">
+                <i class="fa-solid fa-rotate-left"></i> <span>Restore</span>
+            </a>
+            <?php else: ?>
             <button class="btn-archive" onclick="archivePerson(<?= $p['id'] ?>,'<?= htmlspecialchars(addslashes($p['full_name'])) ?>')">
                 <i class="fa-solid fa-box-archive"></i> <span>Archive</span>
             </button>
+            <?php endif; ?>
         </div>
     </div>
 </div>

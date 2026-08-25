@@ -513,7 +513,7 @@ $HEALTH_ITEMS = [
     .notif-wrap{position:relative;display:flex;align-items:center;margin-left:4px;}
     .notif-btn{width:36px;height:36px;border-radius:50%;background:#F8FAFC;border:1px solid #E2E8F0;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:15px;cursor:pointer;transition:all .2s;position:relative;}
     .notif-btn:hover,.notif-btn.has-unread{color:var(--blue-accent);border-color:#BFDBFE;background:#EFF6FF;}
-    .notif-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;border-radius:9px;background:#BF616A;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px;border:2px solid #FFFFFF;opacity:0;transform:scale(0);transition:opacity .2s,transform .2s;pointer-events:none;}
+    .notif-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;border-radius:9px;background:#FF0000;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px;border:2px solid #FFFFFF;opacity:0;transform:scale(0);transition:opacity .2s,transform .2s;pointer-events:none;}
     .notif-badge.show{opacity:1;transform:scale(1);}
 
     /* Notification panel — fixed so it never breaks layout */
@@ -886,6 +886,38 @@ input::placeholder, textarea::placeholder { color:#94A3B8; }
 }
 button, .btn { font-weight:700; }
 a { color:inherit; }
+</style>
+
+<!-- Admin text color override: keep standard page text black for readability. -->
+<style id="admin-black-text-override">
+  body { color:#000 !important; }
+  body p, body span, body label, body li, body td, body th,
+  body h1, body h2, body h3, body h4, body h5, body h6,
+  body .page-title, body .page-header, body .page-header *,
+  body .page-sub, body .subtitle, body .description, body .helper,
+  body .muted, body .hint, body .section-title, body .section-heading,
+  body .card-title, body .card-subtitle, body .form-label,
+  body .table-title, body .table-subtitle { color:#000 !important; }
+  body a:not(.btn):not(.button):not([class*="btn-"]) { color:#000 !important; }
+  body input, body select, body textarea { color:#000 !important; }
+  body input::placeholder, body textarea::placeholder { color:#555 !important; }
+</style>
+
+<style id="admin-global-black-text">
+/* Global admin text treatment: normal interface text is black throughout the admin side.
+   Intentional semantic colors on buttons, badges, alerts, icons, and status indicators are preserved. */
+body { color:#000 !important; }
+body p, body h1, body h2, body h3, body h4, body h5, body h6,
+body label, body li, body td, body th, body dt, body dd,
+body .page-title, body .page-header, body .page-header p, body .page-sub,
+body .subtitle, body .description, body .helper, body .hint, body .muted,
+body .section-title, body .section-heading, body .card-title, body .card-subtitle,
+body .table-title, body .table-subtitle, body .form-label, body .modal-title, body .modal-sub,
+body .empty-state, body .empty-cta, body .field-label, body .stat-label, body .stat-value,
+body .back, body .back-btn, body .nav-link, body .sidebar-text, body .content-text { color:#000 !important; }
+body a:not(.btn):not(.button):not([class*="btn-"]):not(.badge):not(.status):not(.nav-item) { color:#000 !important; }
+body input, body select, body textarea { color:#000 !important; }
+body input::placeholder, body textarea::placeholder { color:#555 !important; }
 </style>
 </head>
 <body>

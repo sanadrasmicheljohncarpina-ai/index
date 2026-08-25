@@ -65,7 +65,7 @@ function eval_type_label(?string $eval_type, ?string $peer_group = null): string
         case 'student':               return 'Student Evaluation';
         case 'peer':
         case 'faculty_peer':
-        case 'staff_peer':            return 'Peer Evaluation' . ($peer_group ? ' (' . $peer_group . ')' : '');
+        case 'staff_peer':            return 'Evaluation' . ($peer_group ? ' (' . $peer_group . ')' : '');
         case 'school_head':           return 'School Head Evaluation';
         case 'supervisor_to_teacher':
         case 'supervisor_to_staff':
@@ -121,12 +121,18 @@ if (!empty($tracker['school_year']) && !empty($tracker['semester'])) {
 // back to a placeholder label instead of silently disappearing or being
 // re-matched against today's active questionnaire.
 $qStmt = $mysqli->prepare("
-    SELECT qa.question_id, qa.answer_score,
-           eq.question_text, eq.category
+    SELECT qa.question_id, qa.user_question_id, qa.question_source, qa.answer_score,
+           COALESCE(eq.question_text, uq.question_text) AS question_text,
+           COALESCE(eq.category, uq.category) AS category,
+           COALESCE(eq.id, uq.id) AS resolved_question_id
     FROM questionnaire_answers qa
-    LEFT JOIN evaluation_questions eq ON eq.id = qa.question_id
+    LEFT JOIN evaluation_questions eq
+      ON qa.question_source='evaluation' AND eq.id = qa.question_id
+    LEFT JOIN user_questions uq
+      ON qa.question_source='user' AND uq.id = qa.user_question_id
     WHERE qa.tracker_id = ?
-    ORDER BY eq.category ASC, eq.id ASC
+    ORDER BY COALESCE(eq.category, uq.category, 'General') ASC,
+             qa.id ASC
 ");
 $qStmt->bind_param("i", $tracker_id);
 $qStmt->execute();
@@ -138,7 +144,7 @@ $cat_totals  = []; // category => ['sum' => x, 'count' => y]
 while ($row = $qRes->fetch_assoc()) {
     $category = $row['category'] ?? 'General';
     $questions[] = [
-        'question_id'   => (int)$row['question_id'],
+        'question_id'   => (int)($row['resolved_question_id'] ?? $row['question_id'] ?? $row['user_question_id'] ?? 0),
         'category'      => $category,
         'question_text' => $row['question_text'] ?? '(This question is no longer available)',
         'score'         => (int)$row['answer_score'],
