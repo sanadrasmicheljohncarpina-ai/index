@@ -368,7 +368,7 @@ if ($view === 'sheet' && $target_id && $tracker_id) {
     $tgt = $mysqli->query("SELECT id,full_name,designation,photo,role FROM users u WHERE u.id=$target_id AND $reportScopeSql LIMIT 1")->fetch_assoc();
     if (!$tgt) { http_response_code(404); exit('Personnel not found in this report scope.'); }
     $stu = $mysqli->query("SELECT id,full_name,photo FROM users WHERE id=$student_id LIMIT 1")->fetch_assoc();
-    $trk = $mysqli->query("SELECT * FROM evaluation_tracker WHERE id=$tracker_id AND target_user_id=$target_id AND $evalTypeSql LIMIT 1")->fetch_assoc();
+    $trk = $mysqli->query("SELECT * FROM evaluation_tracker et WHERE et.id=$tracker_id AND et.target_user_id=$target_id AND $evalTypeSql LIMIT 1")->fetch_assoc();
     if (!$trk) { http_response_code(404); exit('Evaluation not found in this report scope.'); }
 
     $answers = [];
