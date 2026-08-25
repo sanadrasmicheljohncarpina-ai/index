@@ -60,7 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <style>
 :root{--dark-blue:#0A192F;--blue-mid:#172A45;--teal:#0D9488;--teal-hover:#14B8A6;--light:#E0E6F0;--muted:#A0B3C6;--radius:10px;--shadow:0 8px 32px rgba(0,0,0,0.45);}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-body{min-height:100vh;background:#0A192F url('../bacjground.png') center center / cover no-repeat fixed;font-family:'DM Sans',sans-serif;color:var(--light);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;}
+body{min-height:100vh;background:#0A192F url('../admin/background.png') center center / cover no-repeat fixed;font-family:'DM Sans',sans-serif;color:var(--light);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;}
 .bg-image-overlay{position:fixed;inset:0;z-index:0;background:rgba(10,25,47,.42);pointer-events:none;}
 .bg-grid{display:none;position:fixed;inset:0;z-index:0;background-image:linear-gradient(rgba(13,148,136,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(13,148,136,.06) 1px,transparent 1px);background-size:48px 48px;animation:g 22s linear infinite;}
 @keyframes g{0%{background-position:0 0}100%{background-position:48px 48px}}
