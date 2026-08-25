@@ -142,7 +142,7 @@ function e($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 .back-link:hover{color:var(--text-dark)}
 .page-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px;flex-wrap:wrap;gap:14px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;padding:22px 26px;box-shadow:var(--card-shadow)}
 .page-header h1{margin:0;font-family:'Rajdhani',sans-serif;font-size:28px;font-weight:700;color:var(--text-dark)}.page-header p{color:var(--text-dim);margin:6px 0 0;font-size:13px}
-.period-badge{background:var(--accent-bg);border:1px solid var(--accent-border);color:var(--accent);padding:8px 16px;border-radius:20px;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.period-badge{background:var(--accent-bg);border:1px solid var(--accent-border);color:#14181F;padding:8px 16px;border-radius:20px;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:8px;white-space:nowrap}
 .period-badge.closed{background:var(--danger-bg);border-color:var(--danger-border);color:var(--danger)}
 
 .alert{border-radius:10px;padding:13px 16px;font-size:13.5px;margin-bottom:18px;display:flex;align-items:center;gap:8px}
@@ -158,7 +158,7 @@ function e($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 .eval-tab{padding:10px 20px;border-radius:7px;font-size:13.5px;font-weight:700;color:var(--text-dim);text-decoration:none;display:flex;align-items:center;gap:8px}
 .eval-tab.active{background:var(--accent);color:#fff}
 .eval-tab:not(.active):hover{background:var(--inner);color:var(--text-dark)}
-.eval-tab .badge{background:rgba(15,23,42,.12);border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700}
+.eval-tab .badge{background:rgba(24,45,93,.12);border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700}
 .eval-tab.active .badge{background:rgba(255,255,255,.28)}
 
 .table-wrap{background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;overflow:hidden;box-shadow:var(--card-shadow)}

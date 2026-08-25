@@ -159,8 +159,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .bar-bg{height:6px;background:rgba(15,23,42,.12);border-radius:3px;overflow:hidden;}
 .bar-fill{height:100%;border-radius:3px;}
 .pct{font-size:12px;color:var(--muted);margin-top:4px;}
-.badge-complete{font-size:11px;font-weight:700;padding:4px 11px;border-radius:20px;background:rgba(74,222,128,.15);color:#4ade80;border:1px solid rgba(74,222,128,.3);}
-.badge-incomplete{font-size:11px;font-weight:700;padding:4px 11px;border-radius:20px;background:rgba(248,113,113,.15);color:#f87171;border:1px solid rgba(248,113,113,.3);}
+.badge-complete{font-size:11px;font-weight:700;padding:4px 11px;border-radius:20px;background:rgba(81,239,139,.15);color:#14181F;border:1px solid rgba(20,253,105,.3);}
+.badge-incomplete{font-size:11px;font-weight:700;padding:4px 11px;border-radius:20px;background:rgba(255,121,121,.15);color:#14181F;border:1px solid rgba(255,60,60,.3);}
 .no-data{text-align:center;padding:40px;color:var(--muted);background:var(--mid);border-radius:12px;border:1px solid var(--border);}
 .no-period{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.3);color:#f87171;padding:14px 18px;border-radius:10px;margin-bottom:20px;font-size:13px;}
 

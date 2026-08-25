@@ -249,7 +249,7 @@ foreach ($questions as $q) { $questionGroups[$q['category'] ?: 'General'][] = $q
 .person-photo{width:60px;height:60px;border-radius:50%;object-fit:cover;background:var(--inner);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:22px}
 .person-name{font-size:20px;font-weight:800;color:var(--text)}
 .person-meta{font-size:12.5px;color:var(--muted);margin-top:2px}
-.badge{display:inline-block;margin-top:6px;color:var(--purple);font-size:11.5px;background:#EFF6FF;padding:4px 10px;border-radius:99px;font-weight:700}
+.badge{display:inline-block;margin-top:6px;color:#14181F;font-size:11.5px;background:#EAF3FF;padding:4px 10px;border-radius:99px;font-weight:700}
 .alert{border-radius:10px;padding:13px 16px;font-size:13.5px;margin-bottom:18px;display:flex;align-items:center;gap:8px}
 .alert-error{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.25);color:#ffb4b4}
 .alert-info{background:#EFF6FF;border:1px solid #BFDBFE;color:#2563EB}

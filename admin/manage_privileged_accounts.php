@@ -642,9 +642,9 @@ body{font-family:'Inter',sans-serif;background:var(--page-bg);color:var(--text-d
 .sector-tab{padding:9px 20px;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;transition:all .22s;background:transparent;color:var(--text-dim);display:flex;align-items:center;gap:7px;text-decoration:none;font-family:'Inter',sans-serif;}
 .sector-tab.active{background:var(--accent);color:#fff;}
 .sector-tab:not(.active):hover{color:var(--text-dark);background:rgba(255,255,255,.05);}
-.tab-badge{background:rgba(15,23,42,.12);border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700;color:var(--text-dim);}
+.tab-badge{background:rgba(24,45,93,.12);border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700;color:var(--text-dim);}
 .sector-tab.active .tab-badge{background:rgba(255,255,255,.28);color:#fff;}
-.tab-badge.pending-badge{background:var(--amber-bg);color:var(--amber);}
+.tab-badge.pending-badge{background:var(--amber-bg);color:#14181F;}
 
 .status-tabs{display:flex;gap:4px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius);padding:4px;margin-bottom:24px;width:fit-content;flex-wrap:wrap;box-shadow:var(--card-shadow);}
 .status-tab{padding:8px 16px;border:none;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer;transition:all .22s;background:transparent;color:var(--text-dim);display:flex;align-items:center;gap:6px;text-decoration:none;font-family:'Inter',sans-serif;}
@@ -675,28 +675,28 @@ tbody tr.row-selected{background:var(--accent-bg);}
 tbody td{padding:14px 16px;font-size:14px;vertical-align:middle;}
 .user-name{font-weight:600;color:var(--text-dark);}
 .user-username{font-size:12px;color:var(--text-dim);}
-.year-level-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:var(--accent-bg);color:#2F80ED;border:1px solid rgba(59,130,246,.45);}
+.year-level-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:var(--accent-bg);color:#14181F;border:1px solid rgba(24,111,255,.45);}
 .year-level-pill.pill-jhs{
-    background:rgba(59,130,246,.16) !important;
-    color:#2563EB !important;
-    border:1px solid rgba(59,130,246,.55) !important;
+    background:rgba(73,142,255,.16) !important;
+    color:#14181F;
+    border:1px solid rgba(24,111,255,.55) !important;
 }
 .year-level-pill.pill-shs{
-    background:rgba(236,72,153,.17);
-    color:#DB2777;
-    border:1px solid rgba(236,72,153,.48);
+    background:rgba(253,78,164,.17);
+    color:#14181F;
+    border:1px solid rgba(255,26,139,.48);
 }
 .year-level-pill.pill-col{
-    background:rgba(13,148,136,.18);
-    color:#0F766E;
-    border:1px solid rgba(13,148,136,.5);
+    background:rgba(0,206,187,.18);
+    color:#14181F;
+    border:1px solid rgba(0,185,169,.5);
 }
 .status-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;}
-.status-pill.pending{background:var(--amber-bg);color:var(--amber);}
-.status-pill.approved{background:var(--success-bg);color:var(--success);}
-.status-pill.blocked{background:var(--danger-bg);color:var(--danger);}
-.status-pill.active-sub{background:var(--success-bg);color:var(--success);}
-.status-pill.inactive-sub{background:var(--danger-bg);color:var(--danger);}
+.status-pill.pending{background:var(--amber-bg);color:#14181F;}
+.status-pill.approved{background:var(--success-bg);color:#14181F;}
+.status-pill.blocked{background:var(--danger-bg);color:#14181F;}
+.status-pill.active-sub{background:var(--success-bg);color:#14181F;}
+.status-pill.inactive-sub{background:var(--danger-bg);color:#14181F;}
 
 .action-wrap{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
 .btn-icon{background:var(--inner);border:1px solid var(--card-border);border-radius:6px;padding:6px 10px;color:var(--text-dim);cursor:pointer;font-size:13px;transition:all .2s;font-family:'Inter',sans-serif;}

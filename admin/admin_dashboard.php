@@ -44,18 +44,20 @@ $initials  = strtoupper(substr($parts[0],0,1) . (isset($parts[1]) ? substr($part
 // Display-only label for the role badge. Session/DB value stays 'superadmin' —
 // only the text shown on screen changes.
 function display_role($role) {
-    $map = ['superadmin' => 'Executive Assistant', 'admin' => 'Admin', 'registrar' => 'Registrar'];
-    return $map[$role] ?? ucfirst($role);
+    $map = [
+        'superadmin' => 'Employee Performance Management System',
+        'admin' => 'Employee Performance Management System',
+        'registrar' => 'Employee Performance Management System'
+    ];
+    return $map[$role] ?? 'Employee Performance Management System';
 }
 
 // Executive Assistants and Admins share this workspace.  The interface stays
 // the same because their tools overlap, while the displayed context reflects
 // the account that is currently signed in.
 $isExecutiveAssistant = ($_SESSION['role'] ?? '') === 'superadmin';
-$workspaceTitle = $isExecutiveAssistant ? 'Executive Assistant Workspace' : 'Administrative Workspace';
-$workspaceSubtitle = $isExecutiveAssistant
-    ? 'Manage assigned evaluation operations, personnel, and reporting.'
-    : 'Manage evaluation operations, personnel, and reporting.';
+$workspaceTitle = 'Employee Performance Management System';
+$workspaceSubtitle = 'Manage evaluation operations, personnel, and reporting.';
 
 // Live counts
 $totalUsers  = 0; $activeEvals = 0;
@@ -461,7 +463,7 @@ $HEALTH_ITEMS = [
     .pd-head-avatar img{width:100%;height:100%;object-fit:cover;display:block;}
     .pd-head-name{font-size:13px;font-weight:700;color:#172033;line-height:1.3;}
     .pd-head-role{font-size:11px;color:var(--muted);}
-    .pd-head-badge{display:inline-flex;align-items:center;gap:3px;margin-top:4px;font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;background:rgba(59,130,246,.3);color:#2563EB;border:1px solid rgba(59,130,246,.35);text-transform:uppercase;}
+    .pd-head-badge{display:inline-flex;align-items:center;gap:3px;margin-top:4px;font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;background:rgba(73,142,255,.3);color:#14181F;border:1px solid rgba(24,111,255,.35);text-transform:uppercase;}
     .pd-menu{padding:6px 0;}
     .pd-item{
         display:flex;align-items:center;gap:11px;padding:9px 16px;
@@ -513,7 +515,7 @@ $HEALTH_ITEMS = [
     .notif-wrap{position:relative;display:flex;align-items:center;margin-left:4px;}
     .notif-btn{width:36px;height:36px;border-radius:50%;background:#F8FAFC;border:1px solid #E2E8F0;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:15px;cursor:pointer;transition:all .2s;position:relative;}
     .notif-btn:hover,.notif-btn.has-unread{color:var(--blue-accent);border-color:#BFDBFE;background:#EFF6FF;}
-    .notif-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;border-radius:9px;background:#FF0000;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px;border:2px solid #FFFFFF;opacity:0;transform:scale(0);transition:opacity .2s,transform .2s;pointer-events:none;}
+    .notif-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;border-radius:9px;background:#FF1F1F;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px;border:2px solid #FFFFFF;opacity:0;transform:scale(0);transition:opacity .2s,transform .2s;pointer-events:none;}
     .notif-badge.show{opacity:1;transform:scale(1);}
 
     /* Notification panel — fixed so it never breaks layout */
@@ -1506,7 +1508,7 @@ body input::placeholder, body textarea::placeholder { color:#555 !important; }
                                 <tr>
                                     <th>Date &amp; Time</th>
                                     <th>Action</th>
-                                    <th>User</th>
+                                    <th>Performed By</th>
                                     <th>Details</th>
                                 </tr>
                             </thead>
@@ -1788,13 +1790,14 @@ function renderLogsTable(feedFull){
     }
     body.innerHTML=feedFull.map(a=>{
         const color=activityColor(a);
-        const user=a.actor ? escH(a.actor) : (a.type==='role_change' ? 'System' : 'System Automator');
+        const actor= a.actor ? escH(a.actor) : 'System';
+        const details = a.meta ? escH(a.meta) : '—';
         return `
         <tr>
             <td class="log-datetime">${escH(a.date||a.time||'—')}</td>
             <td><span class="log-action"><span class="log-action-dot" style="background:${color};"></span>${escH(a.text)}</span></td>
-            <td class="log-user">${user}</td>
-            <td class="log-details">${escH(a.meta||'')}</td>
+            <td class="log-user">${actor}</td>
+            <td class="log-details">${details}</td>
         </tr>`;
     }).join('');
 }
