@@ -74,10 +74,57 @@ function canSchoolHeadEvaluate(mysqli $mysqli, int $schoolHeadId, int $targetUse
     return [true, null];
 }
 
-/* Shared portal background for faculty, staff, and student pages. */
+/* Shared portal background plus presentation styling. */
 if (!empty($_SERVER['SCRIPT_NAME']) && preg_match('#/(faculty|student)/#', $_SERVER['SCRIPT_NAME'])) {
     ob_start(function ($html) {
-        $css = '<style id="pbi-portal-background">html,body{min-height:100%;}body{background-color:#0A192F!important;background-image:linear-gradient(rgba(10,25,47,.28),rgba(10,25,47,.28)),url(\'../bacjground.png\')!important;background-position:center center!important;background-repeat:no-repeat!important;background-size:cover!important;background-attachment:fixed!important;}</style>';
+        $isStudent = preg_match('#/student/#', $_SERVER['SCRIPT_NAME']);
+        $studentCss = $isStudent ? <<<'CSS'
+<style id="pbi-student-dashboard-polish">
+body {
+    background-image: linear-gradient(rgba(7,20,40,.58), rgba(7,20,40,.64)), url('../bacjground.png') !important;
+    background-position: center center !important;
+    background-repeat: no-repeat !important;
+    background-size: cover !important;
+    background-attachment: fixed !important;
+}
+
+main { position: relative; z-index: 1; }
+main > div { backdrop-filter: blur(2px); }
+
+.card, .stat-card, .stats-card, .summary-card, .progress-card, .evaluation-card, .dashboard-card {
+    border: 1px solid rgba(255,255,255,.10) !important;
+    box-shadow: 0 12px 30px rgba(0,0,0,.16) !important;
+}
+
+.card h1, .card h2, .card h3,
+.stat-card h1, .stat-card h2, .stat-card h3,
+.dashboard-card h1, .dashboard-card h2, .dashboard-card h3 {
+    letter-spacing: -.01em;
+}
+
+a[href*="evaluate"], button[type="submit"] {
+    transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
+}
+
+a[href*="evaluate"]:hover, button[type="submit"]:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.04);
+    box-shadow: 0 8px 18px rgba(0,0,0,.18);
+}
+
+progress, .progress, .progress-bar, .progress-track { border-radius: 999px !important; }
+
+@media (max-width: 900px) {
+    body { background-attachment: scroll !important; }
+    main > div { width: min(94vw, 100%) !important; }
+}
+</style>
+CSS
+        : '';
+
+        $baseCss = '<style id="pbi-portal-background">html,body{min-height:100%;}body{background-color:#0A192F!important;background-image:linear-gradient(rgba(10,25,47,.28),rgba(10,25,47,.28)),url(\'../bacjground.png\')!important;background-position:center center!important;background-repeat:no-repeat!important;background-size:cover!important;background-attachment:fixed!important;}</style>';
+        $css = $baseCss . $studentCss;
+
         if (stripos($html, '</head>') !== false) return preg_replace('/<\/head>/i', $css.'</head>', $html, 1);
         return $css.$html;
     });
