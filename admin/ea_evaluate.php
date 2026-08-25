@@ -11,7 +11,7 @@
 // Evaluation" question set. EA Evaluation reuses whatever is already
 // assigned to that same person elsewhere in Manage Questions
 // (admin/questionnaire.php):
-//   - Principal / Dean  -> user_questions where eval_type='school_head'
+//   - Principal / Dean  -> user_questions where eval_type='ea'
 //     (the same per-person pool the School Head Evaluation tab manages)
 //   - Non-Teaching Staff -> user_questions where eval_type='student'
 //     AND target_type='Staff' (the same per-person pool the Student
@@ -110,7 +110,7 @@ $is_open = $period_id > 0;
 // assigned there yet, $questions comes back empty and the form below
 // shows a message linking straight to the right Manage Questions tab.
 if ($type === 'Principal' || $type === 'Dean') {
-    $qEvalType   = 'school_head';
+    $qEvalType   = 'ea';
     $qTargetType = $type;
 } else {
     $qEvalType   = 'student';

@@ -248,7 +248,7 @@
 
 		<div class="card-footer">
 			Already have an account? <a href="student_login.php">Sign in here</a><br><br>
-			<a href="../faculty/faculty_login.php" style="color:var(--muted)">Faculty / Staff? Register here</a>
+		
 		</div>
 	</div>
 

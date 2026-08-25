@@ -381,18 +381,33 @@ if ($view === 'sheet' && $target_id && $tracker_id) {
     // Staff questionnaires are stored in user_questions. Keep both sources
     // separate so a multi-role evaluation can never be mixed with the person's
     // Staff evaluation even when the same question IDs exist in both tables.
-    $aq = $mysqli->query("
-        SELECT qa.question_id AS q_id, eq.question_text, eq.category, qa.answer_score
-        FROM questionnaire_answers qa
-        JOIN evaluation_questions eq ON eq.id = qa.question_id
-        WHERE qa.tracker_id = $tracker_id AND qa.question_source='evaluation'
-        UNION ALL
-        SELECT qa.user_question_id AS q_id, uq.question_text, uq.category, qa.answer_score
-        FROM questionnaire_answers qa
-        JOIN user_questions uq ON uq.id = qa.user_question_id
-        WHERE qa.tracker_id = $tracker_id AND qa.question_source='user'
-        ORDER BY category, q_id
-    ");
+$aq = $mysqli->query("
+    SELECT
+        qa.question_id AS q_id,
+        COALESCE(eq.question_text, '(This question is no longer available)') AS question_text,
+        COALESCE(eq.category, 'General') AS category,
+        qa.answer_score
+    FROM questionnaire_answers qa
+    LEFT JOIN evaluation_questions eq
+        ON eq.id = qa.question_id
+    WHERE qa.tracker_id = $tracker_id
+      AND qa.question_source = 'evaluation'
+
+    UNION ALL
+
+    SELECT
+        qa.user_question_id AS q_id,
+        COALESCE(uq.question_text, '(This question is no longer available)') AS question_text,
+        COALESCE(uq.category, 'General') AS category,
+        qa.answer_score
+    FROM questionnaire_answers qa
+    LEFT JOIN user_questions uq
+        ON uq.id = qa.user_question_id
+    WHERE qa.tracker_id = $tracker_id
+      AND qa.question_source = 'user'
+
+    ORDER BY category, q_id
+");
     if ($aq) $answers = $aq->fetch_all(MYSQLI_ASSOC);
 
     $grouped_ans = [];
