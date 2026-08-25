@@ -46,9 +46,13 @@ require_once '../shared/EvaluationContextService.php';
     }
 
     // ── FOLD LEGACY "Non-Teaching Staff" DATA INTO "Staff" ───────────
-    // Non-Teaching Staff is no longer its own questionnaire tab (see the
-    // Multi-Role spec) — it remains a system classification only. Anything
-    // an EA already filed under it moves into Staff; true duplicates (same
+    // Non-Teaching Staff is not its own questionnaire tab — it remains a
+    // system classification only. There is no separate EA per-person
+    // question set either: EA Evaluation reuses whatever is already
+    // assigned to that person under School Head Evaluation (Principal/
+    // Dean) or Student Evaluation (Non-Teaching Staff -> Staff), so this
+    // fold-in can run unconditionally. Anything filed under
+    // 'Non-Teaching Staff' moves into Staff; true duplicates (same
     // category name already exists under Staff) are dropped rather than
     // left orphaned. Idempotent: after the first run there is nothing left
     // tagged 'Non-Teaching Staff', so this is a cheap no-op afterwards.
@@ -112,10 +116,18 @@ require_once '../shared/EvaluationContextService.php';
     // Visible questionnaire designations: Teacher, Staff, Multi-Role,
     // School Head. Non-Teaching Staff is a system classification only
     // now (see hasStaffFunction()/userHasTeachingAssignment() below) —
-    // it never gets its own tab, and the EA never picks any of this.
+    // it never gets its own tab.
     // Multi-Role is a Student Evaluation context only. It must not appear in
     // the Peer-to-Peer questionnaire UI. Existing peer Multi-Role data is
     // left untouched for safety, but it is no longer selectable/displayed.
+    //
+    // There is no separate "EA Evaluation" tab. The EA evaluates the
+    // active Principal/Dean using the same per-person questions assigned
+    // here under School Head Evaluation, and evaluates Non-Teaching Staff
+    // using the same per-person questions assigned under Student
+    // Evaluation -> Staff. admin/ea_evaluate.php reads directly from
+    // those two pools (eval_type='school_head' and eval_type='student'),
+    // so nothing about the assignment UI itself needs to change for EA.
     $system_categories = ['Teacher', 'Staff', 'Multi-Role'];
     $peer_categories   = ['Teacher', 'Staff'];
     $school_head_categories = ['Principal', 'Dean'];
@@ -125,9 +137,9 @@ require_once '../shared/EvaluationContextService.php';
 
 
     // Staff, Principal, and Dean are per-person question sets. Multi-Role
-    // is a separate shared question pool and is NEVER created merely because
-    // a person has a teaching assignment. Teaching assignments only affect
-    // where a person is visible to students.
+    // is a separate shared question pool and is NEVER created merely
+    // because a person has a teaching assignment. Teaching assignments
+    // only affect where a person is visible to students.
 $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role'];
     // "Staff/non-teaching function present" per the Multi-Role spec — true
     // for anyone whose role or self-assigned secondary role is 'staff'.
@@ -987,7 +999,39 @@ a { color:inherit; }
 .eval-tab:has(.fa-user-tie) > i{color:#D97706 !important;}
 
 </style>
-    </head>
+    
+<!-- Admin text color override: keep standard page text black for readability. -->
+<style id="admin-black-text-override">
+  body { color:#000 !important; }
+  body p, body span, body label, body li, body td, body th,
+  body h1, body h2, body h3, body h4, body h5, body h6,
+  body .page-title, body .page-header, body .page-header *,
+  body .page-sub, body .subtitle, body .description, body .helper,
+  body .muted, body .hint, body .section-title, body .section-heading,
+  body .card-title, body .card-subtitle, body .form-label,
+  body .table-title, body .table-subtitle { color:#000 !important; }
+  body a:not(.btn):not(.button):not([class*="btn-"]) { color:#000 !important; }
+  body input, body select, body textarea { color:#000 !important; }
+  body input::placeholder, body textarea::placeholder { color:#555 !important; }
+</style>
+
+<style id="admin-global-black-text">
+/* Global admin text treatment: normal interface text is black throughout the admin side.
+   Intentional semantic colors on buttons, badges, alerts, icons, and status indicators are preserved. */
+body { color:#000 !important; }
+body p, body h1, body h2, body h3, body h4, body h5, body h6,
+body label, body li, body td, body th, body dt, body dd,
+body .page-title, body .page-header, body .page-header p, body .page-sub,
+body .subtitle, body .description, body .helper, body .hint, body .muted,
+body .section-title, body .section-heading, body .card-title, body .card-subtitle,
+body .table-title, body .table-subtitle, body .form-label, body .modal-title, body .modal-sub,
+body .empty-state, body .empty-cta, body .field-label, body .stat-label, body .stat-value,
+body .back, body .back-btn, body .nav-link, body .sidebar-text, body .content-text { color:#000 !important; }
+body a:not(.btn):not(.button):not([class*="btn-"]):not(.badge):not(.status):not(.nav-item) { color:#000 !important; }
+body input, body select, body textarea { color:#000 !important; }
+body input::placeholder, body textarea::placeholder { color:#555 !important; }
+</style>
+</head>
     <body>
 
     <?php if (isset($_GET['msg']) && $_GET['msg']): ?>
@@ -1038,7 +1082,7 @@ a { color:inherit; }
     <div class="page-header">
         <div>
             <h1><?= $eval_label ?></h1>
-            <p><?= $eval_desc ?> Teacher uses a shared question set. Staff, Principal, Dean, and Multi-Role questions are assigned per person. Teaching assignments control the student's base Teacher/Staff visibility. An additional responsibility creates a separate Multi-Role context; it never replaces the base role. Faculty/Staff lists are pulled live from Manage Privileged — nothing to add here manually.</p>
+            <p><?= $eval_desc ?> Teacher uses a shared question set. Staff, Principal, Dean, and Multi-Role questions are assigned per person. Teaching assignments control the student's base Teacher/Staff visibility. An additional responsibility creates a separate Multi-Role context; it never replaces the base role. Faculty/Staff lists are pulled live from Manage Privileged — nothing to add here manually.<?php if ($active_eval === 'school_head'): ?> The EA also evaluates the active Principal and Dean, reusing these same per-person questions.<?php elseif ($active_eval === 'student'): ?> The EA also evaluates Non-Teaching Staff, reusing the Staff questions assigned here.<?php endif; ?></p>
         </div>
         <a href="?view=manage&target=Teacher&eval_type=<?= $active_eval ?>" class="btn btn-primary">
             <i class="fa-solid fa-circle-plus"></i> Manage Questions
@@ -1301,8 +1345,10 @@ a { color:inherit; }
                     No approved <?= htmlspecialchars($selected_target) ?> accounts yet.<br><small>Approve <?= htmlspecialchars($selected_target) ?> registrations in Manage Privileged and they'll appear here automatically.</small>
                 <?php elseif ($is_mr_manage): ?>
                     No multi-role <?= $mr_filter !== 'all' ? $mr_filter : 'users' ?> found.<br><small>A user appears here when they have an additional role/responsibility. Teaching assignments do not replace their Staff or Teacher context.</small>
-                <?php else: ?>
+                <?php elseif ($is_fac_manage): ?>
                     No approved Faculty accounts yet.<br><small>Approve Faculty registrations in Manage Privileged and they'll appear here automatically.</small>
+                <?php else: ?>
+                    No eligible <?= htmlspecialchars($selected_target) ?> found.<br><small>This list updates automatically based on active roles and assignments — nothing to add here manually.</small>
                 <?php endif; ?>
             </div>
             <?php else: ?>

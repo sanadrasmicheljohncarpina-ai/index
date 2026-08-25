@@ -449,13 +449,6 @@ table.data th:first-child, table.data td:first-child{width:36px;}
 
     <!-- STUDENTS TO BE EVALUATED -->
     <div class="section">
-        <div class="section-head">
-            <h2><i class="fa-solid fa-user-graduate"></i> Students to be Evaluated</h2>
-            <div style="display:flex;align-items:center;gap:14px;">
-                <span class="count-note"><span id="selCount">0</span> of <?= $studentsAssigned ?> students</span>
-                <a class="export-btn" href="<?= tracker_qs(['export' => 'csv']) ?>"><i class="fa-solid fa-download"></i> Export List</a>
-            </div>
-        </div>
 
         <?php if ($myLevel === 'both'): ?>
         <div class="level-tabs">
@@ -465,26 +458,9 @@ table.data th:first-child, table.data td:first-child{width:36px;}
         </div>
         <?php endif; ?>
 
-        <?php if ($hasPeriod && !empty($pageStudents)): ?>
-        <div class="bulk-banner">
-            <i class="fa-solid fa-circle-info"></i>
-            <div>
-                <b>Students listed below are those who still need to complete the evaluation.</b>
-                <p>You can send reminders or view student details.</p>
-            </div>
-            <button type="button" class="btn-bulk-remind" id="bulkRemindBtn" disabled>
-                <i class="fa-solid fa-paper-plane"></i> Send Bulk Reminder
-            </button>
-        </div>
-        <?php endif; ?>
-
         <?php if (!$hasPeriod): ?>
             <p class="empty-note">No active evaluation period right now.</p>
         <?php else: ?>
-        <div class="stub-note">
-            <i class="fa-solid fa-circle-info"></i>
-                Reminders are logged in-system and rate-limited to one per student every <?= REMINDER_COOLDOWN_HOURS ?> hours. This app has no email/SMS system yet, so students won't get an outside message — the record just shows here. Selection is scoped to the current page only.
-            </div>
             <div id="reminderToast" class="reminder-toast" style="display:none;"></div>
             <?php if (empty($pageStudents)): ?>
                 <p class="empty-note">No students match the current filters.</p>

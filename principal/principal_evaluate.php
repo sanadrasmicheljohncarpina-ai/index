@@ -119,7 +119,12 @@ if ($target['role'] === 'superadmin') {
 } else {
     $bucket = $target['role'] === 'teacher' ? 'Teacher' : 'Staff';
 }
-$evalTypeMap = ['Teacher' => 'supervisor_to_teacher', 'Staff' => 'supervisor_to_staff', 'Executive Assistant' => 'supervisor_to_ea'];
+// 'upward_to_ea' (not 'supervisor_to_ea'): the EA is the Super Admin
+// account, the highest-privilege role in the system — Principal/Dean/
+// Staff evaluating the EA is an upward/360 review, not a supervisor
+// reviewing a subordinate. Kept 'supervisor_to_*' for Teacher/Staff
+// where that relationship is accurate.
+$evalTypeMap = ['Teacher' => 'supervisor_to_teacher', 'Staff' => 'supervisor_to_staff', 'Executive Assistant' => 'upward_to_ea'];
 $evalType = $evalTypeMap[$bucket];
 
 $formStmt = $mysqli->prepare("SELECT id, title FROM questionnaire_forms WHERE eval_type=? AND is_active=1 LIMIT 1");

@@ -675,14 +675,22 @@ tbody tr.row-selected{background:var(--accent-bg);}
 tbody td{padding:14px 16px;font-size:14px;vertical-align:middle;}
 .user-name{font-weight:600;color:var(--text-dark);}
 .user-username{font-size:12px;color:var(--text-dim);}
-.year-level-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:var(--accent-bg);color:#93C5FD;}
+.year-level-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:var(--accent-bg);color:#2F80ED;border:1px solid rgba(59,130,246,.45);}
 .year-level-pill.pill-jhs{
-    background:rgba(40,105,196,.13) !important;
-    color:#4B91FF !important;
-    border:1px solid #2869C4 !important;
+    background:rgba(59,130,246,.16) !important;
+    color:#2563EB !important;
+    border:1px solid rgba(59,130,246,.55) !important;
 }
-.year-level-pill.pill-shs{background:var(--pink-bg);color:var(--pink);}
-.year-level-pill.pill-col{background:var(--teal-bg);color:var(--teal);}
+.year-level-pill.pill-shs{
+    background:rgba(236,72,153,.17);
+    color:#DB2777;
+    border:1px solid rgba(236,72,153,.48);
+}
+.year-level-pill.pill-col{
+    background:rgba(13,148,136,.18);
+    color:#0F766E;
+    border:1px solid rgba(13,148,136,.5);
+}
 .status-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;}
 .status-pill.pending{background:var(--amber-bg);color:var(--amber);}
 .status-pill.approved{background:var(--success-bg);color:var(--success);}
@@ -830,6 +838,38 @@ a { color:inherit; }
 .status-approved > i{color:#16A34A !important;}
 .status-blocked > i{color:#EF4444 !important;}
 
+</style>
+
+<!-- Admin text color override: keep standard page text black for readability. -->
+<style id="admin-black-text-override">
+  body { color:#000 !important; }
+  body p, body span, body label, body li, body td, body th,
+  body h1, body h2, body h3, body h4, body h5, body h6,
+  body .page-title, body .page-header, body .page-header *,
+  body .page-sub, body .subtitle, body .description, body .helper,
+  body .muted, body .hint, body .section-title, body .section-heading,
+  body .card-title, body .card-subtitle, body .form-label,
+  body .table-title, body .table-subtitle { color:#000 !important; }
+  body a:not(.btn):not(.button):not([class*="btn-"]) { color:#000 !important; }
+  body input, body select, body textarea { color:#000 !important; }
+  body input::placeholder, body textarea::placeholder { color:#555 !important; }
+</style>
+
+<style id="admin-global-black-text">
+/* Global admin text treatment: normal interface text is black throughout the admin side.
+   Intentional semantic colors on buttons, badges, alerts, icons, and status indicators are preserved. */
+body { color:#000 !important; }
+body p, body h1, body h2, body h3, body h4, body h5, body h6,
+body label, body li, body td, body th, body dt, body dd,
+body .page-title, body .page-header, body .page-header p, body .page-sub,
+body .subtitle, body .description, body .helper, body .hint, body .muted,
+body .section-title, body .section-heading, body .card-title, body .card-subtitle,
+body .table-title, body .table-subtitle, body .form-label, body .modal-title, body .modal-sub,
+body .empty-state, body .empty-cta, body .field-label, body .stat-label, body .stat-value,
+body .back, body .back-btn, body .nav-link, body .sidebar-text, body .content-text { color:#000 !important; }
+body a:not(.btn):not(.button):not([class*="btn-"]):not(.badge):not(.status):not(.nav-item) { color:#000 !important; }
+body input, body select, body textarea { color:#000 !important; }
+body input::placeholder, body textarea::placeholder { color:#555 !important; }
 </style>
 </head>
 <body>

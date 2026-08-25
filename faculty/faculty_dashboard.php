@@ -178,7 +178,7 @@ function resolve_target_type($desig, $map, $cats, $fallback_role = null) {
 
 // NOTE ON "TEACHER vs STAFF": mirrors staff_dashboard.php's peer-evaluation
 // grouping. A colleague's account role (teacher/staff) isn't always the
-// same as how they should be grouped for peer evaluation, so we resolve
+// same as how they should be grouped for evaluation, so we resolve
 // the group off the same designation map used everywhere else, not off
 // the raw account role column — except as a fallback when the designation
 // text doesn't resolve to anything (see resolve_target_type() above).
@@ -189,15 +189,15 @@ function eval_type_label($eval_type, $peer_group = null) {
     switch ($eval_type) {
         case 'student':               return 'Student Evaluation';
         case 'peer':
-        case 'faculty_peer':          return 'Peer Evaluation' . ($peer_group ? ' (' . $peer_group . ')' : '');
+        case 'faculty_peer':          return 'Evaluation' . ($peer_group ? ' (' . $peer_group . ')' : '');
         case 'school_head':           return 'School Head Evaluation';
         case 'supervisor_to_teacher':
-        case 'supervisor_to_staff':
-        case 'supervisor_to_ea':      return 'Supervisor Evaluation';
+        case 'supervisor_to_staff':                              return 'Supervisor Evaluation';
+        case 'upward_to_ea':                                     return 'Executive Assistant Review';
         default:                      return ucwords(str_replace('_', ' ', $eval_type ?: 'Evaluation'));
     }
 }
-$peer_group_labels = ['teacher' => 'Teacher', 'staff' => 'Staff'];
+$peer_group_labels = ['teacher' => 'Teacher', 'staff' => 'Staff', 'school_head' => 'School Head'];
 
 // ── ADD peer_group COLUMN TO evaluation_tracker (idempotent) ──
 // Shared table with the staff dashboard — the column may already exist
@@ -207,14 +207,16 @@ if ($colChk && $colChk->num_rows === 0) {
     $mysqli->query("ALTER TABLE evaluation_tracker ADD COLUMN peer_group VARCHAR(20) NULL AFTER eval_type");
 }
 
-// ── PEER EVALUATION ───────────────────────────────────────────
+// ── EVALUATIONUATION ───────────────────────────────────────────
 // Step 1: pick a designation group (Teacher or Staff) — a teacher may
 // need to peer-evaluate either a fellow teacher or a staff member they
 // worked with. Step 2: pick a specific person from that filtered list.
-$peers_all  = [];   // all eligible peers (teachers + staff), unfiltered — used for the sidebar badge count
-$peers      = [];   // peers filtered down to the selected group (Teacher/Staff)
-$done_peers = [];
-$peer_group = null; // 'teacher' | 'staff' | null (Step 1 not yet completed)
+$peers_all       = [];   // eligible faculty/staff peers for the Teacher/Staff tabs
+$peers            = [];   // targets shown for the selected evaluation group
+$school_heads     = [];   // Dean + Principal targets for the School Head tab
+$done_peers       = [];
+$done_school_heads = [];
+$peer_group       = null; // 'teacher' | 'staff' | 'school_head' | null
 
 if ($page === 'peer') {
     $pr2 = $mysqli->prepare("SELECT id, full_name, designation, photo, role FROM users WHERE role IN ('teacher','staff') AND is_active=1 AND id != ? ORDER BY full_name ASC");
@@ -224,80 +226,165 @@ if ($page === 'peer') {
     if ($pr2res) $peers_all = $pr2res->fetch_all(MYSQLI_ASSOC);
     $pr2->close();
 
+    // School Heads come from the same users source used by the
+    // Questionnaire / privileged-account feature.  Do not infer school-head
+    // status from the free-text designation: the account role is the source
+    // of truth. Only active, approved Principal/Dean accounts are eligible.
+    $sh = $mysqli->prepare("
+        SELECT id, full_name, designation, photo, role
+        FROM users
+        WHERE role IN ('principal','dean')
+          AND is_active=1
+          AND account_status='approved'
+          AND id != ?
+        ORDER BY
+          CASE WHEN role='dean' THEN 1 ELSE 2 END,
+          full_name ASC
+    ");
+    $sh->bind_param("i", $user_id);
+    $sh->execute();
+    $shRes = $sh->get_result();
+    if ($shRes) $school_heads = $shRes->fetch_all(MYSQLI_ASSOC);
+    $sh->close();
+
     if ($period) {
         $period_id_int = (int)$period['id'];
+
         $dpStmt = $mysqli->prepare("SELECT target_user_id FROM evaluation_tracker WHERE evaluator_id=? AND period_id=? AND eval_type='faculty_peer'");
         $dpStmt->bind_param("ii", $user_id, $period_id_int);
         $dpStmt->execute();
         $dp = $dpStmt->get_result();
-        if ($dp) while ($r = $dp->fetch_assoc()) $done_peers[] = $r['target_user_id'];
+        if ($dp) while ($r = $dp->fetch_assoc()) $done_peers[] = (int)$r['target_user_id'];
         $dpStmt->close();
+
+        $shDone = $mysqli->prepare("SELECT target_user_id FROM evaluation_tracker WHERE evaluator_id=? AND period_id=? AND eval_type='school_head'");
+        $shDone->bind_param("ii", $user_id, $period_id_int);
+        $shDone->execute();
+        $shDoneRes = $shDone->get_result();
+        if ($shDoneRes) while ($r = $shDoneRes->fetch_assoc()) $done_school_heads[] = (int)$r['target_user_id'];
+        $shDone->close();
     }
 
-    if (isset($_GET['group']) && in_array($_GET['group'], ['teacher', 'staff'], true)) {
+    if (isset($_GET['group']) && in_array($_GET['group'], ['teacher', 'staff', 'school_head'], true)) {
         $peer_group = $_GET['group'];
-        $peers = array_values(array_filter($peers_all, function ($p) use ($peer_group, $token_to_target, $system_categories) {
-            return resolve_peer_group($p['designation'] ?? '', $token_to_target, $system_categories, $p['role'] ?? null) === $peer_group;
-        }));
+
+        if ($peer_group === 'school_head') {
+            $peers = $school_heads;
+        } else {
+            // Manage Registrations is the source of truth for whether an
+            // account is a Teacher or Staff member.  Keep the Evaluation
+            // tabs aligned with the account role instead of re-classifying
+            // teachers from their free-text designation.
+            $expected_role = $peer_group === 'teacher' ? 'teacher' : 'staff';
+            $peers = array_values(array_filter($peers_all, function ($p) use ($expected_role) {
+                return ($p['role'] ?? '') === $expected_role;
+            }));
+        }
     }
 }
 
-// ── PEER EVAL FORM ────────────────────────────────────────────
+// ── EVALUATION FORM ─────────────────────────────────────────────
 $peer_target       = null;
 $peer_questions    = [];
 $peer_form_id      = 0;
-$peer_eval_group   = null;  // group carried over from Step 1, validated below
-$peer_group_error  = '';    // set when tid/group don't match, shown in the invalid-target view
+$peer_eval_group   = null;
+$peer_group_error  = '';
 
 if ($page === 'peer_eval' && isset($_GET['tid'])) {
     $tid = intval($_GET['tid']);
     $req_group = $_GET['group'] ?? null;
 
-    $tu  = $mysqli->prepare("SELECT * FROM users WHERE id=? AND role IN ('teacher','staff') AND is_active=1 LIMIT 1");
-    $tu->bind_param("i", $tid); $tu->execute();
-    $peer_target = $tu->get_result()->fetch_assoc(); $tu->close();
+    $tu = $mysqli->prepare("SELECT * FROM users WHERE id=? AND is_active=1 LIMIT 1");
+    $tu->bind_param("i", $tid);
+    $tu->execute();
+    $peer_target = $tu->get_result()->fetch_assoc();
+    $tu->close();
 
-    if ($peer_target && !in_array($req_group, ['teacher', 'staff'], true)) {
-        $peer_group_error = "Please select a designation.";
+    if ($peer_target && !in_array($req_group, ['teacher', 'staff', 'school_head'], true)) {
+        $peer_group_error = "Please select an evaluation group.";
         $peer_target = null;
     } elseif ($peer_target) {
-        $actual_group = resolve_peer_group($peer_target['designation'] ?? '', $token_to_target, $system_categories, $peer_target['role'] ?? null);
-        if ($actual_group !== $req_group) {
-            $peer_group_error = "The selected user does not belong to the selected designation.";
-            $peer_target = null;
+        if ($req_group === 'school_head') {
+            $targetRole = strtolower(trim($peer_target['role'] ?? ''));
+            $isSchoolHead = in_array($targetRole, ['dean', 'principal'], true);
+            if (!$isSchoolHead) {
+                $peer_group_error = "The selected user is not a Dean or Principal.";
+                $peer_target = null;
+            } else {
+                $peer_eval_group = 'school_head';
+            }
         } else {
-            $peer_eval_group = $req_group;
+            $actual_group = resolve_peer_group(
+                $peer_target['designation'] ?? '',
+                $token_to_target,
+                $system_categories,
+                $peer_target['role'] ?? null
+            );
+            if (!in_array($peer_target['role'] ?? '', ['teacher', 'staff'], true) || $actual_group !== $req_group) {
+                $peer_group_error = "The selected user does not belong to the selected evaluation group.";
+                $peer_target = null;
+            } else {
+                $peer_eval_group = $req_group;
+            }
         }
     }
 
     if ($peer_target) {
-// 1) form lookup
-$fu = $mysqli->prepare("SELECT id FROM questionnaire_forms WHERE eval_type='peer' AND is_active=1 LIMIT 1");
-
-// 2) "already evaluated" lookup (Step 2 peer grid)
-$dpStmt = $mysqli->prepare("SELECT target_user_id FROM evaluation_tracker WHERE evaluator_id=? AND period_id=? AND eval_type='peer'");
-
-// 3) the actual insert
-$eval_type  = 'peer';
-
-// 4) duplicate-submission check
-$dup = $mysqli->prepare("SELECT id FROM evaluation_tracker WHERE evaluator_id=? AND target_user_id=? AND period_id=? AND eval_type='peer' LIMIT 1");
-
-        // Questionnaire Management assigns questions differently per bucket:
-        // Staff targets get questions assigned per individual user (the
-        // "Assign Questions" feature -> user_questions, keyed by user_id),
-        // while Teacher targets use the shared evaluation_questions pool
-        // keyed off the EA's 'Teacher' bucket (not the granular designation
-        // category resolve_target_type() returns, e.g. 'Registrar'/'Nurse' -
-        // the admin tool never stores questions under those values).
-        if ($peer_eval_group === 'staff') {
-            $qs = $mysqli->prepare("SELECT * FROM user_questions WHERE user_id=? AND eval_type='peer' ORDER BY category ASC, sort_order ASC, id ASC");
-            $qs->bind_param("i", $tid); $qs->execute();
-        } else {
-            $qs = $mysqli->prepare("SELECT * FROM evaluation_questions WHERE target_type='Teacher' AND eval_type='peer' ORDER BY category ASC, id ASC");
-            $qs->execute();
+        $form_type = ($peer_eval_group === 'school_head') ? 'school_head' : 'faculty_peer';
+        $fu = $mysqli->prepare("SELECT id FROM questionnaire_forms WHERE eval_type=? AND is_active=1 ORDER BY id DESC LIMIT 1");
+        $fu->bind_param("s", $form_type);
+        $fu->execute();
+        $fuRes = $fu->get_result();
+        if ($fuRes) {
+            $fuRow = $fuRes->fetch_assoc();
+            $peer_form_id = (int)($fuRow['id'] ?? 0);
         }
-        $peer_questions = $qs->get_result()->fetch_all(MYSQLI_ASSOC); $qs->close();
+        $fu->close();
+
+        // Questionnaire is the source of truth for Evaluation questions.
+        // Prefer questions assigned directly to this exact user. The
+        // target_type is intentionally not used for normal faculty/staff
+        // lookups because the Questionnaire feature may label a person as
+        // Faculty, Teacher, Staff, etc.; user_id + eval_type identifies the
+        // actual assignment.
+        if ($peer_eval_group === 'school_head') {
+            $targetType = (strtolower($peer_target['role'] ?? '') === 'dean') ? 'Dean' : 'Principal';
+            $qs = $mysqli->prepare("
+                SELECT * FROM user_questions
+                WHERE user_id=? AND target_type=? AND eval_type='school_head'
+                ORDER BY category ASC, sort_order ASC, id ASC
+            ");
+            $qs->bind_param("is", $tid, $targetType);
+            $qs->execute();
+            $peer_questions = $qs->get_result()->fetch_all(MYSQLI_ASSOC);
+            $qs->close();
+        } else {
+            $qs = $mysqli->prepare("
+                SELECT * FROM user_questions
+                WHERE user_id=? AND eval_type='peer'
+                ORDER BY category ASC, sort_order ASC, id ASC
+            ");
+            $qs->bind_param("i", $tid);
+            $qs->execute();
+            $peer_questions = $qs->get_result()->fetch_all(MYSQLI_ASSOC);
+            $qs->close();
+
+            // Backward-compatible shared questionnaire fallback. It is used
+            // only when this specific user has no Questionnaire assignment.
+            if (empty($peer_questions)) {
+                $fallbackTarget = ($peer_eval_group === 'teacher') ? 'Teacher' : 'Staff';
+                $qs = $mysqli->prepare("
+                    SELECT * FROM evaluation_questions
+                    WHERE target_type=? AND eval_type='peer' AND is_active=1
+                    ORDER BY category ASC, id ASC
+                ");
+                $qs->bind_param("s", $fallbackTarget);
+                $qs->execute();
+                $peer_questions = $qs->get_result()->fetch_all(MYSQLI_ASSOC);
+                $qs->close();
+            }
+        }
+
     }
 }
 
@@ -348,127 +435,192 @@ if ($idxChk && $idxChk->num_rows === 0) {
     $mysqli->query("ALTER TABLE evaluation_tracker ADD UNIQUE INDEX uniq_eval_submission (evaluator_id, target_user_id, eval_type, period_id)");
 }
 
-// ── SUBMIT PEER EVAL ──────────────────────────────────────────
+// ── SUBMIT EVALUATION ──────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_peer'])) {
     if (!csrf_check()) {
         $_SESSION['toast_error'] = "Your session expired or the request could not be verified. Please try again.";
         header("Location: faculty_dashboard.php?page=peer"); exit;
     }
 
-$submitted_group = $_POST['group'] ?? '';
-    $tid     = intval($_POST['target_id']);
-    $fid     = intval($_POST['form_id']);
-    $pid     = intval($_POST['period_id']);
+    $submitted_group = $_POST['group'] ?? '';
+    $tid     = intval($_POST['target_id'] ?? 0);
+    $pid     = intval($_POST['period_id'] ?? 0);
     $ratings = $_POST['ratings'] ?? [];
     $comment = trim($_POST['comment'] ?? '');
 
-    // ── Validation (per the Peer Evaluation designation-selection update) ──
-    if (empty($submitted_group) || !in_array($submitted_group, ['teacher', 'staff'], true)) {
-        $_SESSION['toast_error'] = "Please select a designation.";
+    if (!in_array($submitted_group, ['teacher', 'staff', 'school_head'], true)) {
+        $_SESSION['toast_error'] = "Please select an evaluation group.";
         header("Location: faculty_dashboard.php?page=peer"); exit;
     }
 
-    // Eligibility check — peer evaluations have no level restriction (per requirements,
-    // faculty/staff can evaluate anyone they've worked with), but this still blocks
-    // self-evaluation and invalid targets before anything gets inserted.
-    [$eligible, $eligMsg] = canPeerEvaluate($mysqli, $user_id, $tid);
+    $eval_type = ($submitted_group === 'school_head') ? 'school_head' : 'faculty_peer';
+    $form_type = ($submitted_group === 'school_head') ? 'school_head' : 'faculty_peer';
+    $fid = 0;
 
-    if (!$eligible) {
-        $_SESSION['toast_error'] = $eligMsg;
+    $formStmt = $mysqli->prepare("SELECT id FROM questionnaire_forms WHERE eval_type=? AND is_active=1 ORDER BY id DESC LIMIT 1");
+    $formStmt->bind_param("s", $form_type);
+    $formStmt->execute();
+    $formRow = $formStmt->get_result()->fetch_assoc();
+    $fid = (int)($formRow['id'] ?? 0);
+    $formStmt->close();
+
+    if ($fid <= 0) {
+        $_SESSION['toast_error'] = "The Evaluation form is not available or is inactive.";
         header("Location: faculty_dashboard.php?page=peer&group=" . urlencode($submitted_group)); exit;
     }
 
-    // canPeerEvaluate() only checks role, not is_active — re-verify the
-    // target is still an active teacher/staff account before inserting
-    // anything, and confirm it still belongs to the group that was chosen
-    // in Step 1 (designations can change between selecting and submitting).
-    $tchk = $mysqli->prepare("SELECT id, designation, role FROM users WHERE id=? AND role IN ('teacher','staff') AND is_active=1 LIMIT 1");
-    $tchk->bind_param("i", $tid); $tchk->execute();
-    $tchkRow = $tchk->get_result()->fetch_assoc(); $tchk->close();
-    if (!$tchkRow) {
-        $_SESSION['toast_error'] = "The selected colleague is no longer available.";
-        header("Location: faculty_dashboard.php?page=peer&group=" . urlencode($submitted_group)); exit;
-    }
-    if (resolve_peer_group($tchkRow['designation'] ?? '', $token_to_target, $system_categories, $tchkRow['role'] ?? null) !== $submitted_group) {
-        $_SESSION['toast_error'] = "The selected user does not belong to the selected designation.";
-        header("Location: faculty_dashboard.php?page=peer&group=" . urlencode($submitted_group)); exit;
-    }
-
-    // Gate on an active evaluation period -- no period open, no submissions.
     if (!$pid) {
         $_SESSION['toast_error'] = "No evaluation period is currently open.";
         header("Location: faculty_dashboard.php?page=peer&group=" . urlencode($submitted_group)); exit;
     }
 
-    // Only accept ratings for question IDs that actually belong to this
-    // target's EA-assigned peer question set — anything else in the POST is
-    // ignored rather than trusted, so a tampered request can't insert stray
-    // rows. Mirrors the display-side fetch: per-user user_questions for
-    // Staff targets, shared 'Teacher'-bucket evaluation_questions otherwise.
-    if ($submitted_group === 'staff') {
+    // Re-validate the target server-side. School Head targets are strictly
+    // limited to Dean/Principal; normal faculty evaluation keeps its
+    // existing Teacher/Staff eligibility rules.
+    if ($submitted_group === 'school_head') {
+        $tchk = $mysqli->prepare("SELECT id, full_name, designation, role FROM users WHERE id=? AND is_active=1 LIMIT 1");
+        $tchk->bind_param("i", $tid);
+        $tchk->execute();
+        $tchkRow = $tchk->get_result()->fetch_assoc();
+        $tchk->close();
+
+        $targetRole = strtolower(trim($tchkRow['role'] ?? ''));
+        $isSchoolHead = $tchkRow && in_array($targetRole, ['dean', 'principal'], true);
+
+        if (!$tchkRow || !$isSchoolHead || $tid === (int)$user_id) {
+            $_SESSION['toast_error'] = "The selected School Head is no longer available.";
+            header("Location: faculty_dashboard.php?page=peer&group=school_head"); exit;
+        }
+
+        // The Questionnaire feature is the sole source of valid School Head
+        // questions. The target_type is tied to the actual role so Dean and
+        // Principal question sets cannot be mixed.
+        $targetType = ($targetRole === 'dean') ? 'Dean' : 'Principal';
+        $validQStmt = $mysqli->prepare("
+            SELECT id
+            FROM user_questions
+            WHERE user_id=? AND target_type=? AND eval_type='school_head'
+        ");
+        $validQStmt->bind_param("is", $tid, $targetType);
+        $validQStmt->execute();
+        $validQRes = $validQStmt->get_result();
+        $valid_question_ids = [];
+        if ($validQRes) while ($vq = $validQRes->fetch_assoc()) $valid_question_ids[] = (int)$vq['id'];
+        $validQStmt->close();
+        $question_source = 'user';
+
+        if (empty($valid_question_ids)) {
+            $_SESSION['toast_error'] = "No School Head questions have been assigned to this " . $targetType . " in Questionnaire.";
+            header("Location: faculty_dashboard.php?page=peer&group=school_head"); exit;
+        }
+    } else {
+        [$eligible, $eligMsg] = canPeerEvaluate($mysqli, $user_id, $tid);
+        if (!$eligible) {
+            $_SESSION['toast_error'] = $eligMsg;
+            header("Location: faculty_dashboard.php?page=peer&group=" . urlencode($submitted_group)); exit;
+        }
+
+        $tchk = $mysqli->prepare("SELECT id, designation, role FROM users WHERE id=? AND role IN ('teacher','staff') AND is_active=1 LIMIT 1");
+        $tchk->bind_param("i", $tid);
+        $tchk->execute();
+        $tchkRow = $tchk->get_result()->fetch_assoc();
+        $tchk->close();
+
+        if (!$tchkRow || resolve_peer_group($tchkRow['designation'] ?? '', $token_to_target, $system_categories, $tchkRow['role'] ?? null) !== $submitted_group) {
+            $_SESSION['toast_error'] = "The selected faculty member is no longer available in this evaluation group.";
+            header("Location: faculty_dashboard.php?page=peer&group=" . urlencode($submitted_group)); exit;
+        }
+
+        // Match the exact question source used to build the form.
         $validQStmt = $mysqli->prepare("SELECT id FROM user_questions WHERE user_id=? AND eval_type='peer'");
         $validQStmt->bind_param("i", $tid);
-    } else {
-        $validQStmt = $mysqli->prepare("SELECT id FROM evaluation_questions WHERE target_type='Teacher' AND eval_type='peer'");
+        $validQStmt->execute();
+        $validQRes = $validQStmt->get_result();
+        $valid_question_ids = [];
+        if ($validQRes) while ($vq = $validQRes->fetch_assoc()) $valid_question_ids[] = (int)$vq['id'];
+        $validQStmt->close();
+        $question_source = 'user';
+
+        if (empty($valid_question_ids)) {
+            $fallbackTarget = ($submitted_group === 'teacher') ? 'Teacher' : 'Staff';
+            $validQStmt = $mysqli->prepare("SELECT id FROM evaluation_questions WHERE target_type=? AND eval_type='peer' AND is_active=1");
+            $validQStmt->bind_param("s", $fallbackTarget);
+            $validQStmt->execute();
+            $validQRes = $validQStmt->get_result();
+            if ($validQRes) while ($vq = $validQRes->fetch_assoc()) $valid_question_ids[] = (int)$vq['id'];
+            $validQStmt->close();
+            $question_source = 'evaluation';
+        }
     }
-    $validQStmt->execute();
-    $validQRes = $validQStmt->get_result();
-    $valid_question_ids = [];
-    if ($validQRes) while ($vq = $validQRes->fetch_assoc()) $valid_question_ids[] = (int)$vq['id'];
-    $validQStmt->close();
 
     $ratings = array_filter($ratings, function ($val, $qid) use ($valid_question_ids) {
         return in_array((int)$qid, $valid_question_ids, true);
     }, ARRAY_FILTER_USE_BOTH);
 
-    if (empty($ratings) || count($ratings) !== count($valid_question_ids)) {
+    if (empty($valid_question_ids) || count($ratings) !== count($valid_question_ids)) {
         $_SESSION['toast_error'] = "Please rate all questions before submitting.";
         header("Location: faculty_dashboard.php?page=peer_eval&tid=" . $tid . "&group=" . urlencode($submitted_group)); exit;
     }
 
-    $dup = $mysqli->prepare("SELECT id FROM evaluation_tracker WHERE evaluator_id=? AND target_user_id=? AND period_id=? AND eval_type='faculty_peer' LIMIT 1");
-    $dup->bind_param("iii", $user_id, $tid, $pid); $dup->execute(); $dup->store_result();
+    $dup = $mysqli->prepare("SELECT id FROM evaluation_tracker WHERE evaluator_id=? AND target_user_id=? AND period_id=? AND eval_type=? LIMIT 1");
+    $dup->bind_param("iiis", $user_id, $tid, $pid, $eval_type);
+    $dup->execute();
+    $dup->store_result();
 
     if ($dup->num_rows === 0) {
         $dup->close();
         try {
             $mysqli->begin_transaction();
-            $overall    = count($ratings) ? round(array_sum($ratings)/count($ratings), 2) : 0;
-            $eval_type  = 'faculty_peer';
-            $peer_group_label = $peer_group_labels[$submitted_group] ?? ucfirst($submitted_group);
-$ins = $mysqli->prepare("INSERT INTO evaluation_tracker (evaluator_id,target_user_id,form_id,period_id,eval_type,peer_group,score,remarks,status,submitted_at) VALUES (?,?,?,?,?,?,?,?,'submitted',NOW())");
-            $ins->bind_param("iiiissds", $user_id, $tid, $fid, $pid, $eval_type, $peer_group_label, $overall, $comment); $ins->execute();
-            $tracker_id = $mysqli->insert_id; $ins->close();
 
-            $ri = $mysqli->prepare("INSERT INTO questionnaire_answers (tracker_id,question_id,answer_score,submitted_at) VALUES (?,?,?,NOW())");
+            $overall = round(array_sum($ratings) / count($ratings), 2);
+            $group_label = $peer_group_labels[$submitted_group] ?? ucfirst($submitted_group);
+
+            $ins = $mysqli->prepare("
+                INSERT INTO evaluation_tracker
+                (evaluator_id,target_user_id,form_id,period_id,eval_type,peer_group,score,remarks,status,submitted_at)
+                VALUES (?,?,?,?,?,?,?,?,'submitted',NOW())
+            ");
+            $ins->bind_param("iiiissds", $user_id, $tid, $fid, $pid, $eval_type, $group_label, $overall, $comment);
+            $ins->execute();
+            $tracker_id = $mysqli->insert_id;
+            $ins->close();
+
+            if ($question_source === 'user') {
+                $ri = $mysqli->prepare("INSERT INTO questionnaire_answers (tracker_id,question_id,question_source,user_question_id,answer_score,submitted_at) VALUES (?,NULL,'user',?,?,NOW())");
+            } else {
+                $ri = $mysqli->prepare("INSERT INTO questionnaire_answers (tracker_id,question_id,question_source,user_question_id,answer_score,submitted_at) VALUES (?,?,'evaluation',NULL,?,NOW())");
+            }
             foreach ($ratings as $qid => $rating) {
-                $qid = intval($qid); $rating = min(5, max(1, intval($rating)));
-                $ri->bind_param("iii", $tracker_id, $qid, $rating); $ri->execute();
+                $qid = intval($qid);
+                $rating = min(5, max(1, intval($rating)));
+                $ri->bind_param("iii", $tracker_id, $qid, $rating);
+                $ri->execute();
             }
             $ri->close();
+
             $mysqli->commit();
 
-            // Notify the evaluated faculty member — anonymously, no evaluator identity attached.
-            $notif_msg = "You have received a new peer evaluation.";
+            $notif_msg = ($submitted_group === 'school_head')
+                ? "You have received a new School Head evaluation."
+                : "You have received a new evaluation.";
             $nins = $mysqli->prepare("INSERT INTO notifications (type, user_id, message) VALUES ('evaluation_received', ?, ?)");
             $nins->bind_param("is", $tid, $notif_msg);
-            $nins->execute(); $nins->close();
+            $nins->execute();
+            $nins->close();
 
-            $_SESSION['toast'] = "Peer evaluation submitted!";
+            $_SESSION['toast'] = "Evaluation submitted!";
         } catch (Exception $e) {
             $mysqli->rollback();
-            error_log('[faculty_dashboard] submit_peer failed for evaluator=' . $user_id . ' target=' . $tid . ': ' . $e->getMessage());
-            // A duplicate-key error from the unique index lands here too (a
-            // race between two near-simultaneous submissions) — same
-            // user-facing message either way, no internal detail leaked.
+            error_log('[faculty_dashboard] submit evaluation failed for evaluator=' . $user_id . ' target=' . $tid . ': ' . $e->getMessage());
             $_SESSION['toast_error'] = (($mysqli->errno ?? 0) === 1062)
-                ? "You already evaluated this faculty member this period."
+                ? "You already evaluated this person this period."
                 : "Submission failed. Please try again.";
         }
     } else {
         $dup->close();
-        $_SESSION['toast_error'] = "You already evaluated this faculty member this period.";
+        $_SESSION['toast_error'] = "You already evaluated this person this period.";
     }
+
     header("Location: faculty_dashboard.php?page=peer&group=" . urlencode($submitted_group)); exit;
 }
 
@@ -619,6 +771,60 @@ $perf_color = $my_avg === null ? '#6b7280' : ($my_avg >= 4 ? '#4ade80' : ($my_av
     --radius:12px; --shadow:0 4px 24px rgba(0,0,0,.35);
     --sidebar-w:240px;
 }
+body.light-theme{
+    --dark:#F3F6FB; --mid:#FFFFFF; --inner:#EEF2F8;
+    --accent:#2B6CB0; --hover:#1E4E82;
+    --teal:#0D9488; --teal-light:rgba(13,148,136,.10); --teal-hover:#0F766E;
+    --light:#16263B; --muted:#5B7186;
+    --danger:#DC2626; --success:#16A34A;
+    --border:rgba(15,31,61,0.10);
+    --shadow:0 4px 24px rgba(15,31,61,.08);
+}
+body.light-theme .sidebar-brand:hover{background:rgba(15,31,61,.04);}
+body.light-theme .nav-link:hover{background:rgba(15,31,61,.05);}
+body.light-theme .cat-bar-bg{background:rgba(15,31,61,.08);}
+body.light-theme .scale-legend-bar{background:rgba(15,31,61,.03);}
+body.light-theme .btn-cancel-new:hover{background:rgba(15,31,61,.06);}
+body.light-theme .suggestion-chip{background:rgba(15,31,61,.04);}
+body.light-theme .notif-btn{background:rgba(15,31,61,.06);}
+body.light-theme .notif-item{border-bottom:1px solid rgba(15,31,61,.07);}
+body.light-theme .profile-dd-btn:hover{background:rgba(15,31,61,.06);}
+body.light-theme .profile-dd-icon{background:rgba(15,31,61,.06);}
+body.light-theme .dd-appearance-val{background:rgba(15,31,61,.06);}
+body.light-theme .sidebar-title,
+body.light-theme .nav-link.active,
+body.light-theme .nav-page-title,
+body.light-theme .welcome-text h2,
+body.light-theme .stat-card-val,
+body.light-theme .section-title,
+body.light-theme .eval-modal-title,
+body.light-theme .eval-info-value,
+body.light-theme .peer-name,
+body.light-theme .eval-name,
+body.light-theme .q-text-new,
+body.light-theme .profile-name,
+body.light-theme .notif-header-title,
+body.light-theme .photo-modal-title{color:var(--light);}
+body.light-theme .level-view-empty,
+body.light-theme .peer-select-hint.warn,
+body.light-theme .no-period-warn{color:#B45309;}
+body.light-theme .notif-btn:hover,
+body.light-theme .notif-btn.has-unread{color:#B45309;}
+body.light-theme .info-note i{color:#2563EB;}
+body.light-theme .btn-view-all-evals{color:#2563EB;}
+body.light-theme .toast-success{color:#15803D;}
+body.light-theme .toast-error{color:#B91C1C;}
+body.light-theme .level-view-pill{color:#0F766E;}
+.nav-icon-blue{color:#3B82F6;}
+.nav-icon-purple{color:#8B5CF6;}
+.nav-icon-green{color:#22C55E;}
+.nav-icon-orange{color:#F97316;}
+.profile-dd-icon.dd-icon-blue{background:rgba(59,130,246,.14);color:#3B82F6;}
+.profile-dd-icon.dd-icon-amber{background:rgba(217,119,6,.14);color:#D97706;}
+.profile-dd-icon.dd-icon-purple{background:rgba(139,92,246,.14);color:#8B5CF6;}
+.profile-dd-btn:hover .profile-dd-icon.dd-icon-blue{background:rgba(59,130,246,.24);}
+.profile-dd-btn:hover .profile-dd-icon.dd-icon-amber{background:rgba(217,119,6,.24);}
+.profile-dd-btn:hover .profile-dd-icon.dd-icon-purple{background:rgba(139,92,246,.24);}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);min-height:100vh;display:flex;}
 .sidebar{width:var(--sidebar-w);flex-shrink:0;background:var(--mid);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:40;transition:transform .3s;}
@@ -812,7 +1018,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .photo-upload-hint{font-size:11px;color:var(--muted);margin-top:5px;}
 .no-period-warn{background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.18);border-radius:10px;padding:16px 20px;margin-bottom:18px;display:flex;gap:10px;align-items:center;font-size:13px;color:#fcd34d;}
 
-/* ── PEER EVAL — STEP 1: DESIGNATION SELECT ── */
+/* ── EVALUATION — STEP 1: DESIGNATION SELECT ── */
 .desig-select-chips{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:4px;}
 .desig-select-chip{display:flex;align-items:center;gap:8px;padding:14px 22px;border-radius:10px;border:2px solid var(--border);background:var(--inner);color:var(--light);font-size:14px;font-weight:700;text-decoration:none;transition:all .2s;}
 .desig-select-chip:hover{border-color:var(--teal);color:var(--teal-hover);background:rgba(13,148,136,.1);}
@@ -896,24 +1102,16 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
         <i class="fa-solid fa-chevron-down sidebar-caret" id="sidebarCaret"></i>
     </div>
     <div class="sidebar-profile-dropdown" id="sidebarProfileDropdown">
-        <button class="profile-dd-btn" onclick="openPhotoModal()">
-            <span class="profile-dd-icon"><i class="fa-solid fa-camera"></i></span>
-            Update Profile Photo
-        </button>
         <a href="faculty_dashboard.php?page=profile" class="profile-dd-btn">
-            <span class="profile-dd-icon"><i class="fa-solid fa-gear"></i></span>
+            <span class="profile-dd-icon dd-icon-blue"><i class="fa-solid fa-gear"></i></span>
             Settings
         </a>
         <a href="change_password.php" class="profile-dd-btn">
-            <span class="profile-dd-icon"><i class="fa-solid fa-lock"></i></span>
+            <span class="profile-dd-icon dd-icon-amber"><i class="fa-solid fa-lock"></i></span>
             Change Password
         </a>
-        <a href="faculty_dashboard.php?page=profile" class="profile-dd-btn" onclick="localStorage.setItem('pbi_open_level_dd','1')">
-            <span class="profile-dd-icon"><i class="fa-solid fa-sliders"></i></span>
-            My Teaching Level(s)
-        </a>
         <button type="button" class="profile-dd-btn" id="appearanceBtn" onclick="toggleAppearance(event)">
-            <span class="profile-dd-icon"><i class="fa-solid fa-palette"></i></span>
+            <span class="profile-dd-icon dd-icon-purple"><i class="fa-solid fa-palette"></i></span>
             Appearance
             <span class="dd-appearance-val" id="appearanceVal">Dark</span>
         </button>
@@ -928,20 +1126,20 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
     <nav class="sidebar-nav">
         <div class="nav-section-label">Main</div>
         <a href="faculty_dashboard.php?page=dashboard" class="nav-link <?= $page==='dashboard'?'active':'' ?>">
-            <i class="fa-solid fa-house"></i> Dashboard
+            <i class="fa-solid fa-house nav-icon-blue"></i> Dashboard
         </a>
         <a href="faculty_dashboard.php?page=profile" class="nav-link <?= $page==='profile'?'active':'' ?>">
-            <i class="fa-solid fa-id-badge"></i> My Profile &amp; Role
+            <i class="fa-solid fa-id-badge nav-icon-purple"></i> Role &amp; Designation
         </a>
 
         <div class="nav-section-label">Evaluation</div>
         <a href="faculty_dashboard.php?page=my_results" class="nav-link <?= $page==='my_results'?'active':'' ?>">
-            <i class="fa-solid fa-chart-bar"></i> My Results
+            <i class="fa-solid fa-chart-bar nav-icon-green"></i> My Results
         </a>
         <a href="faculty_dashboard.php?page=peer" class="nav-link <?= in_array($page,['peer','peer_eval'])?'active':'' ?>">
-            <i class="fa-solid fa-users-viewfinder"></i> Peer Evaluation
-            <?php if ($page==='peer' && !empty($peers_all)): ?>
-            <span class="nav-badge"><?= count($peers_all) - count($done_peers) ?></span>
+            <i class="fa-solid fa-users-viewfinder nav-icon-orange"></i> Evaluation
+            <?php if ($page==='peer' && (!empty($peers_all) || !empty($school_heads))): ?>
+            <span class="nav-badge"><?= (count($peers_all) - count($done_peers)) + (count($school_heads) - count($done_school_heads)) ?></span>
             <?php endif; ?>
         </a>
 
@@ -1007,7 +1205,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
             <i class="fa-solid fa-bars"></i>
         </button>
         <div class="nav-page-title">
-            <?php $titles=['dashboard'=>'Dashboard','profile'=>'My Profile & Role','my_results'=>'My Results','peer'=>'Peer Evaluation','peer_eval'=>'Evaluate Peer'];
+            <?php $titles=['dashboard'=>'Dashboard','profile'=>'Role & Designation','my_results'=>'My Results','peer'=>'Evaluation','peer_eval'=>'Evaluate'];
             echo $titles[$page] ?? 'Dashboard'; ?>
         </div>
     </div>
@@ -1163,16 +1361,23 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 <?php elseif ($page === 'profile'): ?>
     <div class="profile-header" style="justify-content:space-between;flex-wrap:wrap;">
         <div style="display:flex;align-items:center;gap:18px;">
-            <div class="profile-avatar-wrap">
+            <div class="profile-avatar-wrap" style="position:relative;">
                 <?php if ($faculty_photo): ?>
                 <img src="<?= UPLOAD_URL . htmlspecialchars($faculty_photo) ?>" alt=""/>
                 <?php else: ?>
                 <i class="fa-solid fa-chalkboard-user"></i>
                 <?php endif; ?>
+                <button type="button" onclick="openPhotoModal()" title="Update Profile Photo"
+                        style="position:absolute;bottom:-2px;right:-2px;width:30px;height:30px;border-radius:50%;background:var(--teal);border:2px solid var(--mid);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;">
+                    <i class="fa-solid fa-camera"></i>
+                </button>
             </div>
             <div>
                 <div class="profile-name"><?= htmlspecialchars($full_name) ?></div>
                 <div class="profile-desig-badge"><i class="fa-solid fa-id-badge"></i> <?= htmlspecialchars($designation) ?></div>
+                <button type="button" onclick="openPhotoModal()" style="margin-top:6px;background:none;border:none;color:var(--teal);font-size:12px;font-weight:600;cursor:pointer;padding:0;">
+                    <i class="fa-solid fa-camera"></i> Update Profile Photo
+                </button>
             </div>
         </div>
 
@@ -1214,7 +1419,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 
     <div class="info-note">
         <i class="fa-solid fa-circle-info"></i>
-        <span>Updating your designation takes effect <strong style="color:var(--light)">immediately</strong> and changes which evaluation questions apply to you. The admin is notified automatically. To change your profile photo, use <strong style="color:var(--light)">Update Profile Photo</strong> from the sidebar menu.</span>
+        <span>Updating your designation takes effect <strong style="color:var(--light)">immediately</strong> and changes which evaluation questions apply to you. The admin is notified automatically.</span>
     </div>
 </div>
 
@@ -1271,24 +1476,26 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
     </div>
 </div>
 
-<!-- ══════════ PEER EVALUATION — STEP 1: CHOOSE DESIGNATION ══════════ -->
+<!-- ══════════ EVALUATION — STEP 1: CHOOSE GROUP ══════════ -->
 <?php elseif ($page === 'peer' && $peer_group === null): ?>
 
+<?php
+// Match the Manage Registrations counts: account role determines the
+// Teacher/Staff group, while the currently logged-in faculty account has
+// already been excluded from $peers_all above.
+$teacher_count = count(array_filter($peers_all, fn($p) => ($p['role'] ?? '') === 'teacher'));
+$staff_count = count(array_filter($peers_all, fn($p) => ($p['role'] ?? '') === 'staff'));
+?>
+
 <?php if (!$period): ?>
-<div class="no-period-warn"><i class="fa-solid fa-clock"></i> No active evaluation period. Peer evaluation is currently closed.</div>
+<div class="no-period-warn"><i class="fa-solid fa-clock"></i> No active evaluation period. Evaluation is currently closed.</div>
 <?php endif; ?>
 
 <div class="section-card">
-    <div class="section-title"><i class="fa-solid fa-users" style="color:var(--teal)"></i> Peer Evaluation</div>
-    <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">First, choose which designation you'd like to evaluate. You'll then pick a specific person from that list.</p>
+    <div class="section-title"><i class="fa-solid fa-clipboard-check" style="color:var(--teal)"></i> Evaluation</div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Choose who you want to evaluate. Faculty can evaluate fellow teachers, staff members, or the School Heads (Dean and Principal).</p>
 
-    <?php if (empty($peers_all)): ?>
-    <div class="empty-state"><i class="fa-solid fa-users"></i><p>No other faculty members registered yet.</p></div>
-    <?php else:
-        $teacher_count = count(array_filter($peers_all, fn($p) => resolve_peer_group($p['designation'] ?? '', $token_to_target, $system_categories, $p['role'] ?? null) === 'teacher'));
-        $staff_count   = count($peers_all) - $teacher_count;
-    ?>
-    <div class="fg-label" style="margin-bottom:10px;"><i class="fa-solid fa-bolt" style="margin-right:5px"></i>Step 1: Select Designation</div>
+    <div class="fg-label" style="margin-bottom:10px;"><i class="fa-solid fa-bolt" style="margin-right:5px"></i>Step 1: Select Evaluation Group</div>
     <div class="desig-select-chips">
         <a href="faculty_dashboard.php?page=peer&group=teacher" class="desig-select-chip">
             <i class="fa-solid fa-chalkboard-user" style="color:var(--teal-hover)"></i> Teacher <span class="dsc-count">(<?= $teacher_count ?>)</span>
@@ -1296,28 +1503,43 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
         <a href="faculty_dashboard.php?page=peer&group=staff" class="desig-select-chip">
             <i class="fa-solid fa-briefcase" style="color:var(--teal-hover)"></i> Staff <span class="dsc-count">(<?= $staff_count ?>)</span>
         </a>
+        <a href="faculty_dashboard.php?page=peer&group=school_head" class="desig-select-chip">
+            <i class="fa-solid fa-user-tie" style="color:var(--teal-hover)"></i> School Head <span class="dsc-count">(<?= count($school_heads) ?>)</span>
+        </a>
     </div>
-    <div class="peer-select-hint"><i class="fa-solid fa-circle-info"></i> Please select a designation before proceeding.</div>
-    <?php endif; ?>
+    <div class="peer-select-hint"><i class="fa-solid fa-circle-info"></i> School Head includes the Dean and Principal.</div>
 </div>
 
-<!-- ══════════ PEER EVALUATION — STEP 2: FILTERED PEER LIST ══════════ -->
+<!-- ══════════ EVALUATION — STEP 2: TARGET LIST ══════════ -->
 <?php elseif ($page === 'peer' && $peer_group !== null): ?>
 
-<a href="faculty_dashboard.php?page=peer" class="back-link"><i class="fa-solid fa-arrow-left"></i> Change Designation</a>
+<a href="faculty_dashboard.php?page=peer" class="back-link"><i class="fa-solid fa-arrow-left"></i> Change Evaluation Group</a>
 
 <?php if (!$period): ?>
-<div class="no-period-warn"><i class="fa-solid fa-clock"></i> No active evaluation period. Peer evaluation is currently closed.</div>
+<div class="no-period-warn"><i class="fa-solid fa-clock"></i> No active evaluation period. Evaluation is currently closed.</div>
 <?php endif; ?>
 
 <div class="section-card">
-    <div class="section-title"><i class="fa-solid fa-users" style="color:var(--teal)"></i> Fellow <?= htmlspecialchars($peer_group_labels[$peer_group]) ?> Members</div>
-    <p style="font-size:13px;color:var(--muted);margin-bottom:18px;">Select a colleague to evaluate. Your identity will be kept confidential.</p>
+    <div class="section-title"><i class="fa-solid <?= $peer_group === 'school_head' ? 'fa-user-tie' : 'fa-users' ?>" style="color:var(--teal)"></i>
+        <?= $peer_group === 'school_head' ? 'School Heads' : 'Fellow ' . htmlspecialchars($peer_group_labels[$peer_group]) . ' Members' ?>
+    </div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:18px;">
+        <?= $peer_group === 'school_head'
+            ? 'Select the Dean or Principal to evaluate. Your identity will be kept confidential.'
+            : 'Select a colleague to evaluate. Your identity will be kept confidential.' ?>
+    </p>
+
     <?php if (empty($peers)): ?>
-    <div class="empty-state"><i class="fa-solid fa-users"></i><p>No registered <?= htmlspecialchars(strtolower($peer_group_labels[$peer_group])) ?> members found.</p></div>
+    <div class="empty-state"><i class="fa-solid fa-users"></i><p>
+        <?= $peer_group === 'school_head' ? 'No Dean or Principal account was found.' : 'No registered ' . htmlspecialchars(strtolower($peer_group_labels[$peer_group])) . ' members found.' ?>
+    </p></div>
     <?php else: ?>
     <div class="peer-grid">
-        <?php foreach ($peers as $p): $done = in_array($p['id'], $done_peers); ?>
+        <?php foreach ($peers as $p):
+            $done = $peer_group === 'school_head'
+                ? in_array((int)$p['id'], $done_school_heads, true)
+                : in_array((int)$p['id'], $done_peers, true);
+        ?>
         <div class="peer-card <?= $done?'done':'' ?>">
             <?php if ($p['photo']): ?>
             <img class="peer-photo" src="<?= UPLOAD_URL . htmlspecialchars($p['photo']) ?>" alt=""/>
@@ -1337,9 +1559,15 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
         </div>
         <?php endforeach; ?>
     </div>
-    <?php $done_in_group = count(array_intersect(array_column($peers, 'id'), $done_peers)); ?>
+    <?php
+        $done_in_group = $peer_group === 'school_head'
+            ? count(array_intersect(array_map('intval', array_column($peers, 'id')), $done_school_heads))
+            : count(array_intersect(array_map('intval', array_column($peers, 'id')), $done_peers));
+    ?>
     <?php if ($done_in_group > 0): ?>
-    <div class="peer-select-hint warn"><i class="fa-solid fa-circle-check"></i> You've already evaluated <?= $done_in_group ?> of <?= count($peers) ?> <?= htmlspecialchars(strtolower($peer_group_labels[$peer_group])) ?> members this period.</div>
+    <div class="peer-select-hint warn"><i class="fa-solid fa-circle-check"></i>
+        You've already evaluated <?= $done_in_group ?> of <?= count($peers) ?> <?= htmlspecialchars(strtolower($peer_group_labels[$peer_group])) ?> members this period.
+    </div>
     <?php endif; ?>
     <?php endif; ?>
 </div>
@@ -1364,7 +1592,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 
 <?php if (empty($peer_questions)): ?>
 <div style="background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.18);border-radius:10px;padding:18px;color:#fcd34d;font-size:13px;display:flex;gap:10px;">
-    <i class="fa-solid fa-triangle-exclamation"></i> No peer evaluation questions set up yet. Please contact the admin.
+    <i class="fa-solid fa-triangle-exclamation"></i> No evaluation questions have been set up yet. Please contact the admin.
 </div>
 <?php else: ?>
 
@@ -1425,10 +1653,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 </form>
 <?php endif; ?>
 
-<!-- ══════════ PEER EVAL — INVALID / MISSING TARGET ══════════ -->
+<!-- ══════════ EVALUATION — INVALID / MISSING TARGET ══════════ -->
 <?php elseif ($page === 'peer_eval' && !$peer_target): ?>
 
-<a href="faculty_dashboard.php?page=peer" class="back-link"><i class="fa-solid fa-arrow-left"></i> Back to Peer Selection</a>
+<a href="faculty_dashboard.php?page=peer" class="back-link"><i class="fa-solid fa-arrow-left"></i> Back to Evaluation Selection</a>
 
 <div style="background:rgba(240,84,84,.08);border:1px solid rgba(240,84,84,.25);border-radius:10px;padding:18px;color:#fca5a5;font-size:13px;display:flex;gap:10px;">
     <i class="fa-solid fa-circle-exclamation"></i>
@@ -1577,19 +1805,6 @@ document.addEventListener('click', function(e) {
     if (sidebarProfile && dd && !sidebarProfile.contains(e.target) && !dd.contains(e.target)) {
         dd.classList.remove('open');
         document.getElementById('sidebarCaret').style.transform = '';
-    }
-});
-
-// If the "My Teaching Level(s)" item was clicked from the sidebar dropdown,
-// land on the profile page and scroll to / briefly highlight the read-only
-// level card (levels are admin-assigned now, not self-editable).
-document.addEventListener('DOMContentLoaded', function() {
-    const wrap = document.getElementById('levelDdWrap');
-    if (wrap && localStorage.getItem('pbi_open_level_dd') === '1') {
-        localStorage.removeItem('pbi_open_level_dd');
-        wrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        wrap.classList.add('flash');
-        setTimeout(() => wrap.classList.remove('flash'), 1600);
     }
 });
 

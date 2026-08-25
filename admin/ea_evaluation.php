@@ -125,67 +125,102 @@ function e($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>EA Evaluation — PBI</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#102238;--panel:#18314e;--panel2:#203d5f;--inner:#0F1F3D;--line:#315273;--text:#edf4fb;--muted:#aebfd0;--purple:#8b5cf6;--purple-dark:#6d3fd6;--blue:#60a5fa;--green:#34d399;--amber:#f59e0b;--shadow:0 8px 32px rgba(0,0,0,.35)}
-*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif}
-.top{height:74px;background:#203d5f;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 34px;gap:26px;position:sticky;top:0;z-index:5}
-.brand{font-weight:800;letter-spacing:.4px;flex:1}.brand i{color:var(--purple);margin-right:9px}
-.top-back{color:var(--muted);text-decoration:none;padding:10px 16px;border-radius:9px;font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:8px;border:1px solid var(--line)}
-.top-back:hover{color:#fff;border-color:#4a6d92}
-.account{color:var(--muted);font-size:13px}
+:root{
+  --page-bg:#F8FAFC;--card-bg:#FFFFFF;--inner:#F1F5F9;--card-border:#CBD5E1;
+  --text-dark:#0F172A;--text-dim:#475569;
+  --radius:10px;--card-shadow:0 1px 2px rgba(15,23,42,.04),0 4px 12px rgba(15,23,42,.05);
+  --accent:#3B82F6;--accent-bg:rgba(59,130,246,.08);--accent-border:rgba(59,130,246,.22);--hover:#2563EB;
+  --amber:#D97706;--amber-bg:rgba(217,119,6,.08);--amber-border:rgba(217,119,6,.24);
+  --success:#059669;--success-bg:rgba(5,150,105,.1);--success-border:rgba(5,150,105,.25);
+  --danger:#DC2626;--danger-bg:rgba(220,38,38,.08);--danger-border:rgba(220,38,38,.22);
+}
+*{box-sizing:border-box} body{margin:0;background:var(--page-bg);color:var(--text-dark);font-family:'Inter',Segoe UI,Arial,sans-serif}
 .wrap{max-width:1320px;margin:auto;padding:34px}
-.page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px;flex-wrap:wrap;gap:14px}
-.page-header h1{margin:0;font-size:30px}.page-header p{color:var(--muted);margin:6px 0 0}
-.period-badge{background:rgba(139,92,246,.14);border:1px solid rgba(139,92,246,.3);color:#c4b5fd;padding:8px 16px;border-radius:20px;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:8px;white-space:nowrap}
-.period-badge.closed{background:rgba(248,113,113,.1);border-color:rgba(248,113,113,.3);color:#ffb4b4}
+.back-link{display:inline-flex;align-items:center;gap:8px;color:var(--text-dim);text-decoration:none;font-size:13px;margin-bottom:20px}
+.back-link:hover{color:var(--text-dark)}
+.page-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px;flex-wrap:wrap;gap:14px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;padding:22px 26px;box-shadow:var(--card-shadow)}
+.page-header h1{margin:0;font-family:'Rajdhani',sans-serif;font-size:28px;font-weight:700;color:var(--text-dark)}.page-header p{color:var(--text-dim);margin:6px 0 0;font-size:13px}
+.period-badge{background:var(--accent-bg);border:1px solid var(--accent-border);color:var(--accent);padding:8px 16px;border-radius:20px;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.period-badge.closed{background:var(--danger-bg);border-color:var(--danger-border);color:var(--danger)}
 
 .alert{border-radius:10px;padding:13px 16px;font-size:13.5px;margin-bottom:18px;display:flex;align-items:center;gap:8px}
-.alert-success{background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.25);color:#8df0c8}
+.alert-success{background:var(--success-bg);border:1px solid var(--success-border);color:var(--success)}
 
 .card-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px}
-.stat-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px 20px;box-shadow:var(--shadow)}
-.stat-card i{color:var(--purple);font-size:18px;margin-bottom:8px;display:block}
-.stat-card .num{font-size:26px;font-weight:800;color:#fff}
-.stat-card .label{font-size:12px;color:var(--muted);margin-top:4px}
+.stat-card{background:var(--card-bg);border:1px solid var(--card-border);border-top:4px solid var(--accent);border-radius:14px;padding:18px 20px;box-shadow:var(--card-shadow)}
+.stat-card i{color:var(--accent);font-size:18px;margin-bottom:8px;display:block}
+.stat-card .num{font-size:26px;font-weight:800;color:var(--text-dark)}
+.stat-card .label{font-size:12px;color:var(--text-dim);margin-top:4px}
 
-.eval-tabs{display:flex;gap:4px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:4px;margin-bottom:22px;width:fit-content;flex-wrap:wrap}
-.eval-tab{padding:10px 20px;border-radius:8px;font-size:13.5px;font-weight:700;color:var(--muted);text-decoration:none;display:flex;align-items:center;gap:8px}
-.eval-tab.active{background:var(--purple);color:#fff}
-.eval-tab:not(.active):hover{background:rgba(255,255,255,.05);color:var(--text)}
-.eval-tab .badge{background:rgba(255,255,255,.15);border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700}
-.eval-tab.active .badge{background:rgba(255,255,255,.25)}
+.eval-tabs{display:flex;gap:4px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius);padding:4px;margin-bottom:22px;width:fit-content;flex-wrap:wrap;box-shadow:var(--card-shadow)}
+.eval-tab{padding:10px 20px;border-radius:7px;font-size:13.5px;font-weight:700;color:var(--text-dim);text-decoration:none;display:flex;align-items:center;gap:8px}
+.eval-tab.active{background:var(--accent);color:#fff}
+.eval-tab:not(.active):hover{background:var(--inner);color:var(--text-dark)}
+.eval-tab .badge{background:rgba(15,23,42,.12);border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700}
+.eval-tab.active .badge{background:rgba(255,255,255,.28)}
 
-.table-wrap{background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:var(--shadow)}
+.table-wrap{background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;overflow:hidden;box-shadow:var(--card-shadow)}
 table{width:100%;border-collapse:collapse}
 thead tr{background:var(--inner)}
-thead th{padding:13px 18px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);text-align:left;white-space:nowrap}
-tbody tr{border-bottom:1px solid rgba(255,255,255,.05)}
+thead th{padding:13px 18px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);text-align:left;white-space:nowrap;border-bottom:1px solid var(--card-border)}
+tbody tr{border-bottom:1px solid var(--card-border)}
 tbody tr:last-child{border-bottom:none}
-tbody tr:hover{background:rgba(139,92,246,.06)}
+tbody tr:hover{background:var(--page-bg)}
 tbody td{padding:14px 18px;font-size:13.5px;vertical-align:middle}
 .person-cell{display:flex;align-items:center;gap:11px}
-.person-photo{width:38px;height:38px;border-radius:50%;object-fit:cover;background:var(--inner);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--muted)}
-.person-name{font-weight:700;color:#fff}
-.muted-cell{color:var(--muted);font-size:12.5px}
+.person-photo{width:38px;height:38px;border-radius:50%;object-fit:cover;background:var(--inner);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--text-dim)}
+.person-name{font-weight:700;color:var(--text-dark)}
+.muted-cell{color:var(--text-dim);font-size:12.5px}
 .status-pill{display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:20px;font-size:11px;font-weight:800}
-.status-pill.done{background:rgba(52,211,153,.14);color:var(--green)}
-.status-pill.pending{background:rgba(245,158,11,.14);color:#f8c675}
-.btn-eval{background:var(--purple);border:none;color:#fff;padding:8px 15px;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
-.btn-eval:hover{background:var(--purple-dark)}
-.btn-view{background:transparent;border:1px solid var(--line);color:var(--muted);padding:8px 15px;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;margin-left:6px}
-.btn-view:hover{color:var(--text);border-color:#4a6d92}
-.empty-state{text-align:center;padding:56px 20px;color:var(--muted)}
+.status-pill.done{background:var(--success-bg);color:var(--success)}
+.status-pill.pending{background:var(--amber-bg);color:var(--amber)}
+.btn-eval{background:var(--accent);border:none;color:#fff;padding:8px 15px;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.btn-eval:hover{background:var(--hover)}
+.btn-view{background:transparent;border:1px solid var(--card-border);color:var(--text-dim);padding:8px 15px;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;margin-left:6px}
+.btn-view:hover{color:var(--text-dark);border-color:#94A3B8}
+.empty-state{text-align:center;padding:56px 20px;color:var(--text-dim)}
 .empty-state i{font-size:36px;margin-bottom:14px;display:block;opacity:.3}
-@media(max-width:900px){.card-grid{grid-template-columns:1fr}.top-back span{display:none}.top{padding:0 18px}.wrap{padding:20px}}
+@media(max-width:900px){.card-grid{grid-template-columns:1fr}.wrap{padding:20px}}
+</style>
+
+<!-- Admin text color override: keep standard page text black for readability. -->
+<style id="admin-black-text-override">
+  body { color:#000 !important; }
+  body p, body span, body label, body li, body td, body th,
+  body h1, body h2, body h3, body h4, body h5, body h6,
+  body .page-title, body .page-header, body .page-header *,
+  body .page-sub, body .subtitle, body .description, body .helper,
+  body .muted, body .hint, body .section-title, body .section-heading,
+  body .card-title, body .card-subtitle, body .form-label,
+  body .table-title, body .table-subtitle { color:#000 !important; }
+  body a:not(.btn):not(.button):not([class*="btn-"]) { color:#000 !important; }
+  body input, body select, body textarea { color:#000 !important; }
+  body input::placeholder, body textarea::placeholder { color:#555 !important; }
+</style>
+
+<style id="admin-global-black-text">
+/* Global admin text treatment: normal interface text is black throughout the admin side.
+   Intentional semantic colors on buttons, badges, alerts, icons, and status indicators are preserved. */
+body { color:#000 !important; }
+body p, body h1, body h2, body h3, body h4, body h5, body h6,
+body label, body li, body td, body th, body dt, body dd,
+body .page-title, body .page-header, body .page-header p, body .page-sub,
+body .subtitle, body .description, body .helper, body .hint, body .muted,
+body .section-title, body .section-heading, body .card-title, body .card-subtitle,
+body .table-title, body .table-subtitle, body .form-label, body .modal-title, body .modal-sub,
+body .empty-state, body .empty-cta, body .field-label, body .stat-label, body .stat-value,
+body .back, body .back-btn, body .nav-link, body .sidebar-text, body .content-text { color:#000 !important; }
+body a:not(.btn):not(.button):not([class*="btn-"]):not(.badge):not(.status):not(.nav-item) { color:#000 !important; }
+body input, body select, body textarea { color:#000 !important; }
+body input::placeholder, body textarea::placeholder { color:#555 !important; }
 </style>
 </head>
 <body>
-<header class="top">
-  <div class="brand"><i class="fa-solid fa-user-check"></i>EA Evaluation</div>
-  <a class="top-back" href="admin_dashboard.php"><i class="fa-solid fa-arrow-left"></i> Back to Dashboard</a>
-  <div class="account"><?= e($_SESSION['full_name'] ?? 'Executive Assistant') ?></div>
-</header>
 <main class="wrap">
+
+<a class="back-link" href="admin_dashboard.php" onclick="if(window.parent&&window.parent!==window&&window.parent.showPage){window.parent.showPage('dashboard',window.parent.document.getElementById('link-dashboard'));return false;}"><i class="fa-solid fa-arrow-left"></i> Back to Dashboard</a>
 
 <div class="page-header">
   <div>

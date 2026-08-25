@@ -13,7 +13,7 @@
 // scope, centralized System Settings ($settings), shared sidebar/styles.
 //
 // eval_type values: supervisor_to_teacher / supervisor_to_staff /
-// supervisor_to_ea — shared schema with Dean's evaluate flow.
+// upward_to_ea — shared schema with Dean's evaluate flow.
 //
 // NOTE: this page must not derive academic year/structure/term/period/
 // status itself. All of that comes from $settings (set in
@@ -51,7 +51,7 @@ $user_id = $_SESSION['user_id'];
 $toast       = $_SESSION['toast']       ?? ''; unset($_SESSION['toast']);
 $toast_error = $_SESSION['toast_error'] ?? ''; unset($_SESSION['toast_error']);
 
-$bucket_to_evaltype = ['Teacher' => 'supervisor_to_teacher', 'Staff' => 'supervisor_to_staff', 'Executive Assistant' => 'supervisor_to_ea'];
+$bucket_to_evaltype = ['Teacher' => 'supervisor_to_teacher', 'Staff' => 'supervisor_to_staff', 'Executive Assistant' => 'upward_to_ea'];
 
 // ── TAB (Faculty [Teacher+Staff merged] / Executive Assistant) ─────────
 // Same merge rationale as the Dean portal: one "Faculty" roster with a
@@ -119,7 +119,7 @@ if ($structureActive) {
     // Uses $period_id_int from the centralized $settings — not a
     // page-local period lookup.
     if ($period_id_int) {
-        $dstmt = $mysqli->prepare("SELECT target_user_id, eval_type, submitted_at FROM evaluation_tracker WHERE evaluator_id=? AND eval_type IN ('supervisor_to_teacher','supervisor_to_staff','supervisor_to_ea') AND period_id=?");
+        $dstmt = $mysqli->prepare("SELECT target_user_id, eval_type, submitted_at FROM evaluation_tracker WHERE evaluator_id=? AND eval_type IN ('supervisor_to_teacher','supervisor_to_staff','upward_to_ea') AND period_id=?");
         $dstmt->bind_param("ii", $user_id, $period_id_int);
         $dstmt->execute();
         $dres = $dstmt->get_result();
@@ -159,7 +159,7 @@ if ($structureActive) {
     usort($facultyMerged, fn($a, $b) => strcmp($a['full_name'], $b['full_name']));
 
     foreach ($ea_users as $u) {
-        $row = $u; $row['role_label'] = 'Executive Assistant'; $row['eval_type'] = 'supervisor_to_ea';
+        $row = $u; $row['role_label'] = 'Executive Assistant'; $row['eval_type'] = 'upward_to_ea';
         $eaList[] = $row;
     }
 

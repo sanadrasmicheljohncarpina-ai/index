@@ -1,17 +1,28 @@
 <?php
 // admin/ea_evaluate.php
 // The per-person EA evaluation form. Reached from ea_evaluation.php via
-// ?type=<Principal|Dean|Non-Teaching Staff>&user_id=<id>. Rebuilt to match
-// the same evaluate-page pattern used by principal_evaluate.php and
+// ?type=<Principal|Dean|Non-Teaching Staff>&user_id=<id>. Matches the same
+// evaluate-page pattern used by principal_evaluate.php and
 // dean/dean_evaluate.php: a server-rendered form with a person card,
 // one card per question with a 1-5 rating, a comment box, and a
-// read-only view once already submitted this period — instead of the
-// old AJAX-loaded question list.
+// read-only view once already submitted this period.
 //
-// Eligibility, storage, and question content are unchanged from before:
-// the target must currently be the active Principal/Dean or qualifying
-// Non-Teaching Staff (re-checked here, independent of ea_evaluation.php),
-// questions come from user_questions (eval_type='ea'), and a submission
+// Questions are NOT hardcoded here, and there is no separate "EA
+// Evaluation" question set. EA Evaluation reuses whatever is already
+// assigned to that same person elsewhere in Manage Questions
+// (admin/questionnaire.php):
+//   - Principal / Dean  -> user_questions where eval_type='school_head'
+//     (the same per-person pool the School Head Evaluation tab manages)
+//   - Non-Teaching Staff -> user_questions where eval_type='student'
+//     AND target_type='Staff' (the same per-person pool the Student
+//     Evaluation tab manages for that Staff member)
+// If nobody has assigned questions to this specific person yet in the
+// relevant tab, this page says so and links straight to that tab instead
+// of silently seeding default text.
+//
+// Eligibility and storage are otherwise unchanged: the target must
+// currently be the active Principal/Dean or qualifying Non-Teaching Staff
+// (re-checked here, independent of ea_evaluation.php), and a submission
 // writes one evaluation_tracker row (eval_type='ea') plus one
 // questionnaire_answers row per question.
 session_set_cookie_params([
@@ -92,61 +103,26 @@ $period = $mysqli->query("SELECT id, period_label FROM evaluation_periods WHERE 
 $period_id = (int)($period['id'] ?? 0);
 $is_open = $period_id > 0;
 
-// ── EA per-role default question sets (seeded the first time each
-// target is evaluated so the feature is self-contained). ─────────────
-$eaQuestionSets = [
-    'Principal' => [
-        ['Leadership & Direction','Provides clear direction and leadership for the school.'],
-        ['Leadership & Direction','Makes decisions that support the institution’s goals and policies.'],
-        ['Professionalism','Demonstrates professionalism, fairness, and accountability.'],
-        ['Communication','Communicates policies, expectations, and important information clearly.'],
-        ['People Management','Promotes a respectful, supportive, and productive workplace.'],
-        ['Performance','Responds appropriately to concerns and opportunities for improvement.'],
-    ],
-    'Dean' => [
-        ['Academic Leadership','Provides effective academic leadership for the college.'],
-        ['Academic Leadership','Supports quality instruction and continuous academic improvement.'],
-        ['Professionalism','Demonstrates fairness, integrity, and accountability in decisions.'],
-        ['Communication','Communicates academic plans, policies, and expectations clearly.'],
-        ['People Management','Supports faculty and staff and addresses concerns constructively.'],
-        ['Performance','Uses resources and decisions responsibly to achieve institutional goals.'],
-    ],
-    'Non-Teaching Staff' => [
-        ['Work Performance','Performs assigned duties accurately and consistently.'],
-        ['Work Performance','Completes responsibilities efficiently and on time.'],
-        ['Service Quality','Provides courteous, helpful, and responsive service.'],
-        ['Professionalism','Demonstrates professionalism, reliability, and accountability.'],
-        ['Communication','Communicates clearly and respectfully with clients and coworkers.'],
-        ['Teamwork','Works cooperatively with other members of the institution.'],
-    ],
-];
-
-function ensureEAQuestions(mysqli $db, int $userId, string $targetType, array $questions): void {
-    $check = $db->prepare("SELECT COUNT(*) AS c FROM user_questions WHERE user_id=? AND target_type=? AND eval_type='ea'");
-    $check->bind_param('is', $userId, $targetType);
-    $check->execute();
-    $count = (int)$check->get_result()->fetch_assoc()['c'];
-    $check->close();
-    if ($count > 0) return;
-
-    $ins = $db->prepare("INSERT INTO user_questions (user_id,target_type,eval_type,category,question_text,sort_order) VALUES (?,?,'ea',?,?,?)");
-    $sort = 1;
-    foreach ($questions as [$category,$question]) {
-        $ins->bind_param('isssi', $userId, $targetType, $category, $question, $sort);
-        $ins->execute();
-        $sort++;
-    }
-    $ins->close();
+// ── QUESTIONS: reuse whatever's assigned to this person elsewhere ──────
+// No default/fallback set and no auto-seeding. Principal/Dean read from
+// the School Head Evaluation per-person pool; Non-Teaching Staff reads
+// from the Student Evaluation per-person Staff pool. If nothing has been
+// assigned there yet, $questions comes back empty and the form below
+// shows a message linking straight to the right Manage Questions tab.
+if ($type === 'Principal' || $type === 'Dean') {
+    $qEvalType   = 'school_head';
+    $qTargetType = $type;
+} else {
+    $qEvalType   = 'student';
+    $qTargetType = 'Staff';
 }
-ensureEAQuestions($mysqli, $targetId, $type, $eaQuestionSets[$type]);
-
 $qStmt = $mysqli->prepare("
     SELECT id, category, question_text, sort_order
     FROM user_questions
-    WHERE user_id=? AND target_type=? AND eval_type='ea'
+    WHERE user_id=? AND target_type=? AND eval_type=?
     ORDER BY category, sort_order, id
 ");
-$qStmt->bind_param('is', $targetId, $type);
+$qStmt->bind_param('iss', $targetId, $qTargetType, $qEvalType);
 $qStmt->execute();
 $questions = $qStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $qStmt->close();
@@ -261,31 +237,35 @@ foreach ($questions as $q) { $questionGroups[$q['category'] ?: 'General'][] = $q
 <title>Evaluate <?= e($target['full_name']) ?> — PBI</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
-:root{--bg:#102238;--panel:#18314e;--panel2:#203d5f;--inner:#0F1F3D;--line:#315273;--text:#edf4fb;--muted:#aebfd0;--purple:#8b5cf6;--purple-dark:#6d3fd6;--green:#34d399;--shadow:0 8px 32px rgba(0,0,0,.35)}
+:root{--bg:#F8FAFC;--panel:#FFFFFF;--panel2:#EFF6FF;--inner:#F8FAFC;--line:#CBD5E1;--text:#172033;--muted:#475569;--purple:#3B82F6;--purple-dark:#2563EB;--green:#059669;--shadow:0 2px 4px rgba(15,23,42,.04),0 6px 16px rgba(15,23,42,.06)}
 *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif}
-.top{height:74px;background:#203d5f;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 34px;gap:26px;position:sticky;top:0;z-index:5}
-.brand{font-weight:800;letter-spacing:.4px;flex:1}.brand i{color:var(--purple);margin-right:9px}
+.top{height:74px;background:#FFFFFF;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 34px;gap:26px;position:sticky;top:0;z-index:5}
+.brand{font-weight:800;letter-spacing:.4px;flex:1;color:var(--text)}.brand i{color:var(--purple);margin-right:9px}
 .account{color:var(--muted);font-size:13px}
 .wrap{max-width:820px;margin:auto;padding:34px}
-.back-link{color:var(--text);font-size:13.5px;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:8px;margin-bottom:20px;background:var(--panel2);border:1px solid var(--line);padding:10px 16px;border-radius:9px}
-.back-link:hover{border-color:#4a6d92;background:var(--panel)}
+.back-link{color:var(--text);font-size:13.5px;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:8px;margin-bottom:20px;background:var(--panel);border:1px solid var(--line);padding:10px 16px;border-radius:9px}
+.back-link:hover{border-color:#93C5FD;background:var(--panel2)}
 .person-card{display:flex;align-items:center;gap:16px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;box-shadow:var(--shadow);margin-bottom:22px}
 .person-photo{width:60px;height:60px;border-radius:50%;object-fit:cover;background:var(--inner);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:22px}
-.person-name{font-size:20px;font-weight:800;color:#fff}
+.person-name{font-size:20px;font-weight:800;color:var(--text)}
 .person-meta{font-size:12.5px;color:var(--muted);margin-top:2px}
-.badge{display:inline-block;margin-top:6px;color:#c4b5fd;font-size:11.5px;background:rgba(139,92,246,.14);padding:4px 10px;border-radius:99px;font-weight:700}
+.badge{display:inline-block;margin-top:6px;color:var(--purple);font-size:11.5px;background:#EFF6FF;padding:4px 10px;border-radius:99px;font-weight:700}
 .alert{border-radius:10px;padding:13px 16px;font-size:13.5px;margin-bottom:18px;display:flex;align-items:center;gap:8px}
 .alert-error{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.25);color:#ffb4b4}
-.alert-info{background:rgba(139,92,246,.1);border:1px solid rgba(139,92,246,.3);color:#c4b5fd}
+.alert-info{background:#EFF6FF;border:1px solid #BFDBFE;color:#2563EB}
 .q-block{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;box-shadow:var(--shadow);margin-bottom:16px}
-.q-cat{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#c4b5fd;margin-bottom:6px}
+.q-cat{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--purple);margin-bottom:6px}
+.cat-heading{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--purple);margin:26px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.cat-heading:first-child{margin-top:0}
+.cat-heading i{font-size:11px}
+.q-num{color:var(--purple);font-weight:800;margin-right:6px}
 .q-text{font-size:14.5px;color:var(--text);margin-bottom:14px}
 .rating-row{display:flex;gap:10px}
 .rating-opt{flex:1;text-align:center}
 .rating-opt input{display:none}
 .rating-opt label{display:block;padding:10px 0;border-radius:8px;border:1px solid var(--line);background:var(--inner);color:var(--muted);font-size:13px;font-weight:700;cursor:pointer}
 .rating-opt input:checked + label{background:var(--purple);border-color:var(--purple);color:#fff}
-.rating-opt label:hover{border-color:#c4b5fd}
+.rating-opt label:hover{border-color:#93C5FD}
 .rating-readonly{display:flex;align-items:center;gap:6px}
 .rating-readonly .stars{color:#c4b5fd}
 .comment-block{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;box-shadow:var(--shadow);margin-bottom:22px}
@@ -296,9 +276,41 @@ foreach ($questions as $q) { $questionGroups[$q['category'] ?: 'General'][] = $q
 .btn-submit{padding:13px 26px;background:var(--purple);border:none;border-radius:10px;color:#fff;font-size:14.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
 .btn-submit:hover{background:var(--purple-dark)}
 .summary-score{display:flex;align-items:baseline;gap:8px;margin-bottom:4px}
-.summary-score .num{font-size:32px;font-weight:800;color:#fff}
+.summary-score .num{font-size:32px;font-weight:800;color:var(--text)}
 .summary-score .of{font-size:13px;color:var(--muted)}
 @media(max-width:900px){.top{padding:0 18px}.wrap{padding:20px}.rating-row{flex-wrap:wrap}.rating-opt{min-width:50px}}
+</style>
+
+<!-- Admin text color override: keep standard page text black for readability. -->
+<style id="admin-black-text-override">
+  body { color:#000 !important; }
+  body p, body span, body label, body li, body td, body th,
+  body h1, body h2, body h3, body h4, body h5, body h6,
+  body .page-title, body .page-header, body .page-header *,
+  body .page-sub, body .subtitle, body .description, body .helper,
+  body .muted, body .hint, body .section-title, body .section-heading,
+  body .card-title, body .card-subtitle, body .form-label,
+  body .table-title, body .table-subtitle { color:#000 !important; }
+  body a:not(.btn):not(.button):not([class*="btn-"]) { color:#000 !important; }
+  body input, body select, body textarea { color:#000 !important; }
+  body input::placeholder, body textarea::placeholder { color:#555 !important; }
+</style>
+
+<style id="admin-global-black-text">
+/* Global admin text treatment: normal interface text is black throughout the admin side.
+   Intentional semantic colors on buttons, badges, alerts, icons, and status indicators are preserved. */
+body { color:#000 !important; }
+body p, body h1, body h2, body h3, body h4, body h5, body h6,
+body label, body li, body td, body th, body dt, body dd,
+body .page-title, body .page-header, body .page-header p, body .page-sub,
+body .subtitle, body .description, body .helper, body .hint, body .muted,
+body .section-title, body .section-heading, body .card-title, body .card-subtitle,
+body .table-title, body .table-subtitle, body .form-label, body .modal-title, body .modal-sub,
+body .empty-state, body .empty-cta, body .field-label, body .stat-label, body .stat-value,
+body .back, body .back-btn, body .nav-link, body .sidebar-text, body .content-text { color:#000 !important; }
+body a:not(.btn):not(.button):not([class*="btn-"]):not(.badge):not(.status):not(.nav-item) { color:#000 !important; }
+body input, body select, body textarea { color:#000 !important; }
+body input::placeholder, body textarea::placeholder { color:#555 !important; }
 </style>
 </head>
 <body>
@@ -336,25 +348,33 @@ foreach ($questions as $q) { $questionGroups[$q['category'] ?: 'General'][] = $q
         <?php endif; ?>
         <div class="person-meta">Submitted <?= e(date('M j, Y g:i A', strtotime($existingTracker['submitted_at']))) ?></div>
     </div>
-    <?php foreach ($existingAnswers as $a): ?>
+    <?php $existingGroups = []; foreach ($existingAnswers as $a) { $existingGroups[$a['category'] ?: 'General'][] = $a; } ?>
+    <?php $qn = 0; foreach ($existingGroups as $cat => $answers): ?>
+    <div class="cat-heading"><i class="fa-solid fa-layer-group"></i> <?= e($cat) ?></div>
+    <?php foreach ($answers as $a): $qn++; ?>
     <div class="q-block">
-        <div class="q-cat"><?= e($a['category']) ?></div>
-        <div class="q-text"><?= e($a['question_text']) ?></div>
+        <div class="q-text"><span class="q-num"><?= $qn ?>.</span><?= e($a['question_text']) ?></div>
         <div class="rating-readonly"><span class="stars"><?= str_repeat('★', (int)$a['answer_score']) . str_repeat('☆', 5 - (int)$a['answer_score']) ?></span> <?= (int)$a['answer_score'] ?>/5</div>
     </div>
-    <?php endforeach; ?>
+    <?php endforeach; endforeach; ?>
     <div class="comment-block">
         <label>Comment</label>
         <p class="comment-readonly"><?= $existingTracker['remarks'] !== '' ? e($existingTracker['remarks']) : 'No written comment.' ?></p>
     </div>
 <?php elseif (!$questions): ?>
-    <div class="alert alert-info"><i class="fa-solid fa-circle-info"></i> No EA questions have been assigned yet. Configure them in <a style="color:#c4b5fd" href="questionnaire.php?eval_type=ea">Manage Questions</a>.</div>
+    <?php
+        $manageLabel = ($type === 'Principal' || $type === 'Dean')
+            ? 'Questionnaire → School Head Evaluation → ' . $type
+            : 'Questionnaire → Student Evaluation → Staff';
+    ?>
+    <div class="alert alert-info"><i class="fa-solid fa-circle-info"></i> No questions have been assigned to <?= e($target['full_name']) ?> yet. Go to <a href="questionnaire.php?view=manage&eval_type=<?= urlencode($qEvalType) ?>&target=<?= urlencode($qTargetType) ?>&user_id=<?= $targetId ?>" style="color:#2563EB;font-weight:700;"><?= e($manageLabel) ?></a> and select this person to assign their questions.</div>
 <?php else: ?>
     <form method="post">
-        <?php foreach ($questionGroups as $cat => $qs): foreach ($qs as $i => $q): ?>
+        <?php $qn = 0; foreach ($questionGroups as $cat => $qs): ?>
+        <div class="cat-heading"><i class="fa-solid fa-layer-group"></i> <?= e($cat) ?></div>
+        <?php foreach ($qs as $q): $qn++; ?>
         <div class="q-block">
-            <div class="q-cat"><?= e($cat) ?></div>
-            <div class="q-text"><?= e($q['question_text']) ?></div>
+            <div class="q-text"><span class="q-num"><?= $qn ?>.</span><?= e($q['question_text']) ?></div>
             <div class="rating-row">
                 <?php for ($n = 5; $n >= 1; $n--): ?>
                 <div class="rating-opt">

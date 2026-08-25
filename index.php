@@ -1,9 +1,8 @@
 <?php
 // index/index.php
-// Landing page — just links to each existing role's login page.
-// Does NOT check sessions, does NOT grant access to anything.
-// Each button goes to the same separate login file that already
-// enforces its own role check.
+// Landing page — directs users to the portal that authenticates their role.
+// Teacher and Staff intentionally share one portal; their assigned role
+// determines the dashboard shown after sign-in.
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -22,7 +21,7 @@
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 body{
-    min-height:100vh;background:var(--dark);font-family:'DM Sans',sans-serif;
+    min-height:100vh;background:var(--dark) url('bacjground.png') center / cover fixed;font-family:'DM Sans',sans-serif;
     color:var(--light);display:flex;align-items:center;justify-content:center;
     padding:32px;position:relative;overflow-x:hidden;
 }
@@ -32,6 +31,7 @@ body{
                       linear-gradient(90deg,rgba(43,108,176,.06) 1px,transparent 1px);
     background-size:48px 48px;
 }
+.bg-image-overlay{position:fixed;inset:0;z-index:0;background:rgba(10,25,47,.58);pointer-events:none;}
 .wrap{position:relative;z-index:10;width:100%;max-width:920px;text-align:center;}
 
 .brand{margin-bottom:40px;}
@@ -63,8 +63,9 @@ body{
 .role-student   { --accent:#D97706; }
 .role-faculty   { --accent:#0D9488; }
 .role-staff     { --accent:#2B6CB0; }
-.role-executive { --accent:#7C3AED; }
-.role-schoolhead{ --accent:#DB2777; }
+.role-executive { --accent:#0D9488; }
+.role-dean      { --accent:#7C5FD9; }
+.role-principal { --accent:#D99A2B; }
 .role-admin     { --accent:#4C78B8; }
 
 .footer-note{margin-top:36px;font-size:12px;color:var(--muted);}
@@ -75,6 +76,7 @@ body{
 </style>
 </head>
 <body>
+<div class="bg-image-overlay"></div>
 <div class="bg-grid"></div>
 
 <div class="wrap">
@@ -97,22 +99,28 @@ body{
             <div class="role-desc">View results &amp; submit peer evaluations</div>
         </a>
 
-        <a class="role-card role-staff" href="faculty/staff_login.php">
+        <a class="role-card role-staff" href="faculty/faculty_login.php">
             <div class="role-icon"><i class="fa-solid fa-id-card-clip"></i></div>
             <div class="role-name">Staff</div>
-            <div class="role-desc">View results &amp; submit peer evaluations</div>
+            <div class="role-desc">Use the shared Teacher &amp; Staff portal</div>
         </a>
 
-        <a class="role-card role-executive" href="executive/executive_login.php">
+        <a class="role-card role-executive" href="admin/admin_login.php">
             <div class="role-icon"><i class="fa-solid fa-briefcase"></i></div>
             <div class="role-name">Executive Assistant</div>
-            <div class="role-desc">Assist admin with assigned features</div>
+            <div class="role-desc">Access assigned administrative features</div>
         </a>
 
-        <a class="role-card role-schoolhead" href="school_head/school_head_login.php">
-            <div class="role-icon"><i class="fa-solid fa-building-columns"></i></div>
-            <div class="role-name">School Head</div>
-            <div class="role-desc">Evaluate faculty &amp; staff performance</div>
+        <a class="role-card role-dean" href="dean/dean_login.php">
+            <div class="role-icon"><i class="fa-solid fa-user-graduate"></i></div>
+            <div class="role-name">Dean</div>
+            <div class="role-desc">Manage and evaluate college personnel</div>
+        </a>
+
+        <a class="role-card role-principal" href="principal/principal_login.php">
+            <div class="role-icon"><i class="fa-solid fa-user-tie"></i></div>
+            <div class="role-name">Principal</div>
+            <div class="role-desc">Manage and evaluate basic education personnel</div>
         </a>
 
         <a class="role-card role-admin" href="admin/admin_login.php">

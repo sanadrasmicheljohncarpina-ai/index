@@ -7,15 +7,19 @@
 // pointing at a page that had never been built. dean_evaluation.php now
 // links straight here instead: dean_evaluate.php?tab=&user_id=[&view=1].
 //
-// ── QUESTIONNAIRE CONTENT IS A PLACEHOLDER ──────────────────────────
-// There's no questionnaire/question-bank table visible anywhere in the
-// files I've seen, so the rating categories below are a reasonable
-// generic set per role, defined right in this file (see $QUESTION_SETS).
-// If your system already has real questionnaire content somewhere
-// (a questions table, a per-role template, etc.) swap $QUESTION_SETS
-// for a query against that instead of using this hardcoded list — the
-// rest of the page (save/view logic) doesn't care where the questions
-// came from.
+// ── QUESTIONNAIRE CONTENT ────────────────────────────────────────────
+// Executive Assistant tab: questions are now pulled live from the
+// shared 'upward_to_ea' form in questionnaire_forms/questionnaire_
+// questions — the same form Principal (principal_evaluate.php) and
+// Staff (staff_dashboard.php) use, so all three evaluators see the
+// same EA questions. Falls back to the hardcoded set below only if
+// that form hasn't been configured yet (see the $tab === 'executive_
+// assistant' branch further down).
+//
+// Faculty/Staff tabs still use the hardcoded $QUESTION_SETS below —
+// there's no equivalent live Dean-specific form for those yet. Swap
+// them the same way once one exists; the save/view logic below
+// doesn't care where $questions came from.
 //
 // ── STORAGE ──────────────────────────────────────────────────────────
 // Submitting writes ONE row to evaluation_tracker (eval_type='dean',
@@ -129,7 +133,47 @@ $QUESTION_SETS = [
         ['key' => 'q5', 'category' => 'Overall Support',        'question' => 'Overall, provides strong support in this role.'],
     ],
 ];
-$questions = $QUESTION_SETS[$tab];
+// Executive Assistant questions are pulled live from the shared
+// 'upward_to_ea' questionnaire form — the same one Principal
+// (principal_evaluate.php) and Staff (staff_dashboard.php) use, so
+// all three evaluators see identical EA questions instead of a
+// Dean-only hardcoded set.
+//
+// Deliberately NOT falling back to $QUESTION_SETS if the form is
+// missing: principal_evaluate.php shows an explicit "not configured,
+// contact your administrator" state in that case rather than
+// substituting different questions, and Dean should behave the same
+// way — a silent fallback here would let Dean quietly drift from
+// Principal/Staff again with no one noticing, the exact problem this
+// change is meant to close. Faculty/Staff tabs still use the local
+// placeholder set below (no live form exists for those yet).
+$eaFormMissing = false;
+if ($tab === 'executive_assistant') {
+    $questions = [];
+    $eaForm = safe_rows($mysqli, "
+        SELECT id FROM questionnaire_forms WHERE eval_type='upward_to_ea' AND is_active=1 ORDER BY id DESC LIMIT 1
+    ");
+    if ($eaForm) {
+        // questionnaire_questions has no category column (it's a flat
+        // per-form list), so every live question is grouped under one
+        // heading here — matches how the form actually reads for the
+        // Principal/Staff evaluators of the same form.
+        $liveQs = safe_rows($mysqli, "
+            SELECT id, question, type FROM questionnaire_questions WHERE form_id=? ORDER BY question_no ASC, id ASC
+        ", "i", [$eaForm[0]['id']]);
+        foreach ($liveQs as $q) {
+            if (($q['type'] ?? 'rating') !== 'rating') continue; // this page only renders 1-5 rating cards
+            $questions[] = [
+                'key'      => 'q_' . $q['id'],
+                'category' => 'Executive Assistant Performance',
+                'question' => $q['question'],
+            ];
+        }
+    }
+    $eaFormMissing = empty($questions);
+} else {
+    $questions = $QUESTION_SETS[$tab];
+}
 
 // ── GLOBAL SYSTEM SETTINGS ──────────────────────────────────────────
 $settings = get_system_settings($mysqli);
@@ -199,7 +243,7 @@ if ($existing) {
     ", "i", [$existing['id']]);
 }
 
-$readOnly = $viewOnly || $existing !== null || !$evalOpen || !$hasPeriod;
+$readOnly = $viewOnly || $existing !== null || !$evalOpen || !$hasPeriod || $eaFormMissing;
 
 // ── HANDLE SUBMISSION ────────────────────────────────────────────────
 $error = '';
@@ -356,6 +400,8 @@ include __DIR__ . '/includes/dean_sidebar.php';
 
     <?php if (!$hasPeriod): ?>
         <div class="alert alert-info"><i class="fa-solid fa-circle-info"></i> No active evaluation period right now.</div>
+    <?php elseif ($eaFormMissing && !$existing): ?>
+        <div class="alert alert-info"><i class="fa-solid fa-circle-info"></i> No active Executive Assistant evaluation form is configured yet. Contact your administrator.</div>
     <?php elseif (!$evalOpen && !$existing): ?>
         <div class="alert alert-info"><i class="fa-solid fa-lock"></i> Evaluation is currently closed for this period.</div>
     <?php else: ?>

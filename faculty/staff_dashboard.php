@@ -206,7 +206,10 @@
         $ea_questions = [];
         $ea_already_done = false;
         if (in_array($page, ['ea_eval','ea_eval_form'], true) && $ea_target) {
-            $eaFormStmt = $mysqli->prepare("SELECT id, title FROM questionnaire_forms WHERE eval_type='supervisor_to_ea' AND is_active=1 ORDER BY id DESC LIMIT 1");
+            // 'upward_to_ea': Staff evaluating the EA (Super Admin, the
+            // highest-privilege role) is an upward review, not a
+            // supervisor-to-subordinate one — see principal_evaluate.php.
+            $eaFormStmt = $mysqli->prepare("SELECT id, title FROM questionnaire_forms WHERE eval_type='upward_to_ea' AND is_active=1 ORDER BY id DESC LIMIT 1");
             if ($eaFormStmt) {
                 $eaFormStmt->execute();
                 $ea_form = $eaFormStmt->get_result()->fetch_assoc();
@@ -220,7 +223,7 @@
                 $q->close();
             }
             if ($period) {
-                $d = $mysqli->prepare("SELECT id FROM evaluation_tracker WHERE evaluator_id=? AND target_user_id=? AND period_id=? AND eval_type='supervisor_to_ea' AND status='submitted' LIMIT 1");
+                $d = $mysqli->prepare("SELECT id FROM evaluation_tracker WHERE evaluator_id=? AND target_user_id=? AND period_id=? AND eval_type='upward_to_ea' AND status='submitted' LIMIT 1");
                 $d->bind_param('iii', $user_id, $ea_target['id'], $period['id']);
                 $d->execute();
                 $ea_already_done = (bool)$d->get_result()->fetch_assoc();
@@ -374,7 +377,7 @@
                 $overallScore = $count ? round($sum / $count, 2) : null;
                 $mysqli->begin_transaction();
                 try {
-                    $ins=$mysqli->prepare("INSERT INTO evaluation_tracker (evaluator_id,target_user_id,form_id,period_id,score,remarks,eval_type,status,submitted_at) VALUES (?,?,?,?,?,?,'supervisor_to_ea','submitted',NOW())");
+                    $ins=$mysqli->prepare("INSERT INTO evaluation_tracker (evaluator_id,target_user_id,form_id,period_id,score,remarks,eval_type,status,submitted_at) VALUES (?,?,?,?,?,?,'upward_to_ea','submitted',NOW())");
                     $formId=(int)$ea_form['id']; $periodId=(int)$period['id'];
                     $ins->bind_param('iiiids',$user_id,$tid,$formId,$periodId,$overallScore,$comments);
                     $ins->execute(); $trackerId=$mysqli->insert_id; $ins->close();
@@ -668,6 +671,62 @@ $tracker_id = $mysqli->insert_id; $trk->close();
             --border:rgba(255,255,255,0.08);--radius:10px;--shadow:0 4px 20px rgba(0,0,0,0.35);
             --sidebar-w:240px;
         }
+        body.light-theme{
+            --dark:#F3F6FB;--mid:#FFFFFF;--inner:#EEF2F8;
+            --accent:#2B6CB0;--hover:#1E4E82;
+            --teal:#6366F1;--teal-hover:#4F46E5;
+            --light:#16263B;--muted:#5B7186;
+            --danger:#DC2626;--success:#16A34A;
+            --border:rgba(15,31,61,0.10);--shadow:0 4px 20px rgba(15,31,61,.08);
+        }
+        body.light-theme .sidebar-brand:hover{background:rgba(15,31,61,.04);}
+        body.light-theme .profile-dd-btn:hover{background:rgba(15,31,61,.06);}
+        body.light-theme .dd-appearance-val{background:rgba(15,31,61,.06);}
+        body.light-theme .nav-link:hover{background:rgba(15,31,61,.05);}
+        body.light-theme .notif-btn{background:rgba(15,31,61,.06);}
+        body.light-theme .notif-item{border-bottom:1px solid rgba(15,31,61,.07);}
+        body.light-theme .cat-bar-bg{background:rgba(15,31,61,.08);}
+        body.light-theme .peer-card-btn.done{background:rgba(15,31,61,.06);}
+        body.light-theme .sidebar-title,
+        body.light-theme .nav-page-title,
+        body.light-theme .notif-header-title,
+        body.light-theme .photo-modal-title,
+        body.light-theme .welcome-bar h2,
+        body.light-theme .stat-box-val,
+        body.light-theme .section-card-title,
+        body.light-theme .eval-modal-title,
+        body.light-theme .eval-info-value,
+        body.light-theme .eval-q-text,
+        body.light-theme .profile-hero-name,
+        body.light-theme .role-card-title,
+        body.light-theme .student-mini-name,
+        body.light-theme .peer-card-name,
+        body.light-theme .eval-name,
+        body.light-theme .q-text{color:var(--light);}
+        body.light-theme .ea-tab{background:rgba(124,58,237,.10);color:#4c1d95;border-color:rgba(124,58,237,.24);}
+        body.light-theme .ea-tab .count{background:rgba(124,58,237,.14);color:#4c1d95;}
+        body.light-theme .ea-toolbar{background:#FFFFFF;}
+        body.light-theme .ea-search-input{background:#F3F6FB;border-color:rgba(15,31,61,.12);color:#16263B;}
+        body.light-theme .ea-search-icon{color:#8892a6;}
+        body.light-theme .ea-export-btn{background:rgba(124,58,237,.08);color:#5b21b6;border-color:rgba(124,58,237,.28);}
+        body.light-theme .ea-table-card{background:#FFFFFF;}
+        body.light-theme .ea-table th{background:#EEF2F8;color:#5B7186;}
+        body.light-theme .ea-table td{color:#16263B;border-top-color:rgba(15,31,61,.08);}
+        body.light-theme .ea-table tr:hover{background:rgba(124,58,237,.04);}
+        body.light-theme .ea-avatar{border-color:rgba(15,31,61,.12);background:#EEF2F8;color:#5b21b6;}
+        body.light-theme .ea-name{color:#16263B;}
+        body.light-theme .ea-role-pill{background:rgba(124,58,237,.10);color:#5b21b6;border-color:rgba(124,58,237,.20);}
+        body.light-theme .ea-status{background:rgba(100,116,139,.12);color:#475569;}
+        body.light-theme .ea-status.done{background:rgba(34,197,94,.12);color:#15803d;}
+        body.light-theme .ea-table-footer{color:#5B7186;border-top-color:rgba(15,31,61,.08);}
+        body.light-theme .level-view-empty,
+        body.light-theme .peer-select-hint.warn{color:#B45309;}
+        body.light-theme .notif-btn:hover,
+        body.light-theme .notif-btn.has-unread{color:#B45309;}
+        body.light-theme .info-note i{color:#2563EB;}
+        body.light-theme .toast-success{color:#15803D;}
+        body.light-theme .toast-error{color:#B91C1C;}
+        body.light-theme .level-view-pill{color:#0F766E;}
         *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
         body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);min-height:100vh;display:flex;}
 
@@ -686,6 +745,12 @@ $tracker_id = $mysqli->insert_id; $trk->close();
         .profile-dd-btn{width:100%;padding:10px 12px;border-radius:8px;border:none;background:none;color:var(--light);font-size:13px;font-family:'DM Sans',sans-serif;cursor:pointer;display:flex;align-items:center;gap:10px;transition:background .18s;text-align:left;text-decoration:none;}
         .profile-dd-btn:hover{background:rgba(255,255,255,.06);}
         .profile-dd-btn i{width:16px;text-align:center;color:var(--muted);}
+        .profile-dd-btn i.dd-icon-blue{color:#3B82F6;}
+        .profile-dd-btn i.dd-icon-purple{color:#8B5CF6;}
+        .nav-icon-blue{color:#3B82F6;}
+        .nav-icon-purple{color:#8B5CF6;}
+        .nav-icon-green{color:#22C55E;}
+        .nav-icon-orange{color:#F97316;}
         .profile-dd-divider{height:1px;background:var(--border);margin:6px 4px;}
         .profile-dd-btn.logout{color:#f87171;}
         .profile-dd-btn.logout i{color:#f87171;}
@@ -968,17 +1033,11 @@ $tracker_id = $mysqli->insert_id; $trk->close();
                 <i class="fa-solid fa-chevron-down sidebar-caret" id="sidebarCaret"></i>
             </div>
             <div class="sidebar-profile-dropdown" id="sidebarProfileDropdown">
-                <button class="profile-dd-btn" onclick="openPhotoModal()">
-                    <i class="fa-solid fa-camera"></i> Update Profile Photo
-                </button>
                 <a href="staff_dashboard.php?page=profile" class="profile-dd-btn">
-                    <i class="fa-solid fa-gear"></i> Settings
-                </a>
-                <a href="staff_dashboard.php?page=profile" class="profile-dd-btn" onclick="localStorage.setItem('pbi_open_level_dd','1')">
-                    <i class="fa-solid fa-sliders"></i> My Teaching Level(s)
+                    <i class="fa-solid fa-gear dd-icon-blue"></i> Settings
                 </a>
                 <button type="button" class="profile-dd-btn" id="appearanceBtn" onclick="toggleAppearance(event)">
-                    <i class="fa-solid fa-palette"></i>
+                    <i class="fa-solid fa-palette dd-icon-purple"></i>
                     Appearance
                     <span class="dd-appearance-val" id="appearanceVal">Dark</span>
                 </button>
@@ -992,18 +1051,18 @@ $tracker_id = $mysqli->insert_id; $trk->close();
             <nav class="sidebar-nav">
                 <div class="nav-section-label">Main</div>
                 <a href="staff_dashboard.php?page=dashboard" class="nav-link <?= $page==='dashboard'?'active':'' ?>">
-                    <i class="fa-solid fa-house"></i> Dashboard
+                    <i class="fa-solid fa-house nav-icon-blue"></i> Dashboard
                 </a>
                 <a href="staff_dashboard.php?page=profile" class="nav-link <?= $page==='profile'?'active':'' ?>">
-                    <i class="fa-solid fa-id-badge"></i> My Profile &amp; Role
+                    <i class="fa-solid fa-id-badge nav-icon-purple"></i> Role &amp; Designation
                 </a>
 
                 <div class="nav-section-label">Evaluation</div>
                 <a href="staff_dashboard.php?page=my_results" class="nav-link <?= $page==='my_results'?'active':'' ?>">
-                    <i class="fa-solid fa-chart-bar"></i> My Results
+                    <i class="fa-solid fa-chart-bar nav-icon-green"></i> My Results
                 </a>
                 <a href="staff_dashboard.php?page=ea_eval" class="nav-link <?= in_array($page,['ea_eval','ea_eval_form'])?'active':'' ?>">
-                    <i class="fa-solid fa-user-tie"></i> EA Evaluation
+                    <i class="fa-solid fa-user-tie nav-icon-orange"></i> EA Evaluation
                     <?php if (!empty($ea_list) && $page==='ea_eval'): ?>
                     <span class="badge"><?= count($ea_list) ?></span>
                     <?php endif; ?>
@@ -1073,7 +1132,7 @@ $tracker_id = $mysqli->insert_id; $trk->close();
                 </button>
                 <div class="nav-page-title">
                     <?php
-                    $titles = ['dashboard'=>'Dashboard','profile'=>'My Profile & Role','my_results'=>'My Evaluation Results','ea_eval'=>'EA Evaluation','ea_eval_form'=>'Evaluate Executive Assistant'];
+                    $titles = ['dashboard'=>'Dashboard','profile'=>'Role & Designation','my_results'=>'My Evaluation Results','ea_eval'=>'EA Evaluation','ea_eval_form'=>'Evaluate Executive Assistant'];
                     echo $titles[$page] ?? 'Dashboard';
                     ?>
                 </div>
@@ -1212,16 +1271,25 @@ $tracker_id = $mysqli->insert_id; $trk->close();
         <!-- Hero card with photo, name, and current role. -->
         <div class="profile-hero">
             <div class="profile-hero-left">
-                <?php if ($photo_url): ?>
-                <img class="profile-hero-avatar" src="<?= htmlspecialchars($photo_url) ?>" alt="<?= htmlspecialchars($full_name) ?>" style="display:block;"/>
-                <?php else: ?>
-                <div class="profile-hero-avatar"><i class="fa-solid fa-briefcase"></i></div>
-                <?php endif; ?>
+                <div style="position:relative;">
+                    <?php if ($photo_url): ?>
+                    <img class="profile-hero-avatar" src="<?= htmlspecialchars($photo_url) ?>" alt="<?= htmlspecialchars($full_name) ?>" style="display:block;"/>
+                    <?php else: ?>
+                    <div class="profile-hero-avatar"><i class="fa-solid fa-briefcase"></i></div>
+                    <?php endif; ?>
+                    <button type="button" onclick="openPhotoModal()" title="Update Profile Photo"
+                            style="position:absolute;bottom:-2px;right:-2px;width:30px;height:30px;border-radius:50%;background:var(--teal);border:2px solid var(--mid);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;">
+                        <i class="fa-solid fa-camera"></i>
+                    </button>
+                </div>
                 <div>
                     <div class="profile-hero-name"><?= htmlspecialchars($full_name) ?></div>
                     <div class="profile-hero-desig">
                         <i class="fa-solid fa-id-badge"></i> <?= htmlspecialchars($designation) ?>
                     </div>
+                    <button type="button" onclick="openPhotoModal()" style="margin-top:6px;background:none;border:none;color:var(--teal);font-size:12px;font-weight:600;cursor:pointer;padding:0;">
+                        <i class="fa-solid fa-camera"></i> Update Profile Photo
+                    </button>
                 </div>
             </div>
 
@@ -1431,7 +1499,7 @@ $tracker_id = $mysqli->insert_id; $trk->close();
                             <?php
                             $done = false; $last_eval = null;
                             if ($period) {
-                                $chk=$mysqli->prepare("SELECT submitted_at FROM evaluation_tracker WHERE evaluator_id=? AND target_user_id=? AND period_id=? AND eval_type='supervisor_to_ea' AND status='submitted' ORDER BY submitted_at DESC LIMIT 1");
+                                $chk=$mysqli->prepare("SELECT submitted_at FROM evaluation_tracker WHERE evaluator_id=? AND target_user_id=? AND period_id=? AND eval_type='upward_to_ea' AND status='submitted' ORDER BY submitted_at DESC LIMIT 1");
                                 $chk->bind_param('iii',$user_id,$ea['id'],$period['id']);
                                 $chk->execute();
                                 $doneRow=$chk->get_result()->fetch_assoc();
@@ -1868,19 +1936,6 @@ function toggleAllEvals() {
             if (sidebarProfile && dd && !sidebarProfile.contains(e.target) && !dd.contains(e.target)) {
                 dd.classList.remove('open');
                 document.getElementById('sidebarCaret').style.transform = '';
-            }
-        });
-
-        // If "My Teaching Level(s)" was clicked from the sidebar dropdown, land on
-        // the profile page and scroll to / briefly highlight the read-only level
-        // card (levels are admin-assigned now, not self-editable).
-        document.addEventListener('DOMContentLoaded', function() {
-            const wrap = document.getElementById('levelDdWrap');
-            if (wrap && localStorage.getItem('pbi_open_level_dd') === '1') {
-                localStorage.removeItem('pbi_open_level_dd');
-                wrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                wrap.classList.add('flash');
-                setTimeout(() => wrap.classList.remove('flash'), 1600);
             }
         });
 

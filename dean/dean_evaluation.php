@@ -375,9 +375,6 @@ include __DIR__ . '/includes/dean_sidebar.php';
             <input type="text" name="q" value="<?= htmlspecialchars($search) ?>" placeholder="Search by name or department..."/>
             <i class="fa-solid fa-magnifying-glass"></i>
         </div>
-        <a class="export-btn" href="<?= dean_eval_qs(['export' => 'csv']) ?>">
-            <i class="fa-solid fa-download"></i> Export List
-        </a>
     </form>
 
     <!-- ROSTER TABLE -->
