@@ -111,22 +111,11 @@ if ($al && $al->num_rows > 0) {
     $fullName   = $nameRow['full_name'] ?? "User #{$userId}";
     $oldLabel   = $oldDesignation ?: ucfirst($oldRole);
     $newLabel   = $newDesignation ?: ucfirst($newRole);
-    $actionText = "{$fullName} role updated: {$oldLabel} → {$newLabel}";
-
-    $actorQ = $mysqli->prepare("SELECT full_name FROM users WHERE id = ? LIMIT 1");
-    $sessionActorId = (int)($_SESSION['user_id'] ?? 0);
-    $actorName = 'System';
-    if ($actorQ && $sessionActorId > 0) {
-        $actorQ->bind_param('i', $sessionActorId);
-        $actorQ->execute();
-        $actorRow = $actorQ->get_result()->fetch_assoc();
-        $actorName = trim((string)($actorRow['full_name'] ?? '')) ?: 'System';
-        $actorQ->close();
-    }
+    $actionText = "{$fullName} changed role: {$oldLabel} → {$newLabel}";
 
     $alStmt = $mysqli->prepare("INSERT INTO audit_log (action, performed_by, created_at) VALUES (?, ?, NOW())");
     if ($alStmt) {
-        $alStmt->bind_param('ss', $actionText, $actorName);
+        $alStmt->bind_param('ss', $actionText, $fullName);
         $alStmt->execute();
         $alStmt->close();
     }

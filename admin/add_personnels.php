@@ -244,8 +244,8 @@ body{font-family:'Inter',sans-serif;background:var(--page-bg);color:var(--text-d
 .sector-tab.active.tab-faculty::after{background:#3B82F6;}
 .sector-tab.active.tab-staff::after{background:#7C3AED;}
 .tab-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--page-bg);color:var(--text-dim);}
-.sector-tab.active.tab-faculty .tab-badge{background:rgba(73,142,255,.15);color:#14181F;}
-.sector-tab.active.tab-staff .tab-badge{background:rgba(135,65,255,.15);color:#14181F;}
+.sector-tab.active.tab-faculty .tab-badge{background:rgba(59,130,246,.15);color:#3B82F6;}
+.sector-tab.active.tab-staff .tab-badge{background:rgba(124,58,237,.15);color:#7C3AED;}
 
 .stats-row{display:flex;gap:16px;margin-bottom:24px;flex-wrap:wrap;}
 .stat-card{background:var(--card-bg);border:1px solid var(--card-border);border-top:4px solid var(--sector);border-radius:14px;padding:16px 22px;flex:1;min-width:130px;box-shadow:var(--card-shadow);}
@@ -279,9 +279,9 @@ tbody td{padding:14px 16px;font-size:14px;vertical-align:middle;}
 /* ── MULTI-ROLE TAG SYSTEM ────────────────────────────────────── */
 .tag-input-wrap{min-width:220px;}
 .tag-list{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px;min-height:22px;}
-.tag-chip{display:inline-flex;align-items:center;gap:6px;background:var(--sector-bg);border:1px solid var(--sector-border);color:#14181F;border-radius:14px;padding:3px 6px 3px 10px;font-size:11px;font-weight:700;}
-.tag-chip .tag-remove{cursor:pointer;font-size:10px;color:#14181F;opacity:.65;transition:opacity .15s,color .15s;width:14px;height:14px;display:flex;align-items:center;justify-content:center;border-radius:50%;}
-.tag-chip .tag-remove:hover{opacity:1;color:#14181F;background:var(--danger-bg);}
+.tag-chip{display:inline-flex;align-items:center;gap:6px;background:var(--sector-bg);border:1px solid var(--sector-border);color:var(--sector);border-radius:14px;padding:3px 6px 3px 10px;font-size:11px;font-weight:700;}
+.tag-chip .tag-remove{cursor:pointer;font-size:10px;color:var(--sector);opacity:.65;transition:opacity .15s,color .15s;width:14px;height:14px;display:flex;align-items:center;justify-content:center;border-radius:50%;}
+.tag-chip .tag-remove:hover{opacity:1;color:var(--danger);background:var(--danger-bg);}
 .tag-empty-hint{font-size:11px;color:var(--text-dim);font-style:italic;}
 
 .tag-input-row{display:flex;gap:6px;}
@@ -289,13 +289,13 @@ tbody td{padding:14px 16px;font-size:14px;vertical-align:middle;}
 .tag-text-input:focus{border-color:var(--sector);}
 .tag-text-input::placeholder{color:#A6B2C4;}
 .btn-tag-add{background:var(--page-bg);border:1px solid var(--card-border);color:var(--text-dark);padding:6px 10px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;transition:all .2s;font-family:'Inter',sans-serif;white-space:nowrap;}
-.btn-tag-add:hover{border-color:var(--sector);color:#14181F;}
+.btn-tag-add:hover{border-color:var(--sector);color:var(--sector);}
 .btn-assign{background:var(--sector);color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;transition:opacity .2s;white-space:nowrap;font-family:'Inter',sans-serif;margin-top:6px;}
 .btn-assign:hover{opacity:.88;}
 .tag-hint{font-size:10px;color:var(--text-dim);margin-top:4px;}
 
-.qs-pill{display:inline-flex;align-items:center;gap:5px;background:var(--success-bg);border:1px solid var(--success-border);color:#14181F;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;}
-.hidden-pill{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:var(--danger-bg);color:#14181F;}
+.qs-pill{display:inline-flex;align-items:center;gap:5px;background:var(--success-bg);border:1px solid var(--success-border);color:var(--success);border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;}
+.hidden-pill{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:var(--danger-bg);color:var(--danger);}
 
 .action-wrap{display:flex;gap:6px;align-items:center;}
 .btn-icon{background:var(--card-bg);border:1px solid var(--card-border);border-radius:6px;padding:6px 10px;color:var(--text-dim);cursor:pointer;font-size:13px;transition:all .2s;font-family:'Inter',sans-serif;}
@@ -406,38 +406,6 @@ a { color:inherit; }
 .sector-tab:has(.fa-chalkboard-user) > i{color:#2563EB !important;}
 .sector-tab:has(.fa-briefcase) > i{color:#7C3AED !important;}
 
-</style>
-
-<!-- Admin text color override: keep standard page text black for readability. -->
-<style id="admin-black-text-override">
-  body { color:#000 !important; }
-  body p, body span, body label, body li, body td, body th,
-  body h1, body h2, body h3, body h4, body h5, body h6,
-  body .page-title, body .page-header, body .page-header *,
-  body .page-sub, body .subtitle, body .description, body .helper,
-  body .muted, body .hint, body .section-title, body .section-heading,
-  body .card-title, body .card-subtitle, body .form-label,
-  body .table-title, body .table-subtitle { color:#000 !important; }
-  body a:not(.btn):not(.button):not([class*="btn-"]) { color:#000 !important; }
-  body input, body select, body textarea { color:#000 !important; }
-  body input::placeholder, body textarea::placeholder { color:#555 !important; }
-</style>
-
-<style id="admin-global-black-text">
-/* Global admin text treatment: normal interface text is black throughout the admin side.
-   Intentional semantic colors on buttons, badges, alerts, icons, and status indicators are preserved. */
-body { color:#000 !important; }
-body p, body h1, body h2, body h3, body h4, body h5, body h6,
-body label, body li, body td, body th, body dt, body dd,
-body .page-title, body .page-header, body .page-header p, body .page-sub,
-body .subtitle, body .description, body .helper, body .hint, body .muted,
-body .section-title, body .section-heading, body .card-title, body .card-subtitle,
-body .table-title, body .table-subtitle, body .form-label, body .modal-title, body .modal-sub,
-body .empty-state, body .empty-cta, body .field-label, body .stat-label, body .stat-value,
-body .back, body .back-btn, body .nav-link, body .sidebar-text, body .content-text { color:#000 !important; }
-body a:not(.btn):not(.button):not([class*="btn-"]):not(.badge):not(.status):not(.nav-item) { color:#000 !important; }
-body input, body select, body textarea { color:#000 !important; }
-body input::placeholder, body textarea::placeholder { color:#555 !important; }
 </style>
 </head>
 <body>

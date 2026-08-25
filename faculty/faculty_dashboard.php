@@ -420,8 +420,33 @@ $mysqli->query("CREATE TABLE IF NOT EXISTS user_preferences (
     user_id INT UNSIGNED PRIMARY KEY,
     email_on_designation_update TINYINT(1) NOT NULL DEFAULT 1,
     email_on_new_evaluation     TINYINT(1) NOT NULL DEFAULT 1,
+    show_result_details         TINYINT(1) NOT NULL DEFAULT 1,
+    compact_dashboard           TINYINT(1) NOT NULL DEFAULT 0,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+// Keep preferences compatible with older installations.
+$mysqli->query("ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS show_result_details TINYINT(1) NOT NULL DEFAULT 1");
+$mysqli->query("ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS compact_dashboard TINYINT(1) NOT NULL DEFAULT 0");
+
+$prefStmt = $mysqli->prepare("SELECT email_on_designation_update, email_on_new_evaluation, show_result_details, compact_dashboard FROM user_preferences WHERE user_id=? LIMIT 1");
+$prefStmt->bind_param('i', $user_id);
+$prefStmt->execute();
+$user_prefs = $prefStmt->get_result()->fetch_assoc() ?: ['email_on_designation_update'=>1,'email_on_new_evaluation'=>1,'show_result_details'=>1,'compact_dashboard'=>0];
+$prefStmt->close();
+
+// Save personal dashboard preferences.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_preferences'])) {
+    if (!csrf_check()) { $_SESSION['toast_error'] = 'Your session expired. Please try again.'; header('Location: ' . __FILE__ . '?page=profile'); exit; }
+    $p1 = isset($_POST['email_on_designation_update']) ? 1 : 0;
+    $p2 = isset($_POST['email_on_new_evaluation']) ? 1 : 0;
+    $p3 = isset($_POST['show_result_details']) ? 1 : 0;
+    $p4 = isset($_POST['compact_dashboard']) ? 1 : 0;
+    $up = $mysqli->prepare("INSERT INTO user_preferences (user_id,email_on_designation_update,email_on_new_evaluation,show_result_details,compact_dashboard) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE email_on_designation_update=VALUES(email_on_designation_update),email_on_new_evaluation=VALUES(email_on_new_evaluation),show_result_details=VALUES(show_result_details),compact_dashboard=VALUES(compact_dashboard)");
+    $up->bind_param('iiiii', $user_id, $p1, $p2, $p3, $p4); $up->execute(); $up->close();
+    $_SESSION['toast'] = 'Settings saved successfully.';
+    header('Location: ' . __FILE__ . '?page=profile'); exit;
+}
 
 // ── ENSURE A UNIQUE CONSTRAINT BACKS THE DUPLICATE-EVAL CHECK ──
 // The application-level duplicate check below (SELECT ... then INSERT) has
@@ -1082,6 +1107,32 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 @media(max-width:1024px){.stats-grid{grid-template-columns:repeat(2,1fr);}}
 @media(max-width:900px){.sidebar{transform:translateX(-100%);}.sidebar.open{transform:translateX(0);}.top-nav{left:0;}.main{margin-left:0;}.hamburger{display:block;}}
 @media(max-width:600px){.main{padding:16px;}.stats-grid{grid-template-columns:1fr 1fr;}.peer-grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr));}.desig-input-row{flex-direction:column;}.welcome-bar{padding:18px 20px;}.welcome-text h2{font-size:19px;}.desig-select-chips{flex-direction:column;}}
+
+.settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:18px;}
+.settings-card{background:var(--inner);border:1px solid var(--border);border-radius:14px;padding:18px;}
+.settings-card.full{grid-column:1/-1;}
+.settings-card-head{display:flex;align-items:center;gap:11px;margin-bottom:14px;}
+.settings-card-head .sicon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:rgba(13,148,136,.12);color:var(--teal-hover);}
+.settings-card-head h3{margin:0;color:var(--light);font-size:15px;}
+.settings-card-head p{margin:3px 0 0;color:var(--muted);font-size:11.5px;}
+.setting-row{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:12px 0;border-top:1px solid var(--border);}
+.setting-row:first-of-type{border-top:0;}
+.setting-row strong{display:block;color:var(--light);font-size:13px;}
+.setting-row span{display:block;color:var(--muted);font-size:11px;margin-top:3px;line-height:1.45;}
+.setting-toggle{position:relative;width:44px;height:24px;flex:0 0 44px;}
+.setting-toggle input{display:none;}
+.setting-toggle .slider{position:absolute;inset:0;border-radius:20px;background:var(--border);cursor:pointer;transition:.2s;}
+.setting-toggle .slider:before{content:'';position:absolute;width:18px;height:18px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s;}
+.setting-toggle input:checked+.slider{background:var(--teal);}
+.setting-toggle input:checked+.slider:before{transform:translateX(20px);}
+.settings-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px;}
+.settings-save{border:0;border-radius:9px;background:var(--teal);color:#fff;font-weight:700;padding:10px 16px;cursor:pointer;}
+.settings-save:hover{background:var(--teal-hover);}
+.account-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;}
+.account-fact{background:var(--mid);border:1px solid var(--border);border-radius:10px;padding:12px;}
+.account-fact label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:4px;}
+.account-fact b{color:var(--light);font-size:12.5px;}
+@media(max-width:760px){.settings-grid{grid-template-columns:1fr}.settings-card.full{grid-column:auto}.account-facts{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -1421,6 +1472,54 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
         <i class="fa-solid fa-circle-info"></i>
         <span>Updating your designation takes effect <strong style="color:var(--light)">immediately</strong> and changes which evaluation questions apply to you. The admin is notified automatically.</span>
     </div>
+
+    <div class="settings-grid">
+        <div class="settings-card full">
+            <div class="settings-card-head">
+                <div class="sicon"><i class="fa-solid fa-user-shield"></i></div>
+                <div><h3>Account Overview</h3><p>Your access is controlled by the system administrator.</p></div>
+            </div>
+            <div class="account-facts">
+                <div class="account-fact"><label>Account Name</label><b><?= htmlspecialchars($full_name) ?></b></div>
+                <div class="account-fact"><label>System Role</label><b>Faculty</b></div>
+                <div class="account-fact"><label>Evaluation Access</label><b>Peer Evaluation</b></div>
+            </div>
+        </div>
+
+        <div class="settings-card">
+            <div class="settings-card-head">
+                <div class="sicon"><i class="fa-solid fa-bell"></i></div>
+                <div><h3>Notifications</h3><p>Choose which updates you want to receive.</p></div>
+            </div>
+            <form method="POST">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
+                <input type="hidden" name="save_preferences" value="1">
+                <div class="setting-row"><div><strong>Designation updates</strong><span>Notify me when designation changes are recorded.</span></div><label class="setting-toggle"><input type="checkbox" name="email_on_designation_update" <?= !empty($user_prefs['email_on_designation_update'])?'checked':'' ?>><span class="slider"></span></label></div>
+                <div class="setting-row"><div><strong>New evaluation results</strong><span>Notify me when a new evaluation is received.</span></div><label class="setting-toggle"><input type="checkbox" name="email_on_new_evaluation" <?= !empty($user_prefs['email_on_new_evaluation'])?'checked':'' ?>><span class="slider"></span></label></div>
+                <div class="setting-row"><div><strong>Evaluation details</strong><span>Allow detailed evaluation entries to appear in My Results.</span></div><label class="setting-toggle"><input type="checkbox" name="show_result_details" <?= !empty($user_prefs['show_result_details'])?'checked':'' ?>><span class="slider"></span></label></div>
+                <div class="settings-actions"><button class="settings-save" type="submit"><i class="fa-solid fa-check"></i> Save Preferences</button></div>
+            </form>
+        </div>
+
+        <div class="settings-card">
+            <div class="settings-card-head">
+                <div class="sicon"><i class="fa-solid fa-lock"></i></div>
+                <div><h3>Security</h3><p>Keep your account protected.</p></div>
+            </div>
+            <div class="setting-row"><div><strong>Password</strong><span>Update your password without leaving the dashboard.</span></div><a href="change_password.php" class="settings-save" style="text-decoration:none;">Change</a></div>
+            <div class="setting-row"><div><strong>Role protection</strong><span>Your system role is administrator-controlled and cannot be changed here.</span></div><i class="fa-solid fa-shield-halved" style="color:var(--success)"></i></div>
+        </div>
+
+        <div class="settings-card full">
+            <div class="settings-card-head">
+                <div class="sicon"><i class="fa-solid fa-circle-info"></i></div>
+                <div><h3>Faculty Evaluation Access</h3><p>What you can do in the Employee Performance Management System.</p></div>
+            </div>
+            <div class="account-facts">
+                <div class="account-fact"><label>Can Evaluate</label><b>Faculty, Staff, School Head</b></div><div class="account-fact"><label>Can View</label><b>Own Evaluation Results</b></div><div class="account-fact"><label>Privacy</label><b>Evaluator identity remains protected</b></div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <?php elseif ($page === 'my_results'): ?>
@@ -1467,9 +1566,11 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
             <div class="score-pill" style="background:<?= $col ?>1a;color:<?= $col ?>;border:1px solid <?= $col ?>44">
                 <?= number_format($s['overall_score'],2) ?> / 5
             </div>
+            <?php if (!empty($user_prefs['show_result_details'])): ?>
             <button type="button" class="btn-view-details" onclick="event.stopPropagation(); openEvalDetails(<?= (int)$s['tracker_id'] ?>)">
                 View Details <i class="fa-solid fa-chevron-right"></i>
             </button>
+            <?php endif; ?>
         </div>
     </div>
     <?php endwhile; $allStmt->close(); endif; ?>

@@ -44,20 +44,18 @@ $initials  = strtoupper(substr($parts[0],0,1) . (isset($parts[1]) ? substr($part
 // Display-only label for the role badge. Session/DB value stays 'superadmin' —
 // only the text shown on screen changes.
 function display_role($role) {
-    $map = [
-        'superadmin' => 'Employee Performance Management System',
-        'admin' => 'Employee Performance Management System',
-        'registrar' => 'Employee Performance Management System'
-    ];
-    return $map[$role] ?? 'Employee Performance Management System';
+    $map = ['superadmin' => 'Executive Assistant', 'admin' => 'Admin', 'registrar' => 'Registrar'];
+    return $map[$role] ?? ucfirst($role);
 }
 
 // Executive Assistants and Admins share this workspace.  The interface stays
 // the same because their tools overlap, while the displayed context reflects
 // the account that is currently signed in.
 $isExecutiveAssistant = ($_SESSION['role'] ?? '') === 'superadmin';
-$workspaceTitle = 'Employee Performance Management System';
-$workspaceSubtitle = 'Manage evaluation operations, personnel, and reporting.';
+$workspaceTitle = $isExecutiveAssistant ? 'Executive Assistant Workspace' : 'Administrative Workspace';
+$workspaceSubtitle = $isExecutiveAssistant
+    ? 'Manage assigned evaluation operations, personnel, and reporting.'
+    : 'Manage evaluation operations, personnel, and reporting.';
 
 // Live counts
 $totalUsers  = 0; $activeEvals = 0;
@@ -463,7 +461,7 @@ $HEALTH_ITEMS = [
     .pd-head-avatar img{width:100%;height:100%;object-fit:cover;display:block;}
     .pd-head-name{font-size:13px;font-weight:700;color:#172033;line-height:1.3;}
     .pd-head-role{font-size:11px;color:var(--muted);}
-    .pd-head-badge{display:inline-flex;align-items:center;gap:3px;margin-top:4px;font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;background:rgba(73,142,255,.3);color:#14181F;border:1px solid rgba(24,111,255,.35);text-transform:uppercase;}
+    .pd-head-badge{display:inline-flex;align-items:center;gap:3px;margin-top:4px;font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;background:rgba(59,130,246,.3);color:#2563EB;border:1px solid rgba(59,130,246,.35);text-transform:uppercase;}
     .pd-menu{padding:6px 0;}
     .pd-item{
         display:flex;align-items:center;gap:11px;padding:9px 16px;
@@ -515,7 +513,7 @@ $HEALTH_ITEMS = [
     .notif-wrap{position:relative;display:flex;align-items:center;margin-left:4px;}
     .notif-btn{width:36px;height:36px;border-radius:50%;background:#F8FAFC;border:1px solid #E2E8F0;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:15px;cursor:pointer;transition:all .2s;position:relative;}
     .notif-btn:hover,.notif-btn.has-unread{color:var(--blue-accent);border-color:#BFDBFE;background:#EFF6FF;}
-    .notif-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;border-radius:9px;background:#FF1F1F;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px;border:2px solid #FFFFFF;opacity:0;transform:scale(0);transition:opacity .2s,transform .2s;pointer-events:none;}
+    .notif-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;border-radius:9px;background:#BF616A;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px;border:2px solid #FFFFFF;opacity:0;transform:scale(0);transition:opacity .2s,transform .2s;pointer-events:none;}
     .notif-badge.show{opacity:1;transform:scale(1);}
 
     /* Notification panel — fixed so it never breaks layout */
@@ -888,38 +886,6 @@ input::placeholder, textarea::placeholder { color:#94A3B8; }
 }
 button, .btn { font-weight:700; }
 a { color:inherit; }
-</style>
-
-<!-- Admin text color override: keep standard page text black for readability. -->
-<style id="admin-black-text-override">
-  body { color:#000 !important; }
-  body p, body span, body label, body li, body td, body th,
-  body h1, body h2, body h3, body h4, body h5, body h6,
-  body .page-title, body .page-header, body .page-header *,
-  body .page-sub, body .subtitle, body .description, body .helper,
-  body .muted, body .hint, body .section-title, body .section-heading,
-  body .card-title, body .card-subtitle, body .form-label,
-  body .table-title, body .table-subtitle { color:#000 !important; }
-  body a:not(.btn):not(.button):not([class*="btn-"]) { color:#000 !important; }
-  body input, body select, body textarea { color:#000 !important; }
-  body input::placeholder, body textarea::placeholder { color:#555 !important; }
-</style>
-
-<style id="admin-global-black-text">
-/* Global admin text treatment: normal interface text is black throughout the admin side.
-   Intentional semantic colors on buttons, badges, alerts, icons, and status indicators are preserved. */
-body { color:#000 !important; }
-body p, body h1, body h2, body h3, body h4, body h5, body h6,
-body label, body li, body td, body th, body dt, body dd,
-body .page-title, body .page-header, body .page-header p, body .page-sub,
-body .subtitle, body .description, body .helper, body .hint, body .muted,
-body .section-title, body .section-heading, body .card-title, body .card-subtitle,
-body .table-title, body .table-subtitle, body .form-label, body .modal-title, body .modal-sub,
-body .empty-state, body .empty-cta, body .field-label, body .stat-label, body .stat-value,
-body .back, body .back-btn, body .nav-link, body .sidebar-text, body .content-text { color:#000 !important; }
-body a:not(.btn):not(.button):not([class*="btn-"]):not(.badge):not(.status):not(.nav-item) { color:#000 !important; }
-body input, body select, body textarea { color:#000 !important; }
-body input::placeholder, body textarea::placeholder { color:#555 !important; }
 </style>
 </head>
 <body>
@@ -1508,7 +1474,7 @@ body input::placeholder, body textarea::placeholder { color:#555 !important; }
                                 <tr>
                                     <th>Date &amp; Time</th>
                                     <th>Action</th>
-                                    <th>Performed By</th>
+                                    <th>User</th>
                                     <th>Details</th>
                                 </tr>
                             </thead>
@@ -1790,14 +1756,13 @@ function renderLogsTable(feedFull){
     }
     body.innerHTML=feedFull.map(a=>{
         const color=activityColor(a);
-        const actor= a.actor ? escH(a.actor) : 'System';
-        const details = a.meta ? escH(a.meta) : '—';
+        const user=a.actor ? escH(a.actor) : (a.type==='role_change' ? 'System' : 'System Automator');
         return `
         <tr>
             <td class="log-datetime">${escH(a.date||a.time||'—')}</td>
             <td><span class="log-action"><span class="log-action-dot" style="background:${color};"></span>${escH(a.text)}</span></td>
-            <td class="log-user">${actor}</td>
-            <td class="log-details">${details}</td>
+            <td class="log-user">${user}</td>
+            <td class="log-details">${escH(a.meta||'')}</td>
         </tr>`;
     }).join('');
 }

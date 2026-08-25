@@ -142,7 +142,7 @@ function e($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 .back-link:hover{color:var(--text-dark)}
 .page-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px;flex-wrap:wrap;gap:14px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;padding:22px 26px;box-shadow:var(--card-shadow)}
 .page-header h1{margin:0;font-family:'Rajdhani',sans-serif;font-size:28px;font-weight:700;color:var(--text-dark)}.page-header p{color:var(--text-dim);margin:6px 0 0;font-size:13px}
-.period-badge{background:var(--accent-bg);border:1px solid var(--accent-border);color:#14181F;padding:8px 16px;border-radius:20px;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.period-badge{background:var(--accent-bg);border:1px solid var(--accent-border);color:var(--accent);padding:8px 16px;border-radius:20px;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:8px;white-space:nowrap}
 .period-badge.closed{background:var(--danger-bg);border-color:var(--danger-border);color:var(--danger)}
 
 .alert{border-radius:10px;padding:13px 16px;font-size:13.5px;margin-bottom:18px;display:flex;align-items:center;gap:8px}
@@ -158,7 +158,7 @@ function e($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 .eval-tab{padding:10px 20px;border-radius:7px;font-size:13.5px;font-weight:700;color:var(--text-dim);text-decoration:none;display:flex;align-items:center;gap:8px}
 .eval-tab.active{background:var(--accent);color:#fff}
 .eval-tab:not(.active):hover{background:var(--inner);color:var(--text-dark)}
-.eval-tab .badge{background:rgba(24,45,93,.12);border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700}
+.eval-tab .badge{background:rgba(15,23,42,.12);border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700}
 .eval-tab.active .badge{background:rgba(255,255,255,.28)}
 
 .table-wrap{background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;overflow:hidden;box-shadow:var(--card-shadow)}
@@ -183,38 +183,6 @@ tbody td{padding:14px 18px;font-size:13.5px;vertical-align:middle}
 .empty-state{text-align:center;padding:56px 20px;color:var(--text-dim)}
 .empty-state i{font-size:36px;margin-bottom:14px;display:block;opacity:.3}
 @media(max-width:900px){.card-grid{grid-template-columns:1fr}.wrap{padding:20px}}
-</style>
-
-<!-- Admin text color override: keep standard page text black for readability. -->
-<style id="admin-black-text-override">
-  body { color:#000 !important; }
-  body p, body span, body label, body li, body td, body th,
-  body h1, body h2, body h3, body h4, body h5, body h6,
-  body .page-title, body .page-header, body .page-header *,
-  body .page-sub, body .subtitle, body .description, body .helper,
-  body .muted, body .hint, body .section-title, body .section-heading,
-  body .card-title, body .card-subtitle, body .form-label,
-  body .table-title, body .table-subtitle { color:#000 !important; }
-  body a:not(.btn):not(.button):not([class*="btn-"]) { color:#000 !important; }
-  body input, body select, body textarea { color:#000 !important; }
-  body input::placeholder, body textarea::placeholder { color:#555 !important; }
-</style>
-
-<style id="admin-global-black-text">
-/* Global admin text treatment: normal interface text is black throughout the admin side.
-   Intentional semantic colors on buttons, badges, alerts, icons, and status indicators are preserved. */
-body { color:#000 !important; }
-body p, body h1, body h2, body h3, body h4, body h5, body h6,
-body label, body li, body td, body th, body dt, body dd,
-body .page-title, body .page-header, body .page-header p, body .page-sub,
-body .subtitle, body .description, body .helper, body .hint, body .muted,
-body .section-title, body .section-heading, body .card-title, body .card-subtitle,
-body .table-title, body .table-subtitle, body .form-label, body .modal-title, body .modal-sub,
-body .empty-state, body .empty-cta, body .field-label, body .stat-label, body .stat-value,
-body .back, body .back-btn, body .nav-link, body .sidebar-text, body .content-text { color:#000 !important; }
-body a:not(.btn):not(.button):not([class*="btn-"]):not(.badge):not(.status):not(.nav-item) { color:#000 !important; }
-body input, body select, body textarea { color:#000 !important; }
-body input::placeholder, body textarea::placeholder { color:#555 !important; }
 </style>
 </head>
 <body>

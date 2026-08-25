@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Aug 23, 2026 at 08:52 AM
+-- Generation Time: Aug 24, 2026 at 05:55 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -176,11 +176,12 @@ CREATE TABLE `evaluation_periods` (
 
 INSERT INTO `evaluation_periods` (`id`, `period_label`, `school_year`, `semester`, `date_start`, `date_end`, `is_active`, `created_at`, `tracking_enabled`) VALUES
 (1, '2024-2025 1st Semester', '2024-2025', '1st Semester', NULL, NULL, 0, '2026-06-08 22:14:26', 0),
-(2, '2026-2027 — School Year', '2026-2027', 'School Year', '2026-08-07', '2026-08-07', 1, '2026-08-05 18:15:42', 1),
+(2, '2026-2027 — School Year', '2026-2027', 'School Year', '2026-08-07', '2026-08-07', 0, '2026-08-05 18:15:42', 1),
 (3, '2026-2027 — 1st Semester', '2026-2027', '1st Semester', '2026-08-07', '2026-08-07', 0, '2026-08-05 18:16:56', 0),
 (4, '2025-2-26 — School Year', '2025-2-26', 'School Year', '2026-08-06', '2026-08-06', 0, '2026-08-06 11:03:33', 0),
 (5, '2026-2027 — Summer', '2026-2027', 'Summer', '2026-08-07', '2026-08-07', 0, '2026-08-06 13:21:02', 1),
-(6, '1st semester 2026-2027', '2026-2027', '1st Semester', '2026-08-21', '2026-08-22', 0, '2026-08-21 12:39:24', 0);
+(6, '1st semester 2026-2027', '2026-2027', '1st Semester', '2026-08-21', '2026-08-22', 0, '2026-08-21 12:39:24', 0),
+(7, '2026-2027 — 2nd Semester', '2026-2027', '2nd Semester', '2026-08-07', '2026-08-07', 1, '2026-08-24 09:52:56', 0);
 
 -- --------------------------------------------------------
 
@@ -210,7 +211,7 @@ INSERT INTO `evaluation_questions` (`id`, `target_type`, `category`, `question_t
 (195, 'Teacher', 'Attendance', 'integrates the school’s Vision, Mission, Objectives and Core Values in the lesson for the day *', 'student', '2026-08-20 10:36:01', 1, '2026-08-20 02:36:01'),
 (196, 'Teacher', 'Professionalism', 'Demonstrates punctuality, excellent attendance *', 'student', '2026-08-20 10:36:07', 1, '2026-08-20 02:36:07'),
 (197, 'Teacher', 'Initiative', 'integrates the school’s Vision, Mission, Objectives and Core Values in the lesson for the day *', 'peer', '2026-08-20 10:37:11', 1, '2026-08-20 02:37:11'),
-(198, 'Teacher', 'Professionalism', 'Demonstrates punctuality, excellent attendance *', 'student', '2026-08-20 10:43:52', 1, '2026-08-20 02:43:52'),
+(198, 'Teacher', 'Attendance', 'Demonstrates punctuality, excellent attendance *', 'student', '2026-08-20 10:43:52', 1, '2026-08-20 02:43:52'),
 (199, 'Teacher', 'Professionalism', 'Starts and ends class on time', 'student', '2026-08-20 19:56:01', 1, '2026-08-20 11:56:01'),
 (200, 'Teacher', 'Professionalism', 'corrects, records, evaluates and feed backs students’ performance regularly and on time', 'student', '2026-08-20 19:56:26', 1, '2026-08-20 11:56:26');
 
@@ -237,6 +238,7 @@ INSERT INTO `evaluation_question_categories` (`question_id`, `category_id`) VALU
 (197, 95),
 (197, 96),
 (197, 104),
+(198, 103),
 (198, 106),
 (199, 106),
 (200, 106);
@@ -612,7 +614,6 @@ INSERT INTO `questionnaire_answers` (`id`, `tracker_id`, `question_id`, `questio
 (297, 46, 189, 'evaluation', NULL, NULL, 4.00, '2026-08-18 12:26:08', NULL),
 (298, 47, NULL, 'user', 87, NULL, 5.00, '2026-08-19 13:42:27', NULL),
 (299, 47, NULL, 'user', 88, NULL, 5.00, '2026-08-19 13:42:27', NULL),
-(300, 49, NULL, 'user', 72, NULL, 5.00, '2026-08-19 21:16:20', NULL),
 (301, 50, NULL, 'user', 153, NULL, 5.00, '2026-08-21 20:41:53', NULL),
 (302, 50, NULL, 'user', 79, NULL, 4.00, '2026-08-21 20:41:53', NULL),
 (303, 51, NULL, 'user', 75, NULL, 5.00, '2026-08-22 09:47:31', NULL),
@@ -650,7 +651,7 @@ INSERT INTO `questionnaire_forms` (`id`, `title`, `description`, `sector`, `peri
 (4, 'Staff Peer Evaluation', NULL, 'All', NULL, 1, NULL, '2026-06-10 07:54:52', '2026-06-10 07:54:52', 'staff_peer'),
 (5, 'Teacher Performance Evaluation (Supervisor)', NULL, 'Teacher', NULL, 1, NULL, '2026-08-06 19:32:37', '2026-08-06 19:32:37', 'supervisor_to_teacher'),
 (6, 'Staff Performance Evaluation (Supervisor)', NULL, 'Staff', NULL, 1, NULL, '2026-08-06 19:32:37', '2026-08-06 19:32:37', 'supervisor_to_staff'),
-(7, 'Executive Assistant Performance Evaluation (Supervisor)', NULL, 'Executive Assistant', NULL, 1, NULL, '2026-08-07 14:56:19', '2026-08-07 14:56:19', 'supervisor_to_ea');
+(7, 'Executive Assistant Performance Evaluation (Supervisor)', NULL, 'Executive Assistant', NULL, 1, NULL, '2026-08-07 14:56:19', '2026-08-24 08:12:15', 'upward_to_ea');
 
 -- --------------------------------------------------------
 
@@ -886,8 +887,8 @@ CREATE TABLE `system_settings` (
 --
 
 INSERT INTO `system_settings` (`setting_key`, `setting_value`) VALUES
-('acad_structure', 'shs'),
-('acad_term', 'School Year'),
+('acad_structure', 'college'),
+('acad_term', '2nd Semester'),
 ('acad_year', '2026-2027'),
 ('auto_schedule', '0'),
 ('control_mode', 'open'),
@@ -983,7 +984,7 @@ INSERT INTO `users` (`id`, `username`, `password_hash`, `full_name`, `email`, `p
 (152, 'Sheramay', '$2y$10$Tm3/LgiyY8jZN3w4a2SiAuoOorLDbai.lyUY7a5Fz7tlhM/v19I02', 'Sheramay Dawn S. Pamay', 'Sheramay@gmail.com', 'usr_6a6e05fe01c7c9.51646425.jpg', 'Staff', 'Staff/Cashier', 'staff', NULL, 1, '2026-08-01 22:43:10', '2026-08-17 18:00:10', NULL, NULL, 'self', 'self', 0, '1st Semester', 'approved', NULL, NULL, NULL, NULL, NULL),
 (157, 'RENALITA', '$2y$10$Hwg1Afa273XUtZk2LUtmmOgUen.3TL.hlM1k4rV9ObyFxBPWMlpoq', 'Renalita', 'renalita@gmail.com', NULL, 'Student', NULL, 'dean', 'college', 1, '2026-08-04 17:52:56', '2026-08-04 17:53:20', 'BSIT', NULL, 'self', 'self', 0, NULL, 'approved', '040506', NULL, NULL, NULL, NULL),
 (158, 'RAY', '$2y$10$w4.0sOL2y99sh.GLmm.3Que0wRUt.ECQuR/hifUHHEf0ce5os2O7q', 'ray', 'ray@gmail.com', NULL, 'Student', NULL, 'principal', 'both', 1, '2026-08-05 15:38:01', '2026-08-05 15:38:33', '', NULL, 'self', 'self', 0, NULL, 'approved', '060708', NULL, NULL, NULL, NULL),
-(160, 'JENNIFER', '$2y$10$c.e3SBCP.uXkiuVdrLVp/.PW4qpWAxNNJkzgWK3Qs4sB6GhKbwGsW', 'Jennifer A. Biadora', 'jennifer@gmail.com', 'usr_6a741e3f48ce38.96566884.jpg', 'Teacher', 'Teacher/ CC   102 - Computer Programming 1** IPT   101 - Integrative Programming and Technologies 1', 'teacher', NULL, 1, '2026-08-06 13:40:15', '2026-08-20 12:19:20', NULL, NULL, 'self', 'self', 0, '1st Semester', 'approved', NULL, NULL, NULL, NULL, NULL),
+(160, 'JENNIFER', '$2y$10$c.e3SBCP.uXkiuVdrLVp/.PW4qpWAxNNJkzgWK3Qs4sB6GhKbwGsW', 'Jennifer A. Biadora', 'jennifer@gmail.com', 'usr_6a741e3f48ce38.96566884.jpg', 'Teacher', 'Teacher/ CC   102 - Computer Programming 1** IPT   101 - Integrative Programming and Technologies 1', 'teacher', NULL, 1, '2026-08-06 13:40:15', '2026-08-23 22:11:56', NULL, NULL, 'self', 'self', 0, '1st Semester', 'approved', NULL, NULL, NULL, NULL, NULL),
 (161, 'NEIL', '$2y$10$ww/kd/xsVNEfgELFicHvpu/wxv9Vu09dnHvZgNJ1Ae6epGNU90rWO', 'Neil Alonsagay', 'neil@gmail.com', NULL, 'Student', NULL, 'student', 'college', 1, '2026-08-06 13:41:55', '2026-08-10 18:13:56', 'College', '4th Year College', 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
 (163, 'ELLYN', '$2y$10$3vYt2rM/dNWjtXpIqgrenOBbvXYQq5PoqppzpqaLQ.t1P11I6KSw.', 'Ellyn S. Verano', 'ellyn@gmail.com', 'usr_6a74497087d9b8.86868053.jpg', 'Teacher', NULL, 'teacher', NULL, 1, '2026-08-06 16:44:32', '2026-08-20 12:19:13', NULL, NULL, 'self', 'self', 0, '2nd Semester', 'approved', NULL, NULL, NULL, NULL, NULL),
 (164, 'REYNALDO', '$2y$10$QstDY64FSyEg7QqgXmcEhuvEoDjmwpuUW7G4LHJLWF/p2jtlL4ZQC', 'Reynaldo C. Varon', 'reynaldo@gmail.com', 'usr_6a7449a9bc1589.35072434.jpg', 'Teacher', NULL, 'teacher', NULL, 1, '2026-08-06 16:45:29', '2026-08-20 12:19:02', NULL, NULL, 'self', 'self', 0, '2nd Semester', 'approved', NULL, NULL, NULL, NULL, NULL),
@@ -995,16 +996,13 @@ INSERT INTO `users` (`id`, `username`, `password_hash`, `full_name`, `email`, `p
 (170, 'JINGLE', '$2y$10$bt4LdJXqYIOEM4KDXQr0XuKQsXL1zE31DDGhQdYusxMQtu28/pD0e', 'Jingle R. Ausan', 'jingle@gmail.com', 'usr_6a7c94c5d7f8d3.77865885.jpg', 'Teacher', 'Teacher', 'teacher', NULL, 1, '2026-08-12 23:44:05', '2026-08-20 12:19:26', NULL, NULL, 'self', 'self', 0, '1st Semester', 'approved', NULL, NULL, NULL, NULL, NULL),
 (171, 'jeo', '$2y$10$.qFtE1a2ywTVnQUKGiSWAO.tHmTrkmdYEB.xi2WsmGGUvwnLdsAvm', 'jeo', 'jeo@gmail.com', NULL, 'Student', 'Student', 'student', 'senior_high', 1, '2026-08-12 23:45:19', '2026-08-12 23:45:29', 'SHS', 'Grade 11', 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
 (172, 'johnny_e._delos_santos_6518', 'NOT NULL', 'Johnny E. Delos Santos', NULL, 'p_6a818636de0682.39560707.jpg', 'Student', 'Personnel', 'staff', NULL, 1, '2026-08-16 17:43:18', '2026-08-18 13:08:38', NULL, NULL, 'self', 'admin_nologin', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
-(173, 'fionah_gwyn_2d68', 'NOT NULL', 'Fionah Gwyn', NULL, '', 'Student', 'Teacher', '', NULL, 1, '2026-08-18 16:08:33', '2026-08-18 16:08:33', 'dfg', NULL, 'self', 'admin_nologin', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
 (174, 'jonaliza_jontilano_5fc8', 'NOT NULL', 'Jonaliza Jontilano', NULL, 'p_6a8413306285b6.14537980.jpg', 'Student', 'Personnel', 'staff', NULL, 1, '2026-08-18 16:09:20', '2026-08-18 16:09:20', 'dfg', NULL, 'self', 'admin_nologin', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
 (175, 'Dim', '$2y$10$NoPujTO4svEjolJP03d3C.c6jlJG8ShC2B3K/0f7EAwVC57CNiGai', 'Dim Mark Damaso', 'dim@gmail.com', NULL, 'Student', 'Student', 'student', 'college', 1, '2026-08-18 16:28:09', '2026-08-18 16:28:19', 'College', '4th Year College', 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
 (176, 'RAFFY', '$2y$10$ag9hJeGCuU23I9tnrUlIv.fqHXQ.hl8yHW1MS9Eti4/MxF/4ohK/.', 'Raffy E. Arevalo', 'raffy@gmail.com', 'usr_6a86c3c4af1b81.39515176.jpg', 'Staff', 'Personnel/ Registrar', 'staff', NULL, 1, '2026-08-20 17:07:16', '2026-08-20 17:07:59', NULL, NULL, 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
 (177, 'ril', '$2y$10$kkeboCRUqs4G6NpxG0j53.axkZPNl4bMtlEPFhyRCuDtsr22YZbK.', 'rila', 'ril@gmail.com', NULL, 'Student', 'Student', 'student', 'college', 1, '2026-08-21 20:40:45', '2026-08-21 20:41:13', 'College', '4th Year College', 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
 (178, 'liv', '$2y$10$QdjGJoD0Cf.GEJiAHIHQvOVErZ83hNSX9D.2TzLk/pYVgkxKFDoJ.', 'olivia', 'liv@gmail.com', 'stu_6a8902d2c2d3d4.95769441.jpg', 'Student', 'Student', 'student', 'college', 1, '2026-08-22 09:42:40', '2026-08-22 10:00:50', 'College', '4th Year College', 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
 (179, 'test', '$2y$10$shGhZhLMT1IWM2/SF3HMq.WwZTYcSKyPP5uKIm0AYtEaV9cYsMmLO', 'testing', 'test@gmail.com', NULL, 'Teacher', 'Cashier', 'teacher', NULL, 1, '2026-08-22 10:04:19', '2026-08-22 10:14:59', NULL, NULL, 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
-(180, 'jessie_a._aquilo_de44', 'NOT NULL', 'Jessie A. Aquilo', NULL, 'p_6a8a4a041c2099.32778197.jpg', 'Student', 'Teacher', '', NULL, 1, '2026-08-23 09:16:52', '2026-08-23 09:16:52', 'Campus Ministry Officer  Formation Services Coordinator', NULL, 'self', 'admin_nologin', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
 (181, 'valerie_jane_s._bendijo_8a42', 'NOT NULL', 'Valerie Jane S. Bendijo', NULL, 'p_6a8a4a6ec7c716.61866805.jpg', 'Student', 'Personnel', 'staff', NULL, 1, '2026-08-23 09:18:38', '2026-08-23 09:18:38', 'HEALTH SERVICES OFFICER SCHOOL NURSE', NULL, 'self', 'admin_nologin', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
-(182, 'jessie_a._aquillo_8213', 'NOT NULL', 'Jessie A. Aquillo', NULL, '', 'Student', 'Teacher', '', NULL, 1, '2026-08-23 09:27:58', '2026-08-23 09:27:58', 'Campus Ministry Officer  Formation Services Coordinator', NULL, 'self', 'admin_nologin', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
 (183, 'jessie_a._aquillo_a0ed', 'NOT NULL', 'Jessie A. Aquillo', NULL, '', 'Student', 'Teacher', 'teacher', NULL, 1, '2026-08-23 09:52:08', '2026-08-23 09:52:08', 'Campus Ministry Officer  Formation Services Coordinator', NULL, 'self', 'admin_nologin', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL);
 
 -- --------------------------------------------------------
@@ -1112,7 +1110,6 @@ INSERT INTO `user_questions` (`id`, `user_id`, `target_type`, `eval_type`, `cate
 (69, 136, 'Staff', 'student', 'Professionalism', 'Arrives at school on time', 1, '2026-08-01 10:39:19', '2026-08-15 04:35:11'),
 (70, 136, 'Staff', 'student', 'Professionalism', 'Demonstrates punctuality, excellent attendance', 2, '2026-08-01 10:39:27', '2026-08-15 04:35:11'),
 (71, 136, 'Staff', 'student', 'Professionalism', 'Observes proper entrance and exit.', 3, '2026-08-01 10:39:48', '2026-08-15 04:35:11'),
-(72, 146, 'Staff', 'student', 'General', 'integrates the school’s Vision, Mission, Objectives and Core Values in the lesson for the day', 1, '2026-08-06 05:23:55', '2026-08-15 04:35:11'),
 (73, 144, 'Staff', 'student', 'General', 'integrates the school’s Vision, Mission, Objectives and Core Values in the lesson for the day', 1, '2026-08-06 05:25:56', '2026-08-15 04:35:11'),
 (74, 152, 'Staff', 'student', 'Professionalism', 'integrates the school’s Vision, Mission, Objectives and Core Values in the lesson for the day', 1, '2026-08-11 03:53:23', '2026-08-15 04:35:11'),
 (75, 144, 'Staff', 'student', 'Cooperaton', 'Demonstrates punctuality, excellent attendance *', 2, '2026-08-12 07:48:24', '2026-08-15 04:35:11'),
@@ -1218,7 +1215,16 @@ INSERT INTO `user_questions` (`id`, `user_id`, `target_type`, `eval_type`, `cate
 (186, 172, 'Staff', 'ea', 'Service Quality', 'Provides courteous, helpful, and responsive service.', 3, '2026-08-23 06:34:19', '2026-08-23 06:34:19'),
 (187, 172, 'Staff', 'ea', 'Professionalism', 'Demonstrates professionalism, reliability, and accountability.', 4, '2026-08-23 06:34:19', '2026-08-23 06:34:19'),
 (188, 172, 'Staff', 'ea', 'Communication', 'Communicates clearly and respectfully with clients and coworkers.', 5, '2026-08-23 06:34:19', '2026-08-23 06:34:19'),
-(189, 172, 'Staff', 'ea', 'Teamwork', 'Works cooperatively with other members of the institution.', 6, '2026-08-23 06:34:19', '2026-08-23 06:34:19');
+(189, 172, 'Staff', 'ea', 'Teamwork', 'Works cooperatively with other members of the institution.', 6, '2026-08-23 06:34:19', '2026-08-23 06:34:19'),
+(190, 172, 'Staff', 'ea', 'Work Performance', 'Performs assigned duties accurately and consistently.', 1, '2026-08-24 01:31:01', '2026-08-24 01:31:01'),
+(191, 172, 'Staff', 'ea', 'Work Performance', 'Completes responsibilities efficiently and on time.', 2, '2026-08-24 01:31:01', '2026-08-24 01:31:01'),
+(192, 172, 'Staff', 'ea', 'Service Quality', 'Provides courteous, helpful, and responsive service.', 3, '2026-08-24 01:31:01', '2026-08-24 01:31:01'),
+(193, 172, 'Staff', 'ea', 'Professionalism', 'Demonstrates professionalism, reliability, and accountability.', 4, '2026-08-24 01:31:01', '2026-08-24 01:31:01'),
+(194, 172, 'Staff', 'ea', 'Communication', 'Communicates clearly and respectfully with clients and coworkers.', 5, '2026-08-24 01:31:01', '2026-08-24 01:31:01'),
+(195, 172, 'Staff', 'ea', 'Teamwork', 'Works cooperatively with other members of the institution.', 6, '2026-08-24 01:31:01', '2026-08-24 01:31:01'),
+(196, 146, 'Staff', 'student', 'Professionalism', 'integrates the school’s Vision, Mission, Objectives and Core Values in the lesson for the day', 12, '2026-08-24 02:05:44', '2026-08-24 02:05:44'),
+(197, 146, 'Staff', 'student', 'Professionalism', 'Demonstrates punctuality, excellent attendance *', 13, '2026-08-24 02:05:56', '2026-08-24 02:05:56'),
+(198, 146, 'Staff', 'student', 'Cooperaton', 'Clearly explains lessons and course-related concepts.', 14, '2026-08-24 02:06:11', '2026-08-24 02:06:11');
 
 -- --------------------------------------------------------
 
@@ -1265,7 +1271,9 @@ INSERT INTO `user_question_categories` (`id`, `user_id`, `target_type`, `eval_ty
 (40, 160, 'Multi-Role', 'student', 'Teaching & Technical Support', 2),
 (41, 136, 'Multi-Role', 'student', 'Facilities & Laboratory Management', 2),
 (42, 176, 'Multi-Role', 'student', 'Personnel / Registrar', 1),
-(43, 144, 'Multi-Role', 'student', 'Teaching & Student Support', 2);
+(43, 144, 'Multi-Role', 'student', 'Teaching & Student Support', 2),
+(44, 146, 'Staff', 'student', 'Professionalism', 3),
+(45, 146, 'Staff', 'student', 'Cooperaton', 4);
 
 -- --------------------------------------------------------
 
@@ -1642,7 +1650,7 @@ ALTER TABLE `evaluation_answers`
 -- AUTO_INCREMENT for table `evaluation_periods`
 --
 ALTER TABLE `evaluation_periods`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
 
 --
 -- AUTO_INCREMENT for table `evaluation_questions`
@@ -1774,13 +1782,13 @@ ALTER TABLE `user_management_log`
 -- AUTO_INCREMENT for table `user_questions`
 --
 ALTER TABLE `user_questions`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=190;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=199;
 
 --
 -- AUTO_INCREMENT for table `user_question_categories`
 --
 ALTER TABLE `user_question_categories`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=44;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=46;
 
 --
 -- AUTO_INCREMENT for table `user_year_levels`

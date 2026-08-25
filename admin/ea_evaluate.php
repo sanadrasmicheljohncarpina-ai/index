@@ -11,7 +11,7 @@
 // Evaluation" question set. EA Evaluation reuses whatever is already
 // assigned to that same person elsewhere in Manage Questions
 // (admin/questionnaire.php):
-//   - Principal / Dean  -> user_questions where eval_type='ea'
+//   - Principal / Dean  -> user_questions where eval_type='school_head'
 //     (the same per-person pool the School Head Evaluation tab manages)
 //   - Non-Teaching Staff -> user_questions where eval_type='student'
 //     AND target_type='Staff' (the same per-person pool the Student
@@ -110,7 +110,7 @@ $is_open = $period_id > 0;
 // assigned there yet, $questions comes back empty and the form below
 // shows a message linking straight to the right Manage Questions tab.
 if ($type === 'Principal' || $type === 'Dean') {
-    $qEvalType   = 'ea';
+    $qEvalType   = 'school_head';
     $qTargetType = $type;
 } else {
     $qEvalType   = 'student';
@@ -249,7 +249,7 @@ foreach ($questions as $q) { $questionGroups[$q['category'] ?: 'General'][] = $q
 .person-photo{width:60px;height:60px;border-radius:50%;object-fit:cover;background:var(--inner);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:22px}
 .person-name{font-size:20px;font-weight:800;color:var(--text)}
 .person-meta{font-size:12.5px;color:var(--muted);margin-top:2px}
-.badge{display:inline-block;margin-top:6px;color:#14181F;font-size:11.5px;background:#EAF3FF;padding:4px 10px;border-radius:99px;font-weight:700}
+.badge{display:inline-block;margin-top:6px;color:var(--purple);font-size:11.5px;background:#EFF6FF;padding:4px 10px;border-radius:99px;font-weight:700}
 .alert{border-radius:10px;padding:13px 16px;font-size:13.5px;margin-bottom:18px;display:flex;align-items:center;gap:8px}
 .alert-error{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.25);color:#ffb4b4}
 .alert-info{background:#EFF6FF;border:1px solid #BFDBFE;color:#2563EB}
@@ -279,38 +279,6 @@ foreach ($questions as $q) { $questionGroups[$q['category'] ?: 'General'][] = $q
 .summary-score .num{font-size:32px;font-weight:800;color:var(--text)}
 .summary-score .of{font-size:13px;color:var(--muted)}
 @media(max-width:900px){.top{padding:0 18px}.wrap{padding:20px}.rating-row{flex-wrap:wrap}.rating-opt{min-width:50px}}
-</style>
-
-<!-- Admin text color override: keep standard page text black for readability. -->
-<style id="admin-black-text-override">
-  body { color:#000 !important; }
-  body p, body span, body label, body li, body td, body th,
-  body h1, body h2, body h3, body h4, body h5, body h6,
-  body .page-title, body .page-header, body .page-header *,
-  body .page-sub, body .subtitle, body .description, body .helper,
-  body .muted, body .hint, body .section-title, body .section-heading,
-  body .card-title, body .card-subtitle, body .form-label,
-  body .table-title, body .table-subtitle { color:#000 !important; }
-  body a:not(.btn):not(.button):not([class*="btn-"]) { color:#000 !important; }
-  body input, body select, body textarea { color:#000 !important; }
-  body input::placeholder, body textarea::placeholder { color:#555 !important; }
-</style>
-
-<style id="admin-global-black-text">
-/* Global admin text treatment: normal interface text is black throughout the admin side.
-   Intentional semantic colors on buttons, badges, alerts, icons, and status indicators are preserved. */
-body { color:#000 !important; }
-body p, body h1, body h2, body h3, body h4, body h5, body h6,
-body label, body li, body td, body th, body dt, body dd,
-body .page-title, body .page-header, body .page-header p, body .page-sub,
-body .subtitle, body .description, body .helper, body .hint, body .muted,
-body .section-title, body .section-heading, body .card-title, body .card-subtitle,
-body .table-title, body .table-subtitle, body .form-label, body .modal-title, body .modal-sub,
-body .empty-state, body .empty-cta, body .field-label, body .stat-label, body .stat-value,
-body .back, body .back-btn, body .nav-link, body .sidebar-text, body .content-text { color:#000 !important; }
-body a:not(.btn):not(.button):not([class*="btn-"]):not(.badge):not(.status):not(.nav-item) { color:#000 !important; }
-body input, body select, body textarea { color:#000 !important; }
-body input::placeholder, body textarea::placeholder { color:#555 !important; }
 </style>
 </head>
 <body>

@@ -159,8 +159,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .bar-bg{height:6px;background:rgba(15,23,42,.12);border-radius:3px;overflow:hidden;}
 .bar-fill{height:100%;border-radius:3px;}
 .pct{font-size:12px;color:var(--muted);margin-top:4px;}
-.badge-complete{font-size:11px;font-weight:700;padding:4px 11px;border-radius:20px;background:rgba(81,239,139,.15);color:#14181F;border:1px solid rgba(20,253,105,.3);}
-.badge-incomplete{font-size:11px;font-weight:700;padding:4px 11px;border-radius:20px;background:rgba(255,121,121,.15);color:#14181F;border:1px solid rgba(255,60,60,.3);}
+.badge-complete{font-size:11px;font-weight:700;padding:4px 11px;border-radius:20px;background:rgba(74,222,128,.15);color:#4ade80;border:1px solid rgba(74,222,128,.3);}
+.badge-incomplete{font-size:11px;font-weight:700;padding:4px 11px;border-radius:20px;background:rgba(248,113,113,.15);color:#f87171;border:1px solid rgba(248,113,113,.3);}
 .no-data{text-align:center;padding:40px;color:var(--muted);background:var(--mid);border-radius:12px;border:1px solid var(--border);}
 .no-period{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.3);color:#f87171;padding:14px 18px;border-radius:10px;margin-bottom:20px;font-size:13px;}
 
@@ -223,39 +223,7 @@ input::placeholder, textarea::placeholder { color:#94A3B8; }
 }
 button, .btn { font-weight:700; }
 a { color:inherit; }
-</style>
-<!-- Admin text color override: keep standard page text black for readability. -->
-<style id="admin-black-text-override">
-  body { color:#000 !important; }
-  body p, body span, body label, body li, body td, body th,
-  body h1, body h2, body h3, body h4, body h5, body h6,
-  body .page-title, body .page-header, body .page-header *,
-  body .page-sub, body .subtitle, body .description, body .helper,
-  body .muted, body .hint, body .section-title, body .section-heading,
-  body .card-title, body .card-subtitle, body .form-label,
-  body .table-title, body .table-subtitle { color:#000 !important; }
-  body a:not(.btn):not(.button):not([class*="btn-"]) { color:#000 !important; }
-  body input, body select, body textarea { color:#000 !important; }
-  body input::placeholder, body textarea::placeholder { color:#555 !important; }
-</style>
-
-<style id="admin-global-black-text">
-/* Global admin text treatment: normal interface text is black throughout the admin side.
-   Intentional semantic colors on buttons, badges, alerts, icons, and status indicators are preserved. */
-body { color:#000 !important; }
-body p, body h1, body h2, body h3, body h4, body h5, body h6,
-body label, body li, body td, body th, body dt, body dd,
-body .page-title, body .page-header, body .page-header p, body .page-sub,
-body .subtitle, body .description, body .helper, body .hint, body .muted,
-body .section-title, body .section-heading, body .card-title, body .card-subtitle,
-body .table-title, body .table-subtitle, body .form-label, body .modal-title, body .modal-sub,
-body .empty-state, body .empty-cta, body .field-label, body .stat-label, body .stat-value,
-body .back, body .back-btn, body .nav-link, body .sidebar-text, body .content-text { color:#000 !important; }
-body a:not(.btn):not(.button):not([class*="btn-"]):not(.badge):not(.status):not(.nav-item) { color:#000 !important; }
-body input, body select, body textarea { color:#000 !important; }
-body input::placeholder, body textarea::placeholder { color:#555 !important; }
-</style>
-</head><body>
+</style></head><body>
 
 <a href="admin_dashboard.php" class="back-btn"><i class="fa-solid fa-arrow-left"></i> Back to Dashboard</a>
 

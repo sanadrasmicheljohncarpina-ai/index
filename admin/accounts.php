@@ -225,16 +225,16 @@ tbody td{padding:14px 16px;font-size:14px;vertical-align:middle;}
 .user-name{font-weight:600;color:#fff;font-size:14px;}
 .user-username{font-size:12px;color:var(--muted);}
 .badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;}
-.badge-active{background:rgba(28,237,105,.15);color:#14181F;}
-.badge-inactive{background:rgba(255,89,89,.15);color:#14181F;}
+.badge-active{background:rgba(34,197,94,.15);color:#4ade80;}
+.badge-inactive{background:rgba(240,84,84,.15);color:#f87171;}
 .desig-form{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
 .desig-select{background:var(--inner);border:1px solid var(--border);color:var(--light);padding:5px 10px;border-radius:6px;font-size:12px;font-family:'DM Sans',sans-serif;outline:none;cursor:pointer;transition:border-color .2s;max-width:140px;}
 .desig-select:focus{border-color:var(--teal);}
 .btn-assign{background:var(--teal);color:#fff;border:none;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;transition:background .2s;white-space:nowrap;}
 .btn-assign:hover{background:#14B8A6;}
-.desig-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:rgba(33,125,222,.18);color:#14181F;margin-bottom:4px;}
-.level-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:#EDF3F9;color:#172033;border:1px solid #93B0D4;}
-.level-badge.unassigned{background:#FFF5E8;color:#14181F;border-color:#FFA241;}
+.desig-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:rgba(43,108,176,.18);color:#93c5fd;margin-bottom:4px;}
+.level-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:rgba(13,148,136,.18);color:#5eead4;}
+.level-badge.unassigned{background:rgba(251,191,36,.15);color:#fbbf24;}
 .level-badge-row{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px;}
 .action-wrap{display:flex;gap:6px;align-items:center;}
 .btn-icon{background:none;border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--muted);cursor:pointer;font-size:13px;transition:all .2s;}
@@ -253,7 +253,7 @@ tbody td{padding:14px 16px;font-size:14px;vertical-align:middle;}
 .btn-cancel{flex:1;padding:10px;background:var(--inner);border:1px solid var(--border);border-radius:var(--radius);color:var(--light);font-size:14px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;}
 .btn-confirm-del{flex:1;padding:10px;background:var(--danger);border:none;border-radius:var(--radius);color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;}
 .btn-confirm-del:hover{background:#e03c3c;}
-.needs-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:rgba(255,200,58,.15);color:#14181F;margin-left:6px;}
+.needs-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:rgba(251,191,36,.15);color:#fbbf24;margin-left:6px;}
 tbody tr.needs-desig{background:rgba(251,191,36,.04);}
 tbody tr.needs-desig:hover{background:rgba(251,191,36,.08);}
 @media(max-width:900px){.hide-mobile{display:none;}tbody td{padding:10px 12px;}body{padding:16px;}}
@@ -324,38 +324,6 @@ input::placeholder, textarea::placeholder { color:#94A3B8; }
 }
 button, .btn { font-weight:700; }
 a { color:inherit; }
-</style>
-
-<!-- Admin text color override: keep standard page text black for readability. -->
-<style id="admin-black-text-override">
-  body { color:#000 !important; }
-  body p, body span, body label, body li, body td, body th,
-  body h1, body h2, body h3, body h4, body h5, body h6,
-  body .page-title, body .page-header, body .page-header *,
-  body .page-sub, body .subtitle, body .description, body .helper,
-  body .muted, body .hint, body .section-title, body .section-heading,
-  body .card-title, body .card-subtitle, body .form-label,
-  body .table-title, body .table-subtitle { color:#000 !important; }
-  body a:not(.btn):not(.button):not([class*="btn-"]) { color:#000 !important; }
-  body input, body select, body textarea { color:#000 !important; }
-  body input::placeholder, body textarea::placeholder { color:#555 !important; }
-</style>
-
-<style id="admin-global-black-text">
-/* Global admin text treatment: normal interface text is black throughout the admin side.
-   Intentional semantic colors on buttons, badges, alerts, icons, and status indicators are preserved. */
-body { color:#000 !important; }
-body p, body h1, body h2, body h3, body h4, body h5, body h6,
-body label, body li, body td, body th, body dt, body dd,
-body .page-title, body .page-header, body .page-header p, body .page-sub,
-body .subtitle, body .description, body .helper, body .hint, body .muted,
-body .section-title, body .section-heading, body .card-title, body .card-subtitle,
-body .table-title, body .table-subtitle, body .form-label, body .modal-title, body .modal-sub,
-body .empty-state, body .empty-cta, body .field-label, body .stat-label, body .stat-value,
-body .back, body .back-btn, body .nav-link, body .sidebar-text, body .content-text { color:#000 !important; }
-body a:not(.btn):not(.button):not([class*="btn-"]):not(.badge):not(.status):not(.nav-item) { color:#000 !important; }
-body input, body select, body textarea { color:#000 !important; }
-body input::placeholder, body textarea::placeholder { color:#555 !important; }
 </style>
 </head>
 <body>

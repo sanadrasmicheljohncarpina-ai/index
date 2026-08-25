@@ -85,23 +85,8 @@ if (isset($_GET['restore_id'])) {
 
 $toast = $_SESSION['toast'] ?? ''; unset($_SESSION['toast']);
 
-// ── DASHBOARD QUICK-REPORT LINKS ────────────────────────────────
-// dean_dashboard.php's "Reports & Analytics" buttons link here with a
-// ?type= value (college_summary, faculty_performance, department_comparison,
-// program_analytics, accreditation_support) instead of ?eval_type=/&group=.
-// Map each to the closest matching tab/group here so the button actually
-// lands somewhere relevant instead of always opening the default Student tab.
-$typeDefaults = [
-    'faculty_performance'   => ['eval_type' => 'student', 'group' => 'Teacher'],
-    'college_summary'       => ['eval_type' => 'student', 'group' => 'All'],
-    'department_comparison' => ['eval_type' => 'student', 'group' => 'All'],
-    'program_analytics'     => ['eval_type' => 'student', 'group' => 'All'],
-    'accreditation_support' => ['eval_type' => 'student', 'group' => 'All'],
-];
-$typeDefault = $typeDefaults[$_GET['type'] ?? ''] ?? null;
-
 // ── ACTIVE EVAL TYPE ──────────────────────────────────────────
-$activeEval = $_GET['eval_type'] ?? ($typeDefault['eval_type'] ?? 'student');
+$activeEval = $_GET['eval_type'] ?? 'student';
 if (!in_array($activeEval, ['student','multi_role','peer'])) $activeEval = 'student';
 
 $evalTypeSql = match ($activeEval) {
@@ -149,7 +134,7 @@ $view       = $_GET['view']       ?? 'list';
 $target_id  = intval($_GET['target_id']  ?? 0);
 $student_id = intval($_GET['student_id'] ?? 0);  // evaluator for peer
 $tracker_id = intval($_GET['tracker_id'] ?? 0);
-$groupFilter = $_GET['group'] ?? ($typeDefault['group'] ?? 'All');
+$groupFilter = $_GET['group'] ?? 'All';
 if (!in_array($groupFilter, ['All','Teacher','Staff'])) $groupFilter = 'All';
 
 // ── HELPERS ───────────────────────────────────────────────────
@@ -368,7 +353,7 @@ if ($view === 'sheet' && $target_id && $tracker_id) {
     $tgt = $mysqli->query("SELECT id,full_name,designation,photo,role FROM users u WHERE u.id=$target_id AND $reportScopeSql LIMIT 1")->fetch_assoc();
     if (!$tgt) { http_response_code(404); exit('Personnel not found in this report scope.'); }
     $stu = $mysqli->query("SELECT id,full_name,photo FROM users WHERE id=$student_id LIMIT 1")->fetch_assoc();
-    $trk = $mysqli->query("SELECT * FROM evaluation_tracker et WHERE et.id=$tracker_id AND et.target_user_id=$target_id AND $evalTypeSql LIMIT 1")->fetch_assoc();
+    $trk = $mysqli->query("SELECT * FROM evaluation_tracker WHERE id=$tracker_id AND target_user_id=$target_id AND $evalTypeSql LIMIT 1")->fetch_assoc();
     if (!$trk) { http_response_code(404); exit('Evaluation not found in this report scope.'); }
 
     $answers = [];
@@ -376,33 +361,19 @@ if ($view === 'sheet' && $target_id && $tracker_id) {
     // Staff questionnaires are stored in user_questions. Keep both sources
     // separate so a multi-role evaluation can never be mixed with the person's
     // Staff evaluation even when the same question IDs exist in both tables.
-$aq = $mysqli->query("
-    SELECT
-        qa.question_id AS q_id,
-        COALESCE(eq.question_text, '(This question is no longer available)') AS question_text,
-        COALESCE(eq.category, 'General') AS category,
-        qa.answer_score
-    FROM questionnaire_answers qa
-    LEFT JOIN evaluation_questions eq
-        ON eq.id = qa.question_id
-    WHERE qa.tracker_id = $tracker_id
-      AND qa.question_source = 'evaluation'
-
-    UNION ALL
-
-    SELECT
-        qa.user_question_id AS q_id,
-        COALESCE(uq.question_text, '(This question is no longer available)') AS question_text,
-        COALESCE(uq.category, 'General') AS category,
-        qa.answer_score
-    FROM questionnaire_answers qa
-    LEFT JOIN user_questions uq
-        ON uq.id = qa.user_question_id
-    WHERE qa.tracker_id = $tracker_id
-      AND qa.question_source = 'user'
-
-    ORDER BY category, q_id
-");    if ($aq) $answers = $aq->fetch_all(MYSQLI_ASSOC);
+    $aq = $mysqli->query("
+        SELECT qa.question_id AS q_id, eq.question_text, eq.category, qa.answer_score
+        FROM questionnaire_answers qa
+        JOIN evaluation_questions eq ON eq.id = qa.question_id
+        WHERE qa.tracker_id = $tracker_id AND qa.question_source='evaluation'
+        UNION ALL
+        SELECT qa.user_question_id AS q_id, uq.question_text, uq.category, qa.answer_score
+        FROM questionnaire_answers qa
+        JOIN user_questions uq ON uq.id = qa.user_question_id
+        WHERE qa.tracker_id = $tracker_id AND qa.question_source='user'
+        ORDER BY category, q_id
+    ");
+    if ($aq) $answers = $aq->fetch_all(MYSQLI_ASSOC);
 
     $grouped_ans = [];
     foreach ($answers as $a) $grouped_ans[$a['category']][] = $a;

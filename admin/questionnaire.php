@@ -643,9 +643,9 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role'];
     .eval-tab.active-peer::after{background:#7C3AED;}
     .eval-tab.active-schoolhead::after{background:#D97706;}
     .eval-tab .tab-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--page-bg);color:var(--text-dim);}
-    .eval-tab.active-student .tab-badge{background:rgba(73,142,255,.15);color:#14181F;}
-    .eval-tab.active-peer .tab-badge{background:rgba(135,65,255,.15);color:#14181F;}
-    .eval-tab.active-schoolhead .tab-badge{background:rgba(255,138,3,.15);color:#14181F;}
+    .eval-tab.active-student .tab-badge{background:rgba(59,130,246,.15);color:#3B82F6;}
+    .eval-tab.active-peer .tab-badge{background:rgba(124,58,237,.15);color:#7C3AED;}
+    .eval-tab.active-schoolhead .tab-badge{background:rgba(217,119,6,.15);color:#D97706;}
     .eval-divider{width:1px;background:var(--card-border);margin:8px 0;}
 
     /* ── PAGE HEADER ── */
@@ -670,12 +670,12 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role'];
     .sector-label.staff-color{color:var(--staff);}
     .sector-label.mr-color{color:var(--mr);}
     .sector-badge{color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;}
-    .sector-badge.student{background:#498EFF;}
-    .sector-badge.peer{background:#8741FF;}
+    .sector-badge.student{background:#3B82F6;}
+    .sector-badge.peer{background:#7C3AED;}
     .sector-badge.staff-b{background:var(--staff);}
     .sector-badge.multi{background:var(--eval-color);}
     .sector-badge.per-user-badge{background:var(--page-bg);color:var(--text-dark);font-size:10px;}
-    .sector-badge.per-user-badge-staff{background:var(--staff-bg);color:#14181F;}
+    .sector-badge.per-user-badge-staff{background:var(--staff-bg);color:var(--staff);}
     .card-avatars{display:flex;align-items:center;}
     .card-avatar{width:30px;height:30px;border-radius:50%;object-fit:cover;border:2px solid var(--card-bg);margin-left:-8px;box-shadow:0 0 0 1px var(--card-border);}
     .card-avatar:first-child{margin-left:0;}
@@ -687,11 +687,11 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role'];
     .card-avatar-more.staff-more{background:var(--staff);}
     .card-avatar-more.mr-more{background:var(--mr);}
     .subrole-chips{display:flex;gap:5px;flex-wrap:wrap;}
-    .subrole-chip{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;display:inline-flex;align-items:center;gap:4px;background:var(--staff-bg);color:#14181F;border:1px solid var(--staff-border);}
+    .subrole-chip{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;display:inline-flex;align-items:center;gap:4px;background:var(--staff-bg);color:var(--staff);border:1px solid var(--staff-border);}
     .mr-role-chips{display:flex;gap:6px;flex-wrap:wrap;}
     .mr-role-chip{font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px;display:inline-flex;align-items:center;gap:4px;}
-    .mr-role-chip.fac{background:rgba(73,142,255,.1);color:#14181F;border:1px solid rgba(24,111,255,.25);}
-    .mr-role-chip.sta{background:var(--staff-bg);color:#14181F;border:1px solid var(--staff-border);}
+    .mr-role-chip.fac{background:rgba(59,130,246,.1);color:#3B82F6;border:1px solid rgba(59,130,246,.25);}
+    .mr-role-chip.sta{background:var(--staff-bg);color:var(--staff);border:1px solid var(--staff-border);}
     .sector-meta{display:flex;gap:16px;flex-wrap:wrap;}
     .sector-stat-lbl{font-size:11px;text-transform:uppercase;letter-spacing:.5px;}
     .sector-stat-lbl.dark{color:var(--text-dim);}
@@ -718,11 +718,11 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role'];
     .btn-edit-mr:hover{background:rgba(217,119,6,.16);}
 
     /* Per-user indicator on dashboard card */
-    .per-user-pill{display:inline-flex;align-items:center;gap:5px;background:rgba(73,142,255,.08);border:1px solid rgba(24,111,255,.22);border-radius:20px;padding:3px 10px;font-size:10px;font-weight:700;color:#14181F;}
-    .per-user-pill.staff-pill{background:var(--staff-bg);border-color:var(--staff-border);color:#14181F;}
+    .per-user-pill{display:inline-flex;align-items:center;gap:5px;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.22);border-radius:20px;padding:3px 10px;font-size:10px;font-weight:700;color:#3B82F6;}
+    .per-user-pill.staff-pill{background:var(--staff-bg);border-color:var(--staff-border);color:var(--staff);}
 
     /* Secondary-role badge (Multi-Role indicator inline on a row/header) */
-    .secondary-role-tag{display:inline-flex;align-items:center;gap:4px;font-size:9px;font-weight:700;padding:1px 7px;border-radius:20px;background:var(--mr-bg);color:#14181F;border:1px solid var(--mr-border);flex-shrink:0;}
+    .secondary-role-tag{display:inline-flex;align-items:center;gap:4px;font-size:9px;font-weight:700;padding:1px 7px;border-radius:20px;background:var(--mr-bg);color:var(--mr);border:1px solid var(--mr-border);flex-shrink:0;}
 
     /* ── MANAGE LAYOUT ── */
     .manage-layout{display:grid;grid-template-columns:300px 1fr;gap:20px;align-items:start;}
@@ -758,15 +758,15 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role'];
     .source-dot.nologin{background:#D97706;}
 
     /* Per-user Q badge — shows individual question count */
-    .q-count-badge{border:1px solid var(--eval-border);color:#14181F;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;white-space:nowrap;flex-shrink:0;background:var(--eval-bg);}
-    .q-count-badge.staff-q{border-color:var(--staff-border);color:#14181F;background:var(--staff-bg);}
-    .q-count-badge.mr-q{border-color:var(--mr-border);color:#14181F;background:var(--mr-bg);}
+    .q-count-badge{border:1px solid var(--eval-border);color:var(--eval-color);font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;white-space:nowrap;flex-shrink:0;background:var(--eval-bg);}
+    .q-count-badge.staff-q{border-color:var(--staff-border);color:var(--staff);background:var(--staff-bg);}
+    .q-count-badge.mr-q{border-color:var(--mr-border);color:var(--mr);background:var(--mr-bg);}
     .q-count-badge.no-q{border-color:var(--card-border);color:var(--text-dim);background:transparent;}
 
     .subrole-mini{font-size:9px;font-weight:700;padding:1px 6px;border-radius:20px;flex-shrink:0;background:var(--staff-bg);color:var(--staff);border:1px solid var(--staff-border);}
     .role-mini-badge{font-size:9px;font-weight:700;padding:1px 6px;border-radius:20px;flex-shrink:0;}
-    .role-mini-badge.fac{background:rgba(73,142,255,.12);color:#14181F;}
-    .role-mini-badge.sta{background:var(--staff-bg);color:#14181F;}
+    .role-mini-badge.fac{background:rgba(59,130,246,.12);color:#3B82F6;}
+    .role-mini-badge.sta{background:var(--staff-bg);color:var(--staff);}
     .sidebar-legend{display:flex;gap:12px;padding:10px 14px;background:var(--page-bg);border-top:1px solid var(--card-border);font-size:10px;color:var(--text-dim);}
     .legend-item{display:flex;align-items:center;gap:5px;}
     .legend-dot{width:7px;height:7px;border-radius:50%;}
@@ -795,17 +795,17 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role'];
     .user-header-name{font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;color:var(--text-dark);}
     .user-header-desig{font-size:11px;color:var(--text-dim);margin-top:2px;line-height:1.5;}
     .user-header-right{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:5px;}
-    .user-header-tag{background:var(--eval-bg);border:1px solid var(--eval-border);color:#14181F;font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;}
-    .user-header-tag.staff-tag{background:var(--staff-bg);border-color:var(--staff-border);color:#14181F;}
-    .user-header-tag.mr-tag{background:var(--mr-bg);border-color:var(--mr-border);color:#14181F;}
+    .user-header-tag{background:var(--eval-bg);border:1px solid var(--eval-border);color:var(--eval-color);font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;}
+    .user-header-tag.staff-tag{background:var(--staff-bg);border-color:var(--staff-border);color:var(--staff);}
+    .user-header-tag.mr-tag{background:var(--mr-bg);border-color:var(--mr-border);color:var(--mr);}
     .source-tag{font-size:10px;padding:2px 9px;border-radius:20px;font-weight:600;}
-    .source-tag.login{background:rgba(0,201,138,.1);color:#14181F;border:1px solid rgba(0,181,125,.25);}
-    .source-tag.nologin{background:rgba(255,138,3,.1);color:#14181F;border:1px solid rgba(225,121,0,.25);}
+    .source-tag.login{background:rgba(5,150,105,.1);color:#059669;border:1px solid rgba(5,150,105,.25);}
+    .source-tag.nologin{background:rgba(217,119,6,.1);color:#D97706;border:1px solid rgba(217,119,6,.25);}
     .desig-tag-row{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;}
-    .desig-tag{font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;background:var(--mr-bg);color:#14181F;border:1px solid var(--mr-border);}
+    .desig-tag{font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;background:var(--mr-bg);color:var(--mr);border:1px solid var(--mr-border);}
     .per-user-desig-tags{max-width:520px;align-items:flex-start;}
     .per-user-desig-tags .desig-tag{white-space:normal;line-height:1.25;word-break:break-word;}
-    .per-user-desig-tags .staff-desig-tag{background:var(--staff-bg);color:#14181F;border-color:var(--staff-border);}
+    .per-user-desig-tags .staff-desig-tag{background:var(--staff-bg);color:var(--staff);border-color:var(--staff-border);}
     .per-user-banner.mr-pu{background:var(--mr-bg);border-color:var(--mr-border);}
     .per-user-banner.mr-pu strong{color:var(--mr);}
 
@@ -817,12 +817,12 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role'];
     .cat-manager-title.staff-ct{color:var(--staff);}
     .cat-manager-title.mr-ct{color:var(--mr);}
     .cat-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;}
-    .cat-chip{display:inline-flex;align-items:center;gap:6px;background:var(--eval-bg);border:1px solid var(--eval-border);border-radius:20px;padding:5px 8px 5px 12px;font-size:12px;font-weight:600;color:#14181F;}
-    .cat-chip.staff-chip{background:var(--staff-bg);border-color:var(--staff-border);color:#14181F;}
-    .cat-chip.mr-chip{background:var(--mr-bg);border-color:var(--mr-border);color:#14181F;}
+    .cat-chip{display:inline-flex;align-items:center;gap:6px;background:var(--eval-bg);border:1px solid var(--eval-border);border-radius:20px;padding:5px 8px 5px 12px;font-size:12px;font-weight:600;color:var(--eval-color);}
+    .cat-chip.staff-chip{background:var(--staff-bg);border-color:var(--staff-border);color:var(--staff);}
+    .cat-chip.mr-chip{background:var(--mr-bg);border-color:var(--mr-border);color:var(--mr);}
     .cat-chip-btn{background:none;border:none;cursor:pointer;font-size:11px;padding:2px 4px;border-radius:4px;color:var(--text-dim);transition:color .2s;}
-    .cat-chip-btn.edit:hover{color:#14181F;}
-    .cat-chip-btn.del:hover{color:#14181F;}
+    .cat-chip-btn.edit:hover{color:var(--eval-color);}
+    .cat-chip-btn.del:hover{color:var(--danger);}
     .cat-add-row{display:grid;grid-template-columns:minmax(220px,420px) auto;gap:10px;align-items:center;}
     .cat-add-row .field-grow{min-width:0;width:100%;}
     .cat-add-row .btn-sm{white-space:nowrap;}
@@ -999,39 +999,7 @@ a { color:inherit; }
 .eval-tab:has(.fa-user-tie) > i{color:#D97706 !important;}
 
 </style>
-    
-<!-- Admin text color override: keep standard page text black for readability. -->
-<style id="admin-black-text-override">
-  body { color:#000 !important; }
-  body p, body span, body label, body li, body td, body th,
-  body h1, body h2, body h3, body h4, body h5, body h6,
-  body .page-title, body .page-header, body .page-header *,
-  body .page-sub, body .subtitle, body .description, body .helper,
-  body .muted, body .hint, body .section-title, body .section-heading,
-  body .card-title, body .card-subtitle, body .form-label,
-  body .table-title, body .table-subtitle { color:#000 !important; }
-  body a:not(.btn):not(.button):not([class*="btn-"]) { color:#000 !important; }
-  body input, body select, body textarea { color:#000 !important; }
-  body input::placeholder, body textarea::placeholder { color:#555 !important; }
-</style>
-
-<style id="admin-global-black-text">
-/* Global admin text treatment: normal interface text is black throughout the admin side.
-   Intentional semantic colors on buttons, badges, alerts, icons, and status indicators are preserved. */
-body { color:#000 !important; }
-body p, body h1, body h2, body h3, body h4, body h5, body h6,
-body label, body li, body td, body th, body dt, body dd,
-body .page-title, body .page-header, body .page-header p, body .page-sub,
-body .subtitle, body .description, body .helper, body .hint, body .muted,
-body .section-title, body .section-heading, body .card-title, body .card-subtitle,
-body .table-title, body .table-subtitle, body .form-label, body .modal-title, body .modal-sub,
-body .empty-state, body .empty-cta, body .field-label, body .stat-label, body .stat-value,
-body .back, body .back-btn, body .nav-link, body .sidebar-text, body .content-text { color:#000 !important; }
-body a:not(.btn):not(.button):not([class*="btn-"]):not(.badge):not(.status):not(.nav-item) { color:#000 !important; }
-body input, body select, body textarea { color:#000 !important; }
-body input::placeholder, body textarea::placeholder { color:#555 !important; }
-</style>
-</head>
+    </head>
     <body>
 
     <?php if (isset($_GET['msg']) && $_GET['msg']): ?>
