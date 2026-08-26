@@ -11,13 +11,10 @@
  * Pass ?mark_read=1 to mark all current role-change notifications as seen
  * (updates the session's "last seen" timestamp so the unread badge clears).
  *
- * ── System Audits box (feed_full) ──────────────────────────────────────────
- * Only ever contains two kinds of entries:
- *   - type=role_change → meta "Admin Module"     (a user changed their OWN
- *                         role from their own dashboard — role_change_log)
- *   - type=audit       → meta "System Automator" (evaluation submissions —
- *                         who submitted, plus a running total — pulled live
- *                         from evaluation_tracker)
+ * ── System Logs box (feed_full) ───────────────────────────────────────────
+ * Contains real-person activity from role/designation changes and evaluation
+ * submissions. The displayed performer is the actual user tied to the event,
+ * while the Source column names the specific module/process that created it.
  * "New user registered" events are intentionally excluded from feed_full;
  * they only show up in the bell dropdown (feed), not the audit box.
  */
@@ -62,6 +59,77 @@ function dashboard_json($payload) {
     exit;
 }
 
+function _humanize($value) {
+    $value = trim((string)$value);
+    if ($value === '') return '';
+    return ucwords(str_replace(['_', '-'], ' ', strtolower($value)));
+}
+
+function _formatTargetType($row) {
+    $role = trim((string)($row['target_role'] ?? ''));
+    $designation = trim((string)($row['target_designation'] ?? ''));
+
+    // Prefer the actual designation stored for the evaluated person. When it
+    // is not available, use the person's actual role value from users and
+    // humanize it. No fixed role-to-label lookup is needed here.
+    if ($designation !== '') return $designation;
+    return _humanize($role) ?: 'Employee';
+}
+
+function _formatEvaluationSource($row) {
+    $evalType   = strtolower(trim((string)($row['eval_type'] ?? '')));
+    $context    = strtolower(trim((string)($row['evaluation_context'] ?? '')));
+    $peerGroup  = trim((string)($row['peer_group'] ?? ''));
+    $formType   = trim((string)($row['form_type'] ?? ''));
+    $evaluator  = trim((string)($row['evaluator_role'] ?? ''));
+    $targetType = _formatTargetType($row);
+
+    /*
+     * The Source is derived from values already stored in the database:
+     * eval_type / evaluation_context / peer_group / evaluator role.
+     * There is intentionally no lookup table in PHP that translates fixed
+     * values such as "student" => "Student Evaluation".
+     */
+    $prefix = '';
+
+    if ($formType !== '') {
+        $prefix = _humanize($formType);
+    }
+
+    if ($prefix === '') {
+        if ($evalType !== '' && str_contains($evalType, '_peer')) {
+            // Example database value: staff_peer -> Staff Peer Evaluation.
+            $prefix = _humanize($evalType) . ' Evaluation';
+        } elseif ($evalType !== '' && str_contains($evalType, '_to_')) {
+            // Example database value: student_to_faculty. Keep the real
+            // direction stored in the data while presenting it compactly.
+            [$from] = explode('_to_', $evalType, 2);
+            $fromLabel = _humanize($from);
+            $prefix = ($fromLabel !== '' ? $fromLabel . ' Evaluation' : 'Evaluation');
+        } elseif ($evalType !== '') {
+            $typeLabel = _humanize($evalType);
+            $prefix = $typeLabel !== '' ? $typeLabel . ' Evaluation' : '';
+        }
+    }
+
+    // When the tracker only has a generic eval_type such as "student",
+    // use the actual evaluator role/context instead of a hardcoded label.
+    if ($prefix === '' || in_array($evalType, ['student','ea','peer'], true)) {
+        $roleLabel = _humanize($evaluator);
+        if ($peerGroup !== '' || $context === 'peer' || ($evalType !== '' && str_contains($evalType, 'peer'))) {
+            $prefix = ($roleLabel !== '' ? $roleLabel . ' ' : '') . 'Peer Evaluation';
+        } elseif ($roleLabel !== '') {
+            $prefix = $roleLabel . ' Evaluation';
+        } elseif ($evalType !== '') {
+            $prefix = _humanize($evalType) . ' Evaluation';
+        } else {
+            $prefix = 'Evaluation';
+        }
+    }
+
+    return trim($prefix) . ' · ' . $targetType;
+}
+
 /* ── Mark as read (bell "Mark all read" button) ─────────────────────────── */
 if (isset($_GET['mark_read'])) {
     $_SESSION['rcl_last_seen'] = time();
@@ -96,106 +164,107 @@ $counts['faculty_staff'] = $counts['teacher'] + $counts['staff']; // for the "Te
 // this is what powers the bell dropdown.
 //
 // $auditFeed holds ONLY role_change + audit entries — this is what powers the
-// two-column "System Audits" box on the dashboard (System Automator / Admin Module).
+// System Logs box on the dashboard.
 
 $feed = [];
 
-/* ── 1. role_change_log → "Admin Module" (self-service role changes) ── */
+/* ── 1. role_change_log → real person + real source ───────────────────── */
 $rclExists = dashboard_query($mysqli, "SHOW TABLES LIKE 'role_change_log'");
 if ($rclExists && $rclExists->num_rows > 0) {
+    // Backward-compatible migration for older databases.
+    $actorCol = dashboard_query($mysqli, "SHOW COLUMNS FROM role_change_log LIKE 'performed_by_id'");
+    if ($actorCol && $actorCol->num_rows === 0) {
+        dashboard_query($mysqli, "ALTER TABLE role_change_log ADD COLUMN performed_by_id INT UNSIGNED NULL AFTER user_id, ADD INDEX idx_performed_by (performed_by_id)");
+    }
     $q = dashboard_query($mysqli, "
         SELECT rcl.user_id, rcl.old_role, rcl.new_role,
                rcl.old_designation, rcl.new_designation,
-               rcl.changed_at, u.full_name
+               rcl.changed_at, u.full_name,
+               COALESCE(actor.full_name, u.full_name) AS actor_name
         FROM role_change_log rcl
         LEFT JOIN users u ON u.id = rcl.user_id
+        LEFT JOIN users actor ON actor.id = rcl.performed_by_id
         ORDER BY rcl.changed_at DESC
         LIMIT 20
     ");
     if ($q) {
         while ($row = $q->fetch_assoc()) {
-            $ts  = strtotime($row['changed_at']);
-            $ago = _timeAgo($ts);
-
+            $ts = strtotime($row['changed_at']);
+            $person = $row['full_name'] ?: ('User #' . (int)$row['user_id']);
             $oldLabel = _formatRole($row['old_role'], $row['old_designation']);
             $newLabel = _formatRole($row['new_role'], $row['new_designation']);
+            $text = $person . ' updated their role/designation from ' . $oldLabel . ' → ' . $newLabel;
+            $actor = $row['actor_name'] ?: $person;
+
+            $roleChanged = strtolower((string)$row['old_role']) !== strtolower((string)$row['new_role']);
+            $designationChanged = trim((string)$row['old_designation']) !== trim((string)$row['new_designation']);
+            if ($roleChanged && $designationChanged) {
+                $source = 'Personnel Registry · Role & Designation Update';
+            } elseif ($roleChanged) {
+                $source = 'Personnel Registry · Role Update';
+            } elseif ($designationChanged) {
+                $source = 'Personnel Registry · Designation Update';
+            } else {
+                $source = 'Personnel Registry · Personnel Update';
+            }
 
             $feed[] = [
-                'id'       => 'rcl_' . $row['user_id'] . '_' . $ts,
-                'type'     => 'role_change',
-                'text'     => htmlspecialchars($row['full_name']) . ' updated their role from ' . htmlspecialchars($oldLabel) . ' → ' . htmlspecialchars($newLabel),
-                'meta'     => 'Admin Module',
-                'time'     => $ago,
-                'ts'       => $ts,
-                'color'    => '#f59e0b',
-                'icon'     => 'fa-user-pen',
-                'user'     => htmlspecialchars($row['full_name']),
-                'new_role' => htmlspecialchars($newLabel),
+                'id'      => 'rcl_' . $row['user_id'] . '_' . $ts,
+                'type'    => 'role_change',
+                'text'    => htmlspecialchars($text),
+                'meta'    => htmlspecialchars($source),
+                'actor'   => htmlspecialchars($actor),
+                'time'    => _timeAgo($ts),
+                'ts'      => $ts,
+                'color'   => '#f59e0b',
+                'icon'    => 'fa-user-pen',
+                'user'    => htmlspecialchars($person),
+                'new_role'=> htmlspecialchars($newLabel),
             ];
         }
     }
 }
 
-/* ── Optional level filter for the System Automator column ── */
-/* ?level=junior_high | senior_high | college — leave unset for all levels */
+/* ── 2. evaluation_tracker → real evaluator + evaluated employee ───────── */
 $levelFilter = $_GET['level'] ?? '';
 $validLevels = ['junior_high', 'senior_high', 'college'];
 if (!in_array($levelFilter, $validLevels, true)) $levelFilter = '';
 
-/* ── 2. evaluation_tracker → "System Automator" (evaluation submissions) ── */
-// Individual submission events: who submitted, and what kind of evaluation.
 $levelClause = $levelFilter ? " AND et.level = '" . $mysqli->real_escape_string($levelFilter) . "'" : "";
 $evSubQ = dashboard_query($mysqli, "
-    SELECT et.id, et.eval_bucket, et.form_type, et.status, et.submitted_at, et.level,
-           u.full_name AS student_name
+    SELECT et.id, et.eval_bucket, et.form_type, et.eval_type, et.evaluation_context, et.peer_group, et.status, et.submitted_at, et.level,
+           evaluator.full_name AS evaluator_name,
+           evaluator.role AS evaluator_role,
+           target.full_name AS target_name,
+           target.role AS target_role,
+           target.designation AS target_designation
     FROM evaluation_tracker et
-    LEFT JOIN users u ON u.id = et.student_id
+    LEFT JOIN users evaluator ON evaluator.id = et.evaluator_id
+    LEFT JOIN users target ON target.id = et.target_user_id
     WHERE et.status IN ('submitted','approved','archived')" . $levelClause . "
     ORDER BY et.submitted_at DESC
     LIMIT 10
 ");
 if ($evSubQ) {
     while ($row = $evSubQ->fetch_assoc()) {
-        $ts          = strtotime($row['submitted_at']);
-        $studentName = $row['student_name'] ?: 'A student';
-        $bucket      = $row['eval_bucket'] ?: 'Teacher';
-        $levelLabel  = _formatLevel($row['level']);
+        $ts = strtotime($row['submitted_at']);
+        $evaluator = $row['evaluator_name'] ?: ('User #' . (int)($row['evaluator_id'] ?? 0));
+        $target = $row['target_name'] ?: ('User #' . (int)($row['target_user_id'] ?? 0));
+        $bucket = trim((string)($row['eval_bucket'] ?? '')) ?: 'Employee';
+        $levelLabel = _formatLevel($row['level']);
+        $source = _formatEvaluationSource($row);
 
         $feed[] = [
             'id'    => 'evt_' . $row['id'],
             'type'  => 'audit',
-            'text'  => htmlspecialchars($studentName) . ' submitted a ' . htmlspecialchars($bucket) . ' evaluation',
-            'meta'  => 'System Automator' . ($levelLabel ? ' · ' . $levelLabel : ''),
+            'text'  => htmlspecialchars($evaluator . ' evaluated ' . $target),
+            'actor' => htmlspecialchars($evaluator),
+            'meta'  => htmlspecialchars($source),
             'time'  => _timeAgo($ts),
             'ts'    => $ts,
             'color' => '#14b8a6',
             'icon'  => 'fa-file-circle-check',
             'level' => $row['level'],
-        ];
-    }
-}
-
-// Rolling total-submitted summary entry — surfaces the running count you asked for.
-$totalSubQ = dashboard_query($mysqli, "
-    SELECT COUNT(*) AS c, MAX(submitted_at) AS latest
-    FROM evaluation_tracker
-    WHERE status IN ('submitted','approved','archived')" . $levelClause . "
-");
-if ($totalSubQ) {
-    $tRow           = $totalSubQ->fetch_assoc();
-    $totalSubmitted = (int)($tRow['c'] ?? 0);
-    if ($totalSubmitted > 0) {
-        $ts = $tRow['latest'] ? strtotime($tRow['latest']) : time();
-        $levelSuffix = $levelFilter ? ' (' . _formatLevel($levelFilter) . ')' : '';
-        $feed[] = [
-            'id'    => 'evt_total_' . $totalSubmitted . '_' . $levelFilter,
-            'type'  => 'audit',
-            'text'  => $totalSubmitted . ' evaluation' . ($totalSubmitted === 1 ? '' : 's') . ' submitted so far' . $levelSuffix,
-            'meta'  => 'System Automator',
-            'time'  => _timeAgo($ts),
-            'ts'    => $ts,
-            'color' => '#14b8a6',
-            'icon'  => 'fa-chart-line',
         ];
     }
 }
@@ -224,8 +293,8 @@ usort($feed, fn($a, $b) => $b['ts'] - $a['ts']);
 // Bell dropdown: top 6 of EVERYTHING (role changes, submissions, new registrations).
 $feedShort = array_slice($feed, 0, 6);
 
-// System Audits box: ONLY role_change ("Admin Module") + audit ("System Automator"),
-// new_user registrations are deliberately left out here.
+// System Logs box: role changes + evaluation activity; new-user registrations
+// remain in the bell feed and are deliberately left out here.
 $auditFeed = array_values(array_filter($feed, fn($e) => in_array($e['type'], ['role_change', 'audit'])));
 $auditFeed = array_slice($auditFeed, 0, 12);
 

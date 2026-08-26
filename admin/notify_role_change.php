@@ -78,17 +78,24 @@ $mysqli->query("
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 ");
 
+/* ── Backward-compatible actor migration ── */
+$colCheck = $mysqli->query("SHOW COLUMNS FROM role_change_log LIKE 'performed_by_id'");
+if ($colCheck && $colCheck->num_rows === 0) {
+    $mysqli->query("ALTER TABLE role_change_log ADD COLUMN performed_by_id INT UNSIGNED NULL AFTER user_id, ADD INDEX idx_performed_by (performed_by_id)");
+}
+
 /* ── Insert the log entry ── */
 $stmt = $mysqli->prepare("
-    INSERT INTO role_change_log (user_id, old_role, new_role, old_designation, new_designation)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO role_change_log (user_id, performed_by_id, old_role, new_role, old_designation, new_designation)
+    VALUES (?, ?, ?, ?, ?, ?)
 ");
 if (!$stmt) {
     http_response_code(500);
     echo json_encode(['error' => 'DB prepare failed: ' . $mysqli->error]);
     exit;
 }
-$stmt->bind_param('issss', $userId, $oldRole, $newRole, $oldDesignation, $newDesignation);
+$performedById = (int)$_SESSION['user_id'];
+$stmt->bind_param('iissss', $userId, $performedById, $oldRole, $newRole, $oldDesignation, $newDesignation);
 $ok = $stmt->execute();
 $stmt->close();
 

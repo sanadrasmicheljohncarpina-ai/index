@@ -829,7 +829,7 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role'];
     .field{background:var(--card-bg);border:1px solid var(--card-border);color:var(--text-dark);padding:9px 13px;border-radius:8px;font-size:13px;font-family:'Inter',sans-serif;outline:none;transition:border-color .2s;}
     .field:focus{border-color:var(--eval-color);}
     .field-grow{flex:1;}
-    .btn-sm{padding:9px 16px;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;transition:opacity .2s;font-family:'Inter',sans-serif;}
+    .btn-sm{width:max-content;justify-self:start;padding:9px 16px;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:opacity .2s;font-family:'Inter',sans-serif;}
     .btn-eval{background:var(--eval-color);color:#fff;}
     .btn-eval:hover{opacity:.88;}
     .btn-staff{background:var(--staff);color:#fff;}
@@ -838,8 +838,8 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role'];
     .btn-mr:hover{opacity:.88;}
 
     /* ── QUESTION BUILDER ── */
-    .add-form-row{display:grid;grid-template-columns:240px minmax(0,1fr) auto;gap:12px;align-items:center;background:var(--page-bg);border:1px solid var(--card-border);border-radius:10px;padding:16px;margin-bottom:24px;}
-    .add-form-row select{background:var(--card-bg);border:1px solid var(--card-border);color:var(--eval-color);padding:11px 14px;border-radius:8px;font-size:13px;font-family:'Inter',sans-serif;outline:none;width:100%;min-width:0;cursor:pointer;font-weight:600;}
+    .add-form-row{display:grid;grid-template-columns:300px minmax(600px,1fr) auto;gap:12px;align-items:center;background:var(--page-bg);border:1px solid var(--card-border);border-radius:10px;padding:16px;margin-bottom:24px;}
+    .add-form-row select{background:var(--card-bg);border:1px solid var(--card-border);color:var(--text-dark);padding:11px 14px;border-radius:8px;font-size:13px;font-family:'Inter',sans-serif;outline:none;width:100%;min-width:0;cursor:pointer;font-weight:600;}
     .add-form-row select:focus{border-color:var(--eval-color);}
     .add-form-row input[type="text"]{background:var(--card-bg);border:1px solid var(--card-border);color:var(--text-dark);padding:11px 14px;border-radius:8px;font-size:14px;font-family:'Inter',sans-serif;outline:none;min-width:0;width:100%;}
     .add-form-row input[type="text"]:focus{border-color:var(--eval-color);}
@@ -1477,12 +1477,13 @@ a { color:inherit; }
                 <?php if ($selected_user): ?><input type="hidden" name="user_id" value="<?= $selected_user ?>"/><?php endif; ?>
                 <?php if ($is_mr_manage): ?><input type="hidden" name="mr_filter" value="<?= $mr_filter ?>"/><?php endif; ?>
                 <div class="add-form-row">
-                    <div class="category-picker" title="Select one or more categories">
-                        <?php if (empty($categories_list)): ?><span style="font-size:11px;color:var(--text-dim)">General (default)</span><?php endif; ?>
+                    <select name="category_ids[]" required>
+                        <option value="" disabled selected hidden style="color:#A6B2C4">Category</option>
                         <?php foreach ($categories_list as $c): ?>
-                        <label class="category-check"><input type="checkbox" name="category_ids[]" value="<?= $c['id'] ?>" <?= count($categories_list)===1?'checked':'' ?>/> <?= htmlspecialchars($c['category_name']) ?></label>
+                        <option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['category_name']) ?></option>
                         <?php endforeach; ?>
-                    </div>
+                        <?php if (empty($categories_list)): ?><option value="">General</option><?php endif; ?>
+                    </select>
                     <input type="text" name="question_text" placeholder="Type a new <?= htmlspecialchars($selected_target) ?> question..." required/>
                     <button type="submit" class="btn-sm <?= $is_mr_manage ? 'btn-mr' : 'btn-eval' ?>"><i class="fa-solid fa-plus"></i> Add</button>
                 </div>

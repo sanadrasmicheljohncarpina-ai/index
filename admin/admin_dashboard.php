@@ -54,7 +54,7 @@ function display_role($role) {
 $isExecutiveAssistant = ($_SESSION['role'] ?? '') === 'superadmin';
 $workspaceTitle = $isExecutiveAssistant ? 'Executive Assistant Workspace' : 'Administrative Workspace';
 $workspaceSubtitle = $isExecutiveAssistant
-    ? 'Manage assigned evaluation operations, personnel, and reporting.'
+    ? 'Employee Performance Evaluation Management System.'
     : 'Manage evaluation operations, personnel, and reporting.';
 
 // Live counts
@@ -1474,8 +1474,8 @@ a { color:inherit; }
                                 <tr>
                                     <th>Date &amp; Time</th>
                                     <th>Action</th>
-                                    <th>User</th>
-                                    <th>Details</th>
+                                    <th>Performed By</th>
+                                    <th>Source</th>
                                 </tr>
                             </thead>
                             <tbody id="logsTableBody">
@@ -1667,14 +1667,9 @@ window.addEventListener('beforeunload', function(e){
 });
 
 /* ── DASHBOARD DATA: counts + bell + System Logs, all from dashboard_counts.php ──
-   System Logs is now rendered as a single flat table (Date & Time / Action /
-   User / Details), combining both feed types the backend already returns in
-   `feed_full`:
-     • type === 'audit'       → machine-generated events (schedules firing,
-       syncs, reminders, etc.) — shown with "System" as the user unless the
-       backend supplies an explicit actor.
-     • type === 'role_change' → human-generated events (something a real
-       admin/registrar/dean did) — shown under that person's name.
+   System Logs is rendered from the backend `feed_full` data. Each row carries
+   the real actor and a specific source label (for example Student Evaluation ·
+   Faculty, Peer Evaluation · Teacher, or Personnel Registry · Role Update).
    Nothing here is hardcoded — every row rendered comes from that feed; the
    helpers below only add presentation: a severity color for the action dot
    (using an optional `severity` field from the backend, or `color` if the
@@ -1756,7 +1751,7 @@ function renderLogsTable(feedFull){
     }
     body.innerHTML=feedFull.map(a=>{
         const color=activityColor(a);
-        const user=a.actor ? escH(a.actor) : (a.type==='role_change' ? 'System' : 'System Automator');
+        const user=a.actor ? escH(a.actor) : '—';
         return `
         <tr>
             <td class="log-datetime">${escH(a.date||a.time||'—')}</td>
