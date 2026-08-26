@@ -38,7 +38,31 @@ if ($row) {
     
 }
 
-$photo_src = $admin_photo ? '../image/' . htmlspecialchars($admin_photo) : null;
+// Build the profile-photo URL from the value stored in users.photo.
+// The database normally stores only the generated filename, but older records
+// may contain image/..., uploads/..., ./..., or an already-qualified URL.
+function build_profile_photo_url($photo) {
+    $photo = trim((string)$photo);
+    if ($photo === '') return null;
+
+    if (preg_match('#^(?:https?:)?//#i', $photo) || str_starts_with($photo, 'data:image/')) {
+        return $photo;
+    }
+
+    $photo = str_replace('\\', '/', $photo);
+    $photo = ltrim($photo, '/');
+    $photo = preg_replace('#^(?:\./|\../)+#', '', $photo);
+
+    // Stored path already includes the project image directory.
+    if (preg_match('#^(?:image|uploads)/#i', $photo)) {
+        return '../' . $photo;
+    }
+
+    // Normal/current format: users.photo contains only the filename.
+    return '../image/' . $photo;
+}
+
+$photo_src = build_profile_photo_url($admin_photo);
 $parts     = explode(' ', trim($admin_fullname));
 $initials  = strtoupper(substr($parts[0],0,1) . (isset($parts[1]) ? substr($parts[1],0,1) : ''));
 // Display-only label for the role badge. Session/DB value stays 'superadmin' —
@@ -922,7 +946,7 @@ a { color:inherit; }
             <div class="brand-avatar-wrap" id="avatarWrap" onclick="toggleProfileDropdown()">
                 <div class="brand-avatar" id="brandAvatar">
                     <?php if ($photo_src): ?>
-                        <img src="<?= $photo_src ?>" alt="<?= htmlspecialchars($admin_fullname) ?>" id="brandAvatarImg"
+                        <img src="<?= htmlspecialchars($photo_src, ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars($admin_fullname, ENT_QUOTES, 'UTF-8') ?>" id="brandAvatarImg"
                              onerror="this.style.display='none';document.getElementById('brandAvatarInitials').style.display='flex';"/>
                         <span id="brandAvatarInitials" style="display:none;"><?= $initials ?></span>
                     <?php else: ?>
@@ -944,7 +968,8 @@ a { color:inherit; }
                 <div class="pd-head">
                     <div class="pd-head-avatar">
                         <?php if ($photo_src): ?>
-                            <img src="<?= $photo_src ?>" alt="" id="pdHeadImg"/>
+                            <img src="<?= htmlspecialchars($photo_src, ENT_QUOTES, 'UTF-8') ?>" alt="" id="pdHeadImg"
+                             onerror="this.style.display='none';document.getElementById('pdHeadInitials')?.style.removeProperty('display');"/>
                         <?php else: ?>
                             <span id="pdHeadInitials"><?= $initials ?></span>
                             <img src="" alt="" id="pdHeadImg" style="display:none;"/>
@@ -1025,7 +1050,8 @@ a { color:inherit; }
         <div class="sf-photo-row" onclick="document.getElementById('sfPhotoInput').click()">
             <div class="sf-photo-preview">
                 <?php if ($photo_src): ?>
-                    <img src="<?= $photo_src ?>" alt="" id="sfPhotoImg"/>
+                    <img src="<?= htmlspecialchars($photo_src, ENT_QUOTES, 'UTF-8') ?>" alt="" id="sfPhotoImg"
+                         onerror="this.style.display='none';document.getElementById('sfPhotoInitials')?.style.removeProperty('display');"/>
                 <?php else: ?>
                     <span id="sfPhotoInitials"><?= $initials ?></span>
                     <img src="" alt="" id="sfPhotoImg" style="display:none;"/>
@@ -1053,7 +1079,7 @@ a { color:inherit; }
         </div>
         <div class="sf-group">
             <label class="sf-label">Email Address</label>
-            <input class="sf-input" type="email" name="stteings_email" value="<?= htmlspecialchars($admin_email) ?>"/>
+            <input class="sf-input" type="email" name="settings_email" value="<?= htmlspecialchars($admin_email) ?>"/>
         </div>
         <div class="sf-group">
             <label class="sf-label">Role</label>

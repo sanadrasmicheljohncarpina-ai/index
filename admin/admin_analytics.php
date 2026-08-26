@@ -370,6 +370,13 @@ if ($view === 'sheet' && $target_id && $tracker_id) {
     // has a missing question_source mapping, a NULL user_question_id, or the
     // original question was later removed from its question bank. The answer
     // row itself is authoritative for the score.
+    // Student → Faculty answers belong to the shared evaluation_questions
+    // bank. Older submissions did not save question_source, so use the
+    // target's resolved role only for those legacy NULL-source rows. Staff
+    // rows continue to resolve through user_questions.
+    $legacyFacultySource = (($trk['eval_type'] ?? '') === 'student'
+        && strtolower((string)($tgt['role'] ?? '')) === 'teacher') ? 1 : 0;
+
     $aq = $mysqli->query("
         SELECT
             qa.id AS answer_id,
@@ -379,15 +386,20 @@ if ($view === 'sheet' && $target_id && $tracker_id) {
             qa.answer_score
         FROM questionnaire_answers qa
         LEFT JOIN evaluation_questions eq
-            ON qa.question_source = 'evaluation'
-           AND eq.id = qa.question_id
+            ON eq.id = qa.question_id
+           AND (qa.question_source = 'evaluation'
+                OR (qa.question_source IS NULL AND $legacyFacultySource = 1))
         LEFT JOIN user_questions uq
-            ON qa.question_source = 'user'
-           AND uq.id = COALESCE(qa.user_question_id, qa.question_id)
+            ON uq.id = COALESCE(qa.user_question_id, qa.question_id)
+           AND qa.question_source = 'user'
         WHERE qa.tracker_id = $tracker_id
         ORDER BY category, q_id, qa.id
     ");
     if ($aq) $answers = $aq->fetch_all(MYSQLI_ASSOC);
+
+    // Do not map unresolved answers by display position. If an ID truly no
+    // longer exists, keeping the unresolved marker is safer than attaching
+    // the answer to the wrong question.
 
     $grouped_ans = [];
     foreach ($answers as $a) $grouped_ans[$a['category']][] = $a;
@@ -448,9 +460,33 @@ if ($view === 'sheet' && $target_id && $tracker_id) {
 
 /* ── PRINT: hide evaluator identity entirely ── */
 @media print{
+  @page{margin:10mm;}
+  html,body{width:100%!important;height:auto!important;}
   .no-print{display:none!important;}
-  body{background:#fff!important;color:#000!important;padding:0;}
+  body{background:#fff!important;color:#000!important;padding:0!important;margin:0!important;min-height:0!important;}
   body *{color:#000!important;}
+
+  /* Compact the evaluation sheet for printing */
+  .sheet-header{padding:12px 16px!important;margin-bottom:10px!important;gap:12px!important;border-radius:0!important;}
+  .sheet-avatar,.sheet-avatar-ph{width:46px!important;height:46px!important;}
+  .sheet-name{font-size:18px!important;}
+  .sheet-desig{font-size:11px!important;}
+  .cat-section{margin-bottom:12px!important;break-inside:avoid;page-break-inside:avoid;}
+  .cat-title{margin-bottom:6px!important;padding-bottom:3px!important;}
+  .q-table th{padding:6px 10px!important;}
+  .q-table td{padding:6px 10px!important;line-height:1.25!important;vertical-align:middle!important;}
+  .q-table td.q-num{padding-top:6px!important;}
+  .q-table td.rating-cell{padding-top:5px!important;}
+  .rating-badge{padding:3px 8px!important;gap:0!important;}
+  .rating-num{font-size:14px!important;}
+  .rating-lbl{font-size:8px!important;}
+  .comment-section{padding:10px 14px!important;margin-bottom:12px!important;border-radius:0!important;}
+  .comment-title{margin-bottom:5px!important;}
+  .comment-text{line-height:1.35!important;}
+  .avg-summary{padding:12px 14px!important;gap:14px!important;border-radius:0!important;break-inside:avoid;page-break-inside:avoid;}
+  .avg-score-big{font-size:42px!important;}
+  .avg-bar-row{margin-bottom:4px!important;}
+
   /* Hide the "Evaluated by" block in the sheet header */
   .sheet-eval-by{display:none!important;}
   /* Anonymity notice shown only in print */

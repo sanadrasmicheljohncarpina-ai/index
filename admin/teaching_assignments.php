@@ -148,21 +148,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_evaluation']))
                     $tracker_id = $mysqli->insert_id;
                     $trk->close();
 
-                    // NOTE: `rating[q_id]` keys come straight from whichever
-                    // table loadQuestions() pulled them from (evaluation_questions
-                    // for Faculty/Multi-Role, user_questions for Staff). Both
-                    // tables have their own independent auto-increment id
-                    // space, so if a Multi-Role person is ALSO a Staff member,
-                    // it is possible for a user_questions.id and an
-                    // evaluation_questions.id to collide numerically. That
-                    // edge case isn't fully solved here -- it needs either a
-                    // `question_source` column on questionnaire_answers or a
-                    // prefixed key scheme end-to-end. Flagging this rather
-                    // than silently shipping a subtle mis-attribution bug.
-                    $ins = $mysqli->prepare(
-                        "INSERT INTO questionnaire_answers (tracker_id, question_id, answer_score, submitted_at)
-                         VALUES (?, ?, ?, NOW())"
+                    // Record which question bank supplied each answer. Faculty
+                    // Student Evaluation uses evaluation_questions; Staff uses
+                    // user_questions. Saving the source makes the report join
+                    // deterministic instead of guessing from the numeric ID.
+                    $targetStmt = $mysqli->prepare("SELECT designation, role FROM users WHERE id=? LIMIT 1");
+                    $targetStmt->bind_param("i", $target_id);
+                    $targetStmt->execute();
+                    $targetRow = $targetStmt->get_result()->fetch_assoc();
+                    $targetStmt->close();
+
+                    if (!$targetRow) throw new Exception("Evaluation target was not found.");
+
+                    $primaryTarget = resolveUserTarget(
+                        $targetRow['designation'] ?? '',
+                        $targetRow['role'] ?? 'teacher',
+                        $token_to_target,
+                        $keyword_to_target
                     );
+
+                    if ($primaryTarget === 'Staff') {
+                        $question_source = 'user';
+                        $ins = $mysqli->prepare(
+                            "INSERT INTO questionnaire_answers
+                             (tracker_id, question_id, question_source, user_question_id, answer_score, submitted_at)
+                             VALUES (?, NULL, 'user', ?, ?, NOW())"
+                        );
+                    } else {
+                        $question_source = 'evaluation';
+                        $ins = $mysqli->prepare(
+                            "INSERT INTO questionnaire_answers
+                             (tracker_id, question_id, question_source, user_question_id, answer_score, submitted_at)
+                             VALUES (?, ?, 'evaluation', NULL, ?, NOW())"
+                        );
+                    }
+
                     foreach ($ratings as $q_id => $rating) {
                         $q_id  = intval($q_id);
                         $score = max(1, min(5, floatval($rating)));
