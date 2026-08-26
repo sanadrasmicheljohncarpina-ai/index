@@ -747,7 +747,7 @@ $tracker_id = $mysqli->insert_id; $trk->close();
         body.light-theme .toast-error{color:#B91C1C;}
         body.light-theme .level-view-pill{color:#0F766E;}
         *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-        body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);min-height:100vh;display:flex;}
+        body{font-family:'DM Sans',sans-serif;background:var(--dark);background-image:linear-gradient(rgba(15,31,61,.18),rgba(15,31,61,.18)),url('../background.png');background-position:center center;background-repeat:no-repeat;background-size:cover;background-attachment:fixed;color:var(--light);min-height:100vh;display:flex;}
 
         /* SIDEBAR */
         .sidebar{width:var(--sidebar-w);flex-shrink:0;background:var(--mid);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:40;transition:transform .3s;}

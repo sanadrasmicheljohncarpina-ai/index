@@ -851,7 +851,7 @@ body.light-theme .level-view-pill{color:#0F766E;}
 .profile-dd-btn:hover .profile-dd-icon.dd-icon-amber{background:rgba(217,119,6,.24);}
 .profile-dd-btn:hover .profile-dd-icon.dd-icon-purple{background:rgba(139,92,246,.24);}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);min-height:100vh;display:flex;}
+body{font-family:'DM Sans',sans-serif;background:var(--dark);background-image:linear-gradient(rgba(15,31,61,.18),rgba(15,31,61,.18)),url('../background.png');background-position:center center;background-repeat:no-repeat;background-size:cover;background-attachment:fixed;color:var(--light);min-height:100vh;display:flex;}
 .sidebar{width:var(--sidebar-w);flex-shrink:0;background:var(--mid);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:40;transition:transform .3s;}
 .sidebar-brand{padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer;transition:background .2s;position:relative;}
 .sidebar-brand:hover{background:rgba(255,255,255,.04);}
@@ -1107,6 +1107,30 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 @media(max-width:1024px){.stats-grid{grid-template-columns:repeat(2,1fr);}}
 @media(max-width:900px){.sidebar{transform:translateX(-100%);}.sidebar.open{transform:translateX(0);}.top-nav{left:0;}.main{margin-left:0;}.hamburger{display:block;}}
 @media(max-width:600px){.main{padding:16px;}.stats-grid{grid-template-columns:1fr 1fr;}.peer-grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr));}.desig-input-row{flex-direction:column;}.welcome-bar{padding:18px 20px;}.welcome-text h2{font-size:19px;}.desig-select-chips{flex-direction:column;}}
+
+/* STAFF-STYLE PROFILE / ROLE LAYOUT — Faculty theme */
+.profile-hero{background:linear-gradient(135deg,var(--mid) 0%,rgba(13,148,136,.18) 100%);border:1px solid rgba(13,148,136,.25);border-radius:16px;padding:28px;margin-bottom:22px;display:flex;align-items:center;justify-content:space-between;gap:22px;flex-wrap:wrap;}
+.profile-hero-left{display:flex;align-items:center;gap:22px;flex-wrap:wrap;}
+.profile-hero-avatar{width:80px;height:80px;border-radius:50%;object-fit:cover;border:3px solid var(--teal);box-shadow:0 0 18px rgba(13,148,136,.4);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--teal-hover);font-size:30px;background:var(--inner);}
+.profile-hero-name{font-family:'Rajdhani',sans-serif;font-size:26px;font-weight:700;color:#fff;margin-bottom:6px;}
+.profile-hero-desig{display:inline-flex;align-items:center;gap:7px;background:rgba(13,148,136,.2);border:1px solid rgba(13,148,136,.35);color:var(--teal-hover);font-size:13px;font-weight:700;padding:5px 14px;border-radius:20px;}
+.role-card{background:var(--mid);border:2px solid rgba(13,148,136,.3);border-radius:16px;padding:26px;margin-bottom:22px;position:relative;overflow:hidden;}
+.role-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--teal),var(--teal-hover));}
+.role-card-title{font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;color:#fff;margin-bottom:4px;display:flex;align-items:center;gap:9px;}
+.role-card-sub{font-size:13px;color:var(--muted);margin-bottom:22px;}
+.role-chips-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:6px;}
+.role-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;}
+.role-chip{padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:2px solid var(--border);background:var(--inner);color:var(--muted);transition:all .22s;display:flex;align-items:center;gap:6px;}
+.role-chip:hover{border-color:var(--teal);color:var(--teal-hover);background:rgba(13,148,136,.1);}
+.role-chip.is-current{border-color:var(--teal);background:rgba(13,148,136,.18);color:var(--teal-hover);pointer-events:none;}
+.role-chip.is-current::after{content:'✓';margin-left:2px;font-size:12px;}
+.custom-role-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px;display:flex;align-items:center;gap:6px;}
+.custom-role-row{display:flex;gap:10px;flex-wrap:wrap;}
+.custom-role-input{flex:1;min-width:220px;background:var(--inner);border:2px solid var(--border);color:var(--light);padding:13px 16px;border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .2s,box-shadow .2s;}
+.custom-role-input:focus{border-color:var(--teal);box-shadow:0 0 0 3px rgba(13,148,136,.2);}
+.custom-role-input::placeholder{color:var(--muted);}
+.btn-save-role{background:var(--teal);color:#fff;border:none;padding:13px 28px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px;transition:all .2s;font-family:'DM Sans',sans-serif;white-space:nowrap;}
+.btn-save-role:hover{background:var(--teal-hover);transform:translateY(-1px);}
 
 .settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:18px;}
 .settings-card{background:var(--inner);border:1px solid var(--border);border-radius:14px;padding:18px;}
@@ -1410,13 +1434,14 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 </div>
 
 <?php elseif ($page === 'profile'): ?>
-    <div class="profile-header" style="justify-content:space-between;flex-wrap:wrap;">
-        <div style="display:flex;align-items:center;gap:18px;">
-            <div class="profile-avatar-wrap" style="position:relative;">
+    <!-- STAFF-STYLE PROFILE / ROLE PAGE, preserving Faculty functionality and theme -->
+    <div class="profile-hero">
+        <div class="profile-hero-left">
+            <div style="position:relative;">
                 <?php if ($faculty_photo): ?>
-                <img src="<?= UPLOAD_URL . htmlspecialchars($faculty_photo) ?>" alt=""/>
+                <img class="profile-hero-avatar" src="<?= UPLOAD_URL . htmlspecialchars($faculty_photo) ?>" alt="<?= htmlspecialchars($full_name) ?>" style="display:block;"/>
                 <?php else: ?>
-                <i class="fa-solid fa-chalkboard-user"></i>
+                <div class="profile-hero-avatar"><i class="fa-solid fa-chalkboard-user"></i></div>
                 <?php endif; ?>
                 <button type="button" onclick="openPhotoModal()" title="Update Profile Photo"
                         style="position:absolute;bottom:-2px;right:-2px;width:30px;height:30px;border-radius:50%;background:var(--teal);border:2px solid var(--mid);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;">
@@ -1424,8 +1449,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
                 </button>
             </div>
             <div>
-                <div class="profile-name"><?= htmlspecialchars($full_name) ?></div>
-                <div class="profile-desig-badge"><i class="fa-solid fa-id-badge"></i> <?= htmlspecialchars($designation) ?></div>
+                <div class="profile-hero-name"><?= htmlspecialchars($full_name) ?></div>
+                <div class="profile-hero-desig"><i class="fa-solid fa-id-badge"></i> <?= htmlspecialchars($designation) ?></div>
                 <button type="button" onclick="openPhotoModal()" style="margin-top:6px;background:none;border:none;color:var(--teal);font-size:12px;font-weight:600;cursor:pointer;padding:0;">
                     <i class="fa-solid fa-camera"></i> Update Profile Photo
                 </button>
@@ -1445,40 +1470,49 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
         </div>
     </div>
 
-    <label class="fg-label"><i class="fa-solid fa-tags" style="margin-right:5px"></i>Quick Pick</label>
-    <div class="suggestion-chips">
-        <?php foreach ($desig_suggestions as $d): ?>
-        <span class="suggestion-chip <?= $d===$designation?'is-current':'' ?>"
-              onclick="document.getElementById('desigInput').value='<?= htmlspecialchars(addslashes($d)) ?>'">
-            <?= htmlspecialchars($d) ?>
-        </span>
-        <?php endforeach; ?>
-    </div>
-
-    <form method="POST">
-        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>"/>
-        <input type="hidden" name="update_designation" value="1"/>
-        <label class="fg-label" style="margin-top:10px;">Update My Designation</label>
-        <div class="desig-input-row">
-            <input type="text" name="new_designation" id="desigInput" class="desig-input"
-                   placeholder="Type or pick above…" value="<?= htmlspecialchars($designation) ?>" required/>
-            <button type="submit" class="btn-update-desig">
-                <i class="fa-solid fa-floppy-disk"></i> Save &amp; Notify Admin
-            </button>
+    <div class="role-card">
+        <div class="role-card-title">
+            <i class="fa-solid fa-tags" style="color:var(--teal)"></i>
+            Assign / Update My Role
         </div>
-    </form>
+        <div class="role-card-sub">
+            Your role determines which evaluation questions apply to you and how you appear in the questionnaire.
+            Changes take effect immediately and the admin is notified.
+        </div>
 
-    <div class="info-note">
-        <i class="fa-solid fa-circle-info"></i>
-        <span>Updating your designation takes effect <strong style="color:var(--light)">immediately</strong> and changes which evaluation questions apply to you. The admin is notified automatically.</span>
+        <div class="role-chips-label"><i class="fa-solid fa-bolt" style="color:var(--teal)"></i> Quick Pick</div>
+        <div class="role-chips">
+            <?php foreach ($desig_suggestions as $d): ?>
+            <div class="role-chip <?= ($d === $designation) ? 'is-current' : '' ?>"
+                 onclick="document.getElementById('roleInput').value='<?= htmlspecialchars(addslashes($d)) ?>'">
+                <?= htmlspecialchars($d) ?>
+            </div>
+            <?php endforeach; ?>
+        </div>
+
+        <div class="custom-role-label"><i class="fa-solid fa-pen-to-square" style="color:var(--teal)"></i> Or type a custom role</div>
+        <form method="POST" id="roleForm">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>"/>
+            <input type="hidden" name="update_designation" value="1"/>
+            <div class="custom-role-row">
+                <input type="text" name="new_designation" id="roleInput" class="custom-role-input"
+                       placeholder="e.g. Department Head, Bookkeeper…"
+                       value="<?= htmlspecialchars($designation) ?>" required/>
+                <button type="submit" class="btn-save-role">
+                    <i class="fa-solid fa-floppy-disk"></i> Save &amp; Notify Admin
+                </button>
+            </div>
+        </form>
+
+        <div class="info-note">
+            <i class="fa-solid fa-circle-info"></i>
+            <span>Your role change is logged and sent to the admin automatically so the admin can confirm or reassign you if needed.</span>
+        </div>
     </div>
 
     <div class="settings-grid">
         <div class="settings-card full">
-            <div class="settings-card-head">
-                <div class="sicon"><i class="fa-solid fa-user-shield"></i></div>
-                <div><h3>Account Overview</h3><p>Your access is controlled by the system administrator.</p></div>
-            </div>
+            <div class="settings-card-head"><div class="sicon"><i class="fa-solid fa-user-shield"></i></div><div><h3>Account Overview</h3><p>Your access is controlled by the system administrator.</p></div></div>
             <div class="account-facts">
                 <div class="account-fact"><label>Account Name</label><b><?= htmlspecialchars($full_name) ?></b></div>
                 <div class="account-fact"><label>System Role</label><b>Faculty</b></div>
@@ -1487,10 +1521,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
         </div>
 
         <div class="settings-card">
-            <div class="settings-card-head">
-                <div class="sicon"><i class="fa-solid fa-bell"></i></div>
-                <div><h3>Notifications</h3><p>Choose which updates you want to receive.</p></div>
-            </div>
+            <div class="settings-card-head"><div class="sicon"><i class="fa-solid fa-bell"></i></div><div><h3>Notifications</h3><p>Choose which updates you want to receive.</p></div></div>
             <form method="POST">
                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
                 <input type="hidden" name="save_preferences" value="1">
@@ -1502,25 +1533,20 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
         </div>
 
         <div class="settings-card">
-            <div class="settings-card-head">
-                <div class="sicon"><i class="fa-solid fa-lock"></i></div>
-                <div><h3>Security</h3><p>Keep your account protected.</p></div>
-            </div>
+            <div class="settings-card-head"><div class="sicon"><i class="fa-solid fa-lock"></i></div><div><h3>Security</h3><p>Keep your account protected.</p></div></div>
             <div class="setting-row"><div><strong>Password</strong><span>Update your password without leaving the dashboard.</span></div><a href="change_password.php" class="settings-save" style="text-decoration:none;">Change</a></div>
-            <div class="setting-row"><div><strong>Role protection</strong><span>Your system role is administrator-controlled and cannot be changed here.</span></div><i class="fa-solid fa-shield-halved" style="color:var(--success)"></i></div>
+            <div class="setting-row"><div><strong>Role protection</strong><span>Your system role is administrator-controlled.</span></div><i class="fa-solid fa-shield-halved" style="color:var(--success)"></i></div>
         </div>
 
         <div class="settings-card full">
-            <div class="settings-card-head">
-                <div class="sicon"><i class="fa-solid fa-circle-info"></i></div>
-                <div><h3>Faculty Evaluation Access</h3><p>What you can do in the Employee Performance Management System.</p></div>
-            </div>
+            <div class="settings-card-head"><div class="sicon"><i class="fa-solid fa-circle-info"></i></div><div><h3>Faculty Evaluation Access</h3><p>What you can do in the Employee Performance Management System.</p></div></div>
             <div class="account-facts">
-                <div class="account-fact"><label>Can Evaluate</label><b>Faculty, Staff, School Head</b></div><div class="account-fact"><label>Can View</label><b>Own Evaluation Results</b></div><div class="account-fact"><label>Privacy</label><b>Evaluator identity remains protected</b></div>
+                <div class="account-fact"><label>Can Evaluate</label><b>Faculty, Staff, School Head</b></div>
+                <div class="account-fact"><label>Can View</label><b>Own Evaluation Results</b></div>
+                <div class="account-fact"><label>Privacy</label><b>Evaluator identity remains protected</b></div>
             </div>
         </div>
     </div>
-</div>
 
 <?php elseif ($page === 'my_results'): ?>
 
