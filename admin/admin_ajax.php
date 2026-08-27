@@ -19,7 +19,7 @@ PBI.toast = function (msg, type = 'success') {
         position:fixed;top:20px;right:20px;z-index:9999;
         background:${isSuccess ? 'rgba(34,197,94,.15)' : 'rgba(240,84,84,.15)'};
         border:1px solid ${isSuccess ? 'rgba(34,197,94,.35)' : 'rgba(240,84,84,.35)'};
-        color:${isSuccess ? '#86efac' : '#fca5a5'};
+        color:${isSuccess ? '#6BCFA9' : '#E78D9C'};
         padding:13px 20px;border-radius:8px;font-size:13px;
         display:flex;align-items:center;gap:9px;
         box-shadow:0 6px 24px rgba(0,0,0,.4);
@@ -108,18 +108,18 @@ PBI.confirm = function (msg) {
             font-family:'DM Sans',sans-serif;
         `;
         overlay.innerHTML = `
-            <div style="background:#FFFFFF;border:1px solid rgba(15,23,42,.12);
+            <div style="background:#FFFFFF;border:1px solid rgba(30,82,144,.13);
                         border-radius:14px;padding:28px 26px;max-width:400px;width:100%;
-                        box-shadow:0 20px 60px rgba(15,23,42,.12);">
-                <p style="font-size:14px;color:#0F172A;line-height:1.6;margin-bottom:22px;">${msg}</p>
+                        box-shadow:0 20px 60px rgba(30,82,144,.13);">
+                <p style="font-size:14px;color:#0B1F3A;line-height:1.6;margin-bottom:22px;">${msg}</p>
                 <div style="display:flex;gap:10px;">
                     <button id="pbi-no"
-                        style="flex:1;padding:10px;background:#F8FAFC;border:1px solid rgba(15,23,42,.12);
-                               border-radius:8px;color:#0F172A;font-size:14px;font-weight:600;cursor:pointer;">
+                        style="flex:1;padding:10px;background:#F8FAFC;border:1px solid rgba(30,82,144,.13);
+                               border-radius:8px;color:#0B1F3A;font-size:14px;font-weight:600;cursor:pointer;">
                         Cancel
                     </button>
                     <button id="pbi-yes"
-                        style="flex:1;padding:10px;background:#F05454;border:none;border-radius:8px;
+                        style="flex:1;padding:10px;background:#D6455D;border:none;border-radius:8px;
                                color:#fff;font-size:14px;font-weight:600;cursor:pointer;">
                         Confirm
                     </button>
@@ -151,7 +151,7 @@ PBI.toast = function (msg, type = 'success') {
         position:fixed;top:20px;right:20px;z-index:9999;
         background:${isSuccess ? 'rgba(34,197,94,.15)' : 'rgba(240,84,84,.15)'};
         border:1px solid ${isSuccess ? 'rgba(34,197,94,.35)' : 'rgba(240,84,84,.35)'};
-        color:${isSuccess ? '#86efac' : '#fca5a5'};
+        color:${isSuccess ? '#6BCFA9' : '#E78D9C'};
         padding:13px 20px;border-radius:8px;font-size:13px;
         display:flex;align-items:center;gap:9px;
         box-shadow:0 6px 24px rgba(0,0,0,.4);
@@ -240,18 +240,18 @@ PBI.confirm = function (msg) {
             font-family:'DM Sans',sans-serif;
         `;
         overlay.innerHTML = `
-            <div style="background:#FFFFFF;border:1px solid rgba(15,23,42,.12);
+            <div style="background:#FFFFFF;border:1px solid rgba(30,82,144,.13);
                         border-radius:14px;padding:28px 26px;max-width:400px;width:100%;
-                        box-shadow:0 20px 60px rgba(15,23,42,.12);">
-                <p style="font-size:14px;color:#0F172A;line-height:1.6;margin-bottom:22px;">${msg}</p>
+                        box-shadow:0 20px 60px rgba(30,82,144,.13);">
+                <p style="font-size:14px;color:#0B1F3A;line-height:1.6;margin-bottom:22px;">${msg}</p>
                 <div style="display:flex;gap:10px;">
                     <button id="pbi-no"
-                        style="flex:1;padding:10px;background:#F8FAFC;border:1px solid rgba(15,23,42,.12);
-                               border-radius:8px;color:#0F172A;font-size:14px;font-weight:600;cursor:pointer;">
+                        style="flex:1;padding:10px;background:#F8FAFC;border:1px solid rgba(30,82,144,.13);
+                               border-radius:8px;color:#0B1F3A;font-size:14px;font-weight:600;cursor:pointer;">
                         Cancel
                     </button>
                     <button id="pbi-yes"
-                        style="flex:1;padding:10px;background:#F05454;border:none;border-radius:8px;
+                        style="flex:1;padding:10px;background:#D6455D;border:none;border-radius:8px;
                                color:#fff;font-size:14px;font-weight:600;cursor:pointer;">
                         Confirm
                     </button>

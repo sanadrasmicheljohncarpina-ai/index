@@ -59,37 +59,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <style>
-:root{--dark-blue:#0A192F;--blue-mid:#172A45;--blue-accent:#2B6CB0;--blue-hover:#4C78B8;--light:#E0E6F0;--muted:#A0B3C6;--radius:10px;--shadow:0 8px 32px rgba(0,0,0,0.45);}
+:root{--dark-blue:#0B1F3A;--blue-mid:#123B78;--blue-accent:#2563EB;--blue-hover:#1D4ED8;--light:#EAF2FC;--muted:#89A7C5;--radius:10px;--shadow:0 8px 32px rgba(0,0,0,0.45);}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-body{min-height:100vh;background:#0A192F url('../bacjground.png') center center / cover no-repeat fixed;font-family:'DM Sans',sans-serif;color:var(--light);display:flex;align-items:center;justify-content:center;padding:24px;overflow-x:hidden;position:relative;}
+body{min-height:100vh;background:#0B1F3A url('../bacjground.png') center center / cover no-repeat fixed;font-family:'DM Sans',sans-serif;color:var(--light);display:flex;align-items:center;justify-content:center;padding:24px;overflow-x:hidden;position:relative;}
 .bg-image-overlay{position:fixed;inset:0;z-index:0;background:rgba(10,25,47,.42);pointer-events:none;}
-.bg-grid{display:none;position:fixed;inset:0;z-index:0;background-image:linear-gradient(rgba(43,108,176,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(43,108,176,.07) 1px,transparent 1px);background-size:48px 48px;animation:g 20s linear infinite;}
+.bg-grid{display:none;position:fixed;inset:0;z-index:0;background-image:linear-gradient(rgba(37,99,235,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(37,99,235,.08) 1px,transparent 1px);background-size:48px 48px;animation:g 20s linear infinite;}
 @keyframes g{0%{background-position:0 0}100%{background-position:48px 48px}}
 .orb{display:none;position:fixed;border-radius:50%;filter:blur(80px);z-index:0;pointer-events:none;}
-.orb-1{width:420px;height:420px;background:radial-gradient(circle,rgba(43,108,176,.25) 0%,transparent 70%);top:-100px;left:-100px;animation:o1 12s ease-in-out infinite;}
+.orb-1{width:420px;height:420px;background:radial-gradient(circle,rgba(37,99,235,.16) 0%,transparent 70%);top:-100px;left:-100px;animation:o1 12s ease-in-out infinite;}
 .orb-2{width:320px;height:320px;background:radial-gradient(circle,rgba(96,165,250,.15) 0%,transparent 70%);bottom:-80px;right:-80px;animation:o2 15s ease-in-out infinite;}
 @keyframes o1{0%,100%{transform:translate(0,0)}50%{transform:translate(40px,30px)}}
 @keyframes o2{0%,100%{transform:translate(0,0)}50%{transform:translate(-30px,-25px)}}
-.login-card{position:relative;z-index:10;background:rgba(23,42,69,.82);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.09);border-radius:18px;padding:40px 40px 32px;width:100%;max-width:420px;box-shadow:var(--shadow),0 0 0 1px rgba(43,108,176,.18);animation:cardIn .7s cubic-bezier(.22,1,.36,1) both;}
+.login-card{position:relative;z-index:10;background:rgba(23,42,69,.82);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.09);border-radius:18px;padding:40px 40px 32px;width:100%;max-width:420px;box-shadow:var(--shadow),0 0 0 1px rgba(37,99,235,.12);animation:cardIn .7s cubic-bezier(.22,1,.36,1) both;}
 @keyframes cardIn{from{opacity:0;transform:translateY(32px) scale(.97)}to{opacity:1;transform:none}}
 .card-header{text-align:center;margin-bottom:28px;}
 .logo-img{width:72px;height:72px;border-radius:50%;object-fit:cover;border:2.5px solid var(--blue-accent);box-shadow:0 0 20px rgba(43,108,176,.55);margin:0 auto 12px;display:block;}
 .card-title{font-family:'Rajdhani',sans-serif;font-size:26px;font-weight:700;letter-spacing:2px;color:#fff;text-transform:uppercase;}
 .card-subtitle{font-size:11px;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase;margin-top:4px;}
-.divider{height:1px;background:linear-gradient(90deg,transparent,rgba(43,108,176,.4),transparent);margin-bottom:24px;}
+.divider{height:1px;background:linear-gradient(90deg,transparent,rgba(37,99,235,.22),transparent);margin-bottom:24px;}
 .form-group{margin-bottom:16px;}
 .form-label{display:block;font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
 .input-wrap{position:relative;}
 .f-icon{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;pointer-events:none;}
 .form-input{width:100%;padding:12px 13px 12px 38px;background:rgba(10,25,47,.7);border:1px solid rgba(255,255,255,.1);border-radius:var(--radius);color:var(--light);font-size:14px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .25s,box-shadow .25s;}
 .form-input::placeholder{color:rgba(160,179,198,.4);}
-.form-input:focus{border-color:var(--blue-accent);box-shadow:0 0 0 3px rgba(43,108,176,.2);}
+.form-input:focus{border-color:var(--blue-accent);box-shadow:0 0 0 3px rgba(37,99,235,.12);}
 .toggle-pw{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0;transition:color .2s;}
 .toggle-pw:hover{color:var(--light);}
 .alert{border-radius:8px;padding:10px 13px;font-size:13px;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
 .alert-error{background:rgba(240,84,84,.12);border:1px solid rgba(240,84,84,.35);color:#ff8a8a;}
-.alert-success{background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.3);color:#4ade80;}
-.btn-main{width:100%;padding:13px;background:var(--blue-accent);border:none;border-radius:var(--radius);color:#fff;font-size:15px;font-weight:600;font-family:'DM Sans',sans-serif;cursor:pointer;transition:background .2s,transform .15s;box-shadow:0 4px 14px rgba(43,108,176,.4);display:flex;align-items:center;justify-content:center;gap:8px;}
+.alert-success{background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.3);color:#32B98A;}
+.btn-main{width:100%;padding:13px;background:var(--blue-accent);border:none;border-radius:var(--radius);color:#fff;font-size:15px;font-weight:600;font-family:'DM Sans',sans-serif;cursor:pointer;transition:background .2s,transform .15s;box-shadow:0 4px 14px rgba(37,99,235,.22);display:flex;align-items:center;justify-content:center;gap:8px;}
 .btn-main:hover{background:var(--blue-hover);transform:translateY(-1px);}
 .register-row{text-align:center;margin-top:16px;font-size:13px;color:var(--muted);}
 .register-row a{color:var(--blue-hover);font-weight:600;text-decoration:none;}
@@ -97,7 +97,7 @@ body{min-height:100vh;background:#0A192F url('../bacjground.png') center center 
 .card-footer{text-align:center;font-size:12px;color:var(--muted);}
 .card-footer a{color:var(--blue-hover);text-decoration:none;font-weight:600;}
 .secure-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);margin-top:12px;}
-.secure-badge i{color:#4ade80;font-size:10px;}
+.secure-badge i{color:#32B98A;font-size:10px;}
 </style>
 </head>
 <body>

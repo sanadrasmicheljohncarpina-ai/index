@@ -851,7 +851,7 @@ body.light-theme .level-view-pill{color:#0F766E;}
 .profile-dd-btn:hover .profile-dd-icon.dd-icon-amber{background:rgba(217,119,6,.24);}
 .profile-dd-btn:hover .profile-dd-icon.dd-icon-purple{background:rgba(139,92,246,.24);}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'DM Sans',sans-serif;background:var(--dark);background-image:linear-gradient(rgba(15,31,61,.18),rgba(15,31,61,.18)),url('../background.png');background-position:center center;background-repeat:no-repeat;background-size:cover;background-attachment:fixed;color:var(--light);min-height:100vh;display:flex;}
+body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);min-height:100vh;display:flex;}
 .sidebar{width:var(--sidebar-w);flex-shrink:0;background:var(--mid);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:40;transition:transform .3s;}
 .sidebar-brand{padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer;transition:background .2s;position:relative;}
 .sidebar-brand:hover{background:rgba(255,255,255,.04);}

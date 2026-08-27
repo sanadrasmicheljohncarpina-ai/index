@@ -340,7 +340,7 @@
         function resolve_peer_group($desig, $map, $cats, $fallback_role = null) {
             return resolve_target_type($desig, $map, $cats, $fallback_role) === 'Faculty' ? 'teacher' : 'staff';
         }
-        $peer_group_labels = ['teacher' => 'Teacher', 'staff' => 'Staff'];
+        $peer_group_labels = ['teacher' => 'Faculty', 'staff' => 'Staff'];
 
         // ── ADD peer_group COLUMN TO evaluation_tracker (idempotent) ──
         // Stores which of the two designation groups (Teacher/Staff) the
@@ -1702,7 +1702,7 @@ $tracker_id = $mysqli->insert_id; $trk->close();
             <div class="role-chips-label"><i class="fa-solid fa-bolt" style="color:var(--teal)"></i> Step 1: Select Designation</div>
             <div class="role-chips" style="margin-bottom:4px;">
                 <a href="staff_dashboard.php?page=peer&group=teacher" class="role-chip" style="text-decoration:none;padding:14px 22px;font-size:14px;">
-                    <i class="fa-solid fa-chalkboard-user" style="margin-right:6px;color:var(--teal-hover)"></i> Teacher <span style="color:var(--muted);margin-left:6px;">(<?= $teacher_count ?>)</span>
+                    <i class="fa-solid fa-chalkboard-user" style="margin-right:6px;color:var(--teal-hover)"></i> Faculty <span style="color:var(--muted);margin-left:6px;">(<?= $teacher_count ?>)</span>
                 </a>
                 <a href="staff_dashboard.php?page=peer&group=staff" class="role-chip" style="text-decoration:none;padding:14px 22px;font-size:14px;">
                     <i class="fa-solid fa-briefcase" style="margin-right:6px;color:var(--teal-hover)"></i> Staff <span style="color:var(--muted);margin-left:6px;">(<?= $staff_count ?>)</span>

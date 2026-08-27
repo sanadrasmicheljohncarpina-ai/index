@@ -105,10 +105,11 @@
 	<style>
 	:root{--dark-blue:#0A192F;--blue-mid:#172A45;--blue-inner:#0F1F3D;--gold:#D97706;--gold-hover:#F59E0B;--light:#E0E6F0;--muted:#A0B3C6;--radius:10px;--shadow:0 8px 32px rgba(0,0,0,0.45);}
 	*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-	body{min-height:100vh;background:var(--dark-blue);font-family:'DM Sans',sans-serif;color:var(--light);display:flex;align-items:center;justify-content:center;padding:40px 20px;position:relative;overflow-x:hidden;}
-	.bg-grid{position:fixed;inset:0;z-index:0;background-image:linear-gradient(rgba(217,119,6,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(217,119,6,.05) 1px,transparent 1px);background-size:48px 48px;animation:gridShift 25s linear infinite;}
+	body{min-height:100vh;background:#0A192F url('../bacjground.png') center center / cover no-repeat fixed;font-family:'DM Sans',sans-serif;color:var(--light);display:flex;align-items:center;justify-content:center;padding:40px 20px;position:relative;overflow-x:hidden;}
+	.bg-image-overlay{position:fixed;inset:0;z-index:0;background:rgba(10,25,47,.42);pointer-events:none;}
+	.bg-grid{display:none;position:fixed;inset:0;z-index:0;background-image:linear-gradient(rgba(217,119,6,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(217,119,6,.05) 1px,transparent 1px);background-size:48px 48px;animation:gridShift 25s linear infinite;}
 	@keyframes gridShift{0%{background-position:0 0}100%{background-position:48px 48px}}
-	.orb{position:fixed;border-radius:50%;filter:blur(90px);z-index:0;pointer-events:none;}
+	.orb{display:none;position:fixed;border-radius:50%;filter:blur(90px);z-index:0;pointer-events:none;}
 	.orb-1{width:380px;height:380px;background:radial-gradient(circle,rgba(217,119,6,.17) 0%,transparent 70%);bottom:-80px;right:-80px;animation:o1 16s ease-in-out infinite;}
 	.orb-2{width:280px;height:280px;background:radial-gradient(circle,rgba(43,108,176,.14) 0%,transparent 70%);top:-60px;left:-60px;animation:o2 20s ease-in-out infinite;}
 	@keyframes o1{0%,100%{transform:translate(0,0)}50%{transform:translate(-22px,-18px)}}
@@ -146,6 +147,7 @@
 	</style>
 	</head>
 	<body>
+	<div class="bg-image-overlay"></div>
 	<div class="bg-grid"></div>
 	<div class="orb orb-1"></div>
 	<div class="orb orb-2"></div>

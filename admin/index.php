@@ -15,8 +15,8 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <style>
 :root{
-    --dark:#0A192F;--mid:#172A45;--inner:#0F1F3D;
-    --light:#E0E6F0;--muted:#A0B3C6;
+    --dark:#0B1F3A;--mid:#123B78;--inner:#183C6B;
+    --light:#EAF2FC;--muted:#89A7C5;
     --border:rgba(255,255,255,0.08);--radius:14px;
     --shadow:0 8px 32px rgba(0,0,0,0.45);
 }
@@ -35,8 +35,8 @@ body{
 .wrap{position:relative;z-index:10;width:100%;max-width:920px;text-align:center;}
 
 .brand{margin-bottom:40px;}
-.brand-logo{width:78px;height:78px;border-radius:50%;object-fit:cover;border:2.5px solid #2B6CB0;
-    box-shadow:0 0 24px rgba(43,108,176,.4);margin:0 auto 16px;display:block;}
+.brand-logo{width:78px;height:78px;border-radius:50%;object-fit:cover;border:2.5px solid #2563EB;
+    box-shadow:0 0 24px rgba(37,99,235,.22);margin:0 auto 16px;display:block;}
 .brand-title{font-family:'Rajdhani',sans-serif;font-size:30px;font-weight:700;letter-spacing:1.5px;color:#fff;}
 .brand-sub{font-size:13px;color:var(--muted);letter-spacing:1px;margin-top:6px;text-transform:uppercase;}
 
@@ -53,26 +53,27 @@ body{
 .role-card:hover{transform:translateY(-4px);box-shadow:var(--shadow);border-color:var(--accent);}
 .role-icon{
     width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-    font-size:22px;background:rgba(255,255,255,.06);color:var(--accent);
+    font-size:22px;background:rgba(37,99,235,.06);color:var(--accent);
     border:2px solid var(--accent);
 }
 .role-name{font-family:'Rajdhani',sans-serif;font-size:18px;font-weight:700;color:#fff;}
 .role-desc{font-size:12px;color:var(--muted);line-height:1.5;}
 
 /* per-role accent colors, matched to each dashboard's existing theme */
-.role-student   { --accent:#D97706; }
-.role-faculty   { --accent:#0D9488; }
-.role-staff     { --accent:#2B6CB0; }
-.role-executive { --accent:#7C3AED; }
-.role-schoolhead{ --accent:#DB2777; }
-.role-admin     { --accent:#4C78B8; }
+.role-student   { --accent:#C77A08; }
+.role-faculty   { --accent:#0E7490; }
+.role-staff     { --accent:#2563EB; }
+.role-executive { --accent:#4968C8; }
+.role-schoolhead{ --accent:#2563EB; }
+.role-admin     { --accent:#1D4ED8; }
 
 .footer-note{margin-top:36px;font-size:12px;color:var(--muted);}
-.footer-note a{color:#6ea8ff;text-decoration:none;font-weight:600;}
+.footer-note a{color:#66A3FF;text-decoration:none;font-weight:600;}
 .footer-note a:hover{text-decoration:underline;}
 
 @media(max-width:480px){.brand-title{font-size:24px;}}
 </style>
+    <link rel="stylesheet" href="admin_ui_theme.css">
 </head>
 <body>
 <div class="bg-grid"></div>
@@ -93,7 +94,7 @@ body{
 
         <a class="role-card role-faculty" href="faculty/faculty_login.php">
             <div class="role-icon"><i class="fa-solid fa-chalkboard-user"></i></div>
-            <div class="role-name">Teacher</div>
+            <div class="role-name">Faculty</div>
             <div class="role-desc">View results &amp; submit peer evaluations</div>
         </a>
 

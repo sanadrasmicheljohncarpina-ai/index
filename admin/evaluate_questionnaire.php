@@ -223,28 +223,29 @@ $uploadDir = '../image/';
 /* ── SHARP LIGHT ADMIN UI ── */
 html { background:#F8FAFC; }
 body {
-  color:#0F172A !important;
+  color:#0B1F3A !important;
   background:#F8FAFC !important;
   -webkit-font-smoothing:antialiased;
   text-rendering:optimizeLegibility;
 }
-h1,h2,h3,h4,h5,h6 { color:#0F172A; letter-spacing:-.01em; }
-p, .subtitle, .description, .helper, .muted, small { color:#475569; }
-label, th { color:#334155; font-weight:600; }
-td { color:#0F172A; }
+h1,h2,h3,h4,h5,h6 { color:#0B1F3A; letter-spacing:-.01em; }
+p, .subtitle, .description, .helper, .muted, small { color:#67819E; }
+label, th { color:#294765; font-weight:600; }
+td { color:#0B1F3A; }
 input, select, textarea {
-  color:#0F172A;
+  color:#0B1F3A;
   background:#FFFFFF;
-  border-color:#CBD5E1;
+  border-color:#B9CDE5;
 }
-input::placeholder, textarea::placeholder { color:#94A3B8; }
+input::placeholder, textarea::placeholder { color:#91A6BE; }
 .card, .panel, .section, .table-card, .content-card {
-  border-color:#CBD5E1;
-  box-shadow:0 4px 14px rgba(15,23,42,.07);
+  border-color:#B9CDE5;
+  box-shadow:0 4px 14px rgba(30,82,144,.09);
 }
 button, .btn { font-weight:700; }
 a { color:inherit; }
 </style>
+    <link rel="stylesheet" href="admin_ui_theme.css">
 </head>
 <body>
 
@@ -255,7 +256,7 @@ a { color:inherit; }
 
         <!-- Header Block Overview Frame -->
         <div class="form-header-card">
-            <h1>Performance Evaluation for <?= $evalType === 'Teacher' ? 'Teacher' : 'Personnel'; ?> By Students</h1>
+            <h1>Performance Evaluation for <?= $evalType === 'Teacher' ? 'Faculty' : 'Personnel'; ?> By Students</h1>
             <div class="user-identity-strip">
                 <strong>Logged account:</strong> <?= htmlspecialchars($_SESSION['name']); ?> &bull; <span style="color:var(--brand-purple);">Switch account</span>
             </div>
@@ -301,7 +302,7 @@ a { color:inherit; }
                                     <div><?= $index++ . '. ' . htmlspecialchars($target['name']); ?></div>
                                 </div>
                                 <div style="font-size:12px; color:var(--text-secondary); margin-top:4px; padding-left:22px;">
-                                    <span style="text-transform:uppercase; font-size:10px; background:#E8F0FE; color:#1A73E8; padding:2px 6px; border-radius:4px; font-weight:600;">
+                                    <span style="text-transform:uppercase; font-size:10px; background:#E6F0FF; color:#1A73E8; padding:2px 6px; border-radius:4px; font-weight:600;">
                                         <?= htmlspecialchars($roleTag); ?>
                                     </span>
                                 </div>
@@ -316,9 +317,9 @@ a { color:inherit; }
                  PAGE 2+ VIEW: SYSTEM METRICS INJECTION
                  ========================================== -->
             <div class="form-block">
-                <div class="section-highlight-banner">The <?= $evalType === 'Teacher' ? 'Teacher' : 'Personnel'; ?></div>
+                <div class="section-highlight-banner">The <?= $evalType === 'Teacher' ? 'Faculty' : 'Personnel'; ?></div>
                 <div class="scale-info-box">
-                    Truthfully assess the <?= $evalType === 'Teacher' ? 'Teacher\'s' : 'Personnel\'s'; ?> Performance based on your own observations if the items below are practiced. Select the number corresponding to your rating based on the scale below:<br><br>
+                    Truthfully assess the <?= $evalType === 'Teacher' ? 'Faculty\'s' : 'Personnel\'s'; ?> Performance based on your own observations if the items below are practiced. Select the number corresponding to your rating based on the scale below:<br><br>
                     <strong>Rating: 5</strong>-ALWAYS, <strong>4</strong>-OFTEN, <strong>3</strong>-SOMETIMES, <strong>2</strong>-RARELY, <strong>1</strong>-NEVER
                 </div>
             </div>

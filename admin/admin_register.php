@@ -113,9 +113,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <style>
 :root{
-    --dark-blue:#0A192F; --blue-mid:#172A45; --blue-inner:#0F1F3D;
-    --blue-accent:#2B6CB0; --blue-hover:#4C78B8;
-    --light:#E0E6F0; --muted:#A0B3C6; --radius:10px;
+    --dark-blue:#0B1F3A; --blue-mid:#123B78; --blue-inner:#183C6B;
+    --blue-accent:#2563EB; --blue-hover:#1D4ED8;
+    --light:#EAF2FC; --muted:#89A7C5; --radius:10px;
     --shadow:0 8px 32px rgba(0,0,0,0.45);
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -128,13 +128,13 @@ body{
 .bg-grid{
     position:fixed; inset:0; z-index:0;
     background-image:
-        linear-gradient(rgba(43,108,176,.07) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(43,108,176,.07) 1px, transparent 1px);
+        linear-gradient(rgba(37,99,235,.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(37,99,235,.08) 1px, transparent 1px);
     background-size:48px 48px; animation:g 20s linear infinite;
 }
 @keyframes g{0%{background-position:0 0}100%{background-position:48px 48px}}
 .orb{position:fixed;border-radius:50%;filter:blur(80px);z-index:0;pointer-events:none;}
-.orb-1{width:420px;height:420px;background:radial-gradient(circle,rgba(43,108,176,.25) 0%,transparent 70%);top:-100px;left:-100px;animation:o1 12s ease-in-out infinite;}
+.orb-1{width:420px;height:420px;background:radial-gradient(circle,rgba(37,99,235,.16) 0%,transparent 70%);top:-100px;left:-100px;animation:o1 12s ease-in-out infinite;}
 .orb-2{width:320px;height:320px;background:radial-gradient(circle,rgba(96,165,250,.15) 0%,transparent 70%);bottom:-80px;right:-80px;animation:o2 15s ease-in-out infinite;}
 @keyframes o1{0%,100%{transform:translate(0,0)}50%{transform:translate(40px,30px)}}
 @keyframes o2{0%,100%{transform:translate(0,0)}50%{transform:translate(-30px,-25px)}}
@@ -145,7 +145,7 @@ body{
     background:rgba(23,42,69,.82); backdrop-filter:blur(18px);
     border:1px solid rgba(255,255,255,.09); border-radius:18px;
     padding:40px 40px 36px; width:100%; max-width:500px;
-    box-shadow:var(--shadow), 0 0 0 1px rgba(43,108,176,.18);
+    box-shadow:var(--shadow), 0 0 0 1px rgba(37,99,235,.12);
     animation:cardIn .7s cubic-bezier(.22,1,.36,1) both;
 }
 @keyframes cardIn{from{opacity:0;transform:translateY(32px) scale(.97)}to{opacity:1;transform:none}}
@@ -161,7 +161,7 @@ body{
 }
 .card-title{font-family:'Rajdhani',sans-serif;font-size:26px;font-weight:700;letter-spacing:2px;color:#fff;text-transform:uppercase;}
 .card-subtitle{font-size:11px;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase;margin-top:4px;}
-.divider{height:1px;background:linear-gradient(90deg,transparent,rgba(43,108,176,.4),transparent);margin-bottom:22px;}
+.divider{height:1px;background:linear-gradient(90deg,transparent,rgba(37,99,235,.22),transparent);margin-bottom:22px;}
 
 /* ── Photo upload ── */
 .photo-upload-area{display:flex;align-items:center;gap:18px;margin-bottom:20px;}
@@ -179,7 +179,7 @@ body{
 .photo-info span{font-size:11px;color:var(--muted);}
 .btn-photo{
     display:inline-flex; align-items:center; gap:6px;
-    background:rgba(43,108,176,.15); border:1px solid rgba(43,108,176,.4);
+    background:rgba(43,108,176,.15); border:1px solid rgba(37,99,235,.22);
     color:var(--blue-hover); padding:7px 14px; border-radius:7px;
     font-size:12px; font-weight:600; cursor:pointer; transition:all .2s; margin-top:7px;
 }
@@ -201,7 +201,7 @@ input[type="file"]{display:none;}
     outline:none; transition:border-color .25s,box-shadow .25s;
 }
 .form-input::placeholder{color:rgba(160,179,198,.4);}
-.form-input:focus,.role-select:focus{border-color:var(--blue-accent);box-shadow:0 0 0 3px rgba(43,108,176,.2);}
+.form-input:focus,.role-select:focus{border-color:var(--blue-accent);box-shadow:0 0 0 3px rgba(37,99,235,.12);}
 .role-select{appearance:none;cursor:pointer;}
 .toggle-pw{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0;transition:color .2s;}
 .toggle-pw:hover{color:var(--light);}
@@ -220,7 +220,7 @@ input[type="file"]{display:none;}
     border:none; border-radius:var(--radius); color:#fff;
     font-size:15px; font-weight:600; font-family:'DM Sans',sans-serif;
     cursor:pointer; transition:background .2s,transform .15s;
-    box-shadow:0 4px 14px rgba(43,108,176,.4);
+    box-shadow:0 4px 14px rgba(37,99,235,.22);
     display:flex; align-items:center; justify-content:center; gap:8px; margin-top:6px;
 }
 .btn-main:hover{background:var(--blue-hover);transform:translateY(-1px);}
@@ -379,7 +379,7 @@ function checkStrength(val) {
     if (/[A-Z]/.test(val))         score++;
     if (/[0-9]/.test(val))         score++;
     if (/[^A-Za-z0-9]/.test(val))  score++;
-    const colors = ['#ff4444','#ff8800','#f0c040','#4ade80'];
+    const colors = ['#ff4444','#ff8800','#f0c040','#32B98A'];
     const labels = ['Weak','Fair','Good','Strong'];
     if (!val) { bar.style.background = 'rgba(255,255,255,.08)'; hint.textContent = ''; return; }
     bar.style.background = colors[score - 1] || colors[0];

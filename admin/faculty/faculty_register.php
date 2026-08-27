@@ -92,7 +92,7 @@
 	<head>
 	<meta charset="UTF-8"/>
 	<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-	<title>PBI — Teacher & Staff Registration</title>
+	<title>PBI — Faculty & Staff Registration</title>
 	<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 	<style>
@@ -218,7 +218,7 @@
 		<div class="card-header">
 			<img class="logo-ring" src="../image/pbi_logo" alt="PBI Logo"/>
 			<div class="card-title">Create Your Account</div>
-			<div class="card-subtitle">Pandan Bay Institute — Teacher & Staff Portal</div>
+			<div class="card-subtitle">Pandan Bay Institute — Faculty & Staff Portal</div>
 		</div>
 
 		<div class="steps-row">
@@ -229,7 +229,7 @@
 
 		<div class="role-tabs">
 			<button class="role-tab active" id="tab-teacher" type="button" onclick="setRole('teacher')">
-				<i class="fa-solid fa-chalkboard-user"></i> Teacher
+				<i class="fa-solid fa-chalkboard-user"></i> Faculty
 			</button>
 			<button class="role-tab" id="tab-staff" type="button" onclick="setRole('staff')">
 				<i class="fa-solid fa-briefcase"></i> Staff
@@ -313,7 +313,7 @@
 
 			<button type="submit" class="btn-register">
 				<i class="fa-solid fa-user-plus"></i>
-				<span id="regBtnLabel">Create Teacher Account</span>
+				<span id="regBtnLabel">Create Faculty Account</span>
 			</button>
 		</form>
 
@@ -331,7 +331,7 @@
 		document.getElementById('role_input').value=r;
 		document.getElementById('tab-teacher').classList.toggle('active',r==='teacher');
 		document.getElementById('tab-staff').classList.toggle('active',r==='staff');
-		document.getElementById('regBtnLabel').textContent=r==='teacher'?'Create Teacher Account':'Create Staff Account';
+		document.getElementById('regBtnLabel').textContent=r==='teacher'?'Create Faculty Account':'Create Staff Account';
 	}
 	function togglePw(id,ic){const e=document.getElementById(id),i=document.getElementById(ic);e.type=e.type==='password'?'text':'password';i.className=e.type==='password'?'fa-solid fa-eye':'fa-solid fa-eye-slash';}
 	function previewPhoto(input){if(input.files&&input.files[0]){const r=new FileReader();r.onload=e=>{const img=document.getElementById('photoImg'),ic=document.getElementById('phIcon');img.src=e.target.result;img.style.display='block';ic.style.display='none';};r.readAsDataURL(input.files[0]);}}

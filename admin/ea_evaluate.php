@@ -237,7 +237,7 @@ foreach ($questions as $q) { $questionGroups[$q['category'] ?: 'General'][] = $q
 <title>Evaluate <?= e($target['full_name']) ?> — PBI</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
-:root{--bg:#F8FAFC;--panel:#FFFFFF;--panel2:#EFF6FF;--inner:#F8FAFC;--line:#CBD5E1;--text:#172033;--muted:#475569;--purple:#3B82F6;--purple-dark:#2563EB;--green:#059669;--shadow:0 2px 4px rgba(15,23,42,.04),0 6px 16px rgba(15,23,42,.06)}
+:root{--bg:#F8FAFC;--panel:#FFFFFF;--panel2:#E6F0FF;--inner:#F8FAFC;--line:#B9CDE5;--text:#0B1F3A;--muted:#67819E;--purple:#2563EB;--purple-dark:#2563EB;--green:#0F9F6E;--shadow:0 2px 4px rgba(30,82,144,.05),0 6px 16px rgba(30,82,144,.08)}
 *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif}
 .top{height:74px;background:#FFFFFF;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 34px;gap:26px;position:sticky;top:0;z-index:5}
 .brand{font-weight:800;letter-spacing:.4px;flex:1;color:var(--text)}.brand i{color:var(--purple);margin-right:9px}
@@ -249,10 +249,10 @@ foreach ($questions as $q) { $questionGroups[$q['category'] ?: 'General'][] = $q
 .person-photo{width:60px;height:60px;border-radius:50%;object-fit:cover;background:var(--inner);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:22px}
 .person-name{font-size:20px;font-weight:800;color:var(--text)}
 .person-meta{font-size:12.5px;color:var(--muted);margin-top:2px}
-.badge{display:inline-block;margin-top:6px;color:var(--purple);font-size:11.5px;background:#EFF6FF;padding:4px 10px;border-radius:99px;font-weight:700}
+.badge{display:inline-block;margin-top:6px;color:var(--purple);font-size:11.5px;background:#E6F0FF;padding:4px 10px;border-radius:99px;font-weight:700}
 .alert{border-radius:10px;padding:13px 16px;font-size:13.5px;margin-bottom:18px;display:flex;align-items:center;gap:8px}
 .alert-error{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.25);color:#ffb4b4}
-.alert-info{background:#EFF6FF;border:1px solid #BFDBFE;color:#2563EB}
+.alert-info{background:#E6F0FF;border:1px solid #B8D4F8;color:#2563EB}
 .q-block{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;box-shadow:var(--shadow);margin-bottom:16px}
 .q-cat{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--purple);margin-bottom:6px}
 .cat-heading{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--purple);margin:26px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
@@ -280,6 +280,7 @@ foreach ($questions as $q) { $questionGroups[$q['category'] ?: 'General'][] = $q
 .summary-score .of{font-size:13px;color:var(--muted)}
 @media(max-width:900px){.top{padding:0 18px}.wrap{padding:20px}.rating-row{flex-wrap:wrap}.rating-opt{min-width:50px}}
 </style>
+    <link rel="stylesheet" href="admin_ui_theme.css">
 </head>
 <body>
 <header class="top">

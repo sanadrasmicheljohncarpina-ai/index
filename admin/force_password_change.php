@@ -48,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <title>Set New Password — PBI</title>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
-:root{--dark:#0A192F;--mid:#172A45;--inner:#0F1F3D;--accent:#2B6CB0;--hover:#4C78B8;--light:#E0E6F0;--muted:#A0B3C6;--danger:#F05454;--border:rgba(255,255,255,0.08);--radius:10px;}
+:root{--dark:#0B1F3A;--mid:#123B78;--inner:#183C6B;--accent:#2563EB;--hover:#1D4ED8;--light:#EAF2FC;--muted:#89A7C5;--danger:#D6455D;--border:rgba(255,255,255,0.08);--radius:10px;}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
 .card{background:var(--mid);border:1px solid var(--border);border-radius:16px;padding:34px;width:100%;max-width:400px;}
@@ -58,7 +58,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .fg label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);}
 .fg input{background:var(--inner);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--light);font-size:13px;outline:none;width:100%;}
 .fg input:focus{border-color:var(--accent);}
-.error{background:rgba(240,84,84,.12);border:1px solid rgba(240,84,84,.3);color:#fca5a5;padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:16px;}
+.error{background:rgba(240,84,84,.12);border:1px solid rgba(240,84,84,.3);color:#E78D9C;padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:16px;}
 .btn{width:100%;padding:11px;background:var(--accent);border:none;border-radius:var(--radius);color:#fff;font-size:14px;font-weight:600;cursor:pointer;margin-top:6px;}
 .btn:hover{background:var(--hover);}
 </style>

@@ -129,7 +129,11 @@ require_once '../shared/EvaluationContextService.php';
     // those two pools (eval_type='school_head' and eval_type='student'),
     // so nothing about the assignment UI itself needs to change for EA.
     $system_categories = ['Teacher', 'Staff', 'Multi-Role'];
-    $peer_categories   = ['Teacher', 'Staff'];
+    // Peer-to-Peer's "Staff" card is filtered down to Non-Teaching Staff only
+    // (see hasNonTeachingStaffFunction() below) and displayed under that label.
+    // "School" is a Peer-only per-person context for Principal + Dean, entirely
+    // separate from School Head Evaluation's own Principal/Dean question pool.
+    $peer_categories   = ['Teacher', 'Staff', 'School'];
     $school_head_categories = ['Principal', 'Dean'];
     $active_categories = ($active_eval === 'school_head')
         ? $school_head_categories
@@ -140,7 +144,7 @@ require_once '../shared/EvaluationContextService.php';
     // is a separate shared question pool and is NEVER created merely
     // because a person has a teaching assignment. Teaching assignments
     // only affect where a person is visible to students.
-$per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role'];
+$per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School'];
     // "Staff/non-teaching function present" per the Multi-Role spec — true
     // for anyone whose role or self-assigned secondary role is 'staff'.
     // This is an actual assigned function (role / secondary_role), never
@@ -160,6 +164,26 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role'];
     // Dashboard. A Staff account that has a teaching/year-level assignment
     // is also a Multi-Role evaluation context, even when its designation or
     // secondary_role does not explicitly contain an additional-role marker.
+    // Canonical "Non-Teaching Staff" test — identical predicate to the one
+    // ea_evaluation.php already uses for its own Non-Teaching Staff roster:
+    // a Staff account with NO teaching_assignments row and NO
+    // user_year_levels row. This is the only thing that distinguishes
+    // Non-Teaching Staff from Staff who also teach/are scoped to a year
+    // level; it is unrelated to hasAnyYearLevelAssignment()'s Multi-Role use.
+    function isNonTeachingStaff(mysqli $mysqli, int $user_id): bool {
+        $stmt = $mysqli->prepare(
+            "SELECT
+                NOT EXISTS(SELECT 1 FROM teaching_assignments ta WHERE ta.user_id=?)
+                AND NOT EXISTS(SELECT 1 FROM user_year_levels yl WHERE yl.user_id=?)
+             AS is_non_teaching"
+        );
+        $stmt->bind_param('ii', $user_id, $user_id);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return (bool)($row['is_non_teaching'] ?? false);
+    }
+
     function hasAnyYearLevelAssignment(mysqli $mysqli, int $user_id): bool {
         $stmt = $mysqli->prepare(
             "SELECT 1 FROM (
@@ -487,7 +511,12 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role'];
         }
         if ($has_staff) {
             $card_data_student['Staff']['users'][] = $u;
-            $card_data_peer['Staff']['users'][] = $u;
+            // Peer-to-Peer's "Staff" card is Non-Teaching Staff only — a
+            // Staff member who teaches or is scoped to a year level should
+            // evaluate/be evaluated as Faculty in this tab, not appear twice.
+            if (isNonTeachingStaff($mysqli, (int)$u['id'])) {
+                $card_data_peer['Staff']['users'][] = $u;
+            }
         }
         if ($is_multi_role) {
             $card_data_student['Multi-Role']['users'][] = $u;
@@ -503,8 +532,14 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role'];
         if ($u['role'] === 'dean')      $card_data_schoolhead['Dean']['users'][]      = $u;
     }
 
+    // Peer-to-Peer's "School" card: Principal + Dean together, evaluated by
+    // colleagues. Its questions (target_type='School', eval_type='peer') are
+    // a separate pool from School Head Evaluation's own Principal/Dean
+    // questions (target_type='Principal'/'Dean', eval_type='school_head').
+    $card_data_peer['School'] = ['count' => 0, 'users' => $school_head_users];
+
     if ($active_eval === 'peer') {
-        // Peer-to-Peer has only Teacher and Staff questionnaire contexts.
+        // Peer-to-Peer has Teacher, Non-Teaching Staff, and School contexts.
         // Multi-Role remains available only under Student Evaluation.
         unset($card_data_peer['Multi-Role']);
         $card_data = $card_data_peer;
@@ -585,7 +620,15 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role'];
         'Multi-Role'          => 'fa-layer-group',
         'Principal'           => 'fa-user-tie',
         'Dean'                => 'fa-graduation-cap',
+        'School'              => 'fa-building-columns',
     ];
+
+    // Peer-to-Peer's "Staff" card is Non-Teaching Staff only; show that
+    // label wherever the raw target_type key would otherwise print as
+    // "Staff" in this tab. Every other tab/type displays unchanged.
+    function displayTargetLabel(string $type, string $active_eval): string {
+        return ($active_eval === 'peer' && $type === 'Staff') ? 'Non-Teaching Staff' : $type;
+    }
     $eval_theme = [
         'student'     => ['label' => 'Student Evaluation',      'color' => '#3B82F6', 'bg' => 'rgba(59,130,246,.07)',  'border' => 'rgba(59,130,246,.22)', 'desc' => 'Students evaluate teacher and staff they interact with.'],
         'peer'        => ['label' => 'Peer-to-Peer Evaluation',  'color' => '#7C3AED', 'bg' => 'rgba(124,58,237,.07)', 'border' => 'rgba(124,58,237,.22)', 'desc' => 'Teacher and staff evaluate colleagues they work with directly.'],
@@ -1088,6 +1131,20 @@ a { color:inherit; }
     }
     $staff_subroles = $subroles_by_type['Staff'] ?? [];
 
+    // Same cosmetic breakdown for the Peer-to-Peer "School" card: Principal
+    // vs Dean counts, shown the same way Staff shows Personnel/Cashier.
+    $school_subrole_labels = [
+        'Principal' => ['icon'=>'fa-user-tie',       'color'=>'#D97706'],
+        'Dean'      => ['icon'=>'fa-graduation-cap', 'color'=>'#D97706'],
+    ];
+    $school_subroles = [];
+    if (in_array('School', $per_user_targets)) {
+        foreach (($card_data['School']['users'] ?? []) as $su) {
+            $sr = ($su['role'] === 'principal') ? 'Principal' : 'Dean';
+            $school_subroles[$sr] = ($school_subroles[$sr] ?? 0) + 1;
+        }
+    }
+
     foreach ($card_data as $type => $data):
         $icon        = $icons[$type] ?? 'fa-user';
         $users       = $data['users'];
@@ -1116,7 +1173,7 @@ a { color:inherit; }
         <div class="sector-card-top">
             <span class="sector-label <?= $label_class ?>">
                 <i class="fa-solid <?= $icon ?>" style="color:<?= $icon_color ?>"></i>
-                <?= htmlspecialchars($type) ?>
+                <?= htmlspecialchars(displayTargetLabel($type, $active_eval)) ?>
             </span>
             <?php if ($is_staff): ?>
             <span class="per-user-pill staff-pill">
@@ -1132,6 +1189,12 @@ a { color:inherit; }
             <div class="subrole-chips">
                 <?php foreach ($staff_subroles as $sr => $cnt): ?>
                 <span class="subrole-chip"><i class="fa-solid <?= $staff_subrole_labels[$sr]['icon'] ?? 'fa-briefcase' ?>" style="font-size:9px;color:<?= $staff_subrole_labels[$sr]['color'] ?? '#94a3b8' ?>"></i> <?= $sr ?> (<?= $cnt ?>)</span>
+                <?php endforeach; ?>
+            </div>
+            <?php elseif ($type === 'School' && !empty($school_subroles)): ?>
+            <div class="subrole-chips">
+                <?php foreach ($school_subroles as $sr => $cnt): ?>
+                <span class="subrole-chip"><i class="fa-solid <?= $school_subrole_labels[$sr]['icon'] ?? 'fa-user-tie' ?>" style="font-size:9px;color:<?= $school_subrole_labels[$sr]['color'] ?? '#D97706' ?>"></i> <?= $sr ?> (<?= $cnt ?>)</span>
                 <?php endforeach; ?>
             </div>
             <?php endif; ?>
@@ -1245,7 +1308,7 @@ a { color:inherit; }
             <h1>
                 <i class="fa-solid <?= $icons[$selected_target] ?? 'fa-user' ?>"
                    style="color:<?= $hdr_color ?>;margin-right:8px"></i>
-                <?= htmlspecialchars($selected_target) ?>
+                <?= htmlspecialchars(displayTargetLabel($selected_target, $active_eval)) ?>
                 <span style="color:<?= $hdr_color ?>;font-size:20px;font-weight:400"> — <?= $eval_label ?></span>
             </h1>
             <p>
@@ -1260,7 +1323,7 @@ a { color:inherit; }
             <select onchange="window.location='?view=manage&target='+this.value+'&eval_type=<?= $active_eval ?>'"
                 style="background:var(--card-bg);border:1px solid var(--card-border);color:var(--text-dark);padding:9px 14px;border-radius:var(--radius);font-size:13px;font-family:'Inter',sans-serif;cursor:pointer;outline:none;">
                 <?php foreach ($active_categories as $sc): ?>
-                <option value="<?= $sc ?>" <?= $selected_target === $sc ? 'selected' : '' ?>><?= $sc ?></option>
+                <option value="<?= $sc ?>" <?= $selected_target === $sc ? 'selected' : '' ?>><?= htmlspecialchars(displayTargetLabel($sc, $active_eval)) ?></option>
                 <?php endforeach; ?>
             </select>
             <a href="?view=dashboard&eval_type=<?= $active_eval ?>" class="btn btn-back"><i class="fa-solid fa-circle-chevron-left"></i> Back</a>
@@ -1273,7 +1336,7 @@ a { color:inherit; }
             <div class="sidebar-title">
                 <i class="fa-solid <?= $icons[$selected_target] ?? 'fa-users' ?>"
                    style="<?= $is_staff_manage?'color:var(--staff)':($is_mr_manage?'color:var(--mr)':'') ?>"></i>
-                <?= htmlspecialchars($selected_target) ?>
+                <?= htmlspecialchars(displayTargetLabel($selected_target, $active_eval)) ?>
                 <span class="sidebar-count"><?= count($target_users) ?></span>
             </div>
 
@@ -1310,13 +1373,13 @@ a { color:inherit; }
             <div class="user-list-empty">
                 <i class="fa-solid <?= $icons[$selected_target] ?? 'fa-user-slash' ?>" style="font-size:22px;opacity:.3;display:block;margin-bottom:8px;<?= $is_staff_manage?'color:var(--staff)':($is_mr_manage?'color:var(--mr)':'') ?>"></i>
                 <?php if ($is_staff_manage): ?>
-                    No approved <?= htmlspecialchars($selected_target) ?> accounts yet.<br><small>Approve <?= htmlspecialchars($selected_target) ?> registrations in Manage Privileged and they'll appear here automatically.</small>
+                    No approved <?= htmlspecialchars(displayTargetLabel($selected_target, $active_eval)) ?> accounts yet.<br><small>Approve <?= htmlspecialchars($selected_target) ?> registrations in Manage Privileged and they'll appear here automatically.</small>
                 <?php elseif ($is_mr_manage): ?>
                     No multi-role <?= $mr_filter !== 'all' ? $mr_filter : 'users' ?> found.<br><small>A user appears here when they have an additional role/responsibility. Teaching assignments do not replace their Staff or Teacher context.</small>
                 <?php elseif ($is_fac_manage): ?>
                     No approved Faculty accounts yet.<br><small>Approve Faculty registrations in Manage Privileged and they'll appear here automatically.</small>
                 <?php else: ?>
-                    No eligible <?= htmlspecialchars($selected_target) ?> found.<br><small>This list updates automatically based on active roles and assignments — nothing to add here manually.</small>
+                    No eligible <?= htmlspecialchars(displayTargetLabel($selected_target, $active_eval)) ?> found.<br><small>This list updates automatically based on active roles and assignments — nothing to add here manually.</small>
                 <?php endif; ?>
             </div>
             <?php else: ?>
@@ -1327,7 +1390,7 @@ a { color:inherit; }
                     $is_nologin     = ($tu['source'] === 'admin_nologin');
                     $active_cls     = $is_active_item ? ('active'.($is_staff_manage?' staff-active':($is_mr_manage||$is_fac_manage?' mr-active':''))) : '';
                     $q_badge_cls    = $is_staff_manage ? 'staff-q' : 'mr-q';
-                    $sub            = ($selected_target === 'Staff') ? getSubRole($tu) : null;
+                    $sub            = ($selected_target === 'Staff') ? getSubRole($tu) : (($selected_target === 'School') ? ($tu['role'] === 'principal' ? 'Principal' : 'Dean') : null);
                     $sec_label      = secondaryRoleLabel($tu);
 
                     // Badge: per-user count for per-user targets, shared pool count for Teacher/Multi-Role
@@ -1564,7 +1627,7 @@ a { color:inherit; }
                 <div class="prompt-icon">
                     <i class="fa-solid <?= $icons[$selected_target] ?? 'fa-briefcase' ?>"></i>
                 </div>
-                <h3>Select a <?= htmlspecialchars($selected_target) ?></h3>
+                <h3>Select a <?= htmlspecialchars(displayTargetLabel($selected_target, $active_eval)) ?></h3>
                 <p>Choose a person from the list on the left to manage their individual <?= $eval_label ?> questions.</p>
                 <p style="font-size:12px;color:#9AA6B8;margin-top:4px">Each person has their own unique set of questions.</p>
             </div>
@@ -1581,7 +1644,7 @@ a { color:inherit; }
                 <i class="fa-solid fa-user-pen" style="color:<?= $hdr_color ?>"></i>
                 <p>
                     <strong style="color:<?= $hdr_color ?>">Individual question set</strong>
-                    — Questions added here are exclusive to this person. Other <?= htmlspecialchars($selected_target) ?> members are not affected.
+                    — Questions added here are exclusive to this person. Other <?= htmlspecialchars(displayTargetLabel($selected_target, $active_eval)) ?> members are not affected.
                 </p>
             </div>
 

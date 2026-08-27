@@ -114,7 +114,7 @@ $valid_roles = ['principal', 'dean', 'teacher', 'staff', 'student'];
 $role_labels = [
     'principal'             => 'Principal',
     'dean'                  => 'Dean',
-    'teacher'               => 'Teacher',   // display label only — role value stays 'teacher'
+    'teacher'               => 'Faculty',   // display label only — role value stays 'teacher'
     'staff'                 => 'Staff',
     'student'               => 'Student',
 ];
@@ -146,6 +146,15 @@ $year_levels = [
 ];
 $college_levels = ['1st Year College','2nd Year College','3rd Year College','4th Year College'];
 $period_options = ['1st Semester','2nd Semester','Summer'];
+
+// Active evaluation period's semester — used to flag College teachers/staff
+// whose assigned_period doesn't match the term that's actually running
+// right now (e.g. assigned to "2nd Semester" while the active period is
+// "1st Semester"). Same real-world consequence as having no period set at
+// all: they won't be visible to any student this term, so it needs the
+// same kind of warning, not the normal "assigned" pill.
+$active_period_row     = $mysqli->query("SELECT semester FROM evaluation_periods WHERE is_active=1 LIMIT 1")->fetch_assoc();
+$active_period_semester = $active_period_row['semester'] ?? null;
 
 // School-level groupings — used for the Student "Filter by School Level" control
 $school_levels = [
@@ -602,27 +611,27 @@ foreach ($valid_roles as $r) { $roleTotals[$r] = array_sum($countGrid[$r]); }
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
 :root{
-  --page-bg:#F8FAFC;--card-bg:#FFFFFF;--inner:#F1F5F9;--card-border:#CBD5E1;
-  --text-dark:#0F172A;--text-dim:#475569;--track-bg:#CBD5E1;
-  --page-text-dark:#0F172A;--page-text-dim:#475569;
-  --radius:10px;--card-shadow:0 1px 2px rgba(15,23,42,.04),0 4px 12px rgba(15,23,42,.05);
-  --accent:#3B82F6;--accent-bg:rgba(59,130,246,.07);--accent-border:rgba(59,130,246,.22);--hover:#5B9BFA;
-  --teal:#0D9488;--teal-bg:rgba(13,148,136,.14);--teal-border:rgba(13,148,136,.32);
+  --page-bg:#F8FAFC;--card-bg:#FFFFFF;--inner:#F4F8FF;--card-border:#B9CDE5;
+  --text-dark:#0B1F3A;--text-dim:#67819E;--track-bg:#B9CDE5;
+  --page-text-dark:#0B1F3A;--page-text-dim:#67819E;
+  --radius:10px;--card-shadow:0 1px 2px rgba(30,82,144,.05),0 4px 12px rgba(30,82,144,.06);
+  --accent:#2563EB;--accent-bg:rgba(37,99,235,.08);--accent-border:rgba(37,99,235,.16);--hover:#5B9BFA;
+  --teal:#0E7490;--teal-bg:rgba(13,148,136,.14);--teal-border:rgba(13,148,136,.32);
   --pink:#EC4899;--pink-bg:rgba(236,72,153,.14);--pink-border:rgba(236,72,153,.32);
-  --amber:#D97706;--amber-bg:rgba(217,119,6,.08);--amber-border:rgba(217,119,6,.24);
-  --success:#059669;--success-bg:rgba(5,150,105,.1);--success-border:rgba(5,150,105,.25);
-  --danger:#DC2626;--danger-bg:rgba(220,38,38,.08);--danger-border:rgba(220,38,38,.22);
+  --amber:#C77A08;--amber-bg:rgba(217,119,6,.08);--amber-border:rgba(217,119,6,.24);
+  --success:#0F9F6E;--success-bg:rgba(5,150,105,.1);--success-border:rgba(5,150,105,.25);
+  --danger:#D6455D;--danger-bg:rgba(220,38,38,.08);--danger-border:rgba(220,38,38,.22);
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-html{scrollbar-width:thin;scrollbar-color:#C7D2E3 transparent;}
+html{scrollbar-width:thin;scrollbar-color:#B8CCE5 transparent;}
 body{font-family:'Inter',sans-serif;background:var(--page-bg);color:var(--text-dark);min-height:100vh;padding:36px 28px;}
 ::-webkit-scrollbar{width:8px;height:8px;}
 ::-webkit-scrollbar-button{display:none;height:0;width:0;}
 ::-webkit-scrollbar-track{background:transparent;}
-::-webkit-scrollbar-thumb{background:#C7D2E3;border-radius:8px;}
+::-webkit-scrollbar-thumb{background:#B8CCE5;border-radius:8px;}
 ::-webkit-scrollbar-thumb:hover{background:#A6B2C4;}
 
-.toast{position:fixed;top:20px;right:20px;z-index:9999;background:#E4F7F0;border:1px solid #BEEBD8;color:#0D7A4E;padding:12px 20px;border-radius:8px;font-size:13px;display:flex;align-items:center;gap:8px;animation:slideIn .3s ease,fadeOut .4s ease 4s forwards;max-width:420px;box-shadow:var(--card-shadow);}
+.toast{position:fixed;top:20px;right:20px;z-index:9999;background:#E8F8F1;border:1px solid #BEEBD8;color:#0D7A4E;padding:12px 20px;border-radius:8px;font-size:13px;display:flex;align-items:center;gap:8px;animation:slideIn .3s ease,fadeOut .4s ease 4s forwards;max-width:420px;box-shadow:var(--card-shadow);}
 .toast.error{background:var(--danger-bg);border-color:var(--danger-border);color:var(--danger);}
 @keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
 @keyframes fadeOut{to{opacity:0;pointer-events:none}}
@@ -641,8 +650,8 @@ body{font-family:'Inter',sans-serif;background:var(--page-bg);color:var(--text-d
 .sector-tabs{display:flex;gap:4px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius);padding:4px;margin-bottom:14px;width:fit-content;flex-wrap:wrap;box-shadow:var(--card-shadow);}
 .sector-tab{padding:9px 20px;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;transition:all .22s;background:transparent;color:var(--text-dim);display:flex;align-items:center;gap:7px;text-decoration:none;font-family:'Inter',sans-serif;}
 .sector-tab.active{background:var(--accent);color:#fff;}
-.sector-tab:not(.active):hover{color:var(--text-dark);background:rgba(255,255,255,.05);}
-.tab-badge{background:rgba(15,23,42,.12);border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700;color:var(--text-dim);}
+.sector-tab:not(.active):hover{color:var(--text-dark);background:rgba(37,99,235,.05);}
+.tab-badge{background:rgba(30,82,144,.13);border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700;color:var(--text-dim);}
 .sector-tab.active .tab-badge{background:rgba(255,255,255,.28);color:#fff;}
 .tab-badge.pending-badge{background:var(--amber-bg);color:var(--amber);}
 
@@ -651,7 +660,7 @@ body{font-family:'Inter',sans-serif;background:var(--page-bg);color:var(--text-d
 .status-tab.active[data-s="pending"]{background:var(--amber-bg);color:var(--amber);}
 .status-tab.active[data-s="approved"]{background:var(--success-bg);color:var(--success);}
 .status-tab.active[data-s="blocked"]{background:var(--danger-bg);color:var(--danger);}
-.status-tab:not(.active):hover{color:var(--text-dark);background:rgba(255,255,255,.05);}
+.status-tab:not(.active):hover{color:var(--text-dark);background:rgba(37,99,235,.05);}
 
 .stats-row{display:flex;gap:16px;margin-bottom:24px;flex-wrap:wrap;}
 .stat-card{background:var(--card-bg);border:1px solid var(--card-border);border-top:4px solid var(--accent);border-radius:14px;padding:16px 22px;flex:1;min-width:130px;box-shadow:var(--card-shadow);}
@@ -692,7 +701,7 @@ tbody td{padding:14px 16px;font-size:14px;vertical-align:middle;}
 
 .action-wrap{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
 .btn-icon{background:var(--inner);border:1px solid var(--card-border);border-radius:6px;padding:6px 10px;color:var(--text-dim);cursor:pointer;font-size:13px;transition:all .2s;font-family:'Inter',sans-serif;}
-.btn-icon:hover{background:rgba(255,255,255,.06);color:var(--text-dark);}
+.btn-icon:hover{background:rgba(37,99,235,.06);color:var(--text-dark);}
 .btn-icon.approve{border-color:var(--success-border);color:var(--success);}
 .btn-icon.approve:hover{background:var(--success-bg);}
 .btn-icon.block{border-color:var(--danger-border);color:var(--danger);}
@@ -739,12 +748,12 @@ tbody td{padding:14px 16px;font-size:14px;vertical-align:middle;}
 .yl-check input{width:auto;}
 .yl-group-label{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);margin:10px 0 6px;font-weight:700;}
 
-.bulk-bar{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;padding:12px 18px;display:none;align-items:center;gap:12px;box-shadow:0 24px 64px rgba(15,23,42,.10);z-index:150;flex-wrap:wrap;justify-content:center;}
+.bulk-bar{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;padding:12px 18px;display:none;align-items:center;gap:12px;box-shadow:0 24px 64px rgba(30,82,144,.11);z-index:150;flex-wrap:wrap;justify-content:center;}
 .bulk-bar.show{display:flex;}
 .bulk-bar span{font-size:13px;font-weight:600;color:var(--text-dark);white-space:nowrap;}
 .bulk-bar select{background:var(--inner);border:1px solid var(--card-border);border-radius:8px;padding:8px 12px;color:var(--text-dark);font-size:13px;font-family:'Inter',sans-serif;}
 .bulk-btn{padding:8px 16px;border:none;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;display:inline-flex;align-items:center;gap:6px;}
-.bulk-btn.approve{background:var(--success);color:#F1F5F9;}
+.bulk-btn.approve{background:var(--success);color:#F4F8FF;}
 .bulk-btn.block{background:var(--danger);color:#fff;}
 .bulk-btn.neutral{background:var(--accent);color:#fff;}
 .bulk-btn.clear{background:transparent;border:1px solid var(--card-border);color:var(--text-dim);}
@@ -755,82 +764,83 @@ tbody td{padding:14px 16px;font-size:14px;vertical-align:middle;}
 
 /* Admin Module light design system — matches the dashboard */
 :root{
-  --page-bg:#FFFFFF; --card-bg:#FFFFFF; --card-border:#E2E8F0;
-  --inner:#F4F7FB; --text-dark:#172033; --text-dim:#475569;
-  --light:#172033; --muted:#475569; --dark:#FFFFFF; --mid:#FFFFFF;
-  --border:#E2E8F0; --accent:#3B82F6; --blue:#3B82F6;
-  --gold:#D97706; --gold-h:#F59E0B; --teal:#0D9488; --violet:#7C3AED;
-  --danger:#DC2626; --success:#059669; --radius:12px;
-  --card-shadow:0 2px 4px rgba(15,23,42,.05),0 6px 16px rgba(15,23,42,.06);
+  --page-bg:#FFFFFF; --card-bg:#FFFFFF; --card-border:#D8E5F4;
+  --inner:#F7FAFF; --text-dark:#0B1F3A; --text-dim:#67819E;
+  --light:#0B1F3A; --muted:#67819E; --dark:#FFFFFF; --mid:#FFFFFF;
+  --border:#D8E5F4; --accent:#2563EB; --blue:#2563EB;
+  --gold:#C77A08; --gold-h:#D69612; --teal:#0E7490; --violet:#4968C8;
+  --danger:#D6455D; --success:#0F9F6E; --radius:12px;
+  --card-shadow:0 2px 4px rgba(30,82,144,.06),0 6px 16px rgba(30,82,144,.08);
 }
 html{background:#fff;color-scheme:light;}
-body{background:#fff !important;color:#172033 !important;}
+body{background:#fff !important;color:#0B1F3A !important;}
 a{color:inherit;}
-.page-header h1,.page-title,.et-title,.section-title{color:#172033 !important;}
-.page-header p,.page-sub,.et-sub,.et-updated,.muted,.hint{color:#475569 !important;}
-input,select,textarea{background:#fff !important;color:#172033 !important;border-color:#CBD5E1 !important;}
+.page-header h1,.page-title,.et-title,.section-title{color:#0B1F3A !important;}
+.page-header p,.page-sub,.et-sub,.et-updated,.muted,.hint{color:#67819E !important;}
+input,select,textarea{background:#fff !important;color:#0B1F3A !important;border-color:#B9CDE5 !important;}
 button{font-family:inherit;}
 .table-wrap,.content-panel,.create-panel,.period-card,.stat-card,.sector-card,.person-row,
 .sum-card,.standing-panel,.eval-card,.eval-banner,.info-banner,.section,.shell .section,
 .history-card,.gl-card,.amber-card,.green-card,.red-card{
-  background:#fff !important;border-color:#E2E8F0 !important;box-shadow:0 2px 4px rgba(15,23,42,.04),0 6px 16px rgba(15,23,42,.05) !important;
+  background:#fff !important;border-color:#D8E5F4 !important;box-shadow:0 2px 4px rgba(30,82,144,.05),0 6px 16px rgba(30,82,144,.06) !important;
 }
 .sector-tabs,.eval-switcher,.tabs,.level-tabs,.status-tabs{
-  background:#fff !important;border-color:#E2E8F0 !important;box-shadow:0 2px 4px rgba(15,23,42,.04) !important;
+  background:#fff !important;border-color:#D8E5F4 !important;box-shadow:0 2px 4px rgba(30,82,144,.05) !important;
 }
-.sector-tab,.eval-tab,.tab,.level-tab,.status-tab{color:#475569 !important;}
-.sector-tab:hover,.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover{color:#172033 !important;background:#F4F7FB !important;}
+.sector-tab,.eval-tab,.tab,.level-tab,.status-tab{color:#67819E !important;}
+.sector-tab:hover,.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover{color:#0B1F3A !important;background:#F7FAFF !important;}
 thead tr{background:#F8FAFC !important;}
 tbody tr:hover{background:#F8FAFC !important;}
-.btn-cancel,.btn-icon,.btn-back{background:#fff !important;color:#172033 !important;border-color:#CBD5E1 !important;}
-.empty-state,.empty-cta{color:#475569 !important;}
+.btn-cancel,.btn-icon,.btn-back{background:#fff !important;color:#0B1F3A !important;border-color:#B9CDE5 !important;}
+.empty-state,.empty-cta{color:#67819E !important;}
 ::-webkit-scrollbar-track{background:#fff;}
-::-webkit-scrollbar-thumb{background:#CBD5E1;border:2px solid #fff;}
+::-webkit-scrollbar-thumb{background:#B9CDE5;border:2px solid #fff;}
 
 body{padding:28px !important;}
 .page-header{padding:22px 26px !important;}
-.status-tab.active,.sector-tab.active{background:#3B82F6 !important;color:#fff !important;}
-.info-banner{background:#EFF6FF !important;color:#475569 !important;}
+.status-tab.active,.sector-tab.active{background:#2563EB !important;color:#fff !important;}
+.info-banner{background:#E6F0FF !important;color:#67819E !important;}
 
 
 /* ── SHARP LIGHT ADMIN UI ── */
 html { background:#F8FAFC; }
 body {
-  color:#0F172A !important;
+  color:#0B1F3A !important;
   background:#F8FAFC !important;
   -webkit-font-smoothing:antialiased;
   text-rendering:optimizeLegibility;
 }
-h1,h2,h3,h4,h5,h6 { color:#0F172A; letter-spacing:-.01em; }
-p, .subtitle, .description, .helper, .muted, small { color:#475569; }
-label, th { color:#334155; font-weight:600; }
-td { color:#0F172A; }
+h1,h2,h3,h4,h5,h6 { color:#0B1F3A; letter-spacing:-.01em; }
+p, .subtitle, .description, .helper, .muted, small { color:#67819E; }
+label, th { color:#294765; font-weight:600; }
+td { color:#0B1F3A; }
 input, select, textarea {
-  color:#0F172A;
+  color:#0B1F3A;
   background:#FFFFFF;
-  border-color:#CBD5E1;
+  border-color:#B9CDE5;
 }
-input::placeholder, textarea::placeholder { color:#94A3B8; }
+input::placeholder, textarea::placeholder { color:#91A6BE; }
 .card, .panel, .section, .table-card, .content-card {
-  border-color:#CBD5E1;
-  box-shadow:0 4px 14px rgba(15,23,42,.07);
+  border-color:#B9CDE5;
+  box-shadow:0 4px 14px rgba(30,82,144,.09);
 }
 button, .btn { font-weight:700; }
 a { color:inherit; }
 
 /* Persistent role and registration-status icon coding */
 .role-executive_assistant > i{color:#0F9E9A !important;}
-.role-school_head > i{color:#D97706 !important;}
+.role-school_head > i{color:#C77A08 !important;}
 .role-principal > i{color:#2563EB !important;}
-.role-dean > i{color:#7C3AED !important;}
+.role-dean > i{color:#4968C8 !important;}
 .role-teacher > i{color:#16A34A !important;}
 .role-staff > i{color:#0F9E9A !important;}
 .role-student > i{color:#2563EB !important;}
-.status-pending > i{color:#D97706 !important;}
+.status-pending > i{color:#C77A08 !important;}
 .status-approved > i{color:#16A34A !important;}
 .status-blocked > i{color:#EF4444 !important;}
 
 </style>
+    <link rel="stylesheet" href="admin_ui_theme.css">
 </head>
 <body>
 
@@ -846,7 +856,7 @@ a { color:inherit; }
 <div class="page-header">
     <div>
         <h1>Manage Registrations</h1>
-        <p>Review self-registered accounts and approve or block access — Executive Assistant, School Head, Principal, Dean, Teacher, Staff, and Student</p>
+        <p>Review self-registered accounts and approve or block access — Executive Assistant, School Head, Principal, Dean, Faculty, Staff, and Student</p>
     </div>
 </div>
 
@@ -858,6 +868,17 @@ a { color:inherit; }
         approving un-blocks, blocking revokes access.
     </span>
 </div>
+
+<?php if (($viewRole === 'teacher' || $viewRole === 'staff') && $active_period_semester === null): ?>
+<div class="info-banner" style="background:#3f1d1d;border-color:#7f1d1d;color:#fca5a5;">
+    <i class="fa-solid fa-triangle-exclamation"></i>
+    <span>
+        <strong>No evaluation period is currently active.</strong> Until one is turned on in Manage Periods, no College
+        Faculty or Staff will be visible to any student for evaluation — regardless of their year level or period
+        assignment below.
+    </span>
+</div>
+<?php endif; ?>
 
 <div class="sector-tabs">
     <?php foreach ($valid_roles as $r):
@@ -980,10 +1001,12 @@ a { color:inherit; }
         </td>
         <td>
             <?php if ($u['has_college']): ?>
-                <?php if (!empty($u['assigned_period'])): ?>
-                <span class="year-level-pill" style="background:var(--teal-bg);color:var(--teal);"><i class="fa-solid fa-calendar-days" style="font-size:9px"></i> <?= htmlspecialchars($u['assigned_period']) ?></span>
+                <?php if (empty($u['assigned_period'])): ?>
+                <span class="year-level-pill" style="background:#3f1d1d;color:#fca5a5;" title="This person has a College year level but no period assigned yet — they will not appear to any student for evaluation until a period is set."><i class="fa-solid fa-triangle-exclamation" style="font-size:9px"></i> No period — won't show to students</span>
+                <?php elseif ($active_period_semester !== null && trim((string)$u['assigned_period']) !== trim((string)$active_period_semester)): ?>
+                <span class="year-level-pill" style="background:#3f2d0f;color:#fbbf24;" title="Assigned to <?= htmlspecialchars($u['assigned_period']) ?>, but the active evaluation period this term is <?= htmlspecialchars($active_period_semester) ?> — they will not appear to any student until the active period matches or their assignment is updated."><i class="fa-solid fa-triangle-exclamation" style="font-size:9px"></i> <?= htmlspecialchars($u['assigned_period']) ?> — not active this term</span>
                 <?php else: ?>
-                <span style="color:var(--text-dim);font-size:12px;">Unassigned</span>
+                <span class="year-level-pill" style="background:var(--teal-bg);color:var(--teal);"><i class="fa-solid fa-calendar-days" style="font-size:9px"></i> <?= htmlspecialchars($u['assigned_period']) ?></span>
                 <?php endif; ?>
             <?php else: ?>
                 <span style="color:var(--text-dim);font-size:12px;">—</span>

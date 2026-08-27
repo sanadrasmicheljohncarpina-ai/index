@@ -10,9 +10,9 @@ if ($mysqli->connect_errno) {
 // --- DUMMY SESSION FOR DEVELOPMENT ---
 // Once your login system is active, remove these lines.
 if (!isset($_SESSION['user_id'])) {
-    $_SESSION['user_id'] = 1; // Simulating Dr. Alan Ramos (Teacher)
+    $_SESSION['user_id'] = 1; // Simulating Dr. Alan Ramos (Faculty)
     $_SESSION['name'] = "Dr. Alan Ramos";
-    $_SESSION['designation'] = "Teacher";
+    $_SESSION['designation'] = "Faculty";
 }
 
 $currentUserId = $_SESSION['user_id'];

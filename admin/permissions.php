@@ -47,7 +47,7 @@ function render_view_only_banner(string $feature_label): void {
     ?>
     <div style="background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);border-radius:10px;
                 padding:12px 18px;margin-bottom:20px;display:flex;gap:12px;align-items:center;
-                font-size:13px;color:#fbbf24;font-family:'DM Sans',sans-serif;">
+                font-size:13px;color:#C77A08;font-family:'DM Sans',sans-serif;">
         <i class="fa-solid fa-lock" style="flex-shrink:0"></i>
         <span>
             <strong>View-only access.</strong>

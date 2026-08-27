@@ -590,13 +590,22 @@ if (isset($_GET['get_questions'])) {
 
         // ── PRINCIPAL / DEAN → SCHOOL HEAD ───────────────────────
         // Questionnaire stores Principal and Dean as per-user question sets.
+        // IMPORTANT: this must read the STUDENT-EVALUATION pool
+        // (eval_type='student'), which is what the EA assigns under
+        // Questionnaire → Student Evaluation → School Head → Principal/Dean.
+        // eval_type='school_head' is a DIFFERENT, unrelated pool used only
+        // when the EA evaluates the Principal/Dean directly (Questionnaire
+        // → School Head Evaluation). Reading that pool here was the bug:
+        // it made students see questions the EA never assigned for student
+        // evaluation, just because the EA's-own-evaluation pool happened
+        // to have rows in it.
         if (in_array($role, ['principal', 'dean'], true)) {
             $pd_target_type = ucfirst($role);
             $pdq = $mysqli->prepare(
                 "SELECT id, question_text, category,
                         'user' AS question_source
                  FROM user_questions
-                 WHERE user_id = ? AND target_type = ? AND eval_type = 'school_head'
+                 WHERE user_id = ? AND target_type = ? AND eval_type = 'student'
                  ORDER BY category, id"
             );
             $pdq->bind_param("is", $target_id, $pd_target_type);
@@ -607,7 +616,7 @@ if (isset($_GET['get_questions'])) {
             if (empty($pd_questions)) {
                 throw new Exception(
                     "No questions have been set up for this person yet. " .
-                    "Please ask the admin to add questions under Questionnaire → School Head → $pd_target_type."
+                    "Please ask the admin to add questions under Questionnaire → Student Evaluation → School Head → $pd_target_type."
                 );
             }
 
@@ -699,7 +708,10 @@ $is_multi_role = userHasAdditionalRole($userRow) || ($has_staff_context && $has_
 // ── FETCH EVALUATEES ──────────────────────────────────────────────
 // Build contexts per person instead of first filtering people and then
 // guessing their category.  This is the authoritative student visibility rule.
-$grouped = ['Faculty'=>['Teacher'=>[],'Staff'=>[]], 'Multi-Role'=>[]];
+// Faculty and Staff are independent top-level categories -- matching
+// admin/questionnaire.php's $system_categories exactly (Teacher/"Faculty",
+// Staff, Multi-Role, School Head are four separate tabs, never merged).
+$grouped = ['Faculty'=>[], 'Staff'=>[], 'Multi-Role'=>[]];
 
 $ures = $mysqli->query("SELECT id, full_name, designation, photo, role, secondary_role, assigned_period
                         FROM users
@@ -730,13 +742,13 @@ $is_multi    = ec_has_additional_role($u) || ($has_staff && $has_assign);
     // eligibility check above.
     $semester_match = teacherMatchesActiveSemester($mysqli, (int)$u['id'], $student_level, $active_period_semester);
     if ($has_teacher && $base_match && $semester_match) {
-        $grouped['Faculty']['Teacher'][] = $u;
+        $grouped['Faculty'][] = $u;
     }
 
     // Base Staff context: institution-wide only when there is no teaching
     // assignment; otherwise only at the assigned year levels.
     if ($has_staff && (!$has_assign || $base_match)) {
-        $grouped['Faculty']['Staff'][] = $u;
+        $grouped['Staff'][] = $u;
     }
 
     // Multi-Role context: additional responsibility is independent of the
@@ -800,11 +812,11 @@ if (!empty($school_head_members)) {
     $grouped['School Head'] = $school_head_members;
 }
 
-// Remove Faculty entirely if both Teacher and Staff are empty, so
-// students only see categories with people in them.
-if (empty($grouped['Faculty']['Teacher']) && empty($grouped['Faculty']['Staff'])) {
-    unset($grouped['Faculty']);
-}
+// Drop any category that ended up with nobody in it, so students only
+// see categories with people in them. Faculty and Staff are now
+// independent -- one can be empty while the other still shows.
+if (empty($grouped['Faculty'])) unset($grouped['Faculty']);
+if (empty($grouped['Staff']))   unset($grouped['Staff']);
 
 // ── FETCH ALREADY EVALUATED IDs (CURRENT PERIOD ONLY) ─────────
 // evaluation_tracker.period_id scopes a submission to one evaluation
@@ -864,7 +876,7 @@ $group_colors = [
 ];
 
 // Progress counts evaluation contexts, not unique accounts.
-$total_evaluatees=count($grouped['Faculty']['Teacher']??[])+count($grouped['Faculty']['Staff']??[])+count($grouped['Multi-Role']??[])+count($grouped['School Head']??[]);
+$total_evaluatees=count($grouped['Faculty']??[])+count($grouped['Staff']??[])+count($grouped['Multi-Role']??[])+count($grouped['School Head']??[]);
 $total_done=count($done_ids);
 $total_pending     = max(0, $total_evaluatees - $total_done);
 $pct              = $total_evaluatees > 0 ? round(($total_done / $total_evaluatees) * 100) : 0;
@@ -1279,15 +1291,15 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
             <div class="page-sub">Select a category to see who is available for evaluation. A person may appear in more than one evaluation context when they have additional responsibilities.</div>
 
             <?php
-            // Build the top-level display list: "Faculty" (Teacher + Staff
-            // combined, for the card/stats only -- the panel below still
-            // separates them into subsections), "Multi-Role", and
-            // "School Head".
+            // Build the top-level display list: "Faculty", "Staff",
+            // "Multi-Role", and "School Head" -- four independent tabs,
+            // matching admin/questionnaire.php's category structure exactly.
             $top_level = [];
-            if (isset($grouped['Faculty'])) {
-                $teachers=array_map(fn($p)=>array_merge($p,['_evaluation_context'=>'teacher']),$grouped['Faculty']['Teacher']);
-                $staffers=array_map(fn($p)=>array_merge($p,['_evaluation_context'=>'staff']),$grouped['Faculty']['Staff']);
-                $top_level['Faculty']=array_merge($teachers,$staffers);
+            if (!empty($grouped['Faculty'])) {
+                $top_level['Faculty']=array_map(fn($p)=>array_merge($p,['_evaluation_context'=>'teacher']),$grouped['Faculty']);
+            }
+            if (!empty($grouped['Staff'])) {
+                $top_level['Staff']=array_map(fn($p)=>array_merge($p,['_evaluation_context'=>'staff']),$grouped['Staff']);
             }
             if (!empty($grouped['Multi-Role'])) {
                 $top_level['Multi-Role']=array_map(fn($p)=>array_merge($p,['_evaluation_context'=>'multi_role']),$grouped['Multi-Role']);
@@ -1398,34 +1410,9 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
                     </button>
                 </div>
 
-                <?php if ($group_name === 'Faculty'): ?>
-                    <?php
-                    // Faculty splits into Teacher / Staff subsections in the
-                    // SAME panel -- students never see a separate Faculty
-                    // sub-tab, they just scroll through both groups here.
-                    $subgroups = [
-                        'Teacher'=>array_map(fn($p)=>array_merge($p,['_evaluation_context'=>'teacher']),$grouped['Faculty']['Teacher']),
-                        'Staff'=>array_map(fn($p)=>array_merge($p,['_evaluation_context'=>'staff']),$grouped['Faculty']['Staff']),
-                    ];
-                    foreach ($subgroups as $sub_name => $sub_persons):
-                        if (empty($sub_persons)) continue;
-                        $sub_icon  = $group_icons[$sub_name] ?? 'fa-user';
-                        $sub_color = $group_colors[$sub_name] ?? '#D97706';
-                    ?>
-                    <div class="subgroup-header" style="color:<?= $sub_color ?>;">
-                        <i class="fa-solid <?= $sub_icon ?>"></i>
-                        <span style="color:#fff;"><?= htmlspecialchars($sub_name) ?></span>
-                        <span class="subgroup-count">(<?= count($sub_persons) ?>)</span>
-                    </div>
-                    <div class="members-grid">
-                        <?php foreach ($sub_persons as $p) echo render_person_card($p, $done_ids, $period_is_open); ?>
-                    </div>
-                    <?php endforeach; ?>
-                <?php else: ?>
-                    <div class="members-grid">
-                        <?php foreach ($persons as $p) echo render_person_card($p, $done_ids, $period_is_open); ?>
-                    </div>
-                <?php endif; ?>
+                <div class="members-grid">
+                    <?php foreach ($persons as $p) echo render_person_card($p, $done_ids, $period_is_open); ?>
+                </div>
             </div>
             <?php endforeach; ?>
 

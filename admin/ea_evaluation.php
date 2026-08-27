@@ -128,13 +128,13 @@ function e($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --page-bg:#F8FAFC;--card-bg:#FFFFFF;--inner:#F1F5F9;--card-border:#CBD5E1;
-  --text-dark:#0F172A;--text-dim:#475569;
-  --radius:10px;--card-shadow:0 1px 2px rgba(15,23,42,.04),0 4px 12px rgba(15,23,42,.05);
-  --accent:#3B82F6;--accent-bg:rgba(59,130,246,.08);--accent-border:rgba(59,130,246,.22);--hover:#2563EB;
-  --amber:#D97706;--amber-bg:rgba(217,119,6,.08);--amber-border:rgba(217,119,6,.24);
-  --success:#059669;--success-bg:rgba(5,150,105,.1);--success-border:rgba(5,150,105,.25);
-  --danger:#DC2626;--danger-bg:rgba(220,38,38,.08);--danger-border:rgba(220,38,38,.22);
+  --page-bg:#F8FAFC;--card-bg:#FFFFFF;--inner:#F4F8FF;--card-border:#B9CDE5;
+  --text-dark:#0B1F3A;--text-dim:#67819E;
+  --radius:10px;--card-shadow:0 1px 2px rgba(30,82,144,.05),0 4px 12px rgba(30,82,144,.06);
+  --accent:#2563EB;--accent-bg:rgba(37,99,235,.08);--accent-border:rgba(37,99,235,.16);--hover:#2563EB;
+  --amber:#C77A08;--amber-bg:rgba(217,119,6,.08);--amber-border:rgba(217,119,6,.24);
+  --success:#0F9F6E;--success-bg:rgba(5,150,105,.1);--success-border:rgba(5,150,105,.25);
+  --danger:#D6455D;--danger-bg:rgba(220,38,38,.08);--danger-border:rgba(220,38,38,.22);
 }
 *{box-sizing:border-box} body{margin:0;background:var(--page-bg);color:var(--text-dark);font-family:'Inter',Segoe UI,Arial,sans-serif}
 .wrap{max-width:1320px;margin:auto;padding:34px}
@@ -158,7 +158,7 @@ function e($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 .eval-tab{padding:10px 20px;border-radius:7px;font-size:13.5px;font-weight:700;color:var(--text-dim);text-decoration:none;display:flex;align-items:center;gap:8px}
 .eval-tab.active{background:var(--accent);color:#fff}
 .eval-tab:not(.active):hover{background:var(--inner);color:var(--text-dark)}
-.eval-tab .badge{background:rgba(15,23,42,.12);border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700}
+.eval-tab .badge{background:rgba(30,82,144,.13);border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700}
 .eval-tab.active .badge{background:rgba(255,255,255,.28)}
 
 .table-wrap{background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;overflow:hidden;box-shadow:var(--card-shadow)}
@@ -179,11 +179,12 @@ tbody td{padding:14px 18px;font-size:13.5px;vertical-align:middle}
 .btn-eval{background:var(--accent);border:none;color:#fff;padding:8px 15px;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
 .btn-eval:hover{background:var(--hover)}
 .btn-view{background:transparent;border:1px solid var(--card-border);color:var(--text-dim);padding:8px 15px;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;margin-left:6px}
-.btn-view:hover{color:var(--text-dark);border-color:#94A3B8}
+.btn-view:hover{color:var(--text-dark);border-color:#91A6BE}
 .empty-state{text-align:center;padding:56px 20px;color:var(--text-dim)}
 .empty-state i{font-size:36px;margin-bottom:14px;display:block;opacity:.3}
 @media(max-width:900px){.card-grid{grid-template-columns:1fr}.wrap{padding:20px}}
 </style>
+    <link rel="stylesheet" href="admin_ui_theme.css">
 </head>
 <body>
 <main class="wrap">

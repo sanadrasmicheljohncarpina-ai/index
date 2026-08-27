@@ -18,7 +18,7 @@ if (empty($_SESSION['user_id']) || $_SESSION['role'] !== 'teacher') {
 
 $user_id     = $_SESSION['user_id'];
 $full_name   = $_SESSION['full_name'];
-$designation = $_SESSION['designation'] ?? 'Teacher';
+$designation = $_SESSION['designation'] ?? 'Faculty';
 $page        = $_GET['page'] ?? 'dashboard';
 
 // ── CSRF TOKEN ────────────────────────────────────────────────
@@ -197,7 +197,7 @@ function eval_type_label($eval_type, $peer_group = null) {
         default:                      return ucwords(str_replace('_', ' ', $eval_type ?: 'Evaluation'));
     }
 }
-$peer_group_labels = ['teacher' => 'Teacher', 'staff' => 'Staff', 'school_head' => 'School Head'];
+$peer_group_labels = ['teacher' => 'Faculty', 'staff' => 'Staff', 'school_head' => 'School Head'];
 
 // ── ADD peer_group COLUMN TO evaluation_tracker (idempotent) ──
 // Shared table with the staff dashboard — the column may already exist
@@ -1620,12 +1620,12 @@ $staff_count = count(array_filter($peers_all, fn($p) => ($p['role'] ?? '') === '
 
 <div class="section-card">
     <div class="section-title"><i class="fa-solid fa-clipboard-check" style="color:var(--teal)"></i> Evaluation</div>
-    <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Choose who you want to evaluate. Faculty can evaluate fellow teachers, staff members, or the School Heads (Dean and Principal).</p>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Choose who you want to evaluate. Faculty can evaluate fellow faculty members, staff members, or the School Heads (Dean and Principal).</p>
 
     <div class="fg-label" style="margin-bottom:10px;"><i class="fa-solid fa-bolt" style="margin-right:5px"></i>Step 1: Select Evaluation Group</div>
     <div class="desig-select-chips">
         <a href="faculty_dashboard.php?page=peer&group=teacher" class="desig-select-chip">
-            <i class="fa-solid fa-chalkboard-user" style="color:var(--teal-hover)"></i> Teacher <span class="dsc-count">(<?= $teacher_count ?>)</span>
+            <i class="fa-solid fa-chalkboard-user" style="color:var(--teal-hover)"></i> Faculty <span class="dsc-count">(<?= $teacher_count ?>)</span>
         </a>
         <a href="faculty_dashboard.php?page=peer&group=staff" class="desig-select-chip">
             <i class="fa-solid fa-briefcase" style="color:var(--teal-hover)"></i> Staff <span class="dsc-count">(<?= $staff_count ?>)</span>
@@ -1713,7 +1713,7 @@ $staff_count = count(array_filter($peers_all, fn($p) => ($p['role'] ?? '') === '
     <?php endif; ?>
     <div>
         <div class="eval-name"><?= htmlspecialchars($peer_target['full_name']) ?></div>
-        <div class="eval-desig"><?= htmlspecialchars($peer_target['designation'] ?? 'Teacher') ?></div>
+        <div class="eval-desig"><?= htmlspecialchars($peer_target['designation'] ?? 'Faculty') ?></div>
     </div>
 </div>
 
@@ -1787,7 +1787,7 @@ $staff_count = count(array_filter($peers_all, fn($p) => ($p['role'] ?? '') === '
 
 <div style="background:rgba(240,84,84,.08);border:1px solid rgba(240,84,84,.25);border-radius:10px;padding:18px;color:#fca5a5;font-size:13px;display:flex;gap:10px;">
     <i class="fa-solid fa-circle-exclamation"></i>
-    <?= htmlspecialchars($peer_group_error ?: "Selected user does not exist, is inactive, or is not a valid Teacher/Staff account. Please choose someone from the list.") ?>
+    <?= htmlspecialchars($peer_group_error ?: "Selected user does not exist, is inactive, or is not a valid Faculty/Staff account. Please choose someone from the list.") ?>
 </div>
 
 <?php endif; ?>

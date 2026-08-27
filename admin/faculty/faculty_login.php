@@ -54,7 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>PBI — Teacher & Staff Login</title>
+<title>PBI — Faculty & Staff Login</title>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <style>
@@ -103,7 +103,7 @@ body{min-height:100vh;background:#0A192F url('../bacjground.png') center center 
 <div class="login-card">
     <div class="card-header">
         <img class="logo-ring" src="../image/pbi_logo" alt="PBI Logo"/>
-        <div class="card-title">Teacher &amp; Staff Portal</div>
+        <div class="card-title">Faculty &amp; Staff Portal</div>
         <div class="card-subtitle">Pandan Bay Institute Inc.</div>
     </div>
     <div class="divider"></div>

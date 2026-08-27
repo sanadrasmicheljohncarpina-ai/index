@@ -65,11 +65,11 @@ function adjectival($score) {
 }
 function scoreColor($s) {
     if ($s === null) return '#6b7280';
-    if ($s >= 4.5) return '#4ade80';
-    if ($s >= 3.5) return '#86efac';
+    if ($s >= 4.5) return '#32B98A';
+    if ($s >= 3.5) return '#6BCFA9';
     if ($s >= 2.5) return '#facc15';
     if ($s >= 1.5) return '#fb923c';
-    return '#f87171';
+    return '#E6788A';
 }
 
 // ── ACTIVE PERIOD ───────────────────────────────────────────────
@@ -163,8 +163,8 @@ if (($_GET['view'] ?? '') === 'certificate' && isset($_GET['target_id']) && isse
 <title>Certificate of Rating — <?= htmlspecialchars($person['full_name']) ?></title>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
-body{font-family:'DM Sans',sans-serif;background:#F8FAFC;color:#0F172A;padding:40px;display:flex;justify-content:center;}
-.cert{background:#fff;color:#111;max-width:760px;width:100%;padding:60px;border:6px double #2B6CB0;text-align:center;}
+body{font-family:'DM Sans',sans-serif;background:#F8FAFC;color:#0B1F3A;padding:40px;display:flex;justify-content:center;}
+.cert{background:#fff;color:#111;max-width:760px;width:100%;padding:60px;border:6px double #2563EB;text-align:center;}
 .cert h1{font-family:'Rajdhani',sans-serif;font-size:26px;letter-spacing:2px;color:#F8FAFC;margin-bottom:6px;}
 .cert .sub{font-size:12px;color:#666;margin-bottom:32px;text-transform:uppercase;letter-spacing:1.5px;}
 .cert .name{font-family:'Rajdhani',sans-serif;font-size:32px;font-weight:700;margin:24px 0 6px;color:#F8FAFC;}
@@ -173,69 +173,70 @@ body{font-family:'DM Sans',sans-serif;background:#F8FAFC;color:#0F172A;padding:4
 .cert .adj{font-size:18px;font-weight:600;margin-bottom:28px;}
 .cert .meta{font-size:12px;color:#777;margin-top:32px;border-top:1px solid #ddd;padding-top:16px;line-height:1.8;}
 .no-print{margin-top:20px;text-align:center;}
-.btn{background:#2B6CB0;color:#fff;border:none;padding:10px 22px;border-radius:6px;cursor:pointer;font-size:13px;}
+.btn{background:#2563EB;color:#fff;border:none;padding:10px 22px;border-radius:6px;cursor:pointer;font-size:13px;}
 @media print{.no-print{display:none}body{background:#fff;padding:0}}
 
 /* Admin Module light design system — matches the dashboard */
 :root{
-  --page-bg:#FFFFFF; --card-bg:#FFFFFF; --card-border:#E2E8F0;
-  --inner:#F4F7FB; --text-dark:#172033; --text-dim:#475569;
-  --light:#172033; --muted:#475569; --dark:#FFFFFF; --mid:#FFFFFF;
-  --border:#E2E8F0; --accent:#3B82F6; --blue:#3B82F6;
-  --gold:#D97706; --gold-h:#F59E0B; --teal:#0D9488; --violet:#7C3AED;
-  --danger:#DC2626; --success:#059669; --radius:12px;
-  --card-shadow:0 2px 4px rgba(15,23,42,.05),0 6px 16px rgba(15,23,42,.06);
+  --page-bg:#FFFFFF; --card-bg:#FFFFFF; --card-border:#D8E5F4;
+  --inner:#F7FAFF; --text-dark:#0B1F3A; --text-dim:#67819E;
+  --light:#0B1F3A; --muted:#67819E; --dark:#FFFFFF; --mid:#FFFFFF;
+  --border:#D8E5F4; --accent:#2563EB; --blue:#2563EB;
+  --gold:#C77A08; --gold-h:#D69612; --teal:#0E7490; --violet:#4968C8;
+  --danger:#D6455D; --success:#0F9F6E; --radius:12px;
+  --card-shadow:0 2px 4px rgba(30,82,144,.06),0 6px 16px rgba(30,82,144,.08);
 }
 html{background:#fff;color-scheme:light;}
-body{background:#fff !important;color:#172033 !important;}
+body{background:#fff !important;color:#0B1F3A !important;}
 a{color:inherit;}
-.page-header h1,.page-title,.et-title,.section-title{color:#172033 !important;}
-.page-header p,.page-sub,.et-sub,.et-updated,.muted,.hint{color:#475569 !important;}
-input,select,textarea{background:#fff !important;color:#172033 !important;border-color:#CBD5E1 !important;}
+.page-header h1,.page-title,.et-title,.section-title{color:#0B1F3A !important;}
+.page-header p,.page-sub,.et-sub,.et-updated,.muted,.hint{color:#67819E !important;}
+input,select,textarea{background:#fff !important;color:#0B1F3A !important;border-color:#B9CDE5 !important;}
 button{font-family:inherit;}
 .table-wrap,.content-panel,.create-panel,.period-card,.stat-card,.sector-card,.person-row,
 .sum-card,.standing-panel,.eval-card,.eval-banner,.info-banner,.section,.shell .section,
 .history-card,.gl-card,.amber-card,.green-card,.red-card{
-  background:#fff !important;border-color:#E2E8F0 !important;box-shadow:0 2px 4px rgba(15,23,42,.04),0 6px 16px rgba(15,23,42,.05) !important;
+  background:#fff !important;border-color:#D8E5F4 !important;box-shadow:0 2px 4px rgba(30,82,144,.05),0 6px 16px rgba(30,82,144,.06) !important;
 }
 .sector-tabs,.eval-switcher,.tabs,.level-tabs,.status-tabs{
-  background:#fff !important;border-color:#E2E8F0 !important;box-shadow:0 2px 4px rgba(15,23,42,.04) !important;
+  background:#fff !important;border-color:#D8E5F4 !important;box-shadow:0 2px 4px rgba(30,82,144,.05) !important;
 }
-.sector-tab,.eval-tab,.tab,.level-tab,.status-tab{color:#475569 !important;}
-.sector-tab:hover,.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover{color:#172033 !important;background:#F4F7FB !important;}
+.sector-tab,.eval-tab,.tab,.level-tab,.status-tab{color:#67819E !important;}
+.sector-tab:hover,.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover{color:#0B1F3A !important;background:#F7FAFF !important;}
 thead tr{background:#F8FAFC !important;}
 tbody tr:hover{background:#F8FAFC !important;}
-.btn-cancel,.btn-icon,.btn-back{background:#fff !important;color:#172033 !important;border-color:#CBD5E1 !important;}
-.empty-state,.empty-cta{color:#475569 !important;}
+.btn-cancel,.btn-icon,.btn-back{background:#fff !important;color:#0B1F3A !important;border-color:#B9CDE5 !important;}
+.empty-state,.empty-cta{color:#67819E !important;}
 ::-webkit-scrollbar-track{background:#fff;}
-::-webkit-scrollbar-thumb{background:#CBD5E1;border:2px solid #fff;}
+::-webkit-scrollbar-thumb{background:#B9CDE5;border:2px solid #fff;}
 body{padding:28px !important;}
 
 /* ── SHARP LIGHT ADMIN UI ── */
 html { background:#F8FAFC; }
 body {
-  color:#0F172A !important;
+  color:#0B1F3A !important;
   background:#F8FAFC !important;
   -webkit-font-smoothing:antialiased;
   text-rendering:optimizeLegibility;
 }
-h1,h2,h3,h4,h5,h6 { color:#0F172A; letter-spacing:-.01em; }
-p, .subtitle, .description, .helper, .muted, small { color:#475569; }
-label, th { color:#334155; font-weight:600; }
-td { color:#0F172A; }
+h1,h2,h3,h4,h5,h6 { color:#0B1F3A; letter-spacing:-.01em; }
+p, .subtitle, .description, .helper, .muted, small { color:#67819E; }
+label, th { color:#294765; font-weight:600; }
+td { color:#0B1F3A; }
 input, select, textarea {
-  color:#0F172A;
+  color:#0B1F3A;
   background:#FFFFFF;
-  border-color:#CBD5E1;
+  border-color:#B9CDE5;
 }
-input::placeholder, textarea::placeholder { color:#94A3B8; }
+input::placeholder, textarea::placeholder { color:#91A6BE; }
 .card, .panel, .section, .table-card, .content-card {
-  border-color:#CBD5E1;
-  box-shadow:0 4px 14px rgba(15,23,42,.07);
+  border-color:#B9CDE5;
+  box-shadow:0 4px 14px rgba(30,82,144,.09);
 }
 button, .btn { font-weight:700; }
 a { color:inherit; }
-</style></head><body>
+</style>    <link rel="stylesheet" href="admin_ui_theme.css">
+</head><body>
 <div class="cert">
     <h1>Certificate of Rating</h1>
     <div class="sub"><?= htmlspecialchars($per['period_label'] ?? '') ?></div>
@@ -250,7 +251,7 @@ a { color:inherit; }
         Issued by <?= htmlspecialchars($issuer['full_name'] ?? 'Unknown') ?> on <?= date('F d, Y', strtotime($cert['issued_at'])) ?>
     </div>
 </div>
-<div class="no-print"><button class="btn" onclick="window.print()">Print / Save PDF</button> <a href="admin_dashboard.php" class="btn" style="background:#FFFFFF;color:#0F172A;display:inline-block;text-decoration:none;">Back to Dashboard</a></div>
+<div class="no-print"><button class="btn" onclick="window.print()">Print / Save PDF</button> <a href="admin_dashboard.php" class="btn" style="background:#FFFFFF;color:#0B1F3A;display:inline-block;text-decoration:none;">Back to Dashboard</a></div>
 </body></html>
 <?php exit; }
 
@@ -266,12 +267,12 @@ if ($res) $people = $res->fetch_all(MYSQLI_ASSOC);
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
-:root{--dark:#F8FAFC;--mid:#FFFFFF;--inner:#F1F5F9;--gold-h:#F59E0B;--light:#0F172A;--muted:#475569;--border:rgba(15,23,42,.12);}
+:root{--dark:#F8FAFC;--mid:#FFFFFF;--inner:#F4F8FF;--gold-h:#D69612;--light:#0B1F3A;--muted:#67819E;--border:rgba(30,82,144,.13);}
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);padding:28px;}
 .page-title{font-family:'Rajdhani',sans-serif;font-size:26px;font-weight:700;margin-bottom:4px;}
 .back-btn{display:inline-flex;align-items:center;gap:8px;padding:9px 18px;background:var(--mid);border:1px solid var(--border);border-radius:8px;color:var(--light);font-size:13px;font-weight:600;text-decoration:none;margin-bottom:18px;transition:background .2s;}
-.back-btn:hover{background:#2B6CB0;}
+.back-btn:hover{background:#2563EB;}
 .page-sub{font-size:13px;color:var(--muted);margin-bottom:24px;}
 .toast{background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.35);color:#fcd34d;padding:10px 16px;border-radius:8px;font-size:13px;margin-bottom:18px;}
 .row{background:var(--mid);border:1px solid var(--border);border-radius:12px;padding:16px 20px;display:flex;align-items:center;gap:16px;margin-bottom:12px;flex-wrap:wrap;}
@@ -281,35 +282,35 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .name{font-weight:700;font-size:14px;}
 .desig{font-size:12px;color:var(--muted);}
 .bar-wrap{width:160px;}
-.bar-bg{height:6px;background:rgba(15,23,42,.12);border-radius:3px;overflow:hidden;}
+.bar-bg{height:6px;background:rgba(30,82,144,.13);border-radius:3px;overflow:hidden;}
 .bar-fill{height:100%;border-radius:3px;}
 .pct{font-size:12px;color:var(--muted);margin-top:4px;}
 .btn{padding:9px 16px;border-radius:8px;font-size:12px;font-weight:700;border:none;cursor:pointer;text-decoration:none;display:inline-block;}
-.btn-generate{background:#2B6CB0;color:#fff;}
+.btn-generate{background:#2563EB;color:#fff;}
 .btn-disabled{background:var(--inner);color:var(--muted);border:1px solid var(--border);cursor:not-allowed;}
-.btn-view{background:rgba(74,222,128,.15);color:#4ade80;border:1px solid rgba(74,222,128,.3);}
+.btn-view{background:rgba(74,222,128,.15);color:#32B98A;border:1px solid rgba(74,222,128,.3);}
 
 /* ── SHARP LIGHT ADMIN UI ── */
 html { background:#F8FAFC; }
 body {
-  color:#0F172A !important;
+  color:#0B1F3A !important;
   background:#F8FAFC !important;
   -webkit-font-smoothing:antialiased;
   text-rendering:optimizeLegibility;
 }
-h1,h2,h3,h4,h5,h6 { color:#0F172A; letter-spacing:-.01em; }
-p, .subtitle, .description, .helper, .muted, small { color:#475569; }
-label, th { color:#334155; font-weight:600; }
-td { color:#0F172A; }
+h1,h2,h3,h4,h5,h6 { color:#0B1F3A; letter-spacing:-.01em; }
+p, .subtitle, .description, .helper, .muted, small { color:#67819E; }
+label, th { color:#294765; font-weight:600; }
+td { color:#0B1F3A; }
 input, select, textarea {
-  color:#0F172A;
+  color:#0B1F3A;
   background:#FFFFFF;
-  border-color:#CBD5E1;
+  border-color:#B9CDE5;
 }
-input::placeholder, textarea::placeholder { color:#94A3B8; }
+input::placeholder, textarea::placeholder { color:#91A6BE; }
 .card, .panel, .section, .table-card, .content-card {
-  border-color:#CBD5E1;
-  box-shadow:0 4px 14px rgba(15,23,42,.07);
+  border-color:#B9CDE5;
+  box-shadow:0 4px 14px rgba(30,82,144,.09);
 }
 button, .btn { font-weight:700; }
 a { color:inherit; }
@@ -341,7 +342,7 @@ a { color:inherit; }
         <div class="desig"><?= $p['role']==='teacher'?'Faculty':'Staff' ?> · <?= htmlspecialchars($p['designation']) ?></div>
     </div>
     <div class="bar-wrap">
-        <div class="bar-bg"><div class="bar-fill" style="width:<?= $pct ?>%;background:<?= $ready?'#4ade80':'#F59E0B' ?>"></div></div>
+        <div class="bar-bg"><div class="bar-fill" style="width:<?= $pct ?>%;background:<?= $ready?'#32B98A':'#D69612' ?>"></div></div>
         <div class="pct"><?= $done ?> of <?= $req ?> students (<?= $pct ?>%)</div>
     </div>
     <?php if ($existing): ?>

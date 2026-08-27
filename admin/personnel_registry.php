@@ -182,9 +182,9 @@ $toast_error = $_SESSION['toast_error'] ?? ''; unset($_SESSION['toast_error']);
 //    questionnaire page; Staff = purple, mirrors "Staff" there) ──
 $is_staff_sector = ($viewSector === 'Staff');
 $desigKey = $is_staff_sector ? 'staff' : 'faculty';
-$sector_color    = $is_staff_sector ? '#7C3AED' : '#3B82F6';
-$sector_bg       = $is_staff_sector ? 'rgba(124,58,237,.07)' : 'rgba(59,130,246,.07)';
-$sector_border   = $is_staff_sector ? 'rgba(124,58,237,.22)' : 'rgba(59,130,246,.22)';
+$sector_color    = $is_staff_sector ? '#4968C8' : '#2563EB';
+$sector_bg       = $is_staff_sector ? 'rgba(73,104,200,.08)' : 'rgba(37,99,235,.08)';
+$sector_border   = $is_staff_sector ? 'rgba(73,104,200,.15)' : 'rgba(37,99,235,.16)';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -196,19 +196,19 @@ $sector_border   = $is_staff_sector ? 'rgba(124,58,237,.22)' : 'rgba(59,130,246,
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
 :root{
-  --page-bg:#EEF2F8;--card-bg:#FFFFFF;--card-border:#E2E8F0;
-  --text-dark:#1E2A3A;--text-dim:#475569;--track-bg:#E2E8F0;
-  --radius:10px;--card-shadow:0 1px 2px rgba(15,23,42,.04),0 4px 12px rgba(15,23,42,.05);
-  --danger:#DC2626;--danger-bg:rgba(220,38,38,.08);--danger-border:rgba(220,38,38,.22);
-  --success:#059669;--success-bg:rgba(5,150,105,.1);--success-border:rgba(5,150,105,.25);
+  --page-bg:#EEF2F8;--card-bg:#FFFFFF;--card-border:#D8E5F4;
+  --text-dark:#1E2A3A;--text-dim:#67819E;--track-bg:#D8E5F4;
+  --radius:10px;--card-shadow:0 1px 2px rgba(30,82,144,.05),0 4px 12px rgba(30,82,144,.06);
+  --danger:#D6455D;--danger-bg:rgba(220,38,38,.08);--danger-border:rgba(220,38,38,.22);
+  --success:#0F9F6E;--success-bg:rgba(5,150,105,.1);--success-border:rgba(5,150,105,.25);
   --sector:<?= $sector_color ?>;--sector-bg:<?= $sector_bg ?>;--sector-border:<?= $sector_border ?>;
-  --staff:#7C3AED;--staff-bg:rgba(124,58,237,.07);--staff-border:rgba(124,58,237,.22);
-  --mr:#D97706;--mr-bg:rgba(217,119,6,.08);--mr-border:rgba(217,119,6,.24);
+  --staff:#4968C8;--staff-bg:rgba(73,104,200,.08);--staff-border:rgba(73,104,200,.15);
+  --mr:#C77A08;--mr-bg:rgba(217,119,6,.08);--mr-border:rgba(217,119,6,.24);
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Inter',sans-serif;background:var(--page-bg);color:var(--text-dark);min-height:100vh;padding:36px 28px;}
 
-.toast{position:fixed;top:20px;right:20px;z-index:9999;display:flex;align-items:center;gap:10px;background:#E4F7F0;border:1px solid #BEEBD8;border-radius:8px;padding:12px 18px;font-size:14px;color:#0D7A4E;box-shadow:var(--card-shadow);animation:slideIn .3s ease,fadeOut .4s ease 3.5s forwards;max-width:380px;}
+.toast{position:fixed;top:20px;right:20px;z-index:9999;display:flex;align-items:center;gap:10px;background:#E8F8F1;border:1px solid #BEEBD8;border-radius:8px;padding:12px 18px;font-size:14px;color:#0D7A4E;box-shadow:var(--card-shadow);animation:slideIn .3s ease,fadeOut .4s ease 3.5s forwards;max-width:380px;}
 .toast.error{background:var(--danger-bg);border-color:var(--danger-border);color:var(--danger);}
 @keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
 @keyframes fadeOut{to{opacity:0;pointer-events:none}}
@@ -222,14 +222,14 @@ body{font-family:'Inter',sans-serif;background:var(--page-bg);color:var(--text-d
 .sector-tabs{display:flex;gap:0;background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;overflow:hidden;margin-bottom:28px;width:fit-content;box-shadow:var(--card-shadow);}
 .sector-tab{display:flex;align-items:center;gap:9px;padding:13px 26px;font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;color:var(--text-dim);border:none;background:none;font-family:'Inter',sans-serif;transition:all .22s;position:relative;}
 .sector-tab:hover{color:var(--text-dark);background:var(--page-bg);}
-.sector-tab.active.tab-faculty{color:#3B82F6;background:rgba(59,130,246,.07);}
-.sector-tab.active.tab-staff{color:#7C3AED;background:rgba(124,58,237,.07);}
+.sector-tab.active.tab-faculty{color:#2563EB;background:rgba(37,99,235,.08);}
+.sector-tab.active.tab-staff{color:#4968C8;background:rgba(73,104,200,.08);}
 .sector-tab.active.tab-faculty::after,.sector-tab.active.tab-staff::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;border-radius:2px 2px 0 0;}
-.sector-tab.active.tab-faculty::after{background:#3B82F6;}
-.sector-tab.active.tab-staff::after{background:#7C3AED;}
+.sector-tab.active.tab-faculty::after{background:#2563EB;}
+.sector-tab.active.tab-staff::after{background:#4968C8;}
 .tab-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--page-bg);color:var(--text-dim);}
-.sector-tab.active.tab-faculty .tab-badge{background:rgba(59,130,246,.15);color:#3B82F6;}
-.sector-tab.active.tab-staff .tab-badge{background:rgba(124,58,237,.15);color:#7C3AED;}
+.sector-tab.active.tab-faculty .tab-badge{background:rgba(37,99,235,.10);color:#2563EB;}
+.sector-tab.active.tab-staff .tab-badge{background:rgba(73,104,200,.10);color:#4968C8;}
 
 .stats-row{display:flex;gap:16px;margin-bottom:24px;flex-wrap:wrap;}
 .stat-card{background:var(--card-bg);border:1px solid var(--card-border);border-top:4px solid var(--sector);border-radius:14px;padding:16px 22px;flex:1;min-width:130px;box-shadow:var(--card-shadow);}
@@ -314,7 +314,7 @@ tbody td{padding:14px 16px;font-size:14px;vertical-align:middle;}
 .photo-preview.visible{display:block;}
 .modal-actions{display:flex;gap:10px;margin-top:24px;}
 .btn-cancel{flex:1;padding:10px;background:var(--page-bg);border:1px solid var(--card-border);border-radius:var(--radius);color:var(--text-dark);font-size:14px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;}
-.btn-cancel:hover{background:#E2E8F0;}
+.btn-cancel:hover{background:#D8E5F4;}
 .btn-submit{flex:2;padding:10px;background:var(--sector);border:none;border-radius:var(--radius);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;display:flex;align-items:center;justify-content:center;gap:7px;}
 .btn-submit:hover{opacity:.88;}
 .btn-confirm-del{flex:1;padding:10px;background:var(--danger);border:none;border-radius:var(--radius);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;}
@@ -325,37 +325,37 @@ tbody td{padding:14px 16px;font-size:14px;vertical-align:middle;}
 
 /* Admin Module light design system — matches the dashboard */
 :root{
-  --page-bg:#FFFFFF; --card-bg:#FFFFFF; --card-border:#E2E8F0;
-  --inner:#F4F7FB; --text-dark:#172033; --text-dim:#475569;
-  --light:#172033; --muted:#475569; --dark:#FFFFFF; --mid:#FFFFFF;
-  --border:#E2E8F0; --accent:#3B82F6; --blue:#3B82F6;
-  --gold:#D97706; --gold-h:#F59E0B; --teal:#0D9488; --violet:#7C3AED;
-  --danger:#DC2626; --success:#059669; --radius:12px;
-  --card-shadow:0 2px 4px rgba(15,23,42,.05),0 6px 16px rgba(15,23,42,.06);
+  --page-bg:#FFFFFF; --card-bg:#FFFFFF; --card-border:#D8E5F4;
+  --inner:#F7FAFF; --text-dark:#0B1F3A; --text-dim:#67819E;
+  --light:#0B1F3A; --muted:#67819E; --dark:#FFFFFF; --mid:#FFFFFF;
+  --border:#D8E5F4; --accent:#2563EB; --blue:#2563EB;
+  --gold:#C77A08; --gold-h:#D69612; --teal:#0E7490; --violet:#4968C8;
+  --danger:#D6455D; --success:#0F9F6E; --radius:12px;
+  --card-shadow:0 2px 4px rgba(30,82,144,.06),0 6px 16px rgba(30,82,144,.08);
 }
 html{background:#fff;color-scheme:light;}
-body{background:#fff !important;color:#172033 !important;}
+body{background:#fff !important;color:#0B1F3A !important;}
 a{color:inherit;}
-.page-header h1,.page-title,.et-title,.section-title{color:#172033 !important;}
-.page-header p,.page-sub,.et-sub,.et-updated,.muted,.hint{color:#475569 !important;}
-input,select,textarea{background:#fff !important;color:#172033 !important;border-color:#CBD5E1 !important;}
+.page-header h1,.page-title,.et-title,.section-title{color:#0B1F3A !important;}
+.page-header p,.page-sub,.et-sub,.et-updated,.muted,.hint{color:#67819E !important;}
+input,select,textarea{background:#fff !important;color:#0B1F3A !important;border-color:#B9CDE5 !important;}
 button{font-family:inherit;}
 .table-wrap,.content-panel,.create-panel,.period-card,.stat-card,.sector-card,.person-row,
 .sum-card,.standing-panel,.eval-card,.eval-banner,.info-banner,.section,.shell .section,
 .history-card,.gl-card,.amber-card,.green-card,.red-card{
-  background:#fff !important;border-color:#E2E8F0 !important;box-shadow:0 2px 4px rgba(15,23,42,.04),0 6px 16px rgba(15,23,42,.05) !important;
+  background:#fff !important;border-color:#D8E5F4 !important;box-shadow:0 2px 4px rgba(30,82,144,.05),0 6px 16px rgba(30,82,144,.06) !important;
 }
 .sector-tabs,.eval-switcher,.tabs,.level-tabs,.status-tabs{
-  background:#fff !important;border-color:#E2E8F0 !important;box-shadow:0 2px 4px rgba(15,23,42,.04) !important;
+  background:#fff !important;border-color:#D8E5F4 !important;box-shadow:0 2px 4px rgba(30,82,144,.05) !important;
 }
-.sector-tab,.eval-tab,.tab,.level-tab,.status-tab{color:#475569 !important;}
-.sector-tab:hover,.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover{color:#172033 !important;background:#F4F7FB !important;}
+.sector-tab,.eval-tab,.tab,.level-tab,.status-tab{color:#67819E !important;}
+.sector-tab:hover,.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover{color:#0B1F3A !important;background:#F7FAFF !important;}
 thead tr{background:#F8FAFC !important;}
 tbody tr:hover{background:#F8FAFC !important;}
-.btn-cancel,.btn-icon,.btn-back{background:#fff !important;color:#172033 !important;border-color:#CBD5E1 !important;}
-.empty-state,.empty-cta{color:#475569 !important;}
+.btn-cancel,.btn-icon,.btn-back{background:#fff !important;color:#0B1F3A !important;border-color:#B9CDE5 !important;}
+.empty-state,.empty-cta{color:#67819E !important;}
 ::-webkit-scrollbar-track{background:#fff;}
-::-webkit-scrollbar-thumb{background:#CBD5E1;border:2px solid #fff;}
+::-webkit-scrollbar-thumb{background:#B9CDE5;border:2px solid #fff;}
 
 body{padding:28px !important;}
 
@@ -363,24 +363,24 @@ body{padding:28px !important;}
 /* ── SHARP LIGHT ADMIN UI ── */
 html { background:#F8FAFC; }
 body {
-  color:#0F172A !important;
+  color:#0B1F3A !important;
   background:#F8FAFC !important;
   -webkit-font-smoothing:antialiased;
   text-rendering:optimizeLegibility;
 }
-h1,h2,h3,h4,h5,h6 { color:#0F172A; letter-spacing:-.01em; }
-p, .subtitle, .description, .helper, .muted, small { color:#475569; }
-label, th { color:#334155; font-weight:600; }
-td { color:#0F172A; }
+h1,h2,h3,h4,h5,h6 { color:#0B1F3A; letter-spacing:-.01em; }
+p, .subtitle, .description, .helper, .muted, small { color:#67819E; }
+label, th { color:#294765; font-weight:600; }
+td { color:#0B1F3A; }
 input, select, textarea {
-  color:#0F172A;
+  color:#0B1F3A;
   background:#FFFFFF;
-  border-color:#CBD5E1;
+  border-color:#B9CDE5;
 }
-input::placeholder, textarea::placeholder { color:#94A3B8; }
+input::placeholder, textarea::placeholder { color:#91A6BE; }
 .card, .panel, .section, .table-card, .content-card {
-  border-color:#CBD5E1;
-  box-shadow:0 4px 14px rgba(15,23,42,.07);
+  border-color:#B9CDE5;
+  box-shadow:0 4px 14px rgba(30,82,144,.09);
 }
 button, .btn { font-weight:700; }
 a { color:inherit; }
@@ -388,9 +388,10 @@ a { color:inherit; }
 /* Persistent icon coding */
 .btn-add > i{color:#FFFFFF !important;}
 .sector-tab:has(.fa-chalkboard-user) > i{color:#2563EB !important;}
-.sector-tab:has(.fa-briefcase) > i{color:#7C3AED !important;}
+.sector-tab:has(.fa-briefcase) > i{color:#4968C8 !important;}
 
 </style>
+    <link rel="stylesheet" href="admin_ui_theme.css">
 </head>
 <body>
 
@@ -599,7 +600,7 @@ a { color:inherit; }
                     </div>
                     <input type="hidden" name="designation" class="tag-hidden" value=""/>
                 </div>
-                <span class="tag-hint">Add one or more roles — e.g. Teacher, Adviser</span>
+                <span class="tag-hint">Add one or more roles — e.g. Faculty, Adviser</span>
             </div>
         </div>
         <div class="form-grid full">
@@ -659,7 +660,7 @@ a { color:inherit; }
                     </div>
                     <input type="hidden" name="designation" class="tag-hidden" value=""/>
                 </div>
-                <span class="tag-hint">Add or remove roles — e.g. Teacher, Adviser, Coordinator</span>
+                <span class="tag-hint">Add or remove roles — e.g. Faculty, Adviser, Coordinator</span>
             </div>
         </div>
         <div class="form-grid full">
