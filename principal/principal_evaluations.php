@@ -79,7 +79,8 @@ $eaToEvaluate      = 0;
 $agg_total = 0; $agg_done = 0; $agg_pending = 0; $agg_completion = 0;
 
 if ($structureActive) {
-    // ── FETCH APPROVED TEACHER/STAFF WITHIN BASIC EDUCATION SCOPE ───────
+    // ── FETCH APPROVED FACULTY (Teacher) + TEACHING STAFF WITHIN BASIC
+    //    EDUCATION SCOPE — Non-Teaching Staff excluded ────────────────────
     // NOTE: filtered by whether the Super Admin has assigned this person a
     // Grade level within the Principal's scope via the "Assign Year
     // Level(s)" action (manage_privileged_accounts.php) — which writes to
@@ -87,15 +88,39 @@ if ($structureActive) {
     // that column exists (self-healing schema) but nothing ever writes to
     // it, so every row has it as NULL. user_year_levels is the one place
     // Teacher/Staff scope assignment is actually recorded.
+    //
+    // Teacher (Faculty) rows: unchanged — must have a year-level assignment
+    // within the principal's scope.
+    // Staff rows: previously required the SAME year-level check as Teacher,
+    // which is too narrow — a Staff account that teaches can be scoped via
+    // teaching_assignments instead of (or in addition to) user_year_levels.
+    // Now a Staff row qualifies if EITHER exists within the principal's
+    // scope, which is exactly "Teaching Staff". This mirrors the canonical
+    // Non-Teaching Staff predicate used elsewhere (ea_evaluation.php,
+    // questionnaire.php's isNonTeachingStaff()) — Non-Teaching Staff is a
+    // Staff account with NEITHER row at all — just inverted and scoped to
+    // this principal's grades, so Non-Teaching Staff never appear here.
     $scopeYearLevels = array_map(fn($g) => "Grade {$g}", $scopeGrades);
     $scopeYearLevelsIn = esc_list($mysqli, $scopeYearLevels);
     $ures = $mysqli->prepare("
         SELECT id, full_name, designation, photo, role, secondary_role, department
         FROM users
-        WHERE role IN ('teacher','staff') AND is_active=1 AND account_status='approved'
-          AND EXISTS (
-              SELECT 1 FROM user_year_levels uyl
-              WHERE uyl.user_id = users.id AND uyl.year_level IN ($scopeYearLevelsIn)
+        WHERE is_active=1 AND account_status='approved'
+          AND (
+                (role='teacher' AND EXISTS (
+                    SELECT 1 FROM user_year_levels uyl
+                    WHERE uyl.user_id = users.id AND uyl.year_level IN ($scopeYearLevelsIn)
+                ))
+             OR (role='staff' AND (
+                    EXISTS (
+                        SELECT 1 FROM teaching_assignments ta
+                        WHERE ta.user_id = users.id AND ta.year_level IN ($scopeYearLevelsIn)
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM user_year_levels uyl
+                        WHERE uyl.user_id = users.id AND uyl.year_level IN ($scopeYearLevelsIn)
+                    )
+                ))
           )
         ORDER BY full_name ASC
     ");

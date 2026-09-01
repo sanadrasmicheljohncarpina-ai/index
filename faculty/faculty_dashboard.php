@@ -11,6 +11,7 @@ session_set_cookie_params([
 session_start();
 require_once 'db.php';
 require_once '../shared/eligibility.php';
+require_once '../shared/EvaluationContextService.php';
 
 if (empty($_SESSION['user_id']) || $_SESSION['role'] !== 'teacher') {
     header("Location: faculty_login.php"); exit;
@@ -137,53 +138,69 @@ $cat_res = $cat_stmt->get_result();
 if ($cat_res) $my_scores = $cat_res->fetch_all(MYSQLI_ASSOC);
 $cat_stmt->close();
 
-// ── DESIGNATION → QUESTION TARGET_TYPE MAPPING ────────────────
-// Same mapping staff_dashboard.php uses, so a colleague's free-text
-// designation resolves to the same category and the same Teacher/Staff
-// grouping on both portals.
-$system_categories = ['Faculty','Registrar','Cashier','Bookkeeper','Librarian','Guidance','Nurse','Personnel'];
-$token_to_target   = [
-    'Teacher'=>'Faculty','Faculty'=>'Faculty','Registrar'=>'Registrar','Cashier'=>'Cashier',
-    'Bookkeeper'=>'Bookkeeper','Librarian'=>'Librarian','Guidance'=>'Guidance','Nurse'=>'Nurse',
-    'Personnel'=>'Personnel','Staff'=>'Personnel','Adviser'=>'Faculty','Coordinator'=>'Faculty',
-    'Department Head'=>'Faculty',
-];
-function resolve_target_type($desig, $map, $cats, $fallback_role = null) {
-    $tokens = array_filter(array_map('trim', explode(',', $desig ?? '')), fn($t) => $t !== '');
-    // Pass 1: exact token match against the map (e.g. "Bookkeeper", "Teacher")
-    // or an exact system category (e.g. "Registrar").
-    foreach ($tokens as $tok) {
-        if (isset($map[$tok])) return $map[$tok];
-        if (in_array($tok, $cats)) return $tok;
-    }
-    // Pass 2: free-text designations don't always match a token exactly
-    // (e.g. "Math Teacher", "Senior Teacher", "Head Librarian"). Fall back
-    // to a case-insensitive substring match against the same map keys so
-    // these aren't silently miscategorized as generic Personnel.
-    foreach ($tokens as $tok) {
-        foreach ($map as $key => $target) {
-            if (stripos($tok, $key) !== false) return $target;
-        }
-        foreach ($cats as $cat) {
-            if (stripos($tok, $cat) !== false) return $cat;
-        }
-    }
-    // No usable designation text (empty/unset, common for newly
-    // self-registered teachers who haven't set one yet on their Profile
-    // page) — fall back to the account's actual role instead of silently
-    // defaulting everyone to Personnel/Staff.
-    if ($fallback_role === 'teacher') return 'Faculty';
-    return 'Personnel';
+// ── PEER EVALUATION GROUPING (canonical, matches admin/questionnaire.php) ──
+// Faculty/Staff grouping here is NOT derived from designation text. It uses
+// the same shared predicates (ec_has_teacher_function / ec_has_staff_function)
+// admin/questionnaire.php uses for its own Teacher/Staff/Multi-Role buckets,
+// plus the identical "Non-Teaching Staff" DB check admin/questionnaire.php
+// and ea_evaluation.php already use: a Staff account with NO
+// teaching_assignments row and NO user_year_levels row. A designation like
+// "Coordinator" or "Department Head" creates an *additional* Multi-Role
+// context elsewhere in the system — it does not reclassify someone's base
+// Teacher/Staff function or move them out of Non-Teaching Staff here.
+function isNonTeachingStaff(mysqli $mysqli, int $user_id): bool {
+    $stmt = $mysqli->prepare(
+        "SELECT
+            NOT EXISTS(SELECT 1 FROM teaching_assignments ta WHERE ta.user_id=?)
+            AND NOT EXISTS(SELECT 1 FROM user_year_levels yl WHERE yl.user_id=?)
+         AS is_non_teaching"
+    );
+    $stmt->bind_param('ii', $user_id, $user_id);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return (bool)($row['is_non_teaching'] ?? false);
 }
 
-// NOTE ON "TEACHER vs STAFF": mirrors staff_dashboard.php's peer-evaluation
-// grouping. A colleague's account role (teacher/staff) isn't always the
-// same as how they should be grouped for evaluation, so we resolve
-// the group off the same designation map used everywhere else, not off
-// the raw account role column — except as a fallback when the designation
-// text doesn't resolve to anything (see resolve_target_type() above).
-function resolve_peer_group($desig, $map, $cats, $fallback_role = null) {
-    return resolve_target_type($desig, $map, $cats, $fallback_role) === 'Faculty' ? 'teacher' : 'staff';
+// Resolves a peer-eval bucket for a user row ('teacher', 'staff', or null
+// if the account belongs to neither). A Staff account with an active
+// year-level assignment (i.e. NOT isNonTeachingStaff — the exact same
+// Manage Registrations logic used above) is Teaching Staff, and Teaching
+// Staff are evaluated as part of the Faculty ('teacher') group, not Staff.
+// Only a Staff account with no active year-level/teaching assignment
+// (Non-Teaching Staff) resolves to 'staff'. Actual Faculty accounts are
+// still identified the same way they always were, via
+// ec_has_teacher_function(), so no valid Faculty record is affected.
+function resolve_peer_group(mysqli $mysqli, array $u): ?string {
+    if (ec_has_teacher_function($u)) return 'teacher';
+    if (ec_has_staff_function($u)) {
+        return isNonTeachingStaff($mysqli, (int)$u['id']) ? 'staff' : 'teacher';
+    }
+    return null;
+}
+
+// Human-readable role label for a Peer/Faculty evaluation target card.
+// Actual Faculty keep showing their existing stored designation. A Staff
+// account dynamically placed in the Faculty ('teacher') group because of
+// an active year-level assignment is labeled "Teaching Staff" (plus their
+// assigned level(s), from the same user_year_levels table Manage
+// Registrations uses) so it's clear at a glance they're Teaching Staff and
+// not an ordinary/Non-Teaching Staff member. Does not change any stored
+// designation/role — display only.
+function peer_display_label(mysqli $mysqli, array $p, string $peer_group, array $peer_group_labels): string {
+    $role = strtolower(trim($p['role'] ?? ''));
+    if ($peer_group === 'teacher' && $role === 'staff') {
+        $lvlQ = $mysqli->prepare("SELECT year_level FROM user_year_levels WHERE user_id=?");
+        $pid = (int)$p['id'];
+        $lvlQ->bind_param("i", $pid);
+        $lvlQ->execute();
+        $lvlRes = $lvlQ->get_result();
+        $levels = [];
+        while ($lr = $lvlRes->fetch_assoc()) $levels[] = $lr['year_level'];
+        $lvlQ->close();
+        return $levels ? 'Teaching Staff · ' . implode(', ', $levels) : 'Teaching Staff';
+    }
+    return $p['designation'] ?: ($peer_group_labels[$peer_group] ?? '');
 }
 function eval_type_label($eval_type, $peer_group = null) {
     switch ($eval_type) {
@@ -197,7 +214,7 @@ function eval_type_label($eval_type, $peer_group = null) {
         default:                      return ucwords(str_replace('_', ' ', $eval_type ?: 'Evaluation'));
     }
 }
-$peer_group_labels = ['teacher' => 'Teacher', 'staff' => 'Staff', 'school_head' => 'School Head'];
+$peer_group_labels = ['teacher' => 'Faculty', 'staff' => 'Staff', 'school_head' => 'School Head'];
 
 // ── ADD peer_group COLUMN TO evaluation_tracker (idempotent) ──
 // Shared table with the staff dashboard — the column may already exist
@@ -219,7 +236,7 @@ $done_school_heads = [];
 $peer_group       = null; // 'teacher' | 'staff' | 'school_head' | null
 
 if ($page === 'peer') {
-    $pr2 = $mysqli->prepare("SELECT id, full_name, designation, photo, role FROM users WHERE role IN ('teacher','staff') AND is_active=1 AND id != ? ORDER BY full_name ASC");
+    $pr2 = $mysqli->prepare("SELECT id, full_name, designation, photo, role, secondary_role FROM users WHERE role IN ('teacher','staff','faculty') AND is_active=1 AND id != ? ORDER BY full_name ASC");
     $pr2->bind_param("i", $user_id);
     $pr2->execute();
     $pr2res = $pr2->get_result();
@@ -271,13 +288,13 @@ if ($page === 'peer') {
         if ($peer_group === 'school_head') {
             $peers = $school_heads;
         } else {
-            // Manage Registrations is the source of truth for whether an
-            // account is a Teacher or Staff member.  Keep the Evaluation
-            // tabs aligned with the account role instead of re-classifying
-            // teachers from their free-text designation.
-            $expected_role = $peer_group === 'teacher' ? 'teacher' : 'staff';
-            $peers = array_values(array_filter($peers_all, function ($p) use ($expected_role) {
-                return ($p['role'] ?? '') === $expected_role;
+            // Classify with the same shared predicates + DB-backed
+            // "Non-Teaching Staff" check admin/questionnaire.php's own
+            // Peer-to-Peer tab uses (see resolve_peer_group() above), not
+            // designation text. Keeps both portals' Peer-to-Peer rosters
+            // in agreement.
+            $peers = array_values(array_filter($peers_all, function ($p) use ($mysqli, $peer_group) {
+                return resolve_peer_group($mysqli, $p) === $peer_group;
             }));
         }
     }
@@ -314,12 +331,7 @@ if ($page === 'peer_eval' && isset($_GET['tid'])) {
                 $peer_eval_group = 'school_head';
             }
         } else {
-            $actual_group = resolve_peer_group(
-                $peer_target['designation'] ?? '',
-                $token_to_target,
-                $system_categories,
-                $peer_target['role'] ?? null
-            );
+            $actual_group = resolve_peer_group($mysqli, $peer_target);
             if (!in_array($peer_target['role'] ?? '', ['teacher', 'staff'], true) || $actual_group !== $req_group) {
                 $peer_group_error = "The selected user does not belong to the selected evaluation group.";
                 $peer_target = null;
@@ -545,13 +557,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_peer'])) {
             header("Location: faculty_dashboard.php?page=peer&group=" . urlencode($submitted_group)); exit;
         }
 
-        $tchk = $mysqli->prepare("SELECT id, designation, role FROM users WHERE id=? AND role IN ('teacher','staff') AND is_active=1 LIMIT 1");
+        $tchk = $mysqli->prepare("SELECT id, designation, role, secondary_role FROM users WHERE id=? AND role IN ('teacher','staff','faculty') AND is_active=1 LIMIT 1");
         $tchk->bind_param("i", $tid);
         $tchk->execute();
         $tchkRow = $tchk->get_result()->fetch_assoc();
         $tchk->close();
 
-        if (!$tchkRow || resolve_peer_group($tchkRow['designation'] ?? '', $token_to_target, $system_categories, $tchkRow['role'] ?? null) !== $submitted_group) {
+        if (!$tchkRow || resolve_peer_group($mysqli, $tchkRow) !== $submitted_group) {
             $_SESSION['toast_error'] = "The selected faculty member is no longer available in this evaluation group.";
             header("Location: faculty_dashboard.php?page=peer&group=" . urlencode($submitted_group)); exit;
         }
@@ -1607,11 +1619,12 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 <?php elseif ($page === 'peer' && $peer_group === null): ?>
 
 <?php
-// Match the Manage Registrations counts: account role determines the
-// Teacher/Staff group, while the currently logged-in faculty account has
-// already been excluded from $peers_all above.
-$teacher_count = count(array_filter($peers_all, fn($p) => ($p['role'] ?? '') === 'teacher'));
-$staff_count = count(array_filter($peers_all, fn($p) => ($p['role'] ?? '') === 'staff'));
+// Counts mirror the same shared-predicate + Non-Teaching-Staff grouping
+// used to build the Step 2 lists below and admin/questionnaire.php's own
+// Peer-to-Peer cards. The currently logged-in faculty account has already
+// been excluded from $peers_all above.
+$teacher_count = count(array_filter($peers_all, fn($p) => resolve_peer_group($mysqli, $p) === 'teacher'));
+$staff_count = count(array_filter($peers_all, fn($p) => resolve_peer_group($mysqli, $p) === 'staff'));
 ?>
 
 <?php if (!$period): ?>
@@ -1620,12 +1633,12 @@ $staff_count = count(array_filter($peers_all, fn($p) => ($p['role'] ?? '') === '
 
 <div class="section-card">
     <div class="section-title"><i class="fa-solid fa-clipboard-check" style="color:var(--teal)"></i> Evaluation</div>
-    <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Choose who you want to evaluate. Faculty can evaluate fellow teachers, staff members, or the School Heads (Dean and Principal).</p>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Choose who you want to evaluate. Faculty can evaluate fellow faculty, staff members, or the School Heads (Dean and Principal).</p>
 
     <div class="fg-label" style="margin-bottom:10px;"><i class="fa-solid fa-bolt" style="margin-right:5px"></i>Step 1: Select Evaluation Group</div>
     <div class="desig-select-chips">
         <a href="faculty_dashboard.php?page=peer&group=teacher" class="desig-select-chip">
-            <i class="fa-solid fa-chalkboard-user" style="color:var(--teal-hover)"></i> Teacher <span class="dsc-count">(<?= $teacher_count ?>)</span>
+            <i class="fa-solid fa-chalkboard-user" style="color:var(--teal-hover)"></i> Faculty <span class="dsc-count">(<?= $teacher_count ?>)</span>
         </a>
         <a href="faculty_dashboard.php?page=peer&group=staff" class="desig-select-chip">
             <i class="fa-solid fa-briefcase" style="color:var(--teal-hover)"></i> Staff <span class="dsc-count">(<?= $staff_count ?>)</span>
@@ -1674,7 +1687,7 @@ $staff_count = count(array_filter($peers_all, fn($p) => ($p['role'] ?? '') === '
             <div class="peer-photo-ph"><i class="fa-solid fa-user"></i></div>
             <?php endif; ?>
             <div class="peer-name"><?= htmlspecialchars($p['full_name']) ?></div>
-            <div class="peer-desig"><?= htmlspecialchars($p['designation'] ?: $peer_group_labels[$peer_group]) ?></div>
+            <div class="peer-desig"><?= htmlspecialchars(peer_display_label($mysqli, $p, $peer_group, $peer_group_labels)) ?></div>
             <?php if ($done): ?>
             <div class="done-badge"><i class="fa-solid fa-circle-check"></i> Done</div>
             <?php else: ?>
@@ -1713,7 +1726,7 @@ $staff_count = count(array_filter($peers_all, fn($p) => ($p['role'] ?? '') === '
     <?php endif; ?>
     <div>
         <div class="eval-name"><?= htmlspecialchars($peer_target['full_name']) ?></div>
-        <div class="eval-desig"><?= htmlspecialchars($peer_target['designation'] ?? 'Teacher') ?></div>
+        <div class="eval-desig"><?= htmlspecialchars(peer_display_label($mysqli, $peer_target, $peer_eval_group ?? 'teacher', $peer_group_labels)) ?></div>
     </div>
 </div>
 
@@ -1787,7 +1800,7 @@ $staff_count = count(array_filter($peers_all, fn($p) => ($p['role'] ?? '') === '
 
 <div style="background:rgba(240,84,84,.08);border:1px solid rgba(240,84,84,.25);border-radius:10px;padding:18px;color:#fca5a5;font-size:13px;display:flex;gap:10px;">
     <i class="fa-solid fa-circle-exclamation"></i>
-    <?= htmlspecialchars($peer_group_error ?: "Selected user does not exist, is inactive, or is not a valid Teacher/Staff account. Please choose someone from the list.") ?>
+    <?= htmlspecialchars($peer_group_error ?: "Selected user does not exist, is inactive, or is not a valid Faculty/Staff account. Please choose someone from the list.") ?>
 </div>
 
 <?php endif; ?>

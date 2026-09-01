@@ -2,6 +2,9 @@
     session_start();
     require_once 'db.php';
 require_once '../shared/EvaluationContextService.php';
+    require_once '../shared/SchoolHeadAssignmentService.php';
+    sh_ensure_assignment_table($mysqli);
+    $isAdminQuestionnaireUser = !empty($_SESSION['user_id']) && in_array($_SESSION['role'] ?? '', ['superadmin','admin'], true);
 
     // ── MULTI-CATEGORY QUESTION ASSIGNMENTS ────────────────────────
     // A shared question is a reusable item.  Categories are now tags/
@@ -25,6 +28,76 @@ require_once '../shared/EvaluationContextService.php';
                       ON c.target_type COLLATE utf8mb4_general_ci = q.target_type COLLATE utf8mb4_general_ci
                      AND c.eval_type COLLATE utf8mb4_general_ci = q.eval_type COLLATE utf8mb4_general_ci
                      AND c.category_name COLLATE utf8mb4_general_ci = q.category COLLATE utf8mb4_general_ci");
+
+    // ── ENSURE target_type COLUMNS ACCEPT Faculty/EA (School Head Eval) ──
+    // These columns were originally ENUM'd to the older target list
+    // (Teacher/Staff/Multi-Role/Principal/Dean/School/...). 'Faculty' and
+    // 'EA' were added later for School Head Evaluation, but an ENUM column
+    // silently rejects/blanks out any value not in its list — INSERT IGNORE
+    // swallows the warning, so the row looks "saved" but never matches the
+    // SELECT that reads it back by target_type. Convert to plain VARCHAR so
+    // new target types never need a column migration again.
+    function ec_widen_target_type_column(mysqli $mysqli, string $table): void {
+        $col = $mysqli->query("SHOW COLUMNS FROM `$table` LIKE 'target_type'");
+        if (!$col) return;
+        $row = $col->fetch_assoc();
+        if (!$row) return;
+        if (stripos($row['Type'], 'enum') === 0) {
+            $mysqli->query("ALTER TABLE `$table` MODIFY target_type VARCHAR(50) NOT NULL");
+        }
+    }
+    ec_widen_target_type_column($mysqli, 'question_categories');
+    ec_widen_target_type_column($mysqli, 'evaluation_questions');
+    ec_widen_target_type_column($mysqli, 'user_question_categories');
+    ec_widen_target_type_column($mysqli, 'user_questions');
+
+    // ── ENSURE question_categories IS UNIQUE PER (target_type, eval_type,
+    // category_name) — NOT globally or per eval_type alone ─────────────
+    // Symptom this fixes: adding "Professionalism" under Faculty/school_head
+    // gets rejected as "already exists" even though the Faculty list is
+    // empty, because "Professionalism" already exists as a category for a
+    // different target_type (e.g. Multi-Role/student) and an overly broad
+    // UNIQUE key collides across target types.
+    function ec_ensure_category_unique_key(mysqli $mysqli): array {
+        $notices = [];
+        $res = $mysqli->query("SHOW INDEX FROM question_categories WHERE Non_unique = 0 AND Key_name != 'PRIMARY'");
+        if (!$res) {
+            $notices[] = "Could not read indexes on question_categories: " . $mysqli->error;
+            return $notices;
+        }
+        $indexes = [];
+        while ($row = $res->fetch_assoc()) {
+            $indexes[$row['Key_name']][(int)$row['Seq_in_index']] = $row['Column_name'];
+        }
+        if (empty($indexes)) {
+            $notices[] = "No unique index currently exists on question_categories (besides PRIMARY).";
+        }
+        $correct = ['category_name', 'eval_type', 'target_type'];
+        $has_correct = false;
+        foreach ($indexes as $key_name => $cols) {
+            ksort($cols);
+            $cols_sorted = $cols; sort($cols_sorted);
+            if ($cols_sorted === $correct) {
+                $has_correct = true;
+            } else {
+                $notices[] = "Found wrongly-scoped unique key `$key_name` on (" . implode(', ', array_values($cols)) . ")";
+                if (!$mysqli->query("ALTER TABLE question_categories DROP INDEX `$key_name`")) {
+                    $notices[] = "FAILED to drop index `$key_name`: " . $mysqli->error;
+                } else {
+                    $notices[] = "Dropped wrongly-scoped index `$key_name`.";
+                }
+            }
+        }
+        if (!$has_correct) {
+            if (!$mysqli->query("ALTER TABLE question_categories ADD UNIQUE KEY uniq_category_scope (target_type, eval_type, category_name)")) {
+                $notices[] = "FAILED to add correct unique key uniq_category_scope: " . $mysqli->error;
+            } else {
+                $notices[] = "Added correct unique key uniq_category_scope(target_type, eval_type, category_name).";
+            }
+        }
+        return $notices;
+    }
+    $ec_schema_heal_notices = ec_ensure_category_unique_key($mysqli);
 
     // ── ENSURE account_status COLUMN EXISTS ─────────────────────────
     // Same gate manage_privileged_accounts.php uses — only approved accounts
@@ -121,20 +194,32 @@ require_once '../shared/EvaluationContextService.php';
     // the Peer-to-Peer questionnaire UI. Existing peer Multi-Role data is
     // left untouched for safety, but it is no longer selectable/displayed.
     //
-    // There is no separate "EA Evaluation" tab. The EA evaluates the
-    // active Principal/Dean using the same per-person questions assigned
-    // here under School Head Evaluation, and evaluates Non-Teaching Staff
-    // using the same per-person questions assigned under Student
-    // Evaluation -> Staff. admin/ea_evaluate.php reads directly from
-    // those two pools (eval_type='school_head' and eval_type='student'),
-    // so nothing about the assignment UI itself needs to change for EA.
-    $system_categories = ['Teacher', 'Staff', 'Multi-Role'];
+    // School Head Evaluation: Principal and Dean are the EVALUATORS here,
+    // not evaluation targets — they are the School Heads who evaluate the
+    // people under their supervision. What the EA assigns questions to
+    // under this tab are those evaluation targets, not the School Heads
+    // themselves:
+    //   - Faculty: every Faculty Member + Teaching Staff person (a shared
+    //     question pool, same mechanism as Teacher/Multi-Role below).
+    //   - EA: the current Executive Assistant account (also shared).
+    // Non-Teaching Staff is intentionally excluded from Faculty here.
+    //
+    // NOTE: admin/ea_evaluate.php's EA-evaluates-Principal/Dean flow still
+    // reads user_questions where eval_type='school_head' AND
+    // target_type IN ('Principal','Dean') — that per-person pool has no
+    // assignment path from this tab any more (this UI now only writes
+    // target_type IN ('Faculty','EA') here). Old Principal/Dean rows, if
+    // any, are unaffected in the DB but effectively orphaned from Manage
+    // Questions. Flag to the client: ea_evaluate.php's Principal/Dean
+    // flow needs its own follow-up fix (or intentional retirement) since
+    // the evaluation direction has been reversed.
+    $system_categories = ['Teacher', 'Staff', 'Multi-Role', 'School Head'];
     // Peer-to-Peer's "Staff" card is filtered down to Non-Teaching Staff only
     // (see hasNonTeachingStaffFunction() below) and displayed under that label.
     // "School" is a Peer-only per-person context for Principal + Dean, entirely
-    // separate from School Head Evaluation's own Principal/Dean question pool.
+    // separate from School Head Evaluation's Faculty/EA question pools.
     $peer_categories   = ['Teacher', 'Staff', 'School'];
-    $school_head_categories = ['Principal', 'Dean'];
+    $school_head_categories = ['Faculty', 'EA'];
     $active_categories = ($active_eval === 'school_head')
         ? $school_head_categories
         : (($active_eval === 'peer') ? $peer_categories : $system_categories);
@@ -144,7 +229,7 @@ require_once '../shared/EvaluationContextService.php';
     // is a separate shared question pool and is NEVER created merely
     // because a person has a teaching assignment. Teaching assignments
     // only affect where a person is visible to students.
-$per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School'];
+$per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'School Head'];
     // "Staff/non-teaching function present" per the Multi-Role spec — true
     // for anyone whose role or self-assigned secondary role is 'staff'.
     // This is an actual assigned function (role / secondary_role), never
@@ -234,6 +319,32 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School'];
         return 'Personnel';
     }
 
+    // Resolve the synthetic Student Evaluation -> School Head group to the
+    // person's real database target type. Questions remain stored against
+    // Principal/Dean, matching the existing per-person architecture.
+    function resolvePerUserTargetType(mysqli $mysqli, string $requested_target, int $user_id): ?string {
+        $permitted = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School'];
+        if ($requested_target !== 'School Head') {
+            return in_array($requested_target, $permitted, true) ? $requested_target : null;
+        }
+
+        $stmt = $mysqli->prepare(
+            "SELECT role FROM users
+             WHERE id=?
+               AND role IN ('principal','dean')
+               AND is_active=1
+               AND account_status='approved'
+             LIMIT 1"
+        );
+        $stmt->bind_param('i', $user_id);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+
+        if (!$row) return null;
+        return $row['role'] === 'principal' ? 'Principal' : 'Dean';
+    }
+
     // ── ACTION HANDLERS ───────────────────────────────────────────
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_action'])) {
         $action          = $_POST['form_action'];
@@ -242,14 +353,38 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School'];
         if (!in_array($post_eval_type, ['student','peer','school_head'])) $post_eval_type = 'student';
         $message         = '';
         $post_user_id    = isset($_POST['user_id']) ? (int)$_POST['user_id'] : 0;
-        $is_per_user_post = in_array($redirect_target, $per_user_targets) && $post_user_id > 0;
+        $effective_user_target = $post_user_id > 0
+            ? resolvePerUserTargetType($mysqli, $redirect_target, $post_user_id)
+            : null;
+        $is_per_user_post = in_array($redirect_target, $per_user_targets, true)
+            && $post_user_id > 0
+            && $effective_user_target !== null;
 
-        // ── PER-USER ACTIONS (Staff, Principal, Dean, Multi-Role) ──
+        // ── SCHOOL HEAD EVALUATION ASSIGNMENT ACTION ─────────────────────
+        // Evaluator-specific target/question assignments are the source of truth
+        // consumed by Dean/Principal evaluation pages.
+        if ($action === 'schoolhead_assignment_save' && $post_eval_type === 'school_head') {
+            if (!$isAdminQuestionnaireUser) {
+                http_response_code(403);
+                exit('You are not authorized to manage School Head Evaluation assignments.');
+            }
+            $evaluator_id = isset($_POST['evaluator_id']) ? (int)$_POST['evaluator_id'] : 0;
+            $assignment_target_id = isset($_POST['assignment_target_id']) ? (int)$_POST['assignment_target_id'] : 0;
+            $assignment_question_ids = (array)($_POST['question_ids'] ?? []);
+            [$ok, $assignment_message] = sh_save_assignment($mysqli, $evaluator_id, $assignment_target_id, $assignment_question_ids);
+            $message = $assignment_message;
+            $redirect_e = $evaluator_id > 0 ? '&evaluator_id='.$evaluator_id : '';
+            $redirect_t = $assignment_target_id > 0 ? '&assignment_target_id='.$assignment_target_id : '';
+            header("Location: ?view=school_head_assignments&eval_type=school_head$redirect_e$redirect_t&msg=".urlencode($message));
+            exit();
+        }
+
+        // ── PER-USER ACTIONS (Staff, Principal, Dean, Multi-Role, School Head) ──
         if ($action === 'user_insert' && $is_per_user_post) {
             $question_text = trim($_POST['question_text']);
             $category      = trim($_POST['category'] ?? 'General');
             $et            = $post_eval_type;
-            $tt            = $redirect_target;
+            $tt            = $effective_user_target;
             if (!empty($question_text)) {
                 $max = $mysqli->query("SELECT MAX(sort_order) as m FROM user_questions WHERE user_id=$post_user_id AND eval_type='".mysqli_real_escape_string($mysqli,$et)."'")->fetch_assoc()['m'] ?? 0;
                 $next = $max + 1;
@@ -278,7 +413,7 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School'];
         }
         if ($action === 'user_add_category' && $is_per_user_post) {
             $category_name = trim($_POST['category_name'] ?? '');
-            $et = $post_eval_type; $tt = $redirect_target;
+            $et = $post_eval_type; $tt = $effective_user_target;
             if (!empty($category_name)) {
                 $max  = $mysqli->query("SELECT MAX(sort_order) as m FROM user_question_categories WHERE user_id=$post_user_id AND eval_type='".mysqli_real_escape_string($mysqli,$et)."'")->fetch_assoc()['m'] ?? 0;
                 $next = $max + 1;
@@ -394,9 +529,36 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School'];
                 $max  = $mysqli->query("SELECT MAX(sort_order) as m FROM question_categories WHERE target_type='".mysqli_real_escape_string($mysqli,$target_type)."' AND eval_type='$et'")->fetch_assoc()['m'] ?? 0;
                 $next = $max + 1;
                 $stmt = $mysqli->prepare("INSERT IGNORE INTO question_categories (target_type, category_name, eval_type, sort_order) VALUES (?,?,?,?)");
-                $stmt->bind_param("sssi", $target_type, $category_name, $et, $next);
-                $stmt->execute(); $stmt->close();
-                $message = "Category \"$category_name\" added.";
+                if (!$stmt) {
+                    $message = "DB error preparing insert: " . $mysqli->error;
+                } else {
+                    $stmt->bind_param("sssi", $target_type, $category_name, $et, $next);
+                    if (!$stmt->execute()) {
+                        $message = "DB error adding category: " . $stmt->error;
+                    } elseif ($stmt->affected_rows > 0) {
+                        // Verify it actually landed under the target_type we sent —
+                        // catches ENUM columns silently coercing the value.
+                        $verify = $mysqli->prepare("SELECT target_type FROM question_categories WHERE category_name=? AND eval_type=? ORDER BY id DESC LIMIT 1");
+                        $verify->bind_param("ss", $category_name, $et);
+                        $verify->execute();
+                        $vrow = $verify->get_result()->fetch_assoc();
+                        $verify->close();
+                        $stored_as = $vrow['target_type'] ?? '(unknown)';
+                        $message = ($stored_as === $target_type)
+                            ? "Category \"$category_name\" added."
+                            : "Category \"$category_name\" was saved but stored under target_type=\"$stored_as\" instead of \"$target_type\" — check the target_type column definition.";
+                    } else {
+                        $exists = $mysqli->prepare("SELECT 1 FROM question_categories WHERE target_type=? AND eval_type=? AND category_name=? LIMIT 1");
+                        $exists->bind_param("sss", $target_type, $et, $category_name);
+                        $exists->execute();
+                        $already_here = (bool)$exists->get_result()->fetch_row();
+                        $exists->close();
+                        $message = $already_here
+                            ? "Category \"$category_name\" already exists for $target_type / $et."
+                            : "Category \"$category_name\" was rejected by the database, likely due to a unique key that isn't scoped to target_type. Please refresh and try again — this should now be fixed automatically.";
+                    }
+                    $stmt->close();
+                }
             }
         }
         if ($action === 'rename_category') {
@@ -455,7 +617,7 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School'];
     $is_per_user_target = in_array($selected_target, $per_user_targets);
 
     // ── FETCH ALL USERS ───────────────────────────────────────────
-    $card_data_student    = ['Teacher' => ['count'=>0,'users'=>[]], 'Staff' => ['count'=>0,'users'=>[]], 'Multi-Role' => ['count'=>0,'users'=>[]]];
+    $card_data_student    = ['Teacher' => ['count'=>0,'users'=>[]], 'Staff' => ['count'=>0,'users'=>[]], 'Multi-Role' => ['count'=>0,'users'=>[]], 'School Head' => ['count'=>0,'users'=>[]]];
     $card_data_peer       = ['Teacher' => ['count'=>0,'users'=>[]], 'Staff' => ['count'=>0,'users'=>[]], 'Multi-Role' => ['count'=>0,'users'=>[]]];
     $card_data_schoolhead = ['Teacher' => ['count'=>0,'users'=>[]], 'Staff' => ['count'=>0,'users'=>[]], 'Multi-Role' => ['count'=>0,'users'=>[]]];
 
@@ -468,16 +630,39 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School'];
         if ($r['eval_type'] === 'school_head' && isset($card_data_schoolhead[$r['target_type']])) $card_data_schoolhead[$r['target_type']]['count'] = $r['total'];
     }
 
-    // Faculty and Staff are now sourced directly from Manage Privileged:
-    // approved, active accounts whose role IS teacher or staff. No separate
-    // "add evaluator" step exists anymore — this list is always live.
+    // Faculty and Non-Teaching Staff are sourced from the exact personnel pool
+    // used by Manage Registrations: approved + active Teacher/Staff accounts.
+    // IMPORTANT: do NOT filter the query itself to only teaching personnel.
+    // We need the complete pool first, then bucket each person into Faculty
+    // and/or Non-Teaching Staff below. Otherwise genuine Staff accounts are
+    // discarded before the Non-Teaching Staff card can see them.
     $ures = $mysqli->query("
-        SELECT id, full_name, designation, photo, source, role, secondary_role,
-               COALESCE(source, 'login') as src
+        SELECT id, full_name, designation, photo, source, role, secondary_role, sector,
+               COALESCE(source, 'login') as src,
+               EXISTS(
+                   SELECT 1
+                   FROM teaching_assignments ta
+                   WHERE ta.user_id = users.id
+               ) AS has_teaching_assignment,
+               (
+                   role = 'teacher'
+                   OR secondary_role = 'teacher'
+                   OR sector = 'Teacher'
+                   OR EXISTS(
+                       SELECT 1
+                       FROM teaching_assignments ta2
+                       WHERE ta2.user_id = users.id
+                   )
+                   OR EXISTS(
+                       SELECT 1
+                       FROM user_year_levels yl2
+                       WHERE yl2.user_id = users.id
+                   )
+               ) AS is_teaching_staff
         FROM users
-        WHERE role IN ('teacher','staff','faculty')
+        WHERE role IN ('teacher','staff')
           AND is_active = 1
-          AND (account_status = 'approved' OR source = 'admin_nologin')
+          AND account_status = 'approved'
         ORDER BY full_name ASC
     ");
     $all_users = [];
@@ -494,10 +679,33 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School'];
     $school_head_users = [];
     if ($sh_res) while ($u = $sh_res->fetch_assoc()) $school_head_users[] = $u;
 
+    // Student Evaluation -> School Head uses the same active Principal/Dean
+    // pool as the system already uses elsewhere. The card is a grouping label;
+    // each person's questions remain stored under their real Principal/Dean
+    // target_type in user_questions.
+    $card_data_student['School Head']['users'] = $school_head_users;
+
     // ── PLACE EACH USER INTO EVALUATION CONTEXTS ──────────────────
     // Staff is never removed just because the person also has another role.
+    // A person with an actual teaching assignment is also placed in Faculty;
+    // this lets teaching Staff members receive the shared Faculty peer
+    // question set while the Non-Teaching Staff card below remains limited
+    // to people with no teaching assignment/year-level scope.
+    // $faculty_users doubles as the School Head Evaluation -> Faculty
+    // roster: same has_teacher pool (Faculty Members + Teaching Staff),
+    // one shared list, built once here rather than re-queried below.
+    $faculty_users = [];
     foreach ($all_users as $u) {
-        $has_teacher   = ec_has_teacher_function($u);
+        // Faculty/Teaching Staff is determined by an actual teaching
+        // assignment as well as the normal Teacher/Faculty role. This is
+        // important for personnel whose primary role is Staff but who are
+        // also assigned to teach a year level/section: they must still be
+        // available under Peer-to-Peer -> Faculty for question assignment.
+        // Faculty/Teaching Staff roster is sourced from the same personnel
+        // records used by Manage Registrations: a Teacher role/sector, an
+        // explicit secondary Teacher role, or an actual teaching assignment.
+        $has_teacher   = ((int)($u['is_teaching_staff'] ?? 0) === 1)
+            || ec_has_teacher_function($u);
         $has_staff     = ec_has_staff_function($u);
         // Multi-Role is an additional responsibility/context. It is not
         // inferred from teaching assignments. A Teacher+Staff account is
@@ -508,13 +716,23 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School'];
         if ($has_teacher) {
             $card_data_student['Teacher']['users'][] = $u;
             $card_data_peer['Teacher']['users'][] = $u;
+            $faculty_users[] = $u;
         }
         if ($has_staff) {
-            $card_data_student['Staff']['users'][] = $u;
+            // Student Evaluation's "Staff" card is Non-Teaching Staff only —
+            // same rule as Peer-to-Peer below. A Staff member who teaches or
+            // is scoped to a year level is already placed under Teacher
+            // above (Faculty) and must not also appear under Staff here,
+            // or students would be able to assign/see duplicate question
+            // sets for the same person under two designations.
+            $is_non_teaching_staff = isNonTeachingStaff($mysqli, (int)$u['id']);
+            if ($is_non_teaching_staff) {
+                $card_data_student['Staff']['users'][] = $u;
+            }
             // Peer-to-Peer's "Staff" card is Non-Teaching Staff only — a
             // Staff member who teaches or is scoped to a year level should
             // evaluate/be evaluated as Faculty in this tab, not appear twice.
-            if (isNonTeachingStaff($mysqli, (int)$u['id'])) {
+            if ($is_non_teaching_staff) {
                 $card_data_peer['Staff']['users'][] = $u;
             }
         }
@@ -524,18 +742,39 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School'];
         }
     }
 
-    // School Head tab is Principal/Dean only — built from its own user
-    // source, not the Teacher/Staff pool above.
-    $card_data_schoolhead = ['Principal' => ['count'=>0,'users'=>[]], 'Dean' => ['count'=>0,'users'=>[]]];
-    foreach ($school_head_users as $u) {
-        if ($u['role'] === 'principal') $card_data_schoolhead['Principal']['users'][] = $u;
-        if ($u['role'] === 'dean')      $card_data_schoolhead['Dean']['users'][]      = $u;
+    // School Head tab: Faculty (Faculty Members + Teaching Staff, same
+    // has_teacher pool collected into $faculty_users above) and EA (the
+    // current Executive Assistant account). Principal/Dean are the
+    // evaluators for this eval_type, not targets, so they are deliberately
+    // NOT placed into this roster — $school_head_users above is only used
+    // for the separate Peer-to-Peer "School" card further down.
+    $current_ea = null;
+    $session_ea_id = (int)($_SESSION['user_id'] ?? 0);
+    if ($session_ea_id > 0) {
+        $eaStmt = $mysqli->prepare("SELECT id, full_name, designation, photo, source, role FROM users WHERE id=? AND role='superadmin' AND is_active=1 AND account_status='approved' LIMIT 1");
+        $eaStmt->bind_param('i', $session_ea_id);
+        $eaStmt->execute();
+        $current_ea = $eaStmt->get_result()->fetch_assoc();
+        $eaStmt->close();
     }
+    // Fall back to the most recently active approved EA account when this
+    // page isn't being viewed in an EA's own session (e.g. an admin/
+    // registrar teammate managing questions on the EA's behalf) — the EA
+    // target must not silently disappear just because the viewer isn't
+    // the EA themselves. Do not create a placeholder/duplicate account.
+    if (!$current_ea) {
+        $eaRes = $mysqli->query("SELECT id, full_name, designation, photo, source, role FROM users WHERE role='superadmin' AND is_active=1 AND account_status='approved' ORDER BY updated_at DESC LIMIT 1");
+        $current_ea = $eaRes ? $eaRes->fetch_assoc() : null;
+    }
+    $card_data_schoolhead = [
+        'Faculty' => ['count' => 0, 'users' => $faculty_users],
+        'EA'      => ['count' => 0, 'users' => $current_ea ? [$current_ea] : []],
+    ];
 
     // Peer-to-Peer's "School" card: Principal + Dean together, evaluated by
     // colleagues. Its questions (target_type='School', eval_type='peer') are
-    // a separate pool from School Head Evaluation's own Principal/Dean
-    // questions (target_type='Principal'/'Dean', eval_type='school_head').
+    // a separate pool from School Head Evaluation's own Faculty/EA
+    // questions (target_type='Faculty'/'EA', eval_type='school_head').
     $card_data_peer['School'] = ['count' => 0, 'users' => $school_head_users];
 
     if ($active_eval === 'peer') {
@@ -569,8 +808,15 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School'];
 
     if (in_array($current_view, ['manage','user_questions'])) {
         // Shared pool categories + questions (used for Teacher + Multi-Role)
+        // School Head is a UI grouping for Principal/Dean. Resolve the
+        // selected person's real target type before reading per-person data.
+        $selected_user_target = $selected_user ? resolvePerUserTargetType($mysqli, $selected_target, $selected_user) : null;
+        $category_target = ($selected_target === 'School Head' && $selected_user_target)
+            ? $selected_user_target
+            : $selected_target;
+
         $cres = $mysqli->prepare("SELECT * FROM question_categories WHERE target_type=? AND eval_type=? ORDER BY sort_order, category_name");
-        $cres->bind_param("ss", $selected_target, $active_eval); $cres->execute();
+        $cres->bind_param("ss", $category_target, $active_eval); $cres->execute();
         $categories_list = $cres->get_result()->fetch_all(MYSQLI_ASSOC); $cres->close();
 
         $stmt = $mysqli->prepare("SELECT q.*,
@@ -582,7 +828,10 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School'];
                  WHERE q.target_type=? AND q.eval_type=?
                  GROUP BY q.id
                  ORDER BY primary_category, q.id");
-        $stmt->bind_param("ss", $selected_target, $active_eval); $stmt->execute();
+        $question_target = ($selected_target === 'School Head' && $selected_user_target)
+            ? $selected_user_target
+            : $selected_target;
+        $stmt->bind_param("ss", $question_target, $active_eval); $stmt->execute();
         $questions_list = $stmt->get_result()->fetch_all(MYSQLI_ASSOC); $stmt->close();
 
         $all_target_users = $card_data[$selected_target]['users'] ?? [];
@@ -598,13 +847,16 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School'];
             $selected_user_data = $ur->get_result()->fetch_assoc(); $ur->close();
 
             // Per-user categories (scoped to the current designation)
+            $user_target = ($selected_target === 'School Head' && $selected_user_target)
+                ? $selected_user_target
+                : $selected_target;
             $ucres = $mysqli->prepare("SELECT * FROM user_question_categories WHERE user_id=? AND target_type=? AND eval_type=? ORDER BY sort_order, category_name");
-            $ucres->bind_param("iss", $selected_user, $selected_target, $active_eval); $ucres->execute();
+            $ucres->bind_param("iss", $selected_user, $user_target, $active_eval); $ucres->execute();
             $user_categories_list = $ucres->get_result()->fetch_all(MYSQLI_ASSOC); $ucres->close();
 
             // Per-user questions (same scoping)
             $uqstmt = $mysqli->prepare("SELECT * FROM user_questions WHERE user_id=? AND target_type=? AND eval_type=? ORDER BY category, sort_order, id");
-            $uqstmt->bind_param("iss", $selected_user, $selected_target, $active_eval); $uqstmt->execute();
+            $uqstmt->bind_param("iss", $selected_user, $user_target, $active_eval); $uqstmt->execute();
             $user_questions_list = $uqstmt->get_result()->fetch_all(MYSQLI_ASSOC); $uqstmt->close();
 
         } elseif ($selected_user && !$is_per_user_target) {
@@ -621,18 +873,23 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School'];
         'Principal'           => 'fa-user-tie',
         'Dean'                => 'fa-graduation-cap',
         'School'              => 'fa-building-columns',
+        'Faculty'             => 'fa-users',
+        'EA'                  => 'fa-user-shield',
+        'School Head'          => 'fa-user-tie',
     ];
 
     // Peer-to-Peer's "Staff" card is Non-Teaching Staff only; show that
     // label wherever the raw target_type key would otherwise print as
     // "Staff" in this tab. Every other tab/type displays unchanged.
     function displayTargetLabel(string $type, string $active_eval): string {
-        return ($active_eval === 'peer' && $type === 'Staff') ? 'Non-Teaching Staff' : $type;
+        if ($active_eval === 'peer' && $type === 'Staff') return 'Non-Teaching Staff';
+        if ($type === 'Teacher') return 'Faculty';
+        return $type;
     }
     $eval_theme = [
-        'student'     => ['label' => 'Student Evaluation',      'color' => '#3B82F6', 'bg' => 'rgba(59,130,246,.07)',  'border' => 'rgba(59,130,246,.22)', 'desc' => 'Students evaluate teacher and staff they interact with.'],
+        'student'     => ['label' => 'Student Evaluation',      'color' => '#3B82F6', 'bg' => 'rgba(59,130,246,.07)',  'border' => 'rgba(59,130,246,.22)', 'desc' => 'Students evaluate teacher, staff, and eligible school heads.'],
         'peer'        => ['label' => 'Peer-to-Peer Evaluation',  'color' => '#7C3AED', 'bg' => 'rgba(124,58,237,.07)', 'border' => 'rgba(124,58,237,.22)', 'desc' => 'Teacher and staff evaluate colleagues they work with directly.'],
-        'school_head' => ['label' => 'School Head Evaluation',   'color' => '#D97706', 'bg' => 'rgba(217,119,6,.08)',  'border' => 'rgba(217,119,6,.24)',  'desc' => 'The School Head evaluates teacher and staff under their supervision.'],
+        'school_head' => ['label' => 'School Head Evaluation',   'color' => '#D97706', 'bg' => 'rgba(217,119,6,.08)',  'border' => 'rgba(217,119,6,.24)',  'desc' => 'The School Head (Principal/Dean) evaluates faculty, teaching staff, and the EA under their supervision.'],
     ];
     $eval_label        = $eval_theme[$active_eval]['label'];
     $eval_color        = $eval_theme[$active_eval]['color'];
@@ -660,6 +917,7 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School'];
     <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
     <style>
     :root{
+     --school-head:#D97706;--school-head-bg:rgba(217,119,6,.09);--school-head-border:rgba(217,119,6,.24);
       --page-bg:#F8FAFC;--card-bg:#FFFFFF;--card-border:#CBD5E1;
       --text-dark:#0F172A;--text-dim:#475569;--track-bg:#CBD5E1;
       --radius:10px;--card-shadow:0 1px 2px rgba(15,23,42,.06),0 4px 12px rgba(15,23,42,.06);
@@ -707,6 +965,28 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School'];
     .sector-card:hover{transform:translateY(-3px);box-shadow:0 10px 24px rgba(15,23,42,.1);}
     .sector-card.staff-card{border-top-color:var(--staff);}
     .sector-card.multi-role-card{border-top-color:var(--mr);}
+     .sector-card.school-head-card{border-top-color:var(--school-head);}
+     .sector-label.school-head-color{color:var(--school-head);}
+     .school-head-pill{background:var(--school-head-bg);border-color:var(--school-head-border);color:var(--school-head);}
+     .card-avatar-ph.school-head-ph{background:var(--school-head-bg);color:var(--school-head);}
+     .card-avatar-more.school-head-more{background:var(--school-head);}
+     .sector-stat-lbl.school-head-l{color:var(--school-head);opacity:.78;}
+     .sector-stat-val.school-head-v{color:var(--school-head);}
+     .btn-view-school-head{background:var(--school-head);color:#fff;}
+     .btn-view-school-head:hover{opacity:.88;}
+     .school-head-q{border-color:var(--school-head-border);color:var(--school-head);background:var(--school-head-bg);}
+     .user-list-item.active.school-head-active{background:var(--school-head-bg);border-left-color:var(--school-head);}
+     .school-head-pu{background:var(--school-head-bg);border:1px solid var(--school-head-border);}
+     .school-head-pu i{color:var(--school-head);}
+     .school-head-av{border-color:var(--school-head);}
+     .user-header-tag.school-head-tag{background:var(--school-head-bg);border-color:var(--school-head-border);color:var(--school-head);}
+     .school-head-ct{color:var(--school-head);}
+     .cat-chip.school-head-chip{background:var(--school-head-bg);border-color:var(--school-head-border);color:var(--school-head);}
+     .section-heading.school-head-sh{color:var(--school-head);border-color:var(--school-head-border);}
+     .btn-school-head{background:var(--school-head);color:#fff;}
+     .btn-school-head:hover{opacity:.88;}
+     .school-head-prompt .prompt-icon{color:var(--school-head);}
+
     .sector-card-top{display:flex;justify-content:space-between;align-items:center;}
     .sector-label{font-family:'Rajdhani',sans-serif;font-size:22px;font-weight:700;display:flex;align-items:center;gap:8px;}
     .sector-label.dark{color:var(--text-dark);}
@@ -1042,11 +1322,21 @@ a { color:inherit; }
 .eval-tab:has(.fa-user-tie) > i{color:#D97706 !important;}
 
 </style>
-    </head>
-    <body>
+        <link rel="stylesheet" href="admin_compact_ui.css">
+</head>
+    <body class="feature-compact">
 
     <?php if (isset($_GET['msg']) && $_GET['msg']): ?>
     <div class="toast"><i class="fa-solid fa-circle-check"></i> <?= htmlspecialchars($_GET['msg']) ?></div>
+    <?php endif; ?>
+
+    <?php if ($isAdminQuestionnaireUser && !empty($ec_schema_heal_notices)): ?>
+    <div class="toast" style="background:#FFF7ED;border-color:#FED7AA;color:#9A3412;flex-direction:column;align-items:flex-start;gap:4px;">
+        <div><i class="fa-solid fa-database"></i> <strong>Schema self-heal (question_categories):</strong></div>
+        <?php foreach ($ec_schema_heal_notices as $n): ?>
+        <div style="font-size:12.5px;padding-left:20px"><?= htmlspecialchars($n) ?></div>
+        <?php endforeach; ?>
+    </div>
     <?php endif; ?>
 
     <?php
@@ -1093,7 +1383,7 @@ a { color:inherit; }
     <div class="page-header">
         <div>
             <h1><?= $eval_label ?></h1>
-            <p><?= $eval_desc ?> Teacher uses a shared question set. Staff, Principal, Dean, and Multi-Role questions are assigned per person. Teaching assignments control the student's base Teacher/Staff visibility. An additional responsibility creates a separate Multi-Role context; it never replaces the base role. Faculty/Staff lists are pulled live from Manage Privileged — nothing to add here manually.<?php if ($active_eval === 'school_head'): ?> The EA also evaluates the active Principal and Dean, reusing these same per-person questions.<?php elseif ($active_eval === 'student'): ?> The EA also evaluates Non-Teaching Staff, reusing the Staff questions assigned here.<?php endif; ?></p>
+            <p><?= $eval_desc ?></p>
         </div>
         <a href="?view=manage&target=Teacher&eval_type=<?= $active_eval ?>" class="btn btn-primary">
             <i class="fa-solid fa-circle-plus"></i> Manage Questions
@@ -1131,6 +1421,15 @@ a { color:inherit; }
     }
     $staff_subroles = $subroles_by_type['Staff'] ?? [];
 
+    // School Head Evaluation assignment coverage: evaluator-specific target
+    // assignments are the source of truth for what Principal/Dean can evaluate.
+    $sh_target_assignment_counts = [];
+    if ($active_eval === 'school_head') {
+        $shac = $mysqli->query("SELECT target_user_id, COUNT(DISTINCT evaluator_id) AS evaluator_count, COUNT(DISTINCT question_id) AS question_count
+            FROM school_head_evaluation_assignments GROUP BY target_user_id");
+        if ($shac) while ($ar = $shac->fetch_assoc()) $sh_target_assignment_counts[(int)$ar['target_user_id']] = $ar;
+    }
+
     // Same cosmetic breakdown for the Peer-to-Peer "School" card: Principal
     // vs Dean counts, shown the same way Staff shows Personnel/Cashier.
     $school_subrole_labels = [
@@ -1149,16 +1448,41 @@ a { color:inherit; }
         $icon        = $icons[$type] ?? 'fa-user';
         $users       = $data['users'];
         $is_mr       = ($type === 'Multi-Role');
-        $is_staff    = in_array($type, $per_user_targets); // Staff, Principal, Dean
+        $is_school_head = ($type === 'School Head' && $active_eval === 'student');
+        $is_staff    = in_array($type, $per_user_targets, true) || $is_school_head;
         $is_fac      = ($type === 'Teacher');
         $fac_c       = $is_mr ? count(array_filter($users, fn($u) => $u['role'] === 'teacher')) : 0;
         $sta_c       = $is_mr ? count(array_filter($users, fn($u) => $u['role'] === 'staff'))   : 0;
-        $card_class  = $is_mr ? 'multi-role-card' : ($is_staff ? 'staff-card' : '');
-        $label_class = $is_mr ? 'mr-color' : ($is_staff ? 'staff-color' : 'dark');
-        $icon_color  = $is_mr ? 'var(--mr)' : ($is_staff ? 'var(--staff)' : 'var(--eval-color)');
+        $card_class  = $is_mr ? 'multi-role-card' : ($is_school_head ? 'school-head-card' : ($is_staff ? 'staff-card' : ''));
+        $label_class = $is_mr ? 'mr-color' : ($is_school_head ? 'school-head-color' : ($is_staff ? 'staff-color' : 'dark'));
+        $icon_color  = $is_mr ? 'var(--mr)' : ($is_school_head ? 'var(--school-head)' : ($is_staff ? 'var(--staff)' : 'var(--eval-color)'));
 
         // Badge count: per-user total for all individual targets; Teacher alone uses the shared pool.
-        if ($is_staff) {
+        if ($active_eval === 'school_head' && in_array($type, ['Faculty','EA'], true)) {
+            // School Head Evaluation assignments are evaluator-specific, so the
+            // card shows how many distinct targets have at least one assigned
+            // question rather than pretending the shared question pool itself
+            // is an assignment.
+            $assigned_target_ids = [];
+            foreach ($users as $u) {
+                if (isset($sh_target_assignment_counts[(int)$u['id']])) $assigned_target_ids[(int)$u['id']] = true;
+            }
+            $badge_count = array_sum(array_map(fn($r) => (int)$r['question_count'], array_values(array_intersect_key($sh_target_assignment_counts, $assigned_target_ids))));
+            $badge_label = 'assigned Qs';
+            $users_with_q = count($assigned_target_ids);
+        } elseif ($is_school_head) {
+            // Count only questions belonging to the currently active School
+            // Head roster so old rows for inactive heads do not inflate totals.
+            $badge_count = array_sum(array_map(function($u) use ($user_q_counts, $active_eval) {
+                $target = $u['role'] === 'principal' ? 'Principal' : 'Dean';
+                return (int)($user_q_counts[$u['id']][$target][$active_eval] ?? 0);
+            }, $users));
+            $badge_label = 'total Qs';
+            $users_with_q = count(array_filter($users, function($u) use ($user_q_counts, $active_eval) {
+                $target = $u['role'] === 'principal' ? 'Principal' : 'Dean';
+                return ($user_q_counts[$u['id']][$target][$active_eval] ?? 0) > 0;
+            }));
+        } elseif ($is_staff) {
             $badge_count = $per_user_uq_by_type_eval[$type][$active_eval] ?? 0;
             $badge_label = 'total Qs';
             $users_with_q = count(array_filter($users, fn($u) => ($user_q_counts[$u['id']][$type][$active_eval] ?? 0) > 0));
@@ -1176,7 +1500,7 @@ a { color:inherit; }
                 <?= htmlspecialchars(displayTargetLabel($type, $active_eval)) ?>
             </span>
             <?php if ($is_staff): ?>
-            <span class="per-user-pill staff-pill">
+            <span class="per-user-pill <?= $is_school_head ? 'school-head-pill' : 'staff-pill' ?>">
                 <i class="fa-solid fa-user-pen" style="font-size:9px"></i> Per-Person
             </span>
             <?php else: ?>
@@ -1205,19 +1529,23 @@ a { color:inherit; }
                     <?php if ($cu['photo']): ?>
                     <img class="card-avatar" src="../image/<?= htmlspecialchars($cu['photo']) ?>" title="<?= htmlspecialchars($cu['full_name']) ?>"/>
                     <?php else: ?>
-                    <div class="card-avatar-ph staff-ph" title="<?= htmlspecialchars($cu['full_name']) ?>"><i class="fa-solid fa-user" style="font-size:10px"></i></div>
+                    <div class="card-avatar-ph <?= $is_school_head ? 'school-head-ph' : 'staff-ph' ?>" title="<?= htmlspecialchars($cu['full_name']) ?>"><i class="fa-solid fa-user" style="font-size:10px"></i></div>
                     <?php endif; ?>
                 <?php endforeach; ?>
-                <?php if ($extra > 0): ?><div class="card-avatar-more staff-more">+<?= $extra ?></div><?php endif; ?>
+                <?php if ($extra > 0): ?><div class="card-avatar-more <?= $is_school_head ? 'school-head-more' : 'staff-more' ?>">+<?= $extra ?></div><?php endif; ?>
                 <span style="font-size:11px;color:var(--text-dim);margin-left:8px;"><?= count($users) ?> person<?= count($users)>1?'s':'' ?></span>
+            </div>
+            <?php elseif ($is_school_head): ?>
+            <div style="font-size:11px;color:var(--school-head);opacity:.78;font-style:italic;">
+                <i class="fa-solid fa-user-slash" style="font-size:10px"></i> No active School Heads available.
             </div>
             <?php endif; ?>
             <div class="sector-meta">
-                <div><div class="sector-stat-lbl staff-l">Total Questions</div><div class="sector-stat-val staff-v"><?= $badge_count ?></div></div>
-                <div><div class="sector-stat-lbl staff-l">Assigned</div><div class="sector-stat-val staff-v"><?= $users_with_q ?>/<?= count($users) ?></div></div>
+                <div><div class="sector-stat-lbl <?= $is_school_head ? 'school-head-l' : 'staff-l' ?>">Total Questions</div><div class="sector-stat-val <?= $is_school_head ? 'school-head-v' : 'staff-v' ?>"><?= $badge_count ?></div></div>
+                <div><div class="sector-stat-lbl <?= $is_school_head ? 'school-head-l' : 'staff-l' ?>">Assigned</div><div class="sector-stat-val <?= $is_school_head ? 'school-head-v' : 'staff-v' ?>"><?= $users_with_q ?>/<?= count($users) ?></div></div>
             </div>
             <div class="sector-actions">
-                <button class="btn-sector btn-view-staff" onclick="event.stopPropagation();window.location='?view=manage&target=<?= urlencode($type) ?>&eval_type=<?= $active_eval ?>'"><i class="fa-solid fa-user-pen"></i> Assign Questions</button>
+                <button class="btn-sector <?= $is_school_head ? 'btn-view-school-head' : 'btn-view-staff' ?>" onclick="event.stopPropagation();window.location='<?= $active_eval === 'school_head' ? '?view=school_head_assignments&eval_type=school_head' : '?view=manage&target='.urlencode($type).'&eval_type='.$active_eval ?>'"><i class="fa-solid fa-user-pen"></i> <?= $active_eval === 'school_head' ? 'Assign Questions' : 'Assign Questions' ?></button>
             </div>
 
         <?php elseif ($is_mr): ?>
@@ -1265,43 +1593,159 @@ a { color:inherit; }
                 <span style="font-size:11px;color:var(--text-dim);margin-left:8px;"><?= count($users) ?> person<?= count($users)>1?'s':'' ?></span>
             </div>
             <?php else: ?>
-            <div style="font-size:11px;color:var(--text-dim);font-style:italic;"><i class="fa-solid fa-user-slash" style="font-size:10px"></i> No teacher users yet</div>
+            <div style="font-size:11px;color:var(--text-dim);font-style:italic;"><i class="fa-solid fa-user-slash" style="font-size:10px"></i> No faculty users yet</div>
             <?php endif; ?>
             <div class="sector-meta">
                 <div><div class="sector-stat-lbl dark">Shared Questions</div><div class="sector-stat-val dark"><?= $badge_count ?></div></div>
                 <div><div class="sector-stat-lbl dark">People</div><div style="font-size:18px;font-weight:700;color:var(--text-dark);"><?= count($users) ?></div></div>
             </div>
             <div class="sector-actions">
-                <button class="btn-sector btn-view-dark" onclick="event.stopPropagation();window.location='?view=manage&target=Teacher&eval_type=<?= $active_eval ?>'"><i class="fa-solid fa-eye"></i> View</button>
-                <button class="btn-sector btn-edit-light" onclick="event.stopPropagation();window.location='?view=manage&target=Teacher&eval_type=<?= $active_eval ?>'"><i class="fa-solid fa-pen"></i> Edit</button>
+                <button class="btn-sector btn-view-dark" onclick="event.stopPropagation();window.location='?view=manage&target=Teacher&eval_type=<?= $active_eval ?>'"><i class="fa-solid fa-user-pen"></i> Assign Questions</button>
             </div>
         <?php endif; ?>
     </div>
     <?php endforeach; ?>
     </div>
 
+    <?php elseif ($current_view === 'school_head_assignments' && $active_eval === 'school_head'): ?>
+    <?php if (!$isAdminQuestionnaireUser) { http_response_code(403); exit('You are not authorized to manage School Head Evaluation assignments.'); } ?>
+    <!-- ══ SCHOOL HEAD EVALUATION ASSIGNMENTS ══ -->
+    <?php
+    $sh_evaluators = [];
+    $evr = $mysqli->query("SELECT id, full_name, role, designation FROM users
+        WHERE role IN ('principal','dean') AND is_active=1 AND account_status='approved'
+        ORDER BY FIELD(role,'dean','principal'), full_name ASC");
+    if ($evr) $sh_evaluators = $evr->fetch_all(MYSQLI_ASSOC);
+
+    $sh_targets = [];
+    foreach (($faculty_users ?? []) as $tu) {
+        $tu['assignment_group'] = 'Faculty';
+        $tu['assignment_label'] = ($tu['role'] === 'staff') ? 'Teaching Staff' : 'Faculty';
+        $sh_targets[] = $tu;
+    }
+    if (!empty($current_ea)) {
+        $ea_target = $current_ea;
+        $ea_target['assignment_group'] = 'EA';
+        $ea_target['assignment_label'] = 'Executive Assistant';
+        $sh_targets[] = $ea_target;
+    }
+
+    $sh_selected_evaluator = isset($_GET['evaluator_id']) ? (int)$_GET['evaluator_id'] : ($sh_evaluators[0]['id'] ?? 0);
+    $sh_selected_target = isset($_GET['assignment_target_id']) ? (int)$_GET['assignment_target_id'] : ($sh_targets[0]['id'] ?? 0);
+    if (!array_filter($sh_evaluators, fn($e) => (int)$e['id'] === $sh_selected_evaluator)) $sh_selected_evaluator = $sh_evaluators[0]['id'] ?? 0;
+    if (!array_filter($sh_targets, fn($t) => (int)$t['id'] === $sh_selected_target)) $sh_selected_target = $sh_targets[0]['id'] ?? 0;
+
+    $sh_target_row = null;
+    foreach ($sh_targets as $t) if ((int)$t['id'] === $sh_selected_target) { $sh_target_row = $t; break; }
+    $sh_target_type = $sh_target_row['assignment_group'] ?? 'Faculty';
+    $sh_questions = [];
+    $qst = $mysqli->prepare("SELECT id, category, question_text FROM evaluation_questions WHERE eval_type='school_head' AND target_type=? ORDER BY category, id");
+    $qst->bind_param('s', $sh_target_type); $qst->execute(); $sh_questions = $qst->get_result()->fetch_all(MYSQLI_ASSOC); $qst->close();
+    $sh_existing_ids = [];
+    if ($sh_selected_evaluator && $sh_selected_target) {
+        $sh_existing_ids = [];
+        $sh_existing_stmt = $mysqli->prepare("SELECT question_id FROM school_head_evaluation_assignments WHERE evaluator_id=? AND target_user_id=? ORDER BY question_id");
+        if ($sh_existing_stmt) {
+            $sh_existing_stmt->bind_param('ii', $sh_selected_evaluator, $sh_selected_target);
+            $sh_existing_stmt->execute();
+            $sh_existing_res = $sh_existing_stmt->get_result();
+            if ($sh_existing_res) { while ($rr = $sh_existing_res->fetch_assoc()) $sh_existing_ids[] = (int)$rr['question_id']; }
+            $sh_existing_stmt->close();
+        }
+    }
+    ?>
+    <div class="page-header">
+        <div>
+            <h1><i class="fa-solid fa-user-shield" style="color:var(--school-head);margin-right:8px"></i>School Head Evaluation Assignments</h1>
+            <p>Assign the exact School Head Evaluation questions that each Principal or Dean may use for each target. These assignments are the source of truth for the evaluation pages.</p>
+        </div>
+        <a href="?view=dashboard&eval_type=school_head" class="btn btn-back"><i class="fa-solid fa-circle-chevron-left"></i> Back</a>
+    </div>
+
+    <?php if (empty($sh_evaluators) || empty($sh_targets)): ?>
+    <div class="empty-state"><i class="fa-solid fa-user-slash" style="color:var(--school-head)"></i><p>No active School Head evaluators or eligible Faculty/EA targets are available.</p></div>
+    <?php else: ?>
+    <div class="manage-layout">
+        <div class="sidebar">
+            <div class="sidebar-title"><i class="fa-solid fa-user-tie" style="color:var(--school-head)"></i> Evaluators <span class="sidebar-count"><?= count($sh_evaluators) ?></span></div>
+            <ul class="user-list">
+            <?php foreach ($sh_evaluators as $ev): ?>
+                <li class="user-list-item <?= (int)$ev['id']===$sh_selected_evaluator?'active school-head-active':'' ?>" onclick="window.location='?view=school_head_assignments&eval_type=school_head&evaluator_id=<?= (int)$ev['id'] ?>&assignment_target_id=<?= (int)$sh_selected_target ?>'">
+                    <div class="user-list-avatar-ph"><i class="fa-solid <?= $ev['role']==='dean'?'fa-graduation-cap':'fa-user-tie' ?>"></i></div>
+                    <div style="flex:1;min-width:0"><div class="user-list-name"><?= htmlspecialchars($ev['full_name']) ?></div><div class="user-list-desig"><?= htmlspecialchars(ucfirst($ev['role'])) ?></div></div>
+                </li>
+            <?php endforeach; ?>
+            </ul>
+        </div>
+        <div class="content-panel">
+            <div class="pick-prompt" style="text-align:left">
+                <p><strong>Evaluator:</strong> <?= htmlspecialchars(($sh_evaluators[array_search($sh_selected_evaluator, array_column($sh_evaluators,'id'))]['full_name'] ?? '')) ?></p>
+                <p style="margin-top:4px"><strong>Target:</strong> <?= htmlspecialchars($sh_target_row['full_name'] ?? '') ?> — <?= htmlspecialchars($sh_target_row['assignment_label'] ?? '') ?></p>
+            </div>
+            <div style="display:flex;gap:12px;margin-bottom:18px;align-items:end;flex-wrap:wrap">
+                <div style="min-width:280px">
+                    <label style="display:block;font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:6px;text-transform:uppercase">Target Person</label>
+                    <select onchange="window.location='?view=school_head_assignments&eval_type=school_head&evaluator_id=<?= $sh_selected_evaluator ?>&assignment_target_id='+this.value" style="width:100%;background:#fff;border:1px solid var(--card-border);color:var(--text-dark);padding:10px 12px;border-radius:var(--radius);font-size:13px">
+                        <?php $lastGroup=''; foreach ($sh_targets as $t): if ($lastGroup!==$t['assignment_group']) { if ($lastGroup!=='') echo '</optgroup>'; echo '<optgroup label="'.htmlspecialchars($t['assignment_group']).'">'; $lastGroup=$t['assignment_group']; } ?>
+                        <option value="<?= (int)$t['id'] ?>" <?= (int)$t['id']===$sh_selected_target?'selected':'' ?>><?= htmlspecialchars($t['full_name'].' — '.$t['assignment_label']) ?></option>
+                        <?php endforeach; if ($lastGroup!=='') echo '</optgroup>'; ?>
+                    </select>
+                </div>
+            </div>
+            <form method="POST">
+                <input type="hidden" name="form_action" value="schoolhead_assignment_save">
+                <input type="hidden" name="eval_type" value="school_head">
+                <input type="hidden" name="evaluator_id" value="<?= $sh_selected_evaluator ?>">
+                <input type="hidden" name="assignment_target_id" value="<?= $sh_selected_target ?>">
+                <div class="section-heading school-head-sh"><i class="fa-solid fa-list-check"></i> Assigned Questions <span style="font-size:10px;color:var(--text-dim);font-weight:400">(<?= count($sh_questions) ?> available)</span></div>
+                <?php if (empty($sh_questions)): ?>
+                    <div class="empty-state"><i class="fa-solid fa-circle-info"></i><p>No School Head Evaluation questions exist for <?= htmlspecialchars($sh_target_type) ?> yet. Create them from the School Head Evaluation question pool first.</p></div>
+                <?php else: ?>
+                    <div style="display:flex;flex-direction:column;gap:8px;margin:14px 0 18px">
+                    <?php foreach ($sh_questions as $q): ?>
+                        <label style="display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border:1px solid var(--card-border);border-radius:9px;background:#fff;cursor:pointer">
+                            <input type="checkbox" name="question_ids[]" value="<?= (int)$q['id'] ?>" <?= in_array((int)$q['id'],$sh_existing_ids,true)?'checked':'' ?> style="margin-top:3px">
+                            <span><strong style="font-size:11px;color:var(--school-head)"><?= htmlspecialchars($q['category'] ?: 'General') ?></strong><br><span style="font-size:13px;color:var(--text-dark)"><?= htmlspecialchars($q['question_text']) ?></span></span>
+                        </label>
+                    <?php endforeach; ?>
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="background:var(--school-head)"><i class="fa-solid fa-floppy-disk"></i> Save Assignment</button>
+                    <span style="font-size:12px;color:var(--text-dim);margin-left:10px">Saving replaces the current questions for this evaluator + target.</span>
+                <?php endif; ?>
+            </form>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <?php elseif ($current_view === 'manage'): ?>
     <!-- ══ MANAGE ══ -->
     <?php
     $is_mr_manage    = ($selected_target === 'Multi-Role');
     $is_staff_manage = ($selected_target === 'Staff');
-    $is_fac_manage   = ($selected_target === 'Teacher');
-    $is_shared_manage = $is_fac_manage; // only Teacher uses the shared pool
+    $is_school_head_manage = ($selected_target === 'School Head' && $active_eval === 'student');
+    // Shared-pool targets: Teacher (all eval types) plus Faculty/EA under
+    // School Head Evaluation — these use the shared evaluation_questions/
+    // question_categories pool, the same mechanism as Teacher, rather than
+    // per-person user_questions/user_question_categories rows.
+    $is_fac_manage   = ($selected_target === 'Teacher')
+        || ($active_eval === 'school_head' && in_array($selected_target, ['Faculty', 'EA'], true));
+    $is_shared_manage = $is_fac_manage;
     $accent_class    = $is_mr_manage ? 'mr' : ($is_staff_manage ? 'staff' : 'fac');
-    $hdr_color       = $is_mr_manage ? 'var(--mr)' : ($is_staff_manage ? 'var(--staff)' : 'var(--eval-color)');
+    $hdr_color       = $is_mr_manage ? 'var(--mr)' : ($is_school_head_manage ? 'var(--school-head)' : ($is_staff_manage ? 'var(--staff)' : 'var(--eval-color)'));
 
     // Cosmetic per-user theming classes — only Staff gets the dedicated
     // "staff" visual treatment (purple + briefcase icon language baked into
     // the CSS above); Principal/Dean reuse the neutral eval-color theme so
     // they don't visually masquerade as Staff members.
     $pu_is_true_staff = ($selected_target === 'Staff');
-    $pu_av_cls   = $pu_is_true_staff ? 'staff-av'   : '';
-    $pu_tag_cls  = $pu_is_true_staff ? 'staff-tag'  : '';
-    $pu_chip_cls = $pu_is_true_staff ? 'staff-chip' : '';
-    $pu_sh_cls   = $pu_is_true_staff ? 'staff-sh'   : '';
-    $pu_ct_cls   = $pu_is_true_staff ? 'staff-ct'   : '';
-    $pu_btn_cls  = $pu_is_true_staff ? 'btn-staff'  : 'btn-eval';
-    $pu_prompt_cls = $pu_is_true_staff ? 'staff-prompt' : 'generic-prompt';
+    $pu_is_school_head = $is_school_head_manage;
+    $pu_av_cls   = $pu_is_true_staff ? 'staff-av'   : ($pu_is_school_head ? 'school-head-av' : '');
+    $pu_tag_cls  = $pu_is_true_staff ? 'staff-tag'  : ($pu_is_school_head ? 'school-head-tag' : '');
+    $pu_chip_cls = $pu_is_true_staff ? 'staff-chip' : ($pu_is_school_head ? 'school-head-chip' : '');
+    $pu_sh_cls   = $pu_is_true_staff ? 'staff-sh'   : ($pu_is_school_head ? 'school-head-sh' : '');
+    $pu_ct_cls   = $pu_is_true_staff ? 'staff-ct'   : ($pu_is_school_head ? 'school-head-ct' : '');
+    $pu_btn_cls  = $pu_is_true_staff ? 'btn-staff'  : ($pu_is_school_head ? 'btn-school-head' : 'btn-eval');
+    $pu_prompt_cls = $pu_is_true_staff ? 'staff-prompt' : ($pu_is_school_head ? 'school-head-prompt' : 'generic-prompt');
     ?>
     <div class="page-header">
         <div>
@@ -1377,7 +1821,7 @@ a { color:inherit; }
                 <?php elseif ($is_mr_manage): ?>
                     No multi-role <?= $mr_filter !== 'all' ? $mr_filter : 'users' ?> found.<br><small>A user appears here when they have an additional role/responsibility. Teaching assignments do not replace their Staff or Teacher context.</small>
                 <?php elseif ($is_fac_manage): ?>
-                    No approved Faculty accounts yet.<br><small>Approve Faculty registrations in Manage Privileged and they'll appear here automatically.</small>
+                    No approved <?= htmlspecialchars(displayTargetLabel($selected_target, $active_eval)) ?> accounts yet.<br><small>Approve <?= htmlspecialchars($selected_target) ?> registrations in Manage Privileged and they'll appear here automatically.</small>
                 <?php else: ?>
                     No eligible <?= htmlspecialchars(displayTargetLabel($selected_target, $active_eval)) ?> found.<br><small>This list updates automatically based on active roles and assignments — nothing to add here manually.</small>
                 <?php endif; ?>
@@ -1388,14 +1832,15 @@ a { color:inherit; }
                 foreach ($target_users as $tu):
                     $is_active_item = ($selected_user === $tu['id']);
                     $is_nologin     = ($tu['source'] === 'admin_nologin');
-                    $active_cls     = $is_active_item ? ('active'.($is_staff_manage?' staff-active':($is_mr_manage||$is_fac_manage?' mr-active':''))) : '';
-                    $q_badge_cls    = $is_staff_manage ? 'staff-q' : 'mr-q';
-                    $sub            = ($selected_target === 'Staff') ? getSubRole($tu) : (($selected_target === 'School') ? ($tu['role'] === 'principal' ? 'Principal' : 'Dean') : null);
+                    $active_cls     = $is_active_item ? ('active'.($is_staff_manage?' staff-active':($is_school_head_manage?' school-head-active':($is_mr_manage||$is_fac_manage?' mr-active':'')))) : '';
+                    $q_badge_cls    = $is_staff_manage ? 'staff-q' : ($is_school_head_manage ? 'school-head-q' : 'mr-q');
+                    $sub            = ($selected_target === 'Staff') ? getSubRole($tu) : (($selected_target === 'School' || $selected_target === 'School Head') ? ($tu['role'] === 'principal' ? 'Principal' : 'Dean') : null);
                     $sec_label      = secondaryRoleLabel($tu);
 
                     // Badge: per-user count for per-user targets, shared pool count for Teacher/Multi-Role
                     if ($is_per_user_target) {
-                        $uq_cnt = $user_q_counts[$tu['id']][$selected_target][$active_eval] ?? 0;
+                        $uq_target = $selected_target === 'School Head' ? ($tu['role'] === 'principal' ? 'Principal' : 'Dean') : $selected_target;
+                        $uq_cnt = $user_q_counts[$tu['id']][$uq_target][$active_eval] ?? 0;
                         $badge_text = $uq_cnt > 0 ? $uq_cnt.'Q' : '0Q';
                         $badge_extra = $uq_cnt === 0 ? ' no-q' : '';
                     } else {
@@ -1453,7 +1898,7 @@ a { color:inherit; }
             <?php else: ?>
             <div class="mr-notice" style="background:var(--eval-bg);border-color:var(--eval-border)">
                 <i class="fa-solid fa-layer-group" style="color:var(--eval-color)"></i>
-                <p><strong style="color:var(--eval-color)">Teacher Questions</strong> — Shared pool. Every approved Teacher member is evaluated with this same question set.</p>
+                <p><strong style="color:var(--eval-color)"><?= htmlspecialchars($selected_target) ?> Questions</strong> — Shared pool. Every approved <?= htmlspecialchars($selected_target) ?> member is evaluated with this same question set.</p>
             </div>
             <?php endif; ?>
             <div class="shared-banner" style="<?= $is_mr_manage ? 'background:var(--mr-bg);border-color:var(--mr-border)' : '' ?>">
@@ -1640,7 +2085,7 @@ a { color:inherit; }
             ?>
 
             <!-- Per-user banner -->
-            <div class="per-user-banner <?= $selected_target === 'Multi-Role' ? 'mr-pu' : 'staff-pu' ?>">
+            <div class="per-user-banner <?= $selected_target === 'Multi-Role' ? 'mr-pu' : ($selected_target === 'School Head' ? 'school-head-pu' : 'staff-pu') ?>">
                 <i class="fa-solid fa-user-pen" style="color:<?= $hdr_color ?>"></i>
                 <p>
                     <strong style="color:<?= $hdr_color ?>">Individual question set</strong>
@@ -1662,7 +2107,7 @@ a { color:inherit; }
                         array_map('trim', preg_split('/\s*[,\/|;]+\s*/', $selected_user_data['designation'] ?? '')),
                         fn($t) => $t !== ''
                     ));
-                    if (empty($pu_desig_tokens)) $pu_desig_tokens = [$selected_target];
+                    if (empty($pu_desig_tokens)) $pu_desig_tokens = [($selected_target === 'School Head' ? ($selected_user_data['role'] === 'principal' ? 'Principal' : 'Dean') : $selected_target)];
                     ?>
                     <div class="desig-tag-row per-user-desig-tags">
                         <?php foreach ($pu_desig_tokens as $dt): ?>

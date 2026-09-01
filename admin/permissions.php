@@ -41,7 +41,7 @@ function admin_can_edit(mysqli $mysqli, string $feature_key): bool {
 /**
  * Renders the small "view-only" notice banner used at the top of gated pages
  * when the logged-in admin does not have edit rights for that page.
- * Call this right after <body> or right after your page header, only when $can_edit is false.
+ * Call this right after <body class="feature-compact"> or right after your page header, only when $can_edit is false.
  */
 function render_view_only_banner(string $feature_label): void {
     ?>

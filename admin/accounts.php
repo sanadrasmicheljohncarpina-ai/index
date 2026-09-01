@@ -77,7 +77,7 @@ if (isset($_GET['toggle_id'])) {
 
 // ── FETCH USERS ──────────────────────────────────────────────
 // Excludes BOTH admin-created source types:
-//   'admin_nologin' = personnel profiles with no login (managed in personnel_registry.php)
+//   'admin_nologin' = personnel profiles with no login
 //   'admin'         = privileged login accounts created via manage_privileged_accounts.php
 // Only shows users who registered themselves through the login page.
 $sectorMap = [
@@ -331,8 +331,9 @@ button, .btn { font-weight:700; }
 a { color:inherit; }
 </style>
     <link rel="stylesheet" href="admin_ui_theme.css">
+    <link rel="stylesheet" href="admin_compact_ui.css">
 </head>
-<body>
+<body class="feature-compact">
 
 <?php if ($toast): ?>
 <div class="toast"><i class="fa-solid fa-circle-check"></i><?= htmlspecialchars($toast) ?></div>

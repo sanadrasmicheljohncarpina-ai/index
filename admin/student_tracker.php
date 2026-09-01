@@ -224,7 +224,8 @@ input::placeholder, textarea::placeholder { color:#91A6BE; }
 button, .btn { font-weight:700; }
 a { color:inherit; }
 </style>    <link rel="stylesheet" href="admin_ui_theme.css">
-</head><body>
+    <link rel="stylesheet" href="admin_compact_ui.css">
+</head><body class="feature-compact">
 
 <a href="admin_dashboard.php" class="back-btn"><i class="fa-solid fa-arrow-left"></i> Back to Dashboard</a>
 

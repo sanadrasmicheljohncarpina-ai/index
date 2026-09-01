@@ -18,6 +18,7 @@ if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'dean') {
     header("Location: dean_login.php");
     exit;
 }
+$deanId = (int)$_SESSION['user_id'];
 
 // ── PULL DEAN PROFILE ─────────────────────────────────────
 $stmt = $mysqli->prepare("SELECT full_name, username, email, designation, photo FROM users WHERE id = ? LIMIT 1");
@@ -31,67 +32,140 @@ $settings = get_system_settings($mysqli);
 $structureActive = ($settings['academic_structure'] === 'college');
 $period_id_int    = $settings['period_id'] ?? 0;
 $evalOpen         = $settings['is_open_for_submission'];
+$hasPeriod        = $period_id_int > 0;
 
 const HIGHER_ED_LABEL = 'Higher Education';
 
-// ── TAB (Faculty [Teacher+Staff merged] / Executive Assistant) ─────────
-// REFACTOR NOTE (redesign, mockup-driven): Teacher and Staff used to be
-// two separate tabs/queries. The new mockup shows one "Faculty" roster
-// that contains both, with a Department/Office filter and an Include
-// filter (All Faculty / Teachers Only / Staff Only) doing the narrowing
-// that separate tabs used to do. Executive Assistant stays its own tab —
-// EAs aren't scoped by department and the mockup keeps them separate.
-$validTabs = ['faculty', 'executive_assistant'];
-$tab = $_GET['tab'] ?? 'faculty';
-if (!in_array($tab, $validTabs, true)) $tab = 'faculty';
+// ── TAB (single "Faculty" tab: Teacher + Staff + Executive Assistant) ──
+// REFACTOR NOTE: Teacher and Staff used to be two separate tabs/queries,
+// then were merged into one "Faculty" roster with a Department/Office
+// filter and an Include filter (All Faculty / Teachers Only / Staff
+// Only) doing the narrowing that separate tabs used to do. Executive
+// Assistant was its own tab after that; it is now folded into this same
+// Faculty tab/roster too, so Faculty, Teaching/Non-Teaching Staff, and
+// the EA all appear together in one place. Only one tab remains, so
+// $_GET['tab'] is no longer read here — any old bookmarked
+// ?tab=executive_assistant link still resolves, it just shows the same
+// merged Faculty roster instead of a separate EA-only one.
+$validTabs = ['faculty'];
+$tab = 'faculty';
 
 $tabLabels = [
-    'faculty'              => 'Faculty',
-    'executive_assistant'  => 'Executive Assistant',
+    'faculty' => 'Faculty',
 ];
 $tabIcons = [
-    'faculty'              => 'fa-users',
-    'executive_assistant'  => 'fa-user-tie',
+    'faculty' => 'fa-users',
 ];
 
-// ── ROSTERS ──────────────────────────────────────────────────────────
-$facultyList = $staffList = $eaList = [];
-if ($structureActive) {
-    $facultyList = ea_get_faculty($mysqli, $period_id_int);
-    $staffList   = ea_get_staff($mysqli, $period_id_int);
-    $eaList      = ea_get_executive_assistants($mysqli, $period_id_int);
+// ── FACULTY ROSTER (Teacher + Staff + Executive Assistant) ─────────────
+// Who is EVALUABLE (appears in this roster) and what QUESTIONS they get
+// evaluated on are two different questions with two different sources:
+//   - Roster membership = the real personnel pool: every approved Teacher
+//     and Staff account, plus the single approved EA (superadmin)
+//     account, all merged into one Faculty list. This mirrors
+//     questionnaire.php's own $all_users / $faculty_users query, so the
+//     same person set shows up in both places.
+//   - Per-person QUESTIONS come directly from the questionnaire's Student
+//     Evaluation -> Faculty (Teacher) pool (evaluation_questions WHERE
+//     target_type='Teacher' AND eval_type='student') — see
+//     dean_evaluate.php. That pool is shared/global, not per-evaluator,
+//     so there is no more "not assigned to you yet" per-Dean state; the
+//     only "no questions" case is that pool being empty entirely.
+// Assigning Year Levels (Manage Privileged Accounts) is what turns a Staff
+// account into a "Teaching Staff" one — that's a classification/label only,
+// not an eligibility gate. Both plain Staff and Teaching Staff belong in
+// this Faculty roster.
+$facultyMerged = [];
+
+$fres = $mysqli->query("
+    SELECT id, full_name, designation AS position, photo, department, role,
+           EXISTS(
+               SELECT 1 FROM teaching_assignments ta WHERE ta.user_id = users.id
+           ) OR EXISTS(
+               SELECT 1 FROM user_year_levels yl WHERE yl.user_id = users.id
+           ) AS is_teaching_staff
+    FROM users
+    WHERE role IN ('teacher','staff')
+      AND is_active = 1
+      AND account_status = 'approved'
+    ORDER BY full_name ASC
+");
+if ($fres) while ($u = $fres->fetch_assoc()) {
+    $u['evaluation_status'] = 'not_started';
+    $u['last_evaluation_date'] = null;
+    if ($hasPeriod) {
+        $statusStmt = $mysqli->prepare("SELECT status, submitted_at
+            FROM evaluation_tracker
+            WHERE eval_type='school_head' AND evaluator_id=? AND target_user_id=? AND period_id=?
+              AND status IN ('submitted','approved')
+            ORDER BY submitted_at DESC, id DESC LIMIT 1");
+        if ($statusStmt) {
+            $statusStmt->bind_param('iii', $deanId, $u['id'], $period_id_int);
+            $statusStmt->execute();
+            $statusRow = $statusStmt->get_result()->fetch_assoc();
+            $statusStmt->close();
+            if ($statusRow) {
+                $u['evaluation_status'] = 'completed';
+                $u['last_evaluation_date'] = $statusRow['submitted_at'];
+            }
+        }
+    }
+    $u['role_label'] = ($u['role'] === 'staff')
+        ? ((int)$u['is_teaching_staff'] === 1 ? 'Teaching Staff' : 'Staff')
+        : 'Faculty';
+    $u['route_tab'] = 'faculty';
+    $facultyMerged[] = $u;
 }
 
-// Merge Teacher + Staff into one "Faculty" roster. Each row keeps track
-// of which underlying query it came from via two tags:
-//   - role_label: what's DISPLAYED in the new Role column ("Teacher" /
-//     "Staff") — comes straight from which real, role-scoped query
-//     (role='teacher' vs role='staff') produced the row, not typed in.
-//   - route_tab: what ea_questionnaire_route() needs to build the
-//     correct dean_evaluate.php link. The merged UI tab is always
-//     'faculty', but the underlying evaluation form still differs by
-//     actual role — losing this would send every merged Staff row to
-//     the Teacher evaluation form.
-$facultyMerged = [];
-foreach ($facultyList as $r) { $r['role_label'] = 'Teacher'; $r['route_tab'] = 'faculty'; $facultyMerged[] = $r; }
-foreach ($staffList as $r)   { $r['role_label'] = 'Staff';   $r['route_tab'] = 'staff';   $facultyMerged[] = $r; }
+// Single active Executive Assistant (superadmin) account, folded into the
+// same Faculty roster/tab as Teacher and Staff. The viewer here is always
+// the Dean (not the EA), so — unlike questionnaire.php, which prefers the
+// viewing EA's own session — this always takes the most recently active
+// approved EA account.
+$eaRes = $mysqli->query("SELECT id, full_name, designation AS position, photo, department, role
+    FROM users WHERE role='superadmin' AND is_active=1 AND account_status='approved'
+    ORDER BY updated_at DESC LIMIT 1");
+$current_ea = $eaRes ? $eaRes->fetch_assoc() : null;
+if ($current_ea) {
+    $current_ea['evaluation_status'] = 'not_started';
+    $current_ea['last_evaluation_date'] = null;
+    if ($hasPeriod) {
+        $statusStmt = $mysqli->prepare("SELECT status, submitted_at
+            FROM evaluation_tracker
+            WHERE eval_type='school_head' AND evaluator_id=? AND target_user_id=? AND period_id=?
+              AND status IN ('submitted','approved')
+            ORDER BY submitted_at DESC, id DESC LIMIT 1");
+        if ($statusStmt) {
+            $statusStmt->bind_param('iii', $deanId, $current_ea['id'], $period_id_int);
+            $statusStmt->execute();
+            $statusRow = $statusStmt->get_result()->fetch_assoc();
+            $statusStmt->close();
+            if ($statusRow) {
+                $current_ea['evaluation_status'] = 'completed';
+                $current_ea['last_evaluation_date'] = $statusRow['submitted_at'];
+            }
+        }
+    }
+    $current_ea['role_label'] = 'Executive Assistant';
+    $current_ea['route_tab'] = 'faculty';
+    $current_ea['department'] = null;
+    $facultyMerged[] = $current_ea;
+}
+
 usort($facultyMerged, fn($a, $b) => strcmp($a['full_name'], $b['full_name']));
 
-$rosterByTab  = ['faculty' => $facultyMerged, 'executive_assistant' => $eaList];
+$rosterByTab = ['faculty' => $facultyMerged];
 $activeRoster = $rosterByTab[$tab];
 
 $countCompleted = fn(array $rows) => count(array_filter($rows, fn($r) => $r['evaluation_status'] === 'completed'));
 $facultyCompleted = $countCompleted($facultyMerged);
-$eaCompleted      = $countCompleted($eaList);
 
-// ── SUMMARY CARDS ────────────────────────────────────────────────────
 $facultyToEvaluate = count($facultyMerged);
-$eaToEvaluate       = count($eaList);
-$totalAssigned      = $facultyToEvaluate + $eaToEvaluate;
-$totalCompleted     = $facultyCompleted + $eaCompleted;
+$totalAssigned = $facultyToEvaluate;
+$totalCompleted = $facultyCompleted;
 $completedEvaluations = $totalCompleted;
-$pendingEvaluations    = max(0, $totalAssigned - $totalCompleted);
-$completionPct          = $totalAssigned > 0 ? (int) round($totalCompleted / $totalAssigned * 100) : 0;
+$pendingEvaluations = max(0, $totalAssigned - $totalCompleted);
+$completionPct = $totalAssigned > 0 ? (int)round($totalCompleted / $totalAssigned * 100) : 0;
 
 // ── FILTER OPTIONS (built from real roster data, not hardcoded) ────────
 // Department/Office dropdown only ever lists departments that actually
@@ -104,10 +178,11 @@ foreach ($facultyMerged as $r) {
 $departmentOptions = array_keys($departmentOptions);
 sort($departmentOptions);
 
-// "Include" options ARE a fixed 3-way set (All / Teachers / Staff) — this
-// isn't personnel data, it mirrors the two source roles the merge itself
-// is built from, so a fixed list here is legitimate, unlike department.
-$includeOptions = ['all' => 'All Faculty', 'teacher' => 'Teachers Only', 'staff' => 'Staff Only'];
+// "Include" options ARE a fixed 4-way set (All / Teachers / Staff / EA) —
+// this isn't personnel data, it mirrors the three source roles the merge
+// itself is built from, so a fixed list here is legitimate, unlike
+// department.
+$includeOptions = ['all' => 'All Faculty', 'teacher' => 'Teachers Only', 'staff' => 'Staff Only', 'ea' => 'Executive Assistant'];
 
 // ── APPLY FILTERS + SEARCH (server-side, against the fetched roster) ───
 $deptFilter    = trim($_GET['dept'] ?? 'all');
@@ -118,8 +193,13 @@ $search        = trim($_GET['q'] ?? '');
 $filteredRoster = $activeRoster;
 if ($tab === 'faculty') {
     if ($includeFilter !== 'all') {
-        $wantRole = $includeFilter === 'teacher' ? 'Teacher' : 'Staff';
-        $filteredRoster = array_values(array_filter($filteredRoster, fn($r) => $r['role_label'] === $wantRole));
+        // Filter on the underlying users.role, not role_label — role_label
+        // is a display string ('Faculty', 'Teaching Staff', 'Staff',
+        // 'Executive Assistant') and never literally equals 'Teacher' or
+        // 'Staff', so comparing against it here would silently match
+        // nothing.
+        $wantRole = ['teacher' => 'teacher', 'staff' => 'staff', 'ea' => 'superadmin'][$includeFilter];
+        $filteredRoster = array_values(array_filter($filteredRoster, fn($r) => $r['role'] === $wantRole));
     }
     if ($deptFilter !== 'all' && $deptFilter !== '') {
         $filteredRoster = array_values(array_filter($filteredRoster, fn($r) => ($r['department'] ?? '') === $deptFilter));
@@ -139,22 +219,12 @@ if (($_GET['export'] ?? '') === 'csv') {
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="dean_' . $tab . '_export_' . date('Ymd_His') . '.csv"');
     $out = fopen('php://output', 'w');
-    if ($tab === 'faculty') {
-        fputcsv($out, ['Full Name', 'Department/Office', 'Position', 'Role', 'Evaluation Status', 'Last Evaluation Date']);
-        foreach ($filteredRoster as $r) {
-            fputcsv($out, [
-                $r['full_name'], $r['department'] ?: '', $r['position'] ?: '', $r['role_label'],
-                $r['evaluation_status'], $r['last_evaluation_date'] ?: '',
-            ]);
-        }
-    } else {
-        fputcsv($out, ['Full Name', 'Position', 'Role', 'Evaluation Status', 'Last Evaluation Date']);
-        foreach ($filteredRoster as $r) {
-            fputcsv($out, [
-                $r['full_name'], $r['position'] ?: '', 'Executive Assistant',
-                $r['evaluation_status'], $r['last_evaluation_date'] ?: '',
-            ]);
-        }
+    fputcsv($out, ['Full Name', 'Department/Office', 'Position', 'Role', 'Evaluation Status', 'Last Evaluation Date']);
+    foreach ($filteredRoster as $r) {
+        fputcsv($out, [
+            $r['full_name'], $r['department'] ?: '', $r['position'] ?: '', $r['role_label'],
+            $r['evaluation_status'], $r['last_evaluation_date'] ?: '',
+        ]);
     }
     fclose($out);
     $mysqli->close();
@@ -320,8 +390,7 @@ include __DIR__ . '/includes/dean_sidebar.php';
 
     <!-- SUMMARY CARDS -->
     <div class="card-grid">
-        <div class="stat-card"><i class="fa-solid fa-users"></i><div class="num"><?= $facultyToEvaluate ?></div><div class="label">Faculty to Evaluate (Teachers + Staff)</div></div>
-        <div class="stat-card"><i class="fa-solid fa-user-tie"></i><div class="num"><?= $eaToEvaluate ?></div><div class="label">Executive Assistants to Evaluate</div></div>
+        <div class="stat-card"><i class="fa-solid fa-users"></i><div class="num"><?= $facultyToEvaluate ?></div><div class="label">Faculty to Evaluate (Teachers, Staff &amp; EA)</div></div>
         <div class="stat-card"><i class="fa-solid fa-circle-check"></i><div class="num"><?= $completedEvaluations ?></div><div class="label">Completed Evaluations</div></div>
         <div class="stat-card"><i class="fa-solid fa-hourglass-half"></i><div class="num"><?= $pendingEvaluations ?></div><div class="label">Pending Evaluations</div></div>
         <div class="stat-card"><i class="fa-solid fa-chart-simple"></i><div class="num"><?= $completionPct ?>%</div><div class="label">Completion Percentage</div></div>
@@ -334,49 +403,6 @@ include __DIR__ . '/includes/dean_sidebar.php';
     </div>
     <?php endif; ?>
 
-    <!-- TABS -->
-    <div class="eval-tabs">
-        <?php foreach ($validTabs as $t): ?>
-        <a class="eval-tab <?= $tab === $t ? 'active' : '' ?>" href="dean_evaluation.php?tab=<?= $t ?>">
-            <i class="fa-solid <?= $tabIcons[$t] ?>"></i> <?= $tabLabels[$t] ?>
-            <span class="badge"><?= count($rosterByTab[$t]) ?></span>
-        </a>
-        <?php endforeach; ?>
-    </div>
-
-    <!-- FILTER BAR -->
-    <form class="filter-bar" method="get">
-        <input type="hidden" name="tab" value="<?= htmlspecialchars($tab) ?>"/>
-        <?php if ($tab === 'faculty'): ?>
-        <div class="filter-field">
-            <label for="deptSelect">Department / Office</label>
-            <select id="deptSelect" name="dept" onchange="this.form.submit()">
-                <option value="all" <?= $deptFilter === 'all' ? 'selected' : '' ?>>All Departments / Offices</option>
-                <?php foreach ($departmentOptions as $d): ?>
-                <option value="<?= htmlspecialchars($d) ?>" <?= $deptFilter === $d ? 'selected' : '' ?>><?= htmlspecialchars($d) ?></option>
-                <?php endforeach; ?>
-            </select>
-            <?php if (empty($departmentOptions)): ?>
-            <span class="filter-hint">No departments on file yet for current Faculty.</span>
-            <?php endif; ?>
-        </div>
-        <div class="filter-field">
-            <label for="includeSelect">Include</label>
-            <select id="includeSelect" name="include" onchange="this.form.submit()">
-                <?php foreach ($includeOptions as $val => $lbl): ?>
-                <option value="<?= $val ?>" <?= $includeFilter === $val ? 'selected' : '' ?>><?= $lbl ?></option>
-                <?php endforeach; ?>
-            </select>
-            <span class="filter-hint">Teachers + Staff</span>
-        </div>
-        <?php endif; ?>
-        <div class="search-wrap">
-            <label style="font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:6px;">Search</label>
-            <input type="text" name="q" value="<?= htmlspecialchars($search) ?>" placeholder="Search by name or department..."/>
-            <i class="fa-solid fa-magnifying-glass"></i>
-        </div>
-    </form>
-
     <!-- ROSTER TABLE -->
     <div class="table-wrap">
     <table>
@@ -384,18 +410,14 @@ include __DIR__ . '/includes/dean_sidebar.php';
             <tr>
                 <th>Profile</th>
                 <th>Full Name</th>
-                <?php if ($tab === 'faculty'): ?>
-                    <th>Department / Office</th><th>Position</th><th>Role</th>
-                <?php else: ?>
-                    <th>Position</th><th>Role</th>
-                <?php endif; ?>
+                <th>Department / Office</th><th>Position</th><th>Role</th>
                 <th>Evaluation Status</th>
                 <th>Last Evaluation Date</th>
                 <th>Actions</th>
             </tr>
         </thead>
         <tbody>
-        <?php $colspan = $tab === 'faculty' ? 8 : 7; ?>
+        <?php $colspan = 8; ?>
         <?php if (empty($pageRoster)): ?>
         <tr><td colspan="<?= $colspan ?>">
             <div class="empty-state">
@@ -407,18 +429,13 @@ include __DIR__ . '/includes/dean_sidebar.php';
         <tr>
             <td><img class="person-photo" src="<?= !empty($p['photo']) ? htmlspecialchars('../image/' . $p['photo']) : '../image/pbi_logo' ?>" alt=""/></td>
             <td><span class="person-name"><?= htmlspecialchars($p['full_name']) ?></span></td>
-            <?php if ($tab === 'faculty'): ?>
-                <td class="muted-cell"><?= htmlspecialchars($p['department'] ?: '—') ?></td>
-                <td class="muted-cell"><?= htmlspecialchars($p['position'] ?: '—') ?></td>
-                <td><span class="role-pill"><?= htmlspecialchars($p['role_label']) ?></span></td>
-            <?php else: ?>
-                <td class="muted-cell"><?= htmlspecialchars($p['position'] ?: '—') ?></td>
-                <!-- Confidentiality rule (Phase 2, §3): this role is always
-                     stored/fetched as role='system_admin'. Never render that
-                     raw value anywhere in the Dean Portal — the public-facing
-                     label is a fixed string, not data from the row. -->
-                <td><span class="role-pill">Executive Assistant</span></td>
-            <?php endif; ?>
+            <td class="muted-cell"><?= htmlspecialchars($p['department'] ?: '—') ?></td>
+            <td class="muted-cell"><?= htmlspecialchars($p['position'] ?: '—') ?></td>
+            <!-- Confidentiality rule (Phase 2, §3): the EA's raw role
+                 (role='superadmin') is never rendered directly — role_label
+                 already carries the public-facing "Executive Assistant"
+                 string for that row, same as every other role_label here. -->
+            <td><span class="role-pill"><?= htmlspecialchars($p['role_label']) ?></span></td>
             <td>
                 <span class="status-pill <?= htmlspecialchars($p['evaluation_status']) ?>">
                     <?php if ($p['evaluation_status'] === 'completed'): ?><i class="fa-solid fa-check" style="font-size:9px;"></i> Completed
@@ -432,12 +449,22 @@ include __DIR__ . '/includes/dean_sidebar.php';
                 <?php if (!$evalOpen): ?>
                     <span class="muted-cell">Evaluation closed</span>
                 <?php else: ?>
-                    <?php $routeTab = $tab === 'faculty' ? $p['route_tab'] : 'executive_assistant'; ?>
-                    <a class="btn-eval" href="<?= htmlspecialchars(ea_questionnaire_route($routeTab, $p['id'])) ?>">
+                    <?php
+                    // Link straight to dean_evaluate.php — NOT ea_questionnaire_route()
+                    // (that helper is a stub that builds a broken placeholder URL, see
+                    // shared/ea_personnel_service.php). dean_evaluate.php pulls its
+                    // questions directly from the questionnaire's Student Evaluation ->
+                    // Faculty (Teacher) pool (evaluation_questions, eval_type='student',
+                    // target_type='Teacher') — the same shared pool for everyone in this
+                    // roster, Faculty/Staff/EA alike — so the roster and the evaluate
+                    // form stay in sync off one source of truth.
+                    $evalUrl  = 'dean_evaluate.php?tab=' . urlencode($p['route_tab']) . '&user_id=' . (int)$p['id'];
+                    ?>
+                    <a class="btn-eval" href="<?= htmlspecialchars($evalUrl) ?>">
                         <i class="fa-solid fa-pen"></i> Evaluate
                     </a>
                     <?php if ($p['evaluation_status'] === 'completed'): ?>
-                    <a class="btn-view" href="<?= htmlspecialchars(ea_questionnaire_route($routeTab, $p['id'])) ?>&view=1">
+                    <a class="btn-view" href="<?= htmlspecialchars($evalUrl) ?>&view=1">
                         <i class="fa-solid fa-eye"></i> View
                     </a>
                     <?php endif; ?>
@@ -463,7 +490,7 @@ include __DIR__ . '/includes/dean_sidebar.php';
     <?php endif; ?>
     </div>
     <?php if ($tab === 'faculty'): ?>
-    <p class="filter-hint" style="margin-top:10px;">Faculty includes all teaching and non-teaching personnel (Teachers and Staff) under Higher Education Division.</p>
+    <p class="filter-hint" style="margin-top:10px;">Faculty includes all teaching and non-teaching personnel (Teachers and Staff) plus the Executive Assistant, under Higher Education Division.</p>
     <?php endif; ?>
 
     <?php endif; ?>

@@ -606,7 +606,7 @@ foreach ($valid_roles as $r) { $roleTotals[$r] = array_sum($countGrid[$r]); }
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Manage Registrations — PBI Super Admin</title>
+<title>Account Management — PBI Super Admin</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
@@ -841,8 +841,9 @@ a { color:inherit; }
 
 </style>
     <link rel="stylesheet" href="admin_ui_theme.css">
+    <link rel="stylesheet" href="admin_compact_ui.css">
 </head>
-<body>
+<body class="feature-compact">
 
 <?php if ($toast): ?>
 <div class="toast"><i class="fa-solid fa-circle-check"></i><?= htmlspecialchars($toast) ?></div>
@@ -855,7 +856,7 @@ a { color:inherit; }
 
 <div class="page-header">
     <div>
-        <h1>Manage Registrations</h1>
+        <h1>Account Management</h1>
         <p>Review self-registered accounts and approve or block access — Executive Assistant, School Head, Principal, Dean, Faculty, Staff, and Student</p>
     </div>
 </div>
@@ -1032,13 +1033,6 @@ a { color:inherit; }
                     <i class="fa-solid fa-ban"></i>
                 </button>
                 <?php endif; ?>
-                <button class="btn-icon edit" title="Edit"
-                        onclick='openEditModal(<?= json_encode(["id"=>$u["id"],"full_name"=>$u["full_name"],"role"=>$u["role"],"year_level"=>normalize_year_level($u["year_level"])], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) ?>)'>
-                    <i class="fa-solid fa-pen-to-square"></i>
-                </button>
-                <button class="btn-icon key" title="Reset password" onclick='openResetModal(<?= json_encode(["id"=>$u["id"],"full_name"=>$u["full_name"]], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) ?>)'>
-                    <i class="fa-solid fa-key"></i>
-                </button>
                 <?php if ($viewRole === 'teacher' || $viewRole === 'staff'): ?>
                 <button class="btn-icon" title="Assign Year Levels" style="border-color:var(--accent-border);color:var(--accent);"
                         onclick='openYlModal(<?= json_encode(["id"=>$u["id"],"full_name"=>$u["full_name"],"year_levels"=>$u["year_levels"]], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) ?>)'>

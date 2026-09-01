@@ -281,8 +281,9 @@ foreach ($questions as $q) { $questionGroups[$q['category'] ?: 'General'][] = $q
 @media(max-width:900px){.top{padding:0 18px}.wrap{padding:20px}.rating-row{flex-wrap:wrap}.rating-opt{min-width:50px}}
 </style>
     <link rel="stylesheet" href="admin_ui_theme.css">
+    <link rel="stylesheet" href="admin_compact_ui.css">
 </head>
-<body>
+<body class="feature-compact">
 <header class="top">
   <div class="brand"><i class="fa-solid fa-user-check"></i>EA Evaluation</div>
   <div class="account"><?= e($_SESSION['full_name'] ?? 'Executive Assistant') ?></div>

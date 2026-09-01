@@ -236,7 +236,8 @@ input::placeholder, textarea::placeholder { color:#91A6BE; }
 button, .btn { font-weight:700; }
 a { color:inherit; }
 </style>    <link rel="stylesheet" href="admin_ui_theme.css">
-</head><body>
+    <link rel="stylesheet" href="admin_compact_ui.css">
+</head><body class="feature-compact">
 <div class="cert">
     <h1>Certificate of Rating</h1>
     <div class="sub"><?= htmlspecialchars($per['period_label'] ?? '') ?></div>

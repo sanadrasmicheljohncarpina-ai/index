@@ -4,6 +4,26 @@
 session_start();
 require_once 'db.php';
 
+// ── REGISTRATION ENABLED ──────────────────────────────────────
+// Match the enabled registration behavior used by the main/admin
+// registration page. An older database may still contain
+// superadmin_reg_open=0, but Dean registration remains available.
+$reg_open = 1;
+
+$tbl_check = $mysqli->query("SHOW TABLES LIKE 'system_settings'");
+if ($tbl_check && $tbl_check->num_rows > 0) {
+    $flag = $mysqli->query("SELECT setting_value FROM system_settings WHERE setting_key='superadmin_reg_open' LIMIT 1");
+    if ($flag && $flag->num_rows > 0) {
+        // Intentionally keep Dean registration enabled in this build.
+        $reg_open = 1;
+    }
+}
+
+if (!$reg_open) {
+    http_response_code(403);
+    die('Registration is closed. Contact your System Administrator.');
+}
+
 $error = '';
 $success = false;
 
@@ -26,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $error = 'Please enter a valid email address.';
         } else {
-            $chk = $mysqli->prepare("SELECT id FROM users WHERE username = ? OR (email = ? AND email != '') LIMIT 1");
+            $chk = $mysqli->prepare("SELECT id FROM users WHERE username = ? OR email = ? LIMIT 1");
             if ($chk) {
                 $chk->bind_param("ss", $username, $email);
                 $chk->execute();
@@ -35,6 +55,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $error = 'Username or email is already taken.';
                 }
                 $chk->close();
+            } else {
+                $error = 'Unable to validate the account details. Please try again.';
             }
         }
 

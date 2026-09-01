@@ -206,8 +206,9 @@ button, .btn { font-weight:700; }
 a { color:inherit; }
 </style>
     <link rel="stylesheet" href="admin_ui_theme.css">
+    <link rel="stylesheet" href="admin_compact_ui.css">
 </head>
-<body>
+<body class="feature-compact">
 
 <?php if ($toast): ?>
 <div class="toast"><i class="fa-solid fa-circle-check"></i><?= htmlspecialchars($toast) ?></div>

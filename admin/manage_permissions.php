@@ -13,7 +13,7 @@ $toast = '';
 
 // ── SAVE TOGGLES ───────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_permissions'])) {
-    $features = ['user_management','questionnaire','personnel_registry','reports_analytics','eval_periods'];
+    $features = ['user_management','questionnaire','reports_analytics','eval_periods','system_archive'];
     $stmt = $mysqli->prepare("UPDATE admin_permissions SET admin_can_edit = ? WHERE feature_key = ?");
     foreach ($features as $key) {
         $val = isset($_POST['perm_' . $key]) ? 1 : 0;
@@ -27,6 +27,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_permissions'])) 
 }
 
 $toast = $_SESSION['perm_toast'] ?? ''; unset($_SESSION['perm_toast']);
+
+// ── ENSURE NEW FEATURE PERMISSION ROW EXISTS ─────────────────────
+$admins = $mysqli->query("SELECT id FROM users WHERE role='admin'");
+if ($admins) {
+    $ins = $mysqli->prepare("INSERT IGNORE INTO admin_permissions (admin_user_id, feature_key, admin_can_edit, notes, feature_label) VALUES (?, 'system_archive', 0, NULL, 'System Archive')");
+    while ($a = $admins->fetch_assoc()) { $aid=(int)$a['id']; $ins->bind_param('i',$aid); $ins->execute(); }
+    $ins->close();
+}
 
 // ── FETCH CURRENT STATE ──────────────────────────────────────────
 $perms = [];
@@ -129,8 +137,9 @@ button, .btn { font-weight:700; }
 a { color:inherit; }
 </style>
     <link rel="stylesheet" href="admin_ui_theme.css">
+    <link rel="stylesheet" href="admin_compact_ui.css">
 </head>
-<body>
+<body class="feature-compact">
 
 <a href="admin_dashboard.php" class="back-link"><i class="fa-solid fa-arrow-left"></i> Back to Dashboard</a>
 
@@ -158,9 +167,9 @@ a { color:inherit; }
         $icons = [
             'user_management'    => 'fa-users',
             'questionnaire'      => 'fa-file-signature',
-            'personnel_registry' => 'fa-id-card-clip',
             'reports_analytics'  => 'fa-chart-line',
             'eval_periods'       => 'fa-calendar-check',
+            'system_archive'     => 'fa-box-archive',
         ];
         foreach ($perms as $p):
             $icon = $icons[$p['feature_key']] ?? 'fa-puzzle-piece';

@@ -7,14 +7,15 @@ require_once 'db.php';   // provides $mysqli + UPLOAD_DIR + UPLOAD_URL
 // Once a superadmin account exists, this page closes itself automatically.
 // To re-open it later (e.g. lost access, handing off to a second person),
 // run this SQL once, register the new account, then flip it back to 0:
-//   UPDATE system_settings SET setting_value=1 WHERE setting_key='superadmin_reg_open';
-//   UPDATE system_settings SET setting_value=0 WHERE setting_key='superadmin_reg_open';
-$reg_open = 0;
+//   Set superadmin_reg_open=1 to keep registration enabled, or 0 to close it.
+$reg_open = 1;
 $tbl_check = $mysqli->query("SHOW TABLES LIKE 'system_settings'");
 if ($tbl_check && $tbl_check->num_rows > 0) {
     $flag = $mysqli->query("SELECT setting_value FROM system_settings WHERE setting_key='superadmin_reg_open'");
     if ($flag && $flag->num_rows > 0) {
-        $reg_open = (int)$flag->fetch_assoc()['setting_value'];
+        // Registration is intentionally enabled in this build.
+        // Keep it enabled even if an older database still contains a 0 flag.
+        $reg_open = 1;
     }
 }
 
@@ -120,7 +121,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 body{
-    min-height:100vh; background:var(--dark-blue);
+    min-height:100vh;
+    background:linear-gradient(rgba(11,31,58,.72),rgba(11,31,58,.72)),url('background.png') center/cover fixed no-repeat;
     font-family:'DM Sans',sans-serif; color:var(--light);
     display:flex; align-items:center; justify-content:center;
     padding:40px 20px; overflow-x:hidden; position:relative;

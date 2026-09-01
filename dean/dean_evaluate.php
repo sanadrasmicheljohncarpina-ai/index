@@ -8,30 +8,42 @@
 // links straight here instead: dean_evaluate.php?tab=&user_id=[&view=1].
 //
 // ── QUESTIONNAIRE CONTENT ────────────────────────────────────────────
-// Executive Assistant tab: questions are now pulled live from the
-// shared 'upward_to_ea' form in questionnaire_forms/questionnaire_
-// questions — the same form Principal (principal_evaluate.php) and
-// Staff (staff_dashboard.php) use, so all three evaluators see the
-// same EA questions. Falls back to the hardcoded set below only if
-// that form hasn't been configured yet (see the $tab === 'executive_
-// assistant' branch further down).
+// The Faculty tab (Teacher, Teaching/Non-Teaching Staff, and the
+// Executive Assistant — all merged under one "Faculty" tab per
+// dean_evaluation.php) now fetches its questions directly from the
+// questionnaire feature's Student Evaluation tab: evaluation_questions
+// WHERE eval_type='student' AND target_type='Teacher'. That is the exact
+// pool admin/questionnaire.php's Student Evaluation -> "Faculty" card
+// manages, so the Dean rates people on the same rubric students use —
+// one shared source of truth instead of a separate per-evaluator
+// School Head Evaluation assignment. The evaluation stays labeled and
+// bucketed "Faculty" regardless of which of the three groups the target
+// belongs to (see $bucket below).
 //
-// Faculty/Staff tabs still use the hardcoded $QUESTION_SETS below —
-// there's no equivalent live Dean-specific form for those yet. Swap
-// them the same way once one exists; the save/view logic below
-// doesn't care where $questions came from.
+// This intentionally replaces the previous mechanism, where questions
+// came from evaluator-specific School Head Evaluation assignments
+// (school_head_evaluation_assignments, configured per Dean+target by the
+// EA via questionnaire.php's "School Head Evaluation Assignments"
+// screen). That assignment table/screen still exists and still serves
+// the Principal's evaluation flow if it uses the same service — it is
+// simply no longer read here.
 //
 // ── STORAGE ──────────────────────────────────────────────────────────
-// Submitting writes ONE row to evaluation_tracker (eval_type='dean',
+// Submitting writes ONE row to evaluation_tracker (eval_type='school_head',
 // eval_bucket = 'Faculty'|'Staff'|'Executive Assistant', level='college',
 // status='submitted', score = average of the question ratings,
 // evaluator_id = the Dean, target_user_id = the person being evaluated,
 // period_id = current period, comment, submitted_at) plus one row per
-// question in evaluation_answers (tracker_id, category, question, score)
-// so a category breakdown can be built later the same way
-// dean_results.php expects it. Confirm evaluation_answers' real column
-// names against your schema — this is the same placeholder table name
-// used (and flagged) in dean_results.php.
+// question in questionnaire_answers (tracker_id, question_id, answer_score).
+//
+// eval_type is 'school_head' (not 'dean') and answers land in
+// questionnaire_answers (not evaluation_answers) so that admin/
+// admin_analytics.php's School Head Evaluation tab — which reads
+// eval_type='school_head' rows joined to questionnaire_answers — actually
+// picks these submissions up. A prior version of this file used
+// eval_type='dean' and a separate evaluation_answers table that nothing
+// downstream ever read, so every Dean submission silently vanished from
+// Reports & Analytics.
 
 session_set_cookie_params([
     'lifetime' => 0,
@@ -82,8 +94,14 @@ function safe_rows(mysqli $mysqli, string $sql, string $types = '', array $param
     }
 }
 
-// ── VALIDATE tab + user_id ──────────────────────────────────────────
-$validTabs = ['faculty', 'staff', 'executive_assistant'];
+// ── VALIDATE TAB + TARGET ──────────────────────────────────────────
+// 'executive_assistant' is still accepted here (and still linked from
+// dean_evaluation.php's route_tab for any stale/bookmarked links) purely
+// for backward compatibility — it now resolves to the exact same
+// evaluation as 'faculty'. There is only one evaluation tab going
+// forward: Faculty, which covers Teacher, Teaching/Non-Teaching Staff,
+// and the Executive Assistant.
+$validTabs = ['faculty', 'executive_assistant'];
 $tab = $_GET['tab'] ?? '';
 if (!in_array($tab, $validTabs, true)) {
     http_response_code(404);
@@ -96,84 +114,12 @@ if ($targetId <= 0) {
 }
 $viewOnly = isset($_GET['view']);
 
-// form_type: evaluation_tracker.form_type is NOT NULL with no default.
-// Only one real sample value existed in the DB when this was checked
-// ('staff_peer'), suggesting a <role>_<relationship> convention. These
-// dean-submission values follow that pattern as a best guess — rename
-// if your team has an established convention for Dean-initiated forms.
-$tabConfig = [
-    'faculty'              => ['role' => 'teacher',     'bucket' => 'Faculty',              'label' => 'Teacher',              'form_type' => 'faculty_dean'],
-    'staff'                => ['role' => 'staff',        'bucket' => 'Staff',                'label' => 'Staff',                'form_type' => 'staff_dean'],
-    'executive_assistant'  => ['role' => 'superadmin', 'bucket' => 'Executive Assistant',  'label' => 'Executive Assistant',  'form_type' => 'executive_assistant_dean'],
-];
-$cfg = $tabConfig[$tab];
-
-// Generic per-role question set. Category is used for the eventual
-// per-category breakdown; question is the actual prompt text shown.
-$QUESTION_SETS = [
-    'faculty' => [
-        ['key' => 'q1', 'category' => 'Teaching Effectiveness', 'question' => 'Delivers instruction clearly and effectively.'],
-        ['key' => 'q2', 'category' => 'Communication',          'question' => 'Communicates expectations and feedback clearly.'],
-        ['key' => 'q3', 'category' => 'Professionalism',        'question' => 'Demonstrates professionalism and preparedness.'],
-        ['key' => 'q4', 'category' => 'Punctuality',            'question' => 'Is punctual and reliable in fulfilling duties.'],
-        ['key' => 'q5', 'category' => 'Overall Effectiveness',  'question' => 'Overall, is effective in this role.'],
-    ],
-    'staff' => [
-        ['key' => 'q1', 'category' => 'Job Performance',   'question' => 'Performs assigned duties competently and reliably.'],
-        ['key' => 'q2', 'category' => 'Communication',     'question' => 'Communicates clearly with colleagues and stakeholders.'],
-        ['key' => 'q3', 'category' => 'Professionalism',   'question' => 'Demonstrates professionalism in the workplace.'],
-        ['key' => 'q4', 'category' => 'Punctuality',       'question' => 'Is punctual and dependable.'],
-        ['key' => 'q5', 'category' => 'Overall Rating',    'question' => 'Overall, meets expectations for this role.'],
-    ],
-    'executive_assistant' => [
-        ['key' => 'q1', 'category' => 'Administrative Support', 'question' => 'Provides effective administrative support.'],
-        ['key' => 'q2', 'category' => 'Communication',          'question' => 'Communicates clearly and promptly.'],
-        ['key' => 'q3', 'category' => 'Responsiveness',         'question' => 'Responds to requests in a timely manner.'],
-        ['key' => 'q4', 'category' => 'Professionalism',        'question' => 'Demonstrates professionalism at all times.'],
-        ['key' => 'q5', 'category' => 'Overall Support',        'question' => 'Overall, provides strong support in this role.'],
-    ],
-];
-// Executive Assistant questions are pulled live from the shared
-// 'upward_to_ea' questionnaire form — the same one Principal
-// (principal_evaluate.php) and Staff (staff_dashboard.php) use, so
-// all three evaluators see identical EA questions instead of a
-// Dean-only hardcoded set.
-//
-// Deliberately NOT falling back to $QUESTION_SETS if the form is
-// missing: principal_evaluate.php shows an explicit "not configured,
-// contact your administrator" state in that case rather than
-// substituting different questions, and Dean should behave the same
-// way — a silent fallback here would let Dean quietly drift from
-// Principal/Staff again with no one noticing, the exact problem this
-// change is meant to close. Faculty/Staff tabs still use the local
-// placeholder set below (no live form exists for those yet).
-$eaFormMissing = false;
-if ($tab === 'executive_assistant') {
-    $questions = [];
-    $eaForm = safe_rows($mysqli, "
-        SELECT id FROM questionnaire_forms WHERE eval_type='upward_to_ea' AND is_active=1 ORDER BY id DESC LIMIT 1
-    ");
-    if ($eaForm) {
-        // questionnaire_questions has no category column (it's a flat
-        // per-form list), so every live question is grouped under one
-        // heading here — matches how the form actually reads for the
-        // Principal/Staff evaluators of the same form.
-        $liveQs = safe_rows($mysqli, "
-            SELECT id, question, type FROM questionnaire_questions WHERE form_id=? ORDER BY question_no ASC, id ASC
-        ", "i", [$eaForm[0]['id']]);
-        foreach ($liveQs as $q) {
-            if (($q['type'] ?? 'rating') !== 'rating') continue; // this page only renders 1-5 rating cards
-            $questions[] = [
-                'key'      => 'q_' . $q['id'],
-                'category' => 'Executive Assistant Performance',
-                'question' => $q['question'],
-            ];
-        }
-    }
-    $eaFormMissing = empty($questions);
-} else {
-    $questions = $QUESTION_SETS[$tab];
-}
+// Always "Faculty" — this tab is not per-target-group anymore.
+$targetRoleLabel = 'Faculty';
+$formType = 'faculty_dean';
+$bucket = 'Faculty';
+$noQuestionsConfigured = false;
+$questions = [];
 
 // ── GLOBAL SYSTEM SETTINGS ──────────────────────────────────────────
 $settings = get_system_settings($mysqli);
@@ -191,59 +137,84 @@ $me = $stmt->get_result()->fetch_assoc();
 $stmt->close();
 $photo_src = !empty($me['photo']) ? UPLOAD_URL . $me['photo'] : UPLOAD_URL . 'pbi_logo';
 
-// ── TARGET PERSON (must be approved/active and in the Dean's College
-//    scope, same EXISTS/user_year_levels check every other Dean page
-//    uses for teacher/staff; the EA role has no college-year-level
-//    concept, so it's just approved+active) ──────────────────────────
-$collegePh = implode(',', array_fill(0, count(COLLEGE_LEVELS), '?'));
-$collegeTypes = str_repeat('s', count(COLLEGE_LEVELS));
-
-if ($cfg['role'] === 'superadmin') {
-    $target = safe_rows($mysqli, "
-        SELECT id, full_name, photo, designation FROM users
-        WHERE id=? AND role=? AND is_active=1 AND account_status='approved'
-        LIMIT 1
-    ", "is", [$targetId, $cfg['role']]);
-} else {
-    $target = safe_rows($mysqli, "
-        SELECT id, full_name, photo, department, designation FROM users u
-        WHERE id=? AND role=? AND is_active=1 AND account_status='approved'
-          AND EXISTS (SELECT 1 FROM user_year_levels uyl WHERE uyl.user_id = u.id AND uyl.year_level IN ($collegePh))
-        LIMIT 1
-    ", "is" . $collegeTypes, array_merge([$targetId, $cfg['role']], COLLEGE_LEVELS));
+// ── TARGET (ROSTER MEMBERSHIP) ──────────────────────────────────────
+// Mirrors dean_evaluation.php's merged Faculty roster exactly: every
+// active, approved Teacher/Staff account, plus the single approved
+// Executive Assistant (superadmin) account.
+if (!$structureActive) {
+    http_response_code(403);
+    exit('Higher Education is not the active academic structure right now.');
 }
-$target = $target[0] ?? null;
-
-if (!$structureActive || !$target) {
-    http_response_code(404);
-    exit('Person not found or not in the current Higher Education scope.');
+$tstmt = $mysqli->prepare("
+    SELECT id, full_name, designation, photo, department, role,
+           EXISTS(SELECT 1 FROM teaching_assignments ta WHERE ta.user_id = users.id)
+           OR EXISTS(SELECT 1 FROM user_year_levels yl WHERE yl.user_id = users.id) AS is_teaching_staff
+    FROM users
+    WHERE id = ?
+      AND is_active = 1
+      AND account_status = 'approved'
+      AND (role IN ('teacher','staff') OR role = 'superadmin')
+    LIMIT 1
+");
+$tstmt->bind_param('i', $targetId);
+$tstmt->execute();
+$target = $tstmt->get_result()->fetch_assoc();
+$tstmt->close();
+if (!$target) {
+    http_response_code(403);
+    exit('This person is not a valid Faculty evaluation target.');
 }
-// Executive Assistant is a designation of the Super Admin account;
-// the database role remains 'superadmin'.
-$targetRoleLabel = $cfg['label'];
+$targetRoleLabel = ($target['role'] === 'superadmin')
+    ? 'Executive Assistant'
+    : (($target['role'] === 'staff')
+        ? ((int)$target['is_teaching_staff'] === 1 ? 'Teaching Staff' : 'Staff')
+        : 'Faculty');
+
+// ── QUESTIONS — fetched directly from the questionnaire's Student
+// Evaluation -> Faculty (Teacher) pool. This is the exact evaluation_
+// questions set students are asked, so the Dean rates people on the
+// same rubric. Applies uniformly to Faculty, Teaching/Non-Teaching
+// Staff, and the Executive Assistant — there is no separate per-group
+// question pool for this tab anymore.
+$questions = [];
+$qstmt = $mysqli->prepare("SELECT id, category, question_text FROM evaluation_questions WHERE target_type='Teacher' AND eval_type='student' ORDER BY category, id");
+$qstmt->execute();
+$qrows = $qstmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$qstmt->close();
+foreach ($qrows as $q) {
+    $questions[] = [
+        'id' => (int)$q['id'],
+        'key' => 'q_' . (int)$q['id'],
+        'category' => $q['category'] ?: 'General',
+        'question' => $q['question_text'],
+    ];
+}
+$noQuestionsConfigured = empty($questions);
 
 // ── EXISTING SUBMISSION THIS PERIOD? ────────────────────────────────
 $existing = null;
 if ($hasPeriod) {
     $rows = safe_rows($mysqli, "
         SELECT id, score, remarks AS comment, submitted_at FROM evaluation_tracker
-        WHERE eval_type='dean' AND eval_bucket=? AND level='college'
+        WHERE eval_type='school_head' AND eval_bucket=? AND level='college'
           AND status IN ('submitted','approved')
           AND evaluator_id=? AND target_user_id=? AND period_id=?
         LIMIT 1
-    ", "siii", [$cfg['bucket'], $deanId, $targetId, $period_id_int]);
+    ", "siii", [$bucket, $deanId, $targetId, $period_id_int]);
     $existing = $rows[0] ?? null;
 }
 $existingAnswers = [];
 if ($existing) {
     $existingAnswers = safe_rows($mysqli, "
-        SELECT category, question, score FROM evaluation_answers
-        WHERE tracker_id=?
-        ORDER BY id
+        SELECT eq.category AS category, eq.question_text AS question, qa.answer_score AS score
+        FROM questionnaire_answers qa
+        JOIN evaluation_questions eq ON eq.id = qa.question_id
+        WHERE qa.tracker_id=?
+        ORDER BY qa.id
     ", "i", [$existing['id']]);
 }
 
-$readOnly = $viewOnly || $existing !== null || !$evalOpen || !$hasPeriod || $eaFormMissing;
+$readOnly = $viewOnly || $existing !== null || !$evalOpen || !$hasPeriod || $noQuestionsConfigured;
 
 // ── HANDLE SUBMISSION ────────────────────────────────────────────────
 $error = '';
@@ -253,9 +224,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$readOnly) {
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== ($_SESSION['csrf_token'] ?? '')) {
         $error = 'Session expired. Please refresh and try again.';
     } else {
+        // Re-fetch the live question set on submission — straight from the
+        // questionnaire's Student Evaluation -> Faculty pool — so a forged
+        // question id/count submitted by the client can't bypass what's
+        // actually configured there.
+        $liveQstmt = $mysqli->prepare("SELECT id, category, question_text FROM evaluation_questions WHERE target_type='Teacher' AND eval_type='student' ORDER BY category, id");
+        $liveQstmt->execute();
+        $liveRows = $liveQstmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $liveQstmt->close();
+        if (empty($liveRows)) {
+            $error = 'No Student Evaluation questions are currently configured for Faculty.';
+        } else {
+            $questions = [];
+            foreach ($liveRows as $q) {
+                $questions[] = [
+                    'id' => (int)$q['id'],
+                    'key' => 'q_' . (int)$q['id'],
+                    'category' => $q['category'] ?: 'General',
+                    'question' => $q['question_text'],
+                ];
+            }
+        }
         $ratings = [];
         $valid = true;
-        foreach ($questions as $q) {
+        if ($error === '') foreach ($questions as $q) {
             $val = (int)($_POST[$q['key']] ?? 0);
             if ($val < 1 || $val > 5) { $valid = false; break; }
             $ratings[$q['key']] = $val;
@@ -273,21 +265,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$readOnly) {
                 $stmt = $mysqli->prepare("
                     INSERT INTO evaluation_tracker
                         (eval_type, eval_bucket, level, status, score, remarks, evaluator_id, target_user_id, period_id, form_type, submitted_at)
-                    VALUES ('dean', ?, 'college', 'submitted', ?, ?, ?, ?, ?, ?, NOW())
+                    VALUES ('school_head', ?, 'college', 'submitted', ?, ?, ?, ?, ?, ?, NOW())
                 ");
-                $bucket = $cfg['bucket'];
-                $formType = $cfg['form_type'];
+                $bucket = $bucket;
+                $formType = $formType;
                 $stmt->bind_param("sdsiiis", $bucket, $avgScore, $comment, $deanId, $targetId, $period_id_int, $formType);
                 $stmt->execute();
                 $trackerId = $mysqli->insert_id;
                 $stmt->close();
 
                 $stmt = $mysqli->prepare("
-                    INSERT INTO evaluation_answers (tracker_id, category, question, score) VALUES (?, ?, ?, ?)
+                    INSERT INTO questionnaire_answers (tracker_id, question_id, answer_score, submitted_at) VALUES (?, ?, ?, NOW())
                 ");
                 foreach ($questions as $q) {
-                    $cat = $q['category']; $ques = $q['question']; $score = $ratings[$q['key']];
-                    $stmt->bind_param("issi", $trackerId, $cat, $ques, $score);
+                    $qid = $q['id']; $score = $ratings[$q['key']];
+                    $stmt->bind_param("iii", $trackerId, $qid, $score);
                     $stmt->execute();
                 }
                 $stmt->close();
@@ -400,8 +392,8 @@ include __DIR__ . '/includes/dean_sidebar.php';
 
     <?php if (!$hasPeriod): ?>
         <div class="alert alert-info"><i class="fa-solid fa-circle-info"></i> No active evaluation period right now.</div>
-    <?php elseif ($eaFormMissing && !$existing): ?>
-        <div class="alert alert-info"><i class="fa-solid fa-circle-info"></i> No active Executive Assistant evaluation form is configured yet. Contact your administrator.</div>
+    <?php elseif ($noQuestionsConfigured && !$existing): ?>
+        <div class="alert alert-info"><i class="fa-solid fa-circle-info"></i> No Student Evaluation questions have been configured for Faculty yet. Contact your administrator.</div>
     <?php elseif (!$evalOpen && !$existing): ?>
         <div class="alert alert-info"><i class="fa-solid fa-lock"></i> Evaluation is currently closed for this period.</div>
     <?php else: ?>

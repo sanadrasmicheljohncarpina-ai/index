@@ -402,8 +402,9 @@ button, .btn { font-weight:700; }
 a { color:inherit; }
 </style>
     <link rel="stylesheet" href="admin_ui_theme.css">
+    <link rel="stylesheet" href="admin_compact_ui.css">
 </head>
-<body>
+<body class="feature-compact">
 <div class="shell">
 
   <div class="top">
@@ -412,13 +413,6 @@ a { color:inherit; }
       <p class="page-sub">Configure academic terms and evaluation windows for College/University, JHS, and SHS.</p>
     </div>
     <button class="btn btn-primary" id="saveBtnTop">Save System Settings</button>
-  </div>
-
-  <div class="tabs">
-    <div class="tab">Profile</div>
-    <div class="tab">Security</div>
-    <div class="tab active">System &amp; Period</div>
-    <div class="tab">Appearance</div>
   </div>
 
   <!-- Live snapshot, styled like the stat cards -->

@@ -185,8 +185,9 @@ tbody td{padding:14px 18px;font-size:13.5px;vertical-align:middle}
 @media(max-width:900px){.card-grid{grid-template-columns:1fr}.wrap{padding:20px}}
 </style>
     <link rel="stylesheet" href="admin_ui_theme.css">
+    <link rel="stylesheet" href="admin_compact_ui.css">
 </head>
-<body>
+<body class="feature-compact">
 <main class="wrap">
 
 <a class="back-link" href="admin_dashboard.php" onclick="if(window.parent&&window.parent!==window&&window.parent.showPage){window.parent.showPage('dashboard',window.parent.document.getElementById('link-dashboard'));return false;}"><i class="fa-solid fa-arrow-left"></i> Back to Dashboard</a>

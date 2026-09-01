@@ -65,6 +65,10 @@ function build_profile_photo_url($photo) {
 $photo_src = build_profile_photo_url($admin_photo);
 $parts     = explode(' ', trim($admin_fullname));
 $initials  = strtoupper(substr($parts[0],0,1) . (isset($parts[1]) ? substr($parts[1],0,1) : ''));
+
+$hourNow      = (int)date('G');
+$greetingWord = $hourNow < 12 ? 'Good morning' : ($hourNow < 18 ? 'Good afternoon' : 'Good evening');
+$admin_firstname = $parts[0] ?? $admin_fullname;
 // Display-only label for the role badge. Session/DB value stays 'superadmin' —
 // only the text shown on screen changes.
 function display_role($role) {
@@ -106,6 +110,69 @@ $submittedCount = 0;
 $subq = $mysqli->query("SELECT COUNT(DISTINCT evaluator_id) as c FROM evaluation_tracker WHERE status='submitted'");
 if ($subq) $submittedCount = (int)$subq->fetch_assoc()['c'];
 $submissionPct = $studentCount > 0 ? round(($submittedCount / $studentCount) * 100) : 0;
+$pendingEvalCount = max(0, $studentCount - $submittedCount);
+
+// Inactive counts (for the Personnel Overview panel's Active/Inactive line)
+$teacherInactive = 0; $staffInactive = 0;
+foreach (['teacher' => 'teacherInactive', 'staff' => 'staffInactive'] as $r => $var) {
+    $cr = $mysqli->query(
+        "SELECT COUNT(*) as c FROM users
+         WHERE role='" . $mysqli->real_escape_string($r) . "' AND is_active=0"
+    );
+    if ($cr) $$var = (int)($cr->fetch_assoc()['c'] ?? 0);
+}
+
+// Personnel accounts awaiting verification (for the Needs Attention panel)
+$pendingRegCount = 0;
+$prq = $mysqli->query("SELECT COUNT(*) as c FROM users WHERE account_status='pending'");
+if ($prq) $pendingRegCount = (int)($prq->fetch_assoc()['c'] ?? 0);
+
+// ── Widget data: submissions-over-time (last 6 months) ──
+$monthlyBuckets = [];
+for ($i = 5; $i >= 0; $i--) {
+    $ts  = strtotime("-$i months");
+    $key = date('Y-m', $ts);
+    $monthlyBuckets[$key] = ['label' => date('M', $ts), 'count' => 0];
+}
+$msQ = $mysqli->query("
+    SELECT DATE_FORMAT(submitted_at,'%Y-%m') AS ym, COUNT(*) AS c
+    FROM evaluation_tracker
+    WHERE status IN ('submitted','approved','archived')
+      AND submitted_at >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+    GROUP BY ym
+");
+if ($msQ) {
+    while ($r = $msQ->fetch_assoc()) {
+        if (isset($monthlyBuckets[$r['ym']])) $monthlyBuckets[$r['ym']]['count'] = (int)$r['c'];
+    }
+}
+$submissionTrendLabels = array_column($monthlyBuckets, 'label');
+$submissionTrendValues = array_column($monthlyBuckets, 'count');
+
+// ── Widget data: users by role (%) ──
+$rolePctFaculty  = $totalUsers > 0 ? round(($teacherCount / $totalUsers) * 100) : 0;
+$rolePctStaff    = $totalUsers > 0 ? round(($staffCount   / $totalUsers) * 100) : 0;
+$rolePctStudents = $totalUsers > 0 ? round(($studentCount / $totalUsers) * 100) : 0;
+
+// ── Widget data: evaluation status overview ──
+$evalCompleted  = 0;
+$r = $mysqli->query("SELECT COUNT(*) AS c FROM evaluation_tracker WHERE status IN ('submitted','approved','archived')");
+if ($r) $evalCompleted = (int)$r->fetch_assoc()['c'];
+$evalInProgress = 0;
+$r = $mysqli->query("SELECT COUNT(*) AS c FROM evaluation_tracker WHERE status='in_progress'");
+if ($r) $evalInProgress = (int)$r->fetch_assoc()['c'];
+$evalPending = 0;
+$r = $mysqli->query("SELECT COUNT(*) AS c FROM evaluation_tracker WHERE status='draft'");
+if ($r) $evalPending = (int)$r->fetch_assoc()['c'];
+$evalStatusTotal = max(1, $evalCompleted + $evalInProgress + $evalPending);
+$evalCompletedPct  = round(($evalCompleted  / $evalStatusTotal) * 100, 1);
+$evalInProgressPct = round(($evalInProgress / $evalStatusTotal) * 100, 1);
+$evalPendingPct    = round(($evalPending    / $evalStatusTotal) * 100, 1);
+
+// ── Time-based greeting ──
+$serverHour = (int)date('G');
+$greeting   = $serverHour < 12 ? 'Good morning' : ($serverHour < 18 ? 'Good afternoon' : 'Good evening');
+$firstName  = trim(explode(' ', trim($admin_fullname))[0] ?? $admin_fullname);
 
 // ── Academic Structure → Term rules ──
 // The Academic Term dropdown is constrained by the selected Academic Structure so
@@ -418,31 +485,41 @@ $HEALTH_ITEMS = [
         --page-bg:#FFFFFF;--card-bg:#FFFFFF;--card-border:#D8E5F4;
         --text-dark:#0B1F3A;--text-dim:#67819E;--track-bg:#D8E5F4;
         --card-shadow:0 2px 4px rgba(30,82,144,.06),0 6px 16px rgba(30,82,144,.08);
+        --sidebar-w:250px;--topbar-h:82px;
+        --sidebar-bg:#0F2E22;--sidebar-active:rgba(34,197,94,.22);
+        --sidebar-text:#E7F3EC;--sidebar-text-dim:#8FB5A2;--sidebar-border:rgba(255,255,255,.08);
+        --sidebar-card-bg:rgba(255,255,255,.05);--sidebar-hover-bg:rgba(255,255,255,.07);
+        --sidebar-logo-bg:rgba(34,197,94,.18);--sidebar-logo-border:rgba(110,231,166,.4);--sidebar-icon-active:#6EE7A6;
+        --pbi-green:#16A34A;--pbi-green-dark:#0F7A38;--pbi-green-bg:#E8F8EE;--page-bg-tint:#F3FAF5;
     }
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
     body{font-family:'Inter',sans-serif;color:var(--text-dark);min-height:100vh;background:var(--page-bg);}
     a{text-decoration:none;color:inherit;}
 
-    /* ── NAVBAR ── */
+    /* ── TOPBAR (sits to the right of the sidebar) ── */
     .nude-nav{
-        background:#FFFFFF;padding:10px 24px;
+        background:#FFFFFF;padding:14px 28px;
         display:flex;align-items:center;justify-content:space-between;
-        position:fixed;top:0;left:0;right:0;z-index:200;
+        position:fixed;top:0;left:var(--sidebar-w);right:0;z-index:200;
+        min-height:var(--topbar-h);
         box-shadow:var(--shadow);border-bottom:1px solid #D8E5F4;
         gap:20px;
     }
     .nude-nav .nav-container{flex-grow:0;}
+    .topbar-greeting-wrap{display:flex;flex-direction:column;gap:2px;min-width:0;}
+    .topbar-greeting{font-size:15px;font-weight:700;color:var(--text-dark);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .topbar-greeting .wave{display:inline-block;}
 
     /* ── BRAND / AVATAR ── */
-    .nav-brand{display:flex;align-items:center;gap:12px;flex-shrink:0;position:relative;}
+    .nav-brand{display:flex;align-items:center;gap:14px;flex-shrink:0;position:relative;}
     .brand-avatar-wrap{position:relative;cursor:pointer;}
     .brand-avatar{
-        width:44px;height:44px;border-radius:50%;
+        width:48px;height:48px;border-radius:50%;
         border:2px solid var(--blue-accent);
         box-shadow:0 0 8px rgba(59,130,246,.6);
         overflow:hidden;display:flex;align-items:center;justify-content:center;
         background:var(--blue-accent);flex-shrink:0;
-        font-size:16px;font-weight:700;color:#FFFFFF;letter-spacing:.5px;
+        font-size:17px;font-weight:700;color:#FFFFFF;letter-spacing:.5px;
         transition:box-shadow .2s,border-color .2s;
     }
     .brand-avatar:hover{box-shadow:0 0 14px rgba(59,130,246,.9);border-color:#2563EB;}
@@ -450,17 +527,17 @@ $HEALTH_ITEMS = [
     /* small settings gear badge on avatar */
     .avatar-gear{
         position:absolute;bottom:-2px;right:-2px;
-        width:16px;height:16px;border-radius:50%;
+        width:17px;height:17px;border-radius:50%;
         background:var(--blue-accent);border:2px solid #FFFFFF;
         display:flex;align-items:center;justify-content:center;
         font-size:8px;color:#FFFFFF;pointer-events:none;
     }
 
-    .brand-text{display:flex;flex-direction:column;gap:2px;}
-    .brand-name{font-size:15px;font-weight:700;line-height:1;color:#0B1F3A;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis;}
-    .brand-role{font-size:11px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;line-height:1;}
-    #digital-clock{font-size:12px;font-weight:600;color:#2563EB;line-height:1;margin-top:2px;}
-    .nav-divider{width:1px;height:30px;background:#D8E5F4;flex-shrink:0;}
+    .brand-text{display:flex;flex-direction:column;gap:4px;}
+    .brand-name{font-size:15px;font-weight:700;line-height:1.1;color:#0B1F3A;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis;}
+    .brand-role{display:inline-flex;align-items:center;width:fit-content;font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--blue-accent);background:#E6F0FF;border:1px solid #C7DBFA;padding:2px 8px;border-radius:20px;line-height:1.3;}
+    #digital-clock{display:none;}
+    .nav-divider{width:1px;height:34px;background:#D8E5F4;flex-shrink:0;}
 
     /* ── PROFILE DROPDOWN ── */
     .profile-dropdown{
@@ -521,17 +598,50 @@ $HEALTH_ITEMS = [
 
     /* ── SIDEBAR ── */
     .pbi-sidebar{
-        position:fixed;top:0;left:0;bottom:0;width:230px;
-        background:#F8FAFC;padding:22px 14px 16px;
-        display:flex;flex-direction:column;overflow-y:auto;z-index:150;
-        border-right:1px solid rgba(37,99,235,.06);
+        position:fixed;top:0;left:0;bottom:0;width:var(--sidebar-w);
+        background:var(--sidebar-bg);
+        padding:22px 16px 18px;
+        display:flex;flex-direction:column;overflow-y:auto;z-index:250;
+        border-right:1px solid var(--sidebar-border);
+        box-shadow:2px 0 14px rgba(0,0,0,.15);
     }
-    .sidebar-brand{text-align:center;padding:0 6px 20px;margin-bottom:12px;border-bottom:1px solid rgba(30,82,144,.13);}
-    .sidebar-logo{width:88px;height:88px;border-radius:50%;background:rgba(73,104,200,.09);border:2.5px solid #6887E8;box-shadow:0 0 18px rgba(139,92,246,.4);display:flex;align-items:center;justify-content:center;font-size:30px;color:#6887E8;margin:0 auto 14px;overflow:hidden;}
+    .pbi-sidebar::-webkit-scrollbar{width:5px;}
+    .pbi-sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius:4px;}
+    .sidebar-brand{display:flex;align-items:center;gap:11px;padding:0 4px 20px;margin-bottom:14px;border-bottom:1px solid var(--sidebar-border);}
+    .sidebar-logo{width:44px;height:44px;border-radius:10px;background:var(--sidebar-logo-bg);border:1.5px solid var(--sidebar-logo-border);display:flex;align-items:center;justify-content:center;font-size:19px;color:var(--sidebar-icon-active);flex-shrink:0;overflow:hidden;}
     .sidebar-logo img{width:100%;height:100%;object-fit:cover;display:block;}
-    .sidebar-title{font-size:15px;font-weight:700;color:#0B1F3A;line-height:1.3;margin-bottom:4px;}
-    .sidebar-subtitle{font-size:11px;color:#67819E;line-height:1.4;}
-    .sidebar-logout{margin-top:auto;padding-top:14px;border-top:1px solid rgba(30,82,144,.13);}
+    .sidebar-title{font-size:13px;font-weight:700;color:#FFFFFF;line-height:1.3;letter-spacing:.2px;}
+    .sidebar-subtitle{font-size:10.5px;color:var(--sidebar-text-dim);line-height:1.4;margin-top:1px;}
+
+    .sidebar-nav{display:flex;flex-direction:column;gap:4px;}
+    .nav-group-label{font-size:10.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--sidebar-text-dim);padding:14px 10px 6px;}
+    .pbi-sidebar .nav-menu{display:flex;flex-direction:column;gap:2px;list-style:none;}
+    .pbi-sidebar .nav-menu li{list-style:none;}
+    .pbi-sidebar .nav-item{display:flex;align-items:center;gap:11px;color:var(--sidebar-text);font-size:13.5px;font-weight:600;padding:10px 12px;border-radius:9px;transition:all .18s ease;white-space:nowrap;}
+    .pbi-sidebar .nav-item .icon{width:16px;text-align:center;color:var(--sidebar-text-dim);font-size:14px;transition:color .18s ease;}
+    .pbi-sidebar .nav-item:hover{background:var(--sidebar-hover-bg);color:#FFFFFF;}
+    .pbi-sidebar .nav-item:hover .icon{color:#FFFFFF;}
+    .pbi-sidebar .nav-item.active{background:var(--sidebar-active);color:#FFFFFF;box-shadow:none;}
+    .pbi-sidebar .nav-item.active .icon{color:var(--sidebar-icon-active);}
+
+    /* ── SIDEBAR: CURRENT STATUS BOX ── */
+    .sidebar-status{margin-top:auto;padding-top:16px;}
+    .sidebar-status-card{background:var(--sidebar-card-bg);border:1px solid var(--sidebar-border);border-radius:12px;padding:14px 15px;margin-bottom:12px;}
+    .sidebar-status-title{font-size:10.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--sidebar-text-dim);margin-bottom:10px;}
+    .sidebar-status-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px;}
+    .sidebar-status-row:last-of-type{margin-bottom:0;}
+    .sidebar-status-label{font-size:11px;color:var(--sidebar-text-dim);}
+    .sidebar-status-pill{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:.3px;}
+    .sidebar-status-pill.open{background:rgba(34,197,94,.16);color:#6EE7A6;border:1px solid rgba(110,231,166,.3);}
+    .sidebar-status-pill.closed{background:rgba(239,68,68,.16);color:#F3A6A6;border:1px solid rgba(243,166,166,.3);}
+    .sidebar-status-year{font-size:14px;font-weight:700;color:#FFFFFF;line-height:1.3;}
+    .sidebar-status-sub{font-size:10.5px;color:var(--sidebar-text-dim);margin-top:2px;}
+    .sidebar-help{display:flex;align-items:center;gap:10px;background:var(--sidebar-card-bg);border:1px solid var(--sidebar-border);border-radius:12px;padding:11px 13px;cursor:pointer;transition:background .18s ease;}
+    .sidebar-help:hover{background:var(--sidebar-hover-bg);}
+    .sidebar-help i{font-size:15px;color:var(--sidebar-icon-active);flex-shrink:0;}
+    .sidebar-help-text{font-size:11.5px;font-weight:600;color:#FFFFFF;line-height:1.3;}
+    .sidebar-help-sub{font-size:10.5px;color:var(--sidebar-text-dim);font-weight:500;}
+    .sidebar-logout{margin-top:auto;padding-top:14px;border-top:1px solid var(--sidebar-border);}
 
     /* ── NOTIFICATION BELL ── */
     .notif-wrap{position:relative;display:flex;align-items:center;margin-left:4px;}
@@ -542,7 +652,7 @@ $HEALTH_ITEMS = [
 
     /* Notification panel — fixed so it never breaks layout */
     .notif-dropdown{
-        position:fixed;top:70px;right:16px;width:320px;
+        position:fixed;top:calc(var(--topbar-h) - 4px);right:16px;width:320px;
         background:#FFFFFF;border:1px solid #D8E5F4;
         border-radius:14px;box-shadow:0 16px 48px rgba(15,23,42,.14);
         opacity:0;visibility:hidden;transform:translateY(-8px);
@@ -699,11 +809,11 @@ $HEALTH_ITEMS = [
     .sf-btn-save:hover{background:#4968C8;}
 
     /* ── PAGES ── */
-    .page-content{margin-top:72px;margin-left:0;padding:16px 20px;}
+    .page-content{margin-top:var(--topbar-h);margin-left:var(--sidebar-w);padding:16px 20px;}
     .page{display:none;background:transparent;}
     .page:has(>iframe){background:#FFFFFF;}
     .page.active{display:block;}
-    .iframe-box{width:100%;height:calc(100vh - 92px);border:none;border-radius:var(--radius);background:#FFFFFF;}
+    .iframe-box{width:100%;height:calc(100vh - var(--topbar-h) - 20px);border:none;border-radius:var(--radius);background:#FFFFFF;}
 
     /* ── DASHBOARD (light card theme) ── */
     .pbi-dashboard-container{padding:30px 4px;}
@@ -765,6 +875,94 @@ $HEALTH_ITEMS = [
     .pbi-sector-card.staff-card .pbi-view-btn:hover{background:#6D28D9;}
     .pbi-sector-card.student-card .pbi-view-btn{background:#0F9F6E;}
     .pbi-sector-card.student-card .pbi-view-btn:hover{background:#047857;}
+
+    /* ── GREETING ── */
+    .pbi-dashboard-greeting{font-size:14px;color:var(--text-dim);margin:0 0 6px;}
+    .pbi-dashboard-greeting .wave{display:inline-block;}
+
+    /* ── STAT CARDS (redesigned: icon circle + trend) ── */
+    .pbi-stat-card{border-top:none;}
+    .pbi-stat-card .pbi-stat-icon-circle{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:17px;margin-bottom:14px;}
+    .pbi-stat-card.stat-teal .pbi-stat-icon-circle{background:var(--pbi-green-bg);color:var(--pbi-green-dark);}
+    .pbi-stat-card.stat-skyblue .pbi-stat-icon-circle{background:#E6F0FF;color:#2563EB;}
+    .pbi-stat-card.stat-violet .pbi-stat-icon-circle{background:#F1EBFE;color:#6D28D9;}
+    .pbi-stat-card.stat-gold .pbi-stat-icon-circle{background:#FDF3DE;color:#B87A08;}
+    .pbi-stat-card .pbi-stat-trend.up{color:var(--pbi-green-dark);}
+
+    /* ── COMPLETION RATE DONUT ── */
+    .pbi-completion-card{display:flex;align-items:center;gap:16px;}
+    .pbi-completion-ring{--pct:0;width:64px;height:64px;border-radius:50%;flex-shrink:0;
+        background:conic-gradient(#EAB308 calc(var(--pct)*1%), var(--track-bg) 0);
+        display:flex;align-items:center;justify-content:center;}
+    .pbi-completion-ring::before{content:'';position:absolute;}
+    .pbi-completion-ring-inner{width:48px;height:48px;border-radius:50%;background:var(--card-bg);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--text-dark);}
+    .pbi-completion-text .pbi-stat-label{margin-bottom:4px;}
+    .pbi-completion-text .pbi-stat-value{font-size:26px;}
+
+    /* ── EVALUATION PERIOD (redesigned) ── */
+    .pbi-period-badge{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;padding:3px 10px;border-radius:20px;text-transform:uppercase;letter-spacing:.4px;margin-left:10px;vertical-align:middle;}
+    .pbi-period-badge.green{background:#E4F7E4;color:#1E8E1E;border:1px solid #BFE3BD;}
+    .pbi-period-badge.red{background:#FBEAE6;color:#C2542F;border:1px solid #F0C7B9;}
+    .pbi-period-badge.yellow{background:#FDF3DE;color:#B87A08;border:1px solid #F3DDA1;}
+    .pbi-period-badge.gray{background:#EEF1F6;color:var(--text-dim);border:1px solid var(--card-border);}
+    .pbi-period-meta{font-size:12px;color:var(--text-dim);margin-top:6px;}
+    .pbi-period-meta i{margin-right:4px;}
+    .pbi-period-meta .sep{margin:0 8px;opacity:.5;}
+    .pbi-period-tiles{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:14px;margin-top:16px;}
+    .pbi-period-tile{border-radius:10px;padding:14px 16px;}
+    .pbi-period-tile.tile-progress{background:#F7FAFF;border:1px solid var(--card-border);}
+    .pbi-period-tile.tile-submitted{background:var(--pbi-green-bg);}
+    .pbi-period-tile.tile-pending{background:#FDF3DE;}
+    .pbi-period-tile.tile-total{background:#EEF1F6;}
+    .pbi-period-tile-label{font-size:11px;color:var(--text-dim);margin-bottom:6px;}
+    .pbi-period-tile-value{font-size:26px;font-weight:700;color:var(--text-dark);line-height:1;}
+    .pbi-period-tile-value.green{color:var(--pbi-green-dark);}
+    .pbi-period-tile-value.gold{color:#B87A08;}
+    .pbi-period-tile-sub{font-size:11px;color:var(--text-dim);margin-top:4px;}
+
+    /* ── BOTTOM 3-COLUMN ROW ── */
+    .pbi-bottom-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;align-items:start;}
+    .pbi-panel{background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;padding:18px 20px;box-shadow:var(--card-shadow);}
+    .pbi-panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+    .pbi-panel-title{font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--text-dim);}
+    .pbi-panel-viewall{font-size:12px;font-weight:600;color:var(--pbi-green-dark);background:transparent;border:1px solid var(--card-border);border-radius:7px;padding:5px 11px;cursor:pointer;}
+    .pbi-panel-viewall:hover{background:var(--pbi-green-bg);}
+
+    /* Personnel Overview list */
+    .pbi-personnel-item{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--card-border);}
+    .pbi-personnel-item:last-child{border-bottom:none;padding-bottom:0;}
+    .pbi-personnel-icon{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;}
+    .pbi-personnel-icon.teal{background:var(--pbi-green-bg);color:var(--pbi-green-dark);}
+    .pbi-personnel-icon.skyblue{background:#E6F0FF;color:#2563EB;}
+    .pbi-personnel-icon.violet{background:#F1EBFE;color:#6D28D9;}
+    .pbi-personnel-name{font-size:13px;font-weight:700;color:var(--text-dark);}
+    .pbi-personnel-count{font-size:18px;font-weight:700;color:var(--text-dark);margin-left:auto;}
+    .pbi-personnel-meta{font-size:11px;color:var(--text-dim);}
+
+    /* Needs Attention list */
+    .pbi-attention-item{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--card-border);font-size:12.5px;color:var(--text-dark);}
+    .pbi-attention-item:last-child{border-bottom:none;padding-bottom:0;}
+    .pbi-attention-item i.dot{margin-top:2px;font-size:13px;flex-shrink:0;}
+    .pbi-attention-item .warn{color:#C2542F;}
+    .pbi-attention-item .info{color:#2563EB;}
+    .pbi-attention-item .ok{color:var(--pbi-green-dark);}
+    .pbi-attention-item .chev{margin-left:auto;color:var(--text-dim);opacity:.6;}
+
+    /* Quick Access */
+    .pbi-quickaccess-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+    .pbi-quick-btn{display:flex;align-items:center;gap:10px;padding:13px 14px;border-radius:10px;border:1px solid var(--card-border);background:var(--card-bg);cursor:pointer;font-size:12.5px;font-weight:700;color:var(--text-dark);text-align:left;transition:transform .15s ease,box-shadow .15s ease;}
+    .pbi-quick-btn:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(15,23,42,.08);}
+    .pbi-quick-btn i{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;}
+    .pbi-quick-btn.qa-teal i{background:var(--pbi-green-bg);color:var(--pbi-green-dark);}
+    .pbi-quick-btn.qa-skyblue i{background:#E6F0FF;color:#2563EB;}
+    .pbi-quick-btn.qa-violet i{background:#F1EBFE;color:#6D28D9;}
+    .pbi-quick-btn.qa-orange i{background:#FDF0DF;color:#C77A08;}
+    .pbi-quick-btn.qa-gray i{background:#EEF1F6;color:var(--text-dim);}
+
+    @media (max-width:1100px){
+        .pbi-period-tiles{grid-template-columns:1fr 1fr;}
+        .pbi-bottom-row{grid-template-columns:1fr;}
+    }
     .pbi-cards-row{display:flex;gap:20px;margin-bottom:30px;}
     .pbi-card{background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;padding:22px;min-width:200px;box-shadow:var(--card-shadow);flex:1;}
     .pbi-card-title{font-size:13px;font-weight:600;color:var(--text-dim);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px;}
@@ -817,26 +1015,37 @@ $HEALTH_ITEMS = [
     .pbi-dropdown-item:hover{background:var(--page-bg);color:#5B9BFA;}
 
     /* ── RESPONSIVE ── */
-    @media(max-width:900px){.nav-item span{display:none;}.nav-item{padding:9px 11px;}.page-content{padding:20px;}.iframe-box{height:600px;}.pbi-dashboard-grid{grid-template-columns:1fr;}.logs-table{font-size:11px;}}
+    @media(max-width:900px){
+        :root{--sidebar-w:74px;}
+        .sidebar-title,.sidebar-subtitle,.nav-group-label,.pbi-sidebar .nav-item span,.sidebar-status,.sidebar-help-text,.sidebar-help-sub{display:none;}
+        .sidebar-brand{justify-content:center;padding:0 0 16px;}
+        .pbi-sidebar .nav-item{justify-content:center;padding:11px;}
+        .sidebar-help{justify-content:center;padding:11px;}
+        .nav-item{padding:9px 11px;}
+        .page-content{padding:20px;}
+        .iframe-box{height:600px;}
+        .pbi-dashboard-grid{grid-template-columns:1fr;}
+        .logs-table{font-size:11px;}
+    }
     @media(max-width:600px){.logs-table thead th:nth-child(4),.logs-table tbody td:nth-child(4){display:none;}}
     @media(max-width:550px){.sf-row{grid-template-columns:1fr;}.notif-dropdown{right:8px;width:calc(100vw - 16px);}}
     
     /* ── FULL-PAGE DASHBOARD LAYOUT ── */
     .page-content{
-        margin-top:72px;
-        margin-left:0;
-        width:100%;
-        min-height:calc(100vh - 72px);
+        margin-top:var(--topbar-h);
+        margin-left:var(--sidebar-w);
+        width:calc(100% - var(--sidebar-w));
+        min-height:calc(100vh - var(--topbar-h));
         padding:0 24px 28px;
     }
     #dashboard.page.active{
         width:100%;
-        min-height:calc(100vh - 72px);
+        min-height:calc(100vh - var(--topbar-h));
     }
     .pbi-dashboard-container{
         width:100%;
         max-width:none;
-        min-height:calc(100vh - 72px);
+        min-height:calc(100vh - var(--topbar-h));
         padding:24px 0 32px;
     }
     .pbi-stats-row{
@@ -912,25 +1121,294 @@ button, .btn { font-weight:700; }
 a { color:inherit; }
 </style>
     <link rel="stylesheet" href="admin_ui_theme.css">
+
+<style id="friendly-dashboard-overrides">
+/* ------------------------------------------------------------------
+   Friendly dashboard refresh
+   Presentation-only: keeps existing IDs, PHP values and JS actions.
+   ------------------------------------------------------------------ */
+:root{
+    --fd-bg:#f5f7fb;
+    --fd-surface:#ffffff;
+    --fd-border:#e5eaf1;
+    --fd-text:#162033;
+    --fd-muted:#667085;
+    --fd-primary:#1f6feb;
+    --fd-primary-soft:#edf5ff;
+    --fd-success:#169c72;
+    --fd-success-soft:#eaf8f3;
+    --fd-warning:#c47b13;
+    --fd-warning-soft:#fff6e7;
+}
+body{background:var(--fd-bg)!important;color:var(--fd-text);}
+.page-content{padding:24px 28px 34px!important;}
+.pbi-dashboard-container{max-width:1440px;margin:0 auto!important;}
+
+/* Clean, single-purpose page heading */
+.pbi-dashboard-heading{
+    margin:0 0 18px!important;
+    padding:4px 2px 0;
+}
+.pbi-dashboard-greeting{display:none!important;}
+.pbi-system-title{
+    font-size:28px!important;
+    line-height:1.18!important;
+    letter-spacing:-.5px!important;
+    color:var(--fd-text)!important;
+    margin:0 0 6px!important;
+}
+.pbi-system-subtitle{
+    font-size:13px!important;
+    color:var(--fd-muted)!important;
+    margin:0!important;
+}
+.pbi-system-subtitle + .pbi-system-subtitle{display:none!important;}
+
+/* KPI cards */
+.pbi-stats-row{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px!important;margin:0 0 18px!important;}
+.pbi-stat-card{
+    min-width:0!important;
+    border:1px solid var(--fd-border)!important;
+    border-top:0!important;
+    border-radius:14px!important;
+    padding:18px!important;
+    background:var(--fd-surface)!important;
+    box-shadow:0 3px 14px rgba(16,24,40,.05)!important;
+    transition:transform .18s ease,box-shadow .18s ease!important;
+}
+.pbi-stat-card:hover{transform:translateY(-2px)!important;box-shadow:0 10px 24px rgba(16,24,40,.08)!important;}
+.pbi-stat-icon-circle{width:40px!important;height:40px!important;border-radius:11px!important;font-size:15px!important;margin-bottom:13px!important;}
+.pbi-stat-label{font-size:10.5px!important;letter-spacing:.5px!important;color:#718096!important;}
+.pbi-stat-value{font-size:29px!important;color:var(--fd-text)!important;}
+.pbi-stat-sub{font-size:11.5px!important;color:var(--fd-muted)!important;}
+.pbi-stat-trend{margin-top:7px!important;font-size:10.5px!important;}
+
+/* Current period becomes the dashboard's primary orientation block */
+.pbi-period-box{
+    margin:0 0 18px!important;
+    padding:19px 20px!important;
+    border:1px solid var(--fd-border)!important;
+    border-radius:14px!important;
+    background:var(--fd-surface)!important;
+    box-shadow:0 3px 14px rgba(16,24,40,.05)!important;
+}
+.pbi-period-top{margin-bottom:13px!important;}
+.pbi-period-label{font-size:10.5px!important;letter-spacing:.55px!important;color:#7b8798!important;}
+.pbi-period-value{font-size:18px!important;color:var(--fd-text)!important;}
+.pbi-period-meta{font-size:11.5px!important;color:var(--fd-muted)!important;}
+.pbi-period-tiles{gap:10px!important;}
+.pbi-period-tile{border-radius:11px!important;border:1px solid var(--fd-border)!important;background:#fbfcfe!important;}
+.pbi-period-tile-value{font-size:19px!important;}
+.pbi-progress-track{height:9px!important;border-radius:999px!important;background:#edf1f6!important;}
+.pbi-progress-fill{border-radius:999px!important;}
+
+/* Three-column working area, with clearer card hierarchy */
+.pbi-bottom-row{display:grid!important;grid-template-columns:1.05fr 1.15fr 1fr!important;gap:14px!important;margin:0!important;}
+.pbi-panel{
+    min-width:0!important;
+    padding:17px!important;
+    border:1px solid var(--fd-border)!important;
+    border-radius:14px!important;
+    background:var(--fd-surface)!important;
+    box-shadow:0 3px 14px rgba(16,24,40,.05)!important;
+}
+.pbi-panel-head{margin-bottom:12px!important;}
+.pbi-panel-title{font-size:11px!important;letter-spacing:.55px!important;color:#596579!important;}
+.pbi-panel-viewall{font-size:11px!important;padding:5px 10px!important;}
+.pbi-personnel-item{padding:11px 0!important;}
+.pbi-personnel-icon{width:36px!important;height:36px!important;}
+.pbi-personnel-name{font-size:12.5px!important;}
+.pbi-personnel-meta{font-size:10.5px!important;}
+.pbi-personnel-count{font-size:17px!important;}
+.pbi-attention-item{padding:10px 0!important;font-size:12px!important;line-height:1.4!important;}
+
+/* Action launcher: use plain language and obvious click targets */
+.pbi-quickaccess-grid{grid-template-columns:1fr!important;gap:9px!important;}
+.pbi-quick-btn{
+    width:100%!important;
+    min-height:54px!important;
+    padding:10px 11px!important;
+    border-radius:11px!important;
+    border:1px solid var(--fd-border)!important;
+    background:#fff!important;
+    font-size:12px!important;
+    font-weight:700!important;
+}
+.pbi-quick-btn:hover{transform:translateX(2px)!important;box-shadow:0 5px 14px rgba(16,24,40,.07)!important;background:#fbfdff!important;}
+.pbi-quick-btn i{width:34px!important;height:34px!important;border-radius:9px!important;}
+.pbi-quick-btn .qa-copy{display:flex;flex-direction:column;align-items:flex-start;gap:2px;line-height:1.15;}
+.pbi-quick-btn .qa-title{font-size:12px;font-weight:750;color:var(--fd-text);}
+.pbi-quick-btn .qa-sub{font-size:10px;font-weight:500;color:var(--fd-muted);}
+
+/* Improve mobile behavior */
+@media(max-width:1180px){
+    .pbi-stats-row{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+    .pbi-bottom-row{grid-template-columns:1fr 1fr!important;}
+    .pbi-bottom-row .pbi-panel:last-child{grid-column:1 / -1;}
+}
+@media(max-width:760px){
+    .page-content{padding:18px 14px 24px!important;}
+    .pbi-system-title{font-size:23px!important;}
+    .pbi-stats-row{grid-template-columns:1fr 1fr!important;gap:10px!important;}
+    .pbi-bottom-row{grid-template-columns:1fr!important;}
+    .pbi-bottom-row .pbi-panel:last-child{grid-column:auto;}
+    .pbi-period-top{display:block!important;}
+    .pbi-period-tiles{grid-template-columns:1fr 1fr!important;}
+}
+@media(max-width:500px){
+    .pbi-stats-row{grid-template-columns:1fr!important;}
+    .pbi-period-tiles{grid-template-columns:1fr!important;}
+}
+<style id="compact-100-scale">
+/* ── COMPACT 100% DESKTOP SCALE ── */
+:root{--sidebar-w:220px;--topbar-h:70px;}
+.nude-nav{padding:10px 22px!important;min-height:var(--topbar-h)!important;}
+.nav-brand{gap:10px!important;}
+.brand-text{gap:2px!important;}
+.brand-name{font-size:14px!important;max-width:190px!important;}
+.brand-role{font-size:9.5px!important;padding:2px 7px!important;}
+.nav-container{gap:8px!important;}
+.nav-menu{gap:2px!important;}
+.nav-item{font-size:12.5px!important;padding:7px 10px!important;gap:7px!important;}
+.notif-btn{width:32px!important;height:32px!important;font-size:13px!important;}
+.profile-trigger{min-height:32px!important;}
+.pbi-sidebar{padding:18px 14px!important;}
+.sidebar-brand{padding-bottom:15px!important;margin-bottom:9px!important;gap:9px!important;}
+.sidebar-logo{width:38px!important;height:38px!important;font-size:16px!important;border-radius:9px!important;}
+.sidebar-title{font-size:11.5px!important;}
+.sidebar-nav{gap:2px!important;}
+.nav-group-label{font-size:9px!important;padding:11px 8px 5px!important;}
+.pbi-sidebar .nav-item{font-size:12px!important;padding:8px 10px!important;gap:9px!important;border-radius:8px!important;}
+.pbi-sidebar .nav-item .icon{font-size:13px!important;width:15px!important;}
+.sidebar-status{padding-top:10px!important;}
+.sidebar-status-card{padding:11px 12px!important;margin-bottom:8px!important;border-radius:10px!important;}
+.sidebar-help{padding:9px 11px!important;border-radius:10px!important;}
+.page-content{padding:18px 22px 24px!important;}
+.pbi-dashboard-container{padding:18px 0 24px!important;max-width:1500px!important;}
+.pbi-dashboard-heading{margin-bottom:14px!important;padding-top:0!important;}
+.pbi-system-title{font-size:23px!important;margin-bottom:4px!important;}
+.pbi-system-subtitle{font-size:12px!important;}
+.pbi-stats-row{gap:11px!important;margin-bottom:14px!important;}
+.pbi-stat-card{padding:13px 15px!important;border-radius:11px!important;}
+.pbi-stat-card .pbi-stat-icon-circle{width:34px!important;height:34px!important;font-size:13px!important;margin-bottom:10px!important;border-radius:9px!important;}
+.pbi-stat-label{font-size:9.5px!important;margin-bottom:5px!important;}
+.pbi-stat-value{font-size:24px!important;margin-bottom:4px!important;}
+.pbi-stat-sub{font-size:10.5px!important;}
+.pbi-stat-trend{font-size:9.5px!important;margin-top:5px!important;}
+.pbi-period-box{padding:14px 16px!important;margin-bottom:14px!important;border-radius:11px!important;}
+.pbi-period-top{gap:12px 22px!important;margin-bottom:10px!important;}
+.pbi-period-value{font-size:16px!important;gap:8px!important;}
+.pbi-period-label{font-size:9.5px!important;}
+.pbi-period-meta{font-size:10.5px!important;margin-top:4px!important;}
+.pbi-period-tiles{gap:8px!important;margin-top:11px!important;}
+.pbi-period-tile{padding:10px 12px!important;border-radius:9px!important;}
+.pbi-period-tile-label{font-size:9.5px!important;margin-bottom:4px!important;}
+.pbi-period-tile-value{font-size:17px!important;}
+.pbi-period-tile-sub{font-size:10px!important;margin-top:3px!important;}
+.pbi-progress-track{height:7px!important;}
+.pbi-progress-note{font-size:10px!important;margin-top:4px!important;}
+.pbi-bottom-row{gap:11px!important;}
+.pbi-panel{padding:13px 14px!important;border-radius:11px!important;}
+.pbi-panel-head{margin-bottom:9px!important;}
+.pbi-panel-title{font-size:10px!important;}
+.pbi-panel-viewall{font-size:10px!important;padding:4px 8px!important;}
+.pbi-personnel-item{padding:8px 0!important;gap:9px!important;}
+.pbi-personnel-icon{width:31px!important;height:31px!important;font-size:13px!important;}
+.pbi-personnel-name{font-size:11.5px!important;}
+.pbi-personnel-meta{font-size:9.5px!important;}
+.pbi-personnel-count{font-size:15px!important;}
+.pbi-attention-item{padding:8px 0!important;font-size:11px!important;}
+.pbi-quickaccess-grid{gap:7px!important;}
+.pbi-quick-btn{min-height:46px!important;padding:8px 9px!important;border-radius:9px!important;font-size:11px!important;gap:8px!important;}
+.pbi-quick-btn i{width:28px!important;height:28px!important;border-radius:7px!important;font-size:12px!important;}
+.pbi-quick-btn .qa-title{font-size:11px!important;}
+.pbi-quick-btn .qa-sub{font-size:9px!important;}
+@media(max-width:1180px){
+  :root{--sidebar-w:220px;}
+  .pbi-stats-row{grid-template-columns:repeat(4,minmax(0,1fr))!important;}
+  .pbi-bottom-row{grid-template-columns:1fr 1fr!important;}
+  .pbi-bottom-row .pbi-panel:last-child{grid-column:1 / -1;}
+}
+@media(max-width:900px){
+  :root{--sidebar-w:70px;}
+  .pbi-sidebar{padding:16px 10px!important;}
+  .page-content{padding:16px!important;}
+}
+@media(max-width:760px){
+  .pbi-stats-row{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+}
+@media(max-width:500px){
+  .pbi-stats-row{grid-template-columns:1fr!important;}
+}
+</style>
 </head>
 <body>
 
-<!-- ═══ NAVBAR ═══════════════════════════════════════════════════════════ -->
+<!-- ═══ SIDEBAR ══════════════════════════════════════════════════════════ -->
+<aside class="pbi-sidebar">
+    <div class="sidebar-brand">
+        <div class="sidebar-logo"><i class="fa-solid fa-shield-halved"></i></div>
+        <div>
+            <div class="sidebar-title">PANDAN BAY<br>INSTITUTE, INC.</div>
+        </div>
+    </div>
+
+    <nav class="sidebar-nav">
+        <div class="nav-group-label">Main</div>
+        <ul class="nav-menu">
+            <li><a href="#" id="link-dashboard" onclick="showPage('dashboard',this);return false;" class="nav-item"><i class="fa-solid fa-house icon"></i> <span>Dashboard</span></a></li>
+            <li><a href="#" id="link-reports"   onclick="showPage('reports',this);return false;"   class="nav-item"><i class="fa-solid fa-file-signature icon"></i> <span>Questionnaire</span></a></li>
+            <?php if (($_SESSION['role'] ?? '') === 'superadmin'): ?>
+            <li><a href="#" id="link-registrations" onclick="showPage('registrations',this);return false;" class="nav-item"><i class="fa-solid fa-user-lock icon"></i> <span>Account Management</span></a></li>
+            <?php endif; ?>
+        </ul>
+
+        <div class="nav-group-label">Evaluations</div>
+        <ul class="nav-menu">
+            <li><a href="#" id="link-tracker" onclick="showPage('tracker',this);return false;" class="nav-item"><i class="fa-solid fa-user-check icon"></i> <span>Evaluation Tracker</span></a></li>
+            <li><a href="#" id="link-ea-eval" onclick="showPage('ea_eval',this);return false;" class="nav-item"><i class="fa-solid fa-user-tie icon"></i> <span><?= $isExecutiveAssistant ? 'My Evaluations' : 'EA Evaluations' ?></span></a></li>
+            <li><a href="#" id="link-analytics" onclick="showPage('analytics',this);return false;" class="nav-item"><i class="fa-solid fa-chart-line icon"></i> <span>Evaluation Report</span></a></li>
+        </ul>
+
+        <div class="nav-group-label">System</div>
+        <ul class="nav-menu">
+            <li><a href="#" id="link-system_logs" onclick="showPage('system_logs',this);return false;" class="nav-item"><i class="fa-solid fa-clock-rotate-left icon"></i> <span>System Logs</span></a></li>
+            <li><a href="#" id="link-settings" onclick="showPage('settings',this);return false;" class="nav-item"><i class="fa-solid fa-gear icon"></i> <span>Settings</span></a></li>
+        </ul>
+    </nav>
+
+    <div class="sidebar-status">
+        <div class="sidebar-status-card">
+            <div class="sidebar-status-title">Current Status</div>
+            <div class="sidebar-status-row">
+                <span class="sidebar-status-label">Evaluation Period</span>
+                <span class="sidebar-status-pill <?= $evalStatus['cls'] === 'open' ? 'open' : 'closed' ?>"><?= htmlspecialchars($evalStatus['label']) ?></span>
+            </div>
+            <div class="sidebar-status-row" style="margin-bottom:0;">
+                <div>
+                    <div class="sidebar-status-label" style="margin-bottom:3px;">School Year</div>
+                    <div class="sidebar-status-year"><?= htmlspecialchars($sys['acad_year']) ?></div>
+                    <div class="sidebar-status-sub"><?= htmlspecialchars($STRUCTURE_LABELS[$sys['acad_structure']] ?? 'College') ?></div>
+                </div>
+            </div>
+        </div>
+        <div class="sidebar-help">
+            <i class="fa-regular fa-comment-dots"></i>
+            <div>
+                <div class="sidebar-help-text">Need Help?</div>
+                <div class="sidebar-help-sub">System Administrator</div>
+            </div>
+        </div>
+    </div>
+</aside>
+
+<!-- ═══ TOPBAR ═══════════════════════════════════════════════════════════ -->
 <nav class="nude-nav">
 
-    <!-- LEFT: horizontal nav links (moved out of the sidebar) -->
-    <ul class="nav-menu">
-        <div class="indicator"></div>
-        <li><a href="#" id="link-dashboard" onclick="showPage('dashboard',this);return false;" class="nav-item"><i class="fa-solid fa-house icon"></i> <span>Dashboard</span></a></li>
-        <li><a href="#" id="link-reports"   onclick="showPage('reports',this);return false;"   class="nav-item"><i class="fa-solid fa-file-signature icon"></i> <span>Questionnaire</span></a></li>
-        <li><a href="#" id="link-add Users" onclick="showPage('personnel',this);return false;" class="nav-item"><i class="fa-solid fa-id-card-clip icon"></i> <span>Add Personnels</span></a></li>
-        <li><a href="#" id="link-analytics" onclick="showPage('analytics',this);return false;" class="nav-item"><i class="fa-solid fa-chart-line icon"></i> <span>Reports &amp; Analytics</span></a></li>
-        <?php if (($_SESSION['role'] ?? '') === 'superadmin'): ?>
-        <li><a href="#" id="link-registrations" onclick="showPage('registrations',this);return false;" class="nav-item"><i class="fa-solid fa-user-lock icon"></i> <span>Manage Registrations</span></a></li>
-        <?php endif; ?>
-        <li><a href="#" id="link-tracker" onclick="showPage('tracker',this);return false;" class="nav-item"><i class="fa-solid fa-user-check icon"></i> <span>Evaluation Tracker</span></a></li>
-        <li><a href="#" id="link-ea-eval" onclick="showPage('ea_eval',this);return false;" class="nav-item"><i class="fa-solid fa-user-tie icon"></i> <span><?= $isExecutiveAssistant ? 'My Evaluations' : 'EA Evaluations' ?></span></a></li>
-    </ul>
+    <!-- LEFT: greeting -->
+    <div class="topbar-greeting-wrap">
+        <div class="topbar-greeting"><?= htmlspecialchars($greetingWord) ?>, <?= htmlspecialchars($admin_firstname) ?>! <span class="wave">👋</span></div>
+    </div>
 
     <!-- RIGHT: bell, divider, avatar + name + clock -->
     <div class="nav-container">
@@ -989,12 +1467,6 @@ a { color:inherit; }
                     <button class="pd-item" onclick="openSettings('security')">
                         <span class="pd-icon"><i class="fa-solid fa-lock"></i></span> Change Password
                     </button>
-                    <button class="pd-item" onclick="openSettings('system')">
-                        <span class="pd-icon"><i class="fa-solid fa-sliders"></i></span> System &amp; Period Settings
-                    </button>
-                    <button class="pd-item" onclick="openSettings('appearance')">
-                        <span class="pd-icon"><i class="fa-solid fa-palette"></i></span> Appearance
-                    </button>
                     <div class="pd-divider"></div>
                     <a href="../logout.php" class="pd-item danger"
                        onclick="return confirm('Terminate your administrative session?')">
@@ -1005,8 +1477,6 @@ a { color:inherit; }
         </div>
     </div>
 </nav><!-- /.nude-nav -->
-
-<!-- ═══ SIDEBAR — removed for now; nav links moved into the top navbar above ══ -->
 
 <!-- Notification dropdown — OUTSIDE nav, position:fixed -->
 <div class="notif-dropdown" id="notifDropdown">
@@ -1032,6 +1502,7 @@ a { color:inherit; }
         <button class="sm-tab"        id="stab-security"   onclick="switchTab('security')"><i class="fa-solid fa-lock" style="margin-right:4px;"></i>Security</button>
         <button class="sm-tab"        id="stab-system"     onclick="switchTab('system')"><i class="fa-solid fa-sliders" style="margin-right:4px;"></i>System &amp; Period</button>
         <button class="sm-tab"        id="stab-appearance" onclick="switchTab('appearance')"><i class="fa-solid fa-palette" style="margin-right:4px;"></i>Appearance</button>
+        <button class="sm-tab"        id="stab-archive" onclick="switchTab('archive')"><i class="fa-solid fa-box-archive" style="margin-right:4px;"></i>System Archive</button>
     </div>
 
     <?php if ($sm_text): ?>
@@ -1381,6 +1852,18 @@ a { color:inherit; }
             </div>
         </div>
     </div>
+    <div class="sm-section sm-body" id="ssec-archive">
+        <div style="padding:13px 15px;background:#EEF4FF;border:1px solid #C9D9EF;border-radius:10px;color:#2855A4;display:flex;gap:10px;align-items:flex-start;font-size:12px;line-height:1.5;">
+            <i class="fa-solid fa-box-archive" style="margin-top:2px;"></i>
+            <div><strong>System Archive</strong><br>Safely close an evaluation year, preserve its history, and start the next cycle with clean live dashboards.</div>
+        </div>
+        <div style="margin-top:14px;padding:14px;border:1px solid var(--card-border);border-radius:10px;background:var(--inner-bg,#F8FAFC);">
+            <div style="font-weight:700;font-size:13px;color:var(--text-dark);margin-bottom:5px;">What this does</div>
+            <div style="font-size:12px;color:var(--text-dim);line-height:1.55;">Evaluation submissions, results, tracker rows, reminders, generated reports, and evaluation notifications are stored in a protected archive. Questions, user accounts, assignments, permissions, settings, and system logs remain intact.</div>
+        </div>
+        <button type="button" class="sf-btn sf-btn-save" style="margin-top:14px;" onclick="openArchive()"><i class="fa-solid fa-arrow-up-right-from-square" style="margin-right:5px;"></i>Open System Archive</button>
+    </div>
+
     <div class="sm-footer" id="footer-appearance" style="display:none;">
         <button type="button" class="sf-btn sf-btn-save" onclick="closeSettings()">Done</button>
     </div>
@@ -1393,134 +1876,183 @@ a { color:inherit; }
     <div id="dashboard" class="page">
         <div class="pbi-dashboard-container">
             <header class="pbi-dashboard-heading">
-                <p class="pbi-dashboard-kicker"><i class="fa-solid fa-shield-halved"></i> <?= htmlspecialchars(display_role($_SESSION['role'] ?? 'admin')) ?></p>
+                <p class="pbi-dashboard-greeting"><?= htmlspecialchars($greeting) ?>, <?= htmlspecialchars($firstName) ?>! <span class="wave">👋</span></p>
                 <h1 class="pbi-system-title"><?= htmlspecialchars($workspaceTitle) ?></h1>
                 <p class="pbi-system-subtitle"><?= htmlspecialchars($workspaceSubtitle) ?></p>
+                <p class="pbi-system-subtitle">Here's what's happening with the evaluation system today.</p>
             </header>
 
             <!-- ── STAT CARDS ── -->
             <div class="pbi-stats-row">
-                <div class="pbi-stat-card stat-blue">
-                    <i class="fa-solid fa-users pbi-stat-icon"></i>
-                    <div class="pbi-stat-label">Total Users</div>
-                    <div class="pbi-stat-value" id="cnt-total"><?= number_format($totalUsers) ?></div>
-                    <div class="pbi-stat-sub">Faculty + Staff + Students</div>
-                    <div class="pbi-stat-trend flat" id="trend-total"><i class="fa-solid fa-minus"></i> No change yet</div>
-                </div>
-                <div class="pbi-stat-card stat-purple">
-                    <i class="fa-solid fa-chalkboard-user pbi-stat-icon"></i>
-                    <div class="pbi-stat-label">Faculty</div>
+                <div class="pbi-stat-card stat-teal">
+                    <div class="pbi-stat-icon-circle"><i class="fa-solid fa-users"></i></div>
+                    <div class="pbi-stat-label">Total Personnel</div>
                     <div class="pbi-stat-value" id="cnt-faculty"><?= number_format($facultyCount) ?></div>
-                    <div class="pbi-stat-sub">Includes Staff accounts</div>
+                    <div class="pbi-stat-sub">Faculty + Staff</div>
                     <div class="pbi-stat-trend flat" id="trend-faculty"><i class="fa-solid fa-minus"></i> No change yet</div>
                 </div>
-                <div class="pbi-stat-card stat-green">
-                    <i class="fa-solid fa-graduation-cap pbi-stat-icon"></i>
-                    <div class="pbi-stat-label">Students</div>
+                <div class="pbi-stat-card stat-skyblue">
+                    <div class="pbi-stat-icon-circle"><i class="fa-solid fa-graduation-cap"></i></div>
+                    <div class="pbi-stat-label">Students Enrolled</div>
                     <div class="pbi-stat-value" id="cnt-students"><?= number_format($studentCount) ?></div>
                     <div class="pbi-stat-sub">Enrolled this period</div>
                     <div class="pbi-stat-trend flat" id="trend-students"><i class="fa-solid fa-minus"></i> No change yet</div>
                 </div>
-                <div class="pbi-stat-card stat-orange">
-                    <i class="fa-solid fa-file-signature pbi-stat-icon"></i>
-                    <div class="pbi-stat-label">Eval Records</div>
+                <div class="pbi-stat-card stat-violet">
+                    <div class="pbi-stat-icon-circle"><i class="fa-solid fa-clipboard-check"></i></div>
+                    <div class="pbi-stat-label">Evaluations Submitted</div>
                     <div class="pbi-stat-value" id="cnt-evals"><?= number_format($activeEvals) ?></div>
-                    <div class="pbi-stat-sub">Evaluation submissions</div>
+                    <div class="pbi-stat-sub">Submissions this period</div>
                     <div class="pbi-stat-trend flat" id="trend-evals"><i class="fa-solid fa-minus"></i> No change yet</div>
+                </div>
+                <div class="pbi-stat-card stat-gold pbi-completion-card">
+                    <div class="pbi-completion-ring" id="completion-ring" style="--pct:<?= min(100,$submissionPct) ?>;">
+                        <div class="pbi-completion-ring-inner" id="completion-ring-pct"><?= $submissionPct ?>%</div>
+                    </div>
+                    <div class="pbi-completion-text">
+                        <div class="pbi-stat-label">Completion Rate</div>
+                        <div class="pbi-stat-sub" id="completion-note"><?= $submittedCount ?> of <?= $studentCount ?> completed</div>
+                    </div>
                 </div>
             </div>
 
             <!-- ── EVALUATION PERIOD ── -->
             <div class="pbi-period-box">
-                <div class="pbi-period-top">
-                    <div class="pbi-period-block">
-                        <div class="pbi-period-label">Evaluation Period</div>
-                        <div class="pbi-period-value">
-                            <?= htmlspecialchars($sys['acad_year']) ?> · <?= htmlspecialchars($STRUCTURE_LABELS[$sys['acad_structure']] ?? 'College') ?> · <?= htmlspecialchars($sys['acad_term']) ?>
-                            <span class="period-status <?= $evalStatus['cls'] ?>">
-                                <i class="fa-solid fa-circle" style="font-size:7px;"></i>
-                                <?= htmlspecialchars($evalStatus['label']) ?>
-                            </span>
+                <div class="pbi-period-block">
+                    <div class="pbi-period-label">Current Evaluation Period
+                        <span class="pbi-period-badge <?= $evalStatus['cls'] === 'open' ? 'green' : ($evalStatus['cls'] === 'closed' ? 'red' : ($evalStatus['cls'] === 'amber' ? 'yellow' : 'gray')) ?>">
+                            <i class="fa-solid fa-circle" style="font-size:6px;"></i> <?= htmlspecialchars($evalStatus['label']) ?>
+                        </span>
+                    </div>
+                    <div class="pbi-period-value">
+                        <?= htmlspecialchars($sys['acad_year']) ?> · <?= htmlspecialchars($STRUCTURE_LABELS[$sys['acad_structure']] ?? 'College') ?> · <?= htmlspecialchars($sys['acad_term']) ?>
+                    </div>
+                    <div class="pbi-period-meta">
+                        <i class="fa-regular fa-calendar"></i><?= !empty($sys['eval_start']) ? 'Period started: ' . htmlspecialchars(date('M j, Y', strtotime($sys['eval_start']))) : 'No set start date' ?>
+                        <span class="sep">|</span>
+                        <i class="fa-regular fa-clock"></i><?= !empty($sys['eval_end']) ? 'Deadline: ' . htmlspecialchars(date('M j, Y', strtotime($sys['eval_end']))) : 'No set deadline' ?>
+                    </div>
+                </div>
+
+                <div class="pbi-period-tiles">
+                    <div class="pbi-period-tile tile-progress">
+                        <div class="pbi-period-tile-label">Submission Progress</div>
+                        <div class="pbi-period-tile-value" id="progress-pct"><?= $submissionPct ?>%</div>
+                        <div class="pbi-progress-track" style="margin-top:8px;"><div class="pbi-progress-fill" id="progress-fill" style="width:<?= min(100,$submissionPct) ?>%;"></div></div>
+                        <div class="pbi-period-tile-sub" id="progress-note"><?= $submittedCount ?> of <?= $studentCount ?> students</div>
+                    </div>
+                    <div class="pbi-period-tile tile-submitted">
+                        <div class="pbi-period-tile-label">Submitted</div>
+                        <div class="pbi-period-tile-value green" id="cnt-submitted-tile"><?= number_format($submittedCount) ?></div>
+                    </div>
+                    <div class="pbi-period-tile tile-pending">
+                        <div class="pbi-period-tile-label">Pending</div>
+                        <div class="pbi-period-tile-value gold" id="cnt-pending-tile"><?= number_format($pendingEvalCount) ?></div>
+                    </div>
+                    <div class="pbi-period-tile tile-total">
+                        <div class="pbi-period-tile-label">Total Students</div>
+                        <div class="pbi-period-tile-value" id="cnt-student"><?= number_format($studentCount) ?></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── PERSONNEL OVERVIEW / NEEDS ATTENTION / QUICK ACCESS ── -->
+            <div class="pbi-bottom-row">
+
+                <div class="pbi-panel">
+                    <div class="pbi-panel-head">
+                        <span class="pbi-panel-title">Personnel Overview</span>
+                        <button type="button" class="pbi-panel-viewall" onclick="showPage('registrations', document.getElementById('link-registrations'))">View All</button>
+                    </div>
+                    <div class="pbi-personnel-item">
+                        <div class="pbi-personnel-icon teal"><i class="fa-solid fa-chalkboard-user"></i></div>
+                        <div>
+                            <div class="pbi-personnel-name">Faculty</div>
+                            <div class="pbi-personnel-meta">Active: <?= $teacherCount ?> &nbsp; Inactive: <?= $teacherInactive ?></div>
                         </div>
-                        <div class="pbi-period-sub"><?= htmlspecialchars($sys['acad_term']) ?></div>
+                        <div class="pbi-personnel-count" id="cnt-teacher"><?= $teacherCount ?></div>
                     </div>
-                    <div class="pbi-progress-wrap">
-                        <div class="pbi-progress-top"><span>Submission Progress</span><strong id="progress-pct"><?= $submissionPct ?>%</strong></div>
-                        <div class="pbi-progress-track"><div class="pbi-progress-fill" id="progress-fill" style="width:<?= min(100,$submissionPct) ?>%;"></div></div>
-                        <div class="pbi-progress-note" id="progress-note"><?= $submittedCount ?> of <?= $studentCount ?> students submitted</div>
+                    <div class="pbi-personnel-item">
+                        <div class="pbi-personnel-icon skyblue"><i class="fa-solid fa-user-tie"></i></div>
+                        <div>
+                            <div class="pbi-personnel-name">Staff</div>
+                            <div class="pbi-personnel-meta">Active: <?= $staffCount ?> &nbsp; Inactive: <?= $staffInactive ?></div>
+                        </div>
+                        <div class="pbi-personnel-count" id="cnt-staff"><?= $staffCount ?></div>
+                    </div>
+                    <div class="pbi-personnel-item">
+                        <div class="pbi-personnel-icon violet"><i class="fa-solid fa-graduation-cap"></i></div>
+                        <div>
+                            <div class="pbi-personnel-name">Students</div>
+                            <div class="pbi-personnel-meta">Enrolled this period</div>
+                        </div>
+                        <div class="pbi-personnel-count"><?= number_format($studentCount) ?></div>
                     </div>
                 </div>
+
+                <div class="pbi-panel">
+                    <div class="pbi-panel-head">
+                        <span class="pbi-panel-title">Needs Attention</span>
+                    </div>
+                    <?php if ($pendingEvalCount > 0): ?>
+                    <div class="pbi-attention-item">
+                        <i class="fa-solid fa-triangle-exclamation dot warn"></i>
+                        <span><?= number_format($pendingEvalCount) ?> student<?= $pendingEvalCount===1?'':'s' ?> have not yet submitted their evaluations.</span>
+                        <i class="fa-solid fa-chevron-right chev"></i>
+                    </div>
+                    <?php endif; ?>
+                    <?php if ($pendingRegCount > 0): ?>
+                    <div class="pbi-attention-item">
+                        <i class="fa-solid fa-circle-info dot info"></i>
+                        <span><?= number_format($pendingRegCount) ?> personnel account<?= $pendingRegCount===1?'':'s' ?> pending verification.</span>
+                        <i class="fa-solid fa-chevron-right chev"></i>
+                    </div>
+                    <?php else: ?>
+                    <div class="pbi-attention-item">
+                        <i class="fa-solid fa-circle-check dot ok"></i>
+                        <span>All personnel accounts are verified.</span>
+                        <i class="fa-solid fa-chevron-right chev"></i>
+                    </div>
+                    <?php endif; ?>
+                    <div class="pbi-attention-item">
+                        <i class="fa-solid fa-circle-check dot <?= $activeEvals > 0 ? 'ok' : 'warn' ?>"></i>
+                        <span><?= $activeEvals > 0 ? 'All questionnaires are updated and ready.' : 'No questionnaires configured yet.' ?></span>
+                        <i class="fa-solid fa-chevron-right chev"></i>
+                    </div>
+                    <div class="pbi-attention-item">
+                        <i class="fa-solid fa-circle-info dot <?= !empty($sys['maintenance']) ? 'warn' : 'info' ?>"></i>
+                        <span><?= !empty($sys['maintenance']) ? 'System is in maintenance mode.' : 'No system issues reported.' ?></span>
+                        <i class="fa-solid fa-chevron-right chev"></i>
+                    </div>
+                </div>
+
+                <div class="pbi-panel">
+                    <div class="pbi-panel-head">
+                        <span class="pbi-panel-title">Quick Access</span>
+                    </div>
+                    <div class="pbi-quickaccess-grid">
+                        <button type="button" class="pbi-quick-btn qa-teal" onclick="showPage('reports', document.getElementById('link-reports'))"><i class="fa-solid fa-file-signature"></i><span class="qa-copy"><span class="qa-title">Questionnaire</span><span class="qa-sub">Manage evaluation forms and questions</span></span></button>
+                        <?php if (($_SESSION['role'] ?? '') === 'superadmin'): ?>
+                        <button type="button" class="pbi-quick-btn qa-violet" onclick="showPage('registrations', document.getElementById('link-registrations'))"><i class="fa-solid fa-user-lock"></i><span class="qa-copy"><span class="qa-title">Account Management</span><span class="qa-sub">Review accounts awaiting approval</span></span></button>
+                        <?php endif; ?>
+                        <button type="button" class="pbi-quick-btn qa-orange" onclick="showPage('tracker', document.getElementById('link-tracker'))"><i class="fa-solid fa-user-check"></i><span class="qa-copy"><span class="qa-title">Evaluation Tracker</span><span class="qa-sub">Monitor completion and submissions</span></span></button>
+                        <button type="button" class="pbi-quick-btn qa-teal" onclick="showPage('analytics', document.getElementById('link-analytics'))"><i class="fa-solid fa-chart-line"></i><span class="qa-copy"><span class="qa-title">Evaluation Report</span><span class="qa-sub">View trends, summaries, and results</span></span></button>
+                        <button type="button" class="pbi-quick-btn qa-gray" onclick="showPage('system_logs', document.getElementById('link-system_logs'))"><i class="fa-solid fa-clock-rotate-left"></i><span class="qa-copy"><span class="qa-title">System Logs</span><span class="qa-sub">Review recent system activity</span></span></button>
+                    </div>
+                </div>
+
             </div>
 
-            <!-- ── SECTOR CARDS ── -->
-            <div class="pbi-sector-row">
-                <div class="pbi-sector-card teacher-card">
-                    <div class="pbi-sector-top">
-                        <h3>Faculty</h3>
-                        <div class="pbi-sector-count" id="cnt-teacher"><?= $teacherCount ?></div>
-                    </div>
-                    <div class="pbi-sector-meta">
-                        <span><i class="fa-solid fa-circle-check"></i> Active: <?= $teacherCount ?></span>
-                        <span><i class="fa-solid fa-clock"></i> Last registered: —</span>
-                    </div>
-                    <button type="button" class="pbi-view-btn" onclick="openSector('Teacher')">View</button>
-                </div>
-                <div class="pbi-sector-card staff-card">
-                    <div class="pbi-sector-top">
-                        <h3>Staff</h3>
-                        <div class="pbi-sector-count" id="cnt-staff"><?= $staffCount ?></div>
-                    </div>
-                    <div class="pbi-sector-meta">
-                        <span><i class="fa-solid fa-circle-check"></i> Active: <?= $staffCount ?></span>
-                        <span><i class="fa-solid fa-clock"></i> Last registered: —</span>
-                    </div>
-                    <button type="button" class="pbi-view-btn" onclick="openSector('Staff')">View</button>
-                </div>
-                <div class="pbi-sector-card student-card">
-                    <div class="pbi-sector-top">
-                        <h3>Student</h3>
-                        <div class="pbi-sector-count" id="cnt-student"><?= $studentCount ?></div>
-                    </div>
-                    <div class="pbi-sector-meta">
-                        <span><i class="fa-solid fa-circle-check"></i> Active: <?= $studentCount ?></span>
-                        <span><i class="fa-solid fa-hourglass-half"></i> Pending evals: <?= max(0, $studentCount - $submittedCount) ?></span>
-                    </div>
-                    <button type="button" class="pbi-view-btn" onclick="openSector('Student')">View</button>
-                </div>
-            </div>
-
-            <div class="pbi-dashboard-grid">
-                <div class="pbi-section-box">
-                    <div class="pbi-section-head-row">
-                        <h2 class="pbi-section-heading">System Logs</h2>
-                        <a href="#" onclick="showPage('tracker',document.getElementById('link-tracker'));return false;" class="pbi-view-all-link">View All Logs</a>
-                    </div>
-                    <div class="logs-table-wrap">
-                        <table class="logs-table">
-                            <thead>
-                                <tr>
-                                    <th>Date &amp; Time</th>
-                                    <th>Action</th>
-                                    <th>Performed By</th>
-                                    <th>Source</th>
-                                </tr>
-                            </thead>
-                            <tbody id="logsTableBody">
-                                <tr><td colspan="4" class="logs-empty">Loading recent activity…</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
         </div>
     </div>
 
     <div id="reports"       class="page"><iframe src="questionnaire.php"              class="iframe-box"></iframe></div>
-    <div id="personnel"     class="page"><iframe src="add_personnels.php"             class="iframe-box"></iframe></div>
     <div id="analytics"     class="page"><iframe src="admin_analytics.php"            class="iframe-box"></iframe></div>
     <div id="registrations" class="page"><iframe src="manage_privileged_accounts.php" class="iframe-box" id="registrationsFrame"></iframe></div>
     <div id="tracker"       class="page"><iframe src="evaluation_tracker.php"        class="iframe-box"></iframe></div>
     <div id="ea_eval"       class="page"><iframe src="ea_evaluation.php"             class="iframe-box"></iframe></div>
+    <div id="system_logs"   class="page"><iframe src="system_logs.php"              class="iframe-box"></iframe></div>
+    <div id="settings"      class="page"><iframe src="settings.php"                   class="iframe-box" id="settingsFrame"></iframe></div>
 </div>
 
 <script>
@@ -1568,6 +2100,14 @@ function switchTab(tab){
     if(footer)footer.style.display='flex';
 }
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeSettings();});
+
+function openArchive(){
+    document.getElementById('settingsOverlay')?.classList.remove('show');
+    document.body.style.overflow='';
+    showPage('settings', document.getElementById('link-settings'));
+    const frame=document.getElementById('settingsFrame');
+    if(frame){ frame.src='settings.php?tab=archive'; }
+}
 
 /* ── NAV / PAGES ── */
 function showPage(pageId,element){

@@ -190,6 +190,19 @@ function hasAnyYearLevelAssignment($mysqli, $target_id) {
     return $has_any;
 }
 
+// "Teaching person" for evaluation_context='teacher' purposes: a Teacher
+// (role/secondary_role literally 'teacher'), OR a Staff member who carries
+// an actual teaching/year-level assignment ("teaching staff"). Mirrors
+// admin/questionnaire.php's is_teaching_staff rule, where such a Staff
+// account is placed under the Teacher bucket, not Staff. Every check that
+// gates a 'teacher' evaluation_context must use this instead of the plain
+// ec_has_teacher_function() role check, or a teaching-staff member shown
+// under the Faculty tab will fail eligibility when they try to evaluate.
+function isTeachingPerson($mysqli, array $u): bool {
+    return ec_has_teacher_function($u)
+        || (ec_has_staff_function($u) && hasAnyYearLevelAssignment($mysqli, (int)($u['id'] ?? 0)));
+}
+
 function hasUserQuestionSet($mysqli, $target_id, $target_type, $eval_type = 'student') {
     $stmt = $mysqli->prepare(
         "SELECT 1 FROM user_questions WHERE user_id=? AND target_type=? AND eval_type=? LIMIT 1"
@@ -258,6 +271,7 @@ function canStudentEvaluateTarget(
             'This person is not available for evaluation.'
         ];
     }
+    $target['id'] = $target_id;
 
     /*
      * SCHOOL HEAD
@@ -271,8 +285,13 @@ function canStudentEvaluateTarget(
 
     /*
      * DETERMINE AVAILABLE CONTEXTS
+     *
+     * $has_teacher covers both actual Teachers and "teaching staff" --
+     * Staff members with a real teaching/year-level assignment -- so they
+     * pass evaluation_context='teacher' eligibility, matching where they
+     * now appear on the Dashboard (Faculty tab, not Staff).
      */
-    $has_teacher = ec_has_teacher_function($target);
+    $has_teacher = isTeachingPerson($mysqli, $target);
     $has_staff   = ec_has_staff_function($target);
 
     /*
@@ -327,6 +346,18 @@ function canStudentEvaluateTarget(
     }
 
     if ($evaluation_context === 'staff' && !$has_staff) {
+        return [
+            false,
+            'This person is not configured for a Staff evaluation.'
+        ];
+    }
+
+    // Staff context is non-teaching staff ONLY (mirrors the Dashboard's
+    // Staff tab / admin/questionnaire.php's isNonTeachingStaff rule). A
+    // Staff member with an actual teaching/year-level assignment is
+    // teaching staff -- evaluable only under 'teacher', never 'staff',
+    // even when their assignment matches this student's year level.
+    if ($evaluation_context === 'staff' && $has_staff && hasAnyYearLevelAssignment($mysqli, $target_id)) {
         return [
             false,
             'This person is not configured for a Staff evaluation.'
@@ -436,7 +467,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_evaluation']))
     [$eligible, $eligibility_result] = ($target_id > 0) ? canStudentEvaluateTarget($mysqli,$student_level,$student_year_level,$target_id,$evaluation_context,$active_period_semester) : [false,null];
     $ctxStmt=$mysqli->prepare("SELECT role,secondary_role,designation FROM users WHERE id=? AND is_active=1 LIMIT 1");
     $ctxStmt->bind_param('i',$target_id); $ctxStmt->execute(); $ctxRow=$ctxStmt->get_result()->fetch_assoc(); $ctxStmt->close();
-    $has_teacher_context=$ctxRow && ec_has_teacher_function($ctxRow);
+    if ($ctxRow) $ctxRow['id'] = $target_id;
+    $has_teacher_context=$ctxRow && isTeachingPerson($mysqli,$ctxRow);
     $has_staff_context=$ctxRow && ec_has_staff_function($ctxRow);
     $has_multi_context=$ctxRow && (userHasAdditionalRole($ctxRow) || ($has_staff_context && hasAnyYearLevelAssignment($mysqli,$target_id)));
     $context_allowed=($evaluation_context==='teacher'&&$has_teacher_context)||($evaluation_context==='staff'&&$has_staff_context)||($evaluation_context==='multi_role'&&$has_multi_context)||($evaluation_context==='school_head'&&$ctxRow&&in_array($ctxRow['role'],['principal','dean'],true));
@@ -584,6 +616,7 @@ if (isset($_GET['get_questions'])) {
         )->fetch_assoc();
 
         if (!$userRow) throw new Exception("User not found.");
+        $userRow['id'] = $target_id;
 
         $designation = $userRow['designation'] ?? '';
         $role        = $userRow['role'] ?? 'teacher';
@@ -625,7 +658,7 @@ if (isset($_GET['get_questions'])) {
         }
 
         $requested_context = $_GET['context'] ?? '';
-$has_teacher_context = ec_has_teacher_function($userRow);
+$has_teacher_context = isTeachingPerson($mysqli, $userRow);
 $has_staff_context = ec_has_staff_function($userRow);
 $has_assignment = hasAnyYearLevelAssignment($mysqli, $target_id);
 $is_multi_role = userHasAdditionalRole($userRow) || ($has_staff_context && $has_assignment);
@@ -638,7 +671,11 @@ $is_multi_role = userHasAdditionalRole($userRow) || ($has_staff_context && $has_
             echo json_encode(['success'=>true,'questions'=>$questions]); exit;
         }
         if ($requested_context === 'staff') {
-            if (!$has_staff_context) throw new Exception('This person is not configured for a Staff evaluation.');
+            // Staff context is non-teaching staff only -- a Staff member
+            // with an actual teaching/year-level assignment is teaching
+            // staff and belongs under 'teacher' instead (see Dashboard's
+            // Faculty-tab grouping and canStudentEvaluateTarget()).
+            if (!$has_staff_context || $has_assignment) throw new Exception('This person is not configured for a Staff evaluation.');
             $q=$mysqli->prepare("SELECT id,question_text,category,'user' AS question_source FROM user_questions WHERE user_id=? AND target_type='Staff' AND eval_type='student' ORDER BY category,id");
             $q->bind_param('i',$target_id); $q->execute(); $questions=$q->get_result()->fetch_all(MYSQLI_ASSOC); $q->close();
             if (empty($questions)) throw new Exception('No Staff questions have been set up for this person yet.');
@@ -662,11 +699,20 @@ $is_multi_role = userHasAdditionalRole($userRow) || ($has_staff_context && $has_
             // a Staff-bucket person was opened for evaluation. Completed it
             // to match the shape of the Faculty/Multi-Role queries below,
             // including the missing ORDER BY.
+            //
+            // Also restored the missing `target_type = 'Staff'` filter. Without
+            // it, this pulled EVERY user_questions row for that user_id
+            // regardless of bucket -- so a person who is both Staff and
+            // Multi-Role (Staff + a year-level assignment, per
+            // admin/questionnaire.php's own rule) would have their Multi-Role
+            // questions leak into this "Staff" form, and vice versa. The
+            // explicit ?context=staff branch above already scopes correctly;
+            // this fallback needs to match it exactly.
           $uq = $mysqli->prepare(
     "SELECT id, question_text, category,
             'user' AS question_source
      FROM user_questions
-     WHERE user_id = ? AND eval_type = 'student'
+     WHERE user_id = ? AND target_type = 'Staff' AND eval_type = 'student'
      ORDER BY category, id"
 );
             $uq->bind_param("i", $target_id);
@@ -736,18 +782,28 @@ $is_multi    = ec_has_additional_role($u) || ($has_staff && $has_assign);
         ? isMatchedViaAssignment($mysqli, (int)$u['id'], $level_variants, $student_year_level)
         : false;
 
-    // Base Teacher context: only assigned year levels.  For College
-    // students, the Teacher must also belong to the active evaluation
-    // semester.  This is the display-side counterpart to the server-side
-    // eligibility check above.
+    // Base Faculty context: Teacher-role people, AND "teaching staff" --
+    // Staff members who carry an actual teaching/year-level assignment --
+    // both need that assignment to match this student's year level. For
+    // College students, the person must also belong to the active
+    // evaluation semester. This mirrors admin/questionnaire.php, where a
+    // Staff account with a teaching assignment is placed in the Teacher
+    // bucket (is_teaching_staff), never left Staff-only. This is the
+    // display-side counterpart to the server-side eligibility check above.
     $semester_match = teacherMatchesActiveSemester($mysqli, (int)$u['id'], $student_level, $active_period_semester);
-    if ($has_teacher && $base_match && $semester_match) {
+    $is_teaching_person = $has_teacher || ($has_staff && $has_assign);
+    if ($is_teaching_person && $base_match && $semester_match) {
         $grouped['Faculty'][] = $u;
     }
 
-    // Base Staff context: institution-wide only when there is no teaching
-    // assignment; otherwise only at the assigned year levels.
-    if ($has_staff && (!$has_assign || $base_match)) {
+    // Base Staff context: non-teaching staff ONLY -- same rule
+    // admin/questionnaire.php's Student Evaluation -> Staff card uses
+    // (isNonTeachingStaff): no teaching_assignments row and no
+    // user_year_levels row, ever. A Staff member who carries a teaching
+    // assignment is "teaching staff" and belongs in Faculty above instead,
+    // even when that assignment happens to match this student's year
+    // level -- they must never appear in both tabs for the same student.
+    if ($has_staff && !$has_assign) {
         $grouped['Staff'][] = $u;
     }
 
