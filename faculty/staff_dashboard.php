@@ -395,12 +395,18 @@ qn_migrate_legacy_once($mysqli);
         $res_stmt->close();
 
         $cat_stmt = $mysqli->prepare("
-            SELECT eq.category, AVG(qa.answer_score) as avg_cat
+            SELECT COALESCE(uq.category, eq.category, 'General') AS category,
+                   AVG(qa.answer_score) AS avg_cat
             FROM questionnaire_answers qa
             JOIN evaluation_tracker et ON et.id = qa.tracker_id
-            JOIN evaluation_questions eq ON eq.id = qa.question_id
+            LEFT JOIN user_questions uq
+              ON qa.question_source='user'
+             AND uq.id = COALESCE(qa.user_question_id, qa.question_id)
+            LEFT JOIN evaluation_questions eq
+              ON qa.question_source='evaluation'
+             AND eq.id = qa.question_id
             WHERE et.target_user_id = ?
-            GROUP BY eq.category
+            GROUP BY COALESCE(uq.category, eq.category, 'General')
         ");
         $cat_stmt->bind_param("i", $user_id);
         $cat_stmt->execute();
@@ -1887,8 +1893,8 @@ $tracker_id = $mysqli->insert_id; $trk->close();
                                 if ($doneRow) { $done = true; $last_eval = $doneRow['submitted_at']; }
                                 $chk->close();
                             }
-                            $qc = $mysqli->prepare("SELECT COUNT(*) AS c FROM evaluation_questions WHERE eval_type='staff' AND target_type=?");
-                            $qc->bind_param('s', $target['target_type']);
+                            $qc = $mysqli->prepare("SELECT COUNT(*) AS c FROM user_questions WHERE user_id=? AND target_type=? AND eval_type='general'");
+                            $qc->bind_param('is', $target['id'], $target['target_type']);
                             $qc->execute();
                             $qCount = (int)($qc->get_result()->fetch_assoc()['c'] ?? 0);
                             $qc->close();
