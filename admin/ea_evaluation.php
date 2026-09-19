@@ -55,7 +55,8 @@ $period = $mysqli->query("
     LIMIT 1
 ")->fetch_assoc();
 $period_id = (int)($period['id'] ?? 0);
-$is_open = $period_id > 0;
+$liveState = ss_live_state($mysqli)['state'];
+$is_open = (bool)($liveState['open'] ?? false);
 
 // ── ELIGIBLE TARGETS (unchanged) ──────────────────────────────────────
 // Principal + Dean are single-user role targets. Staff = primary Staff

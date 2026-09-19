@@ -278,6 +278,7 @@ body{min-height:100vh;background:var(--page-l);font-family:'DM Sans',sans-serif;
 
 @media(max-width:900px){.two-col{grid-template-columns:1fr;}}
 @media(max-width:768px){body{flex-direction:column;}.sidebar{width:100%;min-height:auto;}}
+.qa-disabled{display:inline-flex;align-items:center;gap:8px;padding:9px 13px;border-radius:8px;border:1px solid #D8E5F4;background:#F8FAFC;color:#94A3B8;font-weight:700;font-size:12.5px;cursor:not-allowed;}
 </style>
 </head>
 <body>
@@ -459,7 +460,11 @@ include __DIR__ . '/includes/dean_sidebar.php';
     <div class="section">
         <h2><i class="fa-solid fa-bolt"></i> Quick Actions</h2>
         <div class="qa-btns">
+            <?php if ($evalOpen): ?>
             <a href="dean_evaluation.php"><i class="fa-solid fa-clipboard-check"></i> Go to Evaluation</a>
+            <?php else: ?>
+            <span class="qa-disabled" title="Evaluation is closed until the scheduled opening time"><i class="fa-solid fa-lock"></i> Evaluation Closed</span>
+            <?php endif; ?>
             <a href="dean_evaluation_tracker.php"><i class="fa-solid fa-satellite-dish"></i> Open Evaluation Tracker</a>
             <a href="dean_results.php"><i class="fa-solid fa-star-half-stroke"></i> View My Results</a>
             <a href="dean_reports.php"><i class="fa-solid fa-file-lines"></i> Generate Reports</a>

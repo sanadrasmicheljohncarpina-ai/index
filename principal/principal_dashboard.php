@@ -221,13 +221,17 @@ a.stat-link:hover .stat-card{border-color:rgba(217,154,43,.45);transform:transla
 .bell-btn.pulse{animation:bellPulse 1.1s ease-in-out 2;}
 @keyframes bellPulse{0%,100%{transform:scale(1);}35%{transform:scale(1.14);}}
 
-.bell-panel{position:absolute;top:calc(100% + 10px);right:0;width:340px;max-height:60vh;overflow-y:auto;background:rgba(15,31,61,.98);border:1px solid rgba(255,255,255,.12);border-radius:14px;box-shadow:0 18px 44px rgba(0,0,0,.55);padding:8px;z-index:60;display:none;}
-.bell-panel.open{display:block;}
-.bell-head{display:flex;align-items:center;justify-content:space-between;padding:8px 10px 10px;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:6px;}
+.bell-panel{position:absolute;top:calc(100% + 10px);right:0;width:340px;max-height:min(70vh,560px);overflow:hidden;background:rgba(15,31,61,.98);border:1px solid rgba(255,255,255,.12);border-radius:14px;box-shadow:0 18px 44px rgba(0,0,0,.55);padding:8px;z-index:60;display:none;flex-direction:column;}
+.bell-panel.open{display:flex;}
+.bell-head{display:flex;align-items:center;justify-content:space-between;padding:8px 10px 10px;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:6px;flex:0 0 auto;}
 .bell-head h3{font-family:'Rajdhani',sans-serif;font-size:16px;color:#fff;font-weight:700;}
 .bell-head button{background:none;border:none;color:var(--amber-h);font-size:11px;font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:.4px;}
 .bell-head button:hover{text-decoration:underline;}
-.bell-list{list-style:none;font-size:13px;}
+.bell-list{list-style:none;font-size:13px;flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;padding:0 3px 2px 0;scrollbar-width:thin;scrollbar-color:rgba(148,163,184,.45) transparent;}
+.bell-list::-webkit-scrollbar{width:7px;}
+.bell-list::-webkit-scrollbar-track{background:transparent;}
+.bell-list::-webkit-scrollbar-thumb{background:rgba(148,163,184,.45);border-radius:8px;}
+.bell-list::-webkit-scrollbar-thumb:hover{background:rgba(148,163,184,.7);}
 .bell-list li{padding:10px 11px;border-radius:9px;display:flex;align-items:flex-start;gap:10px;line-height:1.45;color:var(--light);}
 .bell-list li+li{margin-top:4px;}
 .bell-list li i{font-size:12px;margin-top:3px;color:var(--amber-h);flex-shrink:0;}
@@ -827,12 +831,12 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
             <div class="v"><?= htmlspecialchars($settings['academic_term']) ?></div>
         </div>
         <div class="period-item">
-            <div class="k">Evaluation Opens</div>
-            <div class="v"><?= $settings['eval_start_display'] !== '' ? htmlspecialchars($settings['eval_start_display']) : '—' ?></div>
-        </div>
-        <div class="period-item">
-            <div class="k">Evaluation Closes</div>
-            <div class="v"><?= $settings['eval_end_display'] !== '' ? htmlspecialchars($settings['eval_end_display']) : '—' ?></div>
+            <div class="k">Window</div>
+            <div class="v">
+                <?= $settings['eval_start'] ? htmlspecialchars(date('M j', strtotime($settings['eval_start']))) : '—' ?>
+                &ndash;
+                <?= $settings['eval_end'] ? htmlspecialchars(date('M j, Y', strtotime($settings['eval_end']))) : '—' ?>
+            </div>
         </div>
         <div class="period-item">
             <div class="k">Status</div>
@@ -951,6 +955,7 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
 
     function render(items){
         const before = new Set(currentIds());
+        const nearTop = list.scrollTop < 24;
         list.innerHTML = items.map(n => {
             const div = document.createElement('div');
             div.textContent = n.text;
@@ -968,6 +973,9 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
         if (changed) writeSeen(seen);
 
         const arrived = items.some(n => !before.has(n.id));
+        // Keep the newest items at the top on a normal refresh, but do not
+        // yank the user back to the top once they have scrolled to older updates.
+        if (nearTop) list.scrollTop = 0;
         refreshBadge();
         if (arrived && before.size) {
             btn.classList.remove('pulse');

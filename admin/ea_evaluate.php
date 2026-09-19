@@ -61,6 +61,11 @@ if (!in_array($type, $validTypes, true) || $targetId <= 0) {
     exit;
 }
 
+// Do not expose an active evaluation form before the configured opening time.
+if (empty($_GET['view'])) {
+    ss_require_evaluation_open($mysqli, 'EA Evaluation is currently closed.');
+}
+
 // ── RE-DERIVE ELIGIBILITY FOR THIS TYPE (must match ea_evaluation.php) ──
 if ($type === 'Principal' || $type === 'Dean') {
     $role = $type === 'Principal' ? 'principal' : 'dean';
@@ -99,7 +104,8 @@ if (!$target) {
 
 $period = $mysqli->query("SELECT id, period_label FROM evaluation_periods WHERE is_active=1 ORDER BY id DESC LIMIT 1")->fetch_assoc();
 $period_id = (int)($period['id'] ?? 0);
-$is_open = $period_id > 0;
+$liveState = ss_live_state($mysqli)['state'];
+$is_open = (bool)($liveState['open'] ?? false);
 
 // ── QUESTIONS: direct from Executive Assistant Evaluation bank ────────
 // The Questionnaire -> Executive Assistant Evaluation section stores

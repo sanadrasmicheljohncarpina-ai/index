@@ -241,7 +241,6 @@ function render_principal_styles(): void {
     .qa-btns{display:flex;flex-wrap:wrap;gap:10px;}
     .period-badge{background:rgba(217,154,43,.14);border:1px solid rgba(217,154,43,.3);color:var(--amber-h);padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:7px;}
     .period-badge.closed{background:rgba(240,84,84,.1);border-color:rgba(240,84,84,.3);color:#fca5a5;}
-    .period-badge.scheduled{background:rgba(217,154,43,.12);border-color:rgba(217,154,43,.28);color:var(--amber-h,#d49a2a);}
     .period-badge.amber{background:rgba(217,154,43,.14);border-color:rgba(217,154,43,.3);color:var(--amber-h);}
     .period-badge.gray{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.12);color:var(--muted);}
     .empty-note{color:var(--muted);font-size:13px;font-style:italic;}
@@ -487,7 +486,6 @@ table tbody tr:hover,.person-row:hover,.standing-item:hover{background:#f8fafc!i
 .cat-title,.comment-title,.search-box button,.section h2 i{color:#d99a2b!important;}
 .period-badge{background:rgba(217,154,43,.12)!important;border-color:rgba(217,154,43,.28)!important;}
 .period-badge.closed{background:rgba(240,84,84,.10)!important;border-color:rgba(240,84,84,.28)!important;color:#dc2626!important;}
-.period-badge.scheduled{background:rgba(217,154,43,.12)!important;border-color:rgba(217,154,43,.28)!important;color:#a16207!important;}
 .period-badge.gray{background:#f1f5f9!important;border-color:#cbd5e1!important;color:#64748b!important;}
 
 /* Forms */

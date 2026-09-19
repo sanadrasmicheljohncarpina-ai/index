@@ -704,12 +704,6 @@ main.main::before {
 <main class="main">
     <a class="back-link" href="principal_evaluations.php"><i class="fa-solid fa-arrow-left"></i> Back to Evaluations</a>
 
-    <div class="schedule-strip" style="display:grid;grid-template-columns:1fr 1fr 140px;gap:12px;margin:14px 0 18px;padding:14px 16px;border:1px solid #D9E4EF;border-radius:12px;background:#FFFFFF;box-shadow:0 4px 18px rgba(15,23,42,.05);">
-        <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:700;">Evaluation Opens</div><div style="margin-top:4px;font-size:15px;font-weight:700;color:#172033;"><?= $settings['eval_start_display'] !== '' ? htmlspecialchars($settings['eval_start_display']) : '—' ?></div></div>
-        <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:700;">Evaluation Closes</div><div style="margin-top:4px;font-size:15px;font-weight:700;color:#172033;"><?= $settings['eval_end_display'] !== '' ? htmlspecialchars($settings['eval_end_display']) : '—' ?></div></div>
-        <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:700;">Current State</div><div style="margin-top:4px;font-size:15px;font-weight:800;color:#172033;"><?= htmlspecialchars($settings['status']['label']) ?></div></div>
-    </div>
-
     <div class="section">
         <div class="profile-card">
             <img class="profile-photo-lg" src="<?= htmlspecialchars($tPhoto) ?>" alt="">
@@ -770,7 +764,7 @@ main.main::before {
                 <textarea name="overall_remarks" rows="3" class="eval-comment-box" placeholder="Any additional feedback..."><?= htmlspecialchars($_POST['overall_remarks'] ?? '') ?></textarea>
             </div>
 
-            <button class="btn-primary eval-submit-btn" type="submit" <?= (!$period_id_int || !$evalOpen) ? 'disabled style="opacity:.5;cursor:not-allowed;"' : '' ?>><i class="fa-solid fa-paper-plane"></i> Submit Evaluation</button>
+            <button class="btn-primary eval-submit-btn" type="submit" <?= !$period_id_int ? 'disabled style="opacity:.5;cursor:not-allowed;"' : '' ?>><i class="fa-solid fa-paper-plane"></i> Submit Evaluation</button>
         </form>
         <?php endif; ?>
     </div>
@@ -837,7 +831,6 @@ table tbody tr:hover,.person-row:hover,.standing-item:hover{background:#f8fafc!i
 .cat-title,.comment-title,.search-box button,.section h2 i{color:#d99a2b!important;}
 .period-badge{background:rgba(217,154,43,.12)!important;border-color:rgba(217,154,43,.28)!important;}
 .period-badge.closed{background:rgba(240,84,84,.10)!important;border-color:rgba(240,84,84,.28)!important;color:#dc2626!important;}
-.period-badge.scheduled{background:rgba(217,154,43,.12)!important;border-color:rgba(217,154,43,.28)!important;color:#a16207!important;}
 .period-badge.gray{background:#f1f5f9!important;border-color:#cbd5e1!important;color:#64748b!important;}
 
 /* Forms */

@@ -797,12 +797,6 @@ main.main::before {
         <?php render_period_badge($settings); ?>
     </div>
 
-    <div class="schedule-strip" style="display:grid;grid-template-columns:1fr 1fr 160px;gap:12px;margin:14px 0 18px;padding:14px 16px;border:1px solid #D9E4EF;border-radius:12px;background:#FFFFFF;box-shadow:0 4px 18px rgba(15,23,42,.05);">
-        <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:700;">Evaluation Opens</div><div style="margin-top:4px;font-size:15px;font-weight:700;color:#172033;"><?= $settings['eval_start_display'] !== '' ? htmlspecialchars($settings['eval_start_display']) : '—' ?></div></div>
-        <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:700;">Evaluation Closes</div><div style="margin-top:4px;font-size:15px;font-weight:700;color:#172033;"><?= $settings['eval_end_display'] !== '' ? htmlspecialchars($settings['eval_end_display']) : '—' ?></div></div>
-        <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:700;">Current State</div><div style="margin-top:4px;font-size:15px;font-weight:800;color:#172033;"><?= htmlspecialchars($settings['status']['label']) ?></div></div>
-    </div>
-
     <?php if ($toast): ?>
     <div class="alert success"><i class="fa-solid fa-circle-check"></i> <?= htmlspecialchars($toast) ?></div>
     <?php endif; ?>

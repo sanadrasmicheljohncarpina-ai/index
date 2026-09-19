@@ -182,6 +182,43 @@ function ss_is_submission_open(mysqli $mysqli): bool {
     return ss_evaluation_is_open($sys);
 }
 
+/**
+ * Read the live scheduling state directly from system_settings.
+ * This is intentionally independent of evaluation_periods.is_active: a
+ * configured/current period is not the same thing as an open evaluation window.
+ */
+function ss_live_state(mysqli $mysqli): array {
+    $sys = ss_raw($mysqli);
+    return [
+        'settings' => $sys,
+        'state' => ss_schedule_state($sys),
+    ];
+}
+
+/**
+ * Guard an evaluator entry point. Call this before rendering a form and again
+ * immediately before inserting a submission. Force Open / Force Closed are
+ * preserved because ss_schedule_state() handles those modes first.
+ */
+function ss_require_evaluation_open(mysqli $mysqli, string $closedMessage = 'Evaluation is currently closed.'): void {
+    $live = ss_live_state($mysqli);
+    if (empty($live['state']['open'])) {
+        $state = $live['state'];
+        $detail = $closedMessage;
+        if (($state['reason'] ?? '') === 'before_start' && !empty($state['start'])) {
+            $detail .= ' It will open on ' . $state['start']->format('F j, Y g:i A') . ' (Asia/Manila).';
+        } elseif (($state['reason'] ?? '') === 'after_end' && !empty($state['end'])) {
+            $detail .= ' The scheduled window ended on ' . $state['end']->format('F j, Y g:i A') . ' (Asia/Manila).';
+        } elseif (($state['reason'] ?? '') === 'invalid_schedule') {
+            $detail .= ' No valid evaluation schedule is configured.';
+        }
+        http_response_code(403);
+        header('Content-Type: text/html; charset=UTF-8');
+        echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Evaluation Closed</title><style>body{font-family:Inter,Arial,sans-serif;background:#f8fafc;color:#172033;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}.card{max-width:640px;margin:24px;background:#fff;border:1px solid #dbe4ef;border-radius:16px;padding:32px;box-shadow:0 10px 30px rgba(15,23,42,.08)}h1{margin:0 0 10px;font-size:24px}p{margin:8px 0;color:#526581;line-height:1.6}.badge{display:inline-block;margin-bottom:16px;padding:6px 10px;border-radius:999px;background:#fff1f2;color:#b42318;border:1px solid #fecdd3;font-weight:700;font-size:12px}</style></head><body><div class="card"><div class="badge">EVALUATION CLOSED</div><h1>Evaluation is not currently available.</h1><p>' . htmlspecialchars($detail, ENT_QUOTES, 'UTF-8') . '</p><p>The schedule is evaluated using the <strong>Asia/Manila</strong> timezone.</p></div></body></html>';
+        exit;
+    }
+}
+
 function ss_period_columns(mysqli $mysqli): array {
     $cols = [];
     $res = @$mysqli->query("SHOW COLUMNS FROM evaluation_periods");
@@ -279,10 +316,13 @@ function get_system_settings(mysqli $mysqli): array {
         'reason' => $state['reason'],
     ];
 
-    $evalStartDt = $state['start'] instanceof DateTimeImmutable ? $state['start']->setTimezone(ss_timezone()) : null;
-    $evalEndDt   = $state['end'] instanceof DateTimeImmutable ? $state['end']->setTimezone(ss_timezone()) : null;
+    // Always expose the configured schedule, even when Force Open/Force Closed
+    // overrides its effect on accessibility. This gives dashboards and forms a
+    // consistent view of the EA-configured opening/closing timestamps.
+    $evalStartDt = ss_parse_datetime($sys['eval_start'] ?? '');
+    $evalEndDt   = ss_parse_datetime($sys['eval_end'] ?? '');
     $formatSchedule = static function (?DateTimeImmutable $dt): string {
-        return $dt ? $dt->format('F j, Y \· g:i A') . ' (Asia/Manila)' : '';
+        return $dt ? $dt->setTimezone(ss_timezone())->format('F j, Y · g:i A') . ' (Asia/Manila)' : '';
     };
 
     if ($mode === 'open') {
@@ -339,10 +379,9 @@ function get_system_settings(mysqli $mysqli): array {
 /**
  * Compatibility accessor for Principal/Dean school-head evaluation pages.
  *
- * The school-head pages need the exact same academic-period and scheduling
- * state as the global system settings. The role argument is retained for
- * compatibility with existing callers; it does not create a second source of
- * truth or change Force Open / Force Closed behavior.
+ * The school-head pages use the same global system settings and schedule as
+ * the dashboards. The role argument is retained for compatibility; it does
+ * not create a separate settings source or alter Force Open / Force Closed.
  */
 function get_school_head_settings(mysqli $mysqli, string $role = 'principal'): array {
     return get_system_settings($mysqli);

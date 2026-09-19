@@ -20,6 +20,9 @@ require_once dirname(__DIR__) . '/shared/system_settings_service.php';
 $studentId = $_SESSION['user_id'];
 // Apply the schedule before the evaluation form is displayed.
 ss_sync_from_database($mysqli);
+// In Follow Schedule mode, the schedule is the access condition. Do not let
+// the existence of an active evaluation_periods row expose this form early.
+ss_require_evaluation_open($mysqli, 'Student evaluation is currently closed.');
 
 // Determine current tracking context parameters
 $evalType = $_GET['type'] ?? 'Teacher'; // 'Teacher' or 'Personnel'
