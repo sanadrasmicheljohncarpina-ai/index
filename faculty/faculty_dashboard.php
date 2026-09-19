@@ -12,6 +12,8 @@ session_start();
 require_once 'db.php';
 require_once '../shared/eligibility.php';
 require_once '../shared/EvaluationContextService.php';
+require_once '../shared/QuestionnaireService.php';
+qn_migrate_legacy_once($mysqli);
 
 if (empty($_SESSION['user_id']) || $_SESSION['role'] !== 'teacher') {
     header("Location: faculty_login.php"); exit;
@@ -403,17 +405,17 @@ if ($page === 'peer_eval' && isset($_GET['tid'])) {
         if (in_array($peer_eval_group, $school_head_groups, true)) {
             $qs = $mysqli->prepare("
                 SELECT * FROM user_questions
-                WHERE user_id=? AND target_type='School' AND eval_type='peer'
+                WHERE user_id=? AND target_type=? AND eval_type='general'
                 ORDER BY category ASC, sort_order ASC, id ASC
             ");
-            $qs->bind_param("i", $tid);
+            $qs->bind_param("is", $tid, $peer_eval_group);
             $qs->execute();
             $peer_questions = $qs->get_result()->fetch_all(MYSQLI_ASSOC);
             $qs->close();
         } elseif ($peer_eval_group === 'staff') {
             $qs = $mysqli->prepare("
                 SELECT * FROM user_questions
-                WHERE user_id=? AND target_type='Staff' AND eval_type='peer'
+                WHERE user_id=? AND target_type='Staff' AND eval_type='general'
                 ORDER BY category ASC, sort_order ASC, id ASC
             ");
             $qs->bind_param("i", $tid);
@@ -426,7 +428,7 @@ if ($page === 'peer_eval' && isset($_GET['tid'])) {
             // questionnaire configured by the admin.
             $qs = $mysqli->prepare("
                 SELECT * FROM evaluation_questions
-                WHERE target_type='Teacher' AND eval_type='peer' AND is_active=1
+                WHERE target_type='Faculty' AND eval_type='general' AND evaluator_role='shared' AND is_active=1
                 ORDER BY category ASC, id ASC
             ");
             $qs->execute();
@@ -581,9 +583,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_peer'])) {
         $validQStmt = $mysqli->prepare("
             SELECT id
             FROM user_questions
-            WHERE user_id=? AND target_type='School' AND eval_type='peer'
+            WHERE user_id=? AND target_type=? AND eval_type='general'
         ");
-        $validQStmt->bind_param("i", $tid);
+        $validQStmt->bind_param("is", $tid, $submitted_group === 'principal' ? 'Principal' : 'Dean');
         $validQStmt->execute();
         $validQRes = $validQStmt->get_result();
         $valid_question_ids = [];
@@ -618,14 +620,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_peer'])) {
         // person's Staff pool.
         $valid_question_ids = [];
         if ($submitted_group === 'teacher') {
-            $validQStmt = $mysqli->prepare("SELECT id FROM evaluation_questions WHERE target_type='Teacher' AND eval_type='peer' AND is_active=1");
+            $validQStmt = $mysqli->prepare("SELECT id FROM evaluation_questions WHERE target_type='Faculty' AND eval_type='general' AND evaluator_role='shared' AND is_active=1");
             $validQStmt->execute();
             $validQRes = $validQStmt->get_result();
             if ($validQRes) while ($vq = $validQRes->fetch_assoc()) $valid_question_ids[] = (int)$vq['id'];
             $validQStmt->close();
             $question_source = 'evaluation';
         } else {
-            $validQStmt = $mysqli->prepare("SELECT id FROM user_questions WHERE user_id=? AND target_type='Staff' AND eval_type='peer'");
+            $validQStmt = $mysqli->prepare("SELECT id FROM user_questions WHERE user_id=? AND target_type='Staff' AND eval_type='general'");
             $validQStmt->bind_param("i", $tid);
             $validQStmt->execute();
             $validQRes = $validQStmt->get_result();
