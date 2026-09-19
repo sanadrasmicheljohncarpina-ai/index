@@ -1,9 +1,8 @@
 name: Temp Export Repository
 
 on:
-  push:
-    branches:
-      - feature/generalized-questionnaire
+  pull_request:
+    types: [synchronize, opened, reopened]
 
 jobs:
   export:
