@@ -12,6 +12,8 @@ session_start();
 require_once 'db.php';
 require_once '../shared/eligibility.php';
 require_once '../shared/EvaluationContextService.php';
+require_once '../shared/QuestionnaireService.php';
+qn_migrate_legacy_once($mysqli);
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
@@ -552,7 +554,7 @@ if (isset($_GET['get_questions'])) {
                 "SELECT id, question_text, category,
                         'user' AS question_source
                  FROM user_questions
-                 WHERE user_id = ? AND target_type = ? AND eval_type = 'student'
+                 WHERE user_id = ? AND target_type = ? AND eval_type = 'general'
                  ORDER BY category, id"
             );
             $pdq->bind_param("is", $target_id, $pd_target_type);
@@ -563,7 +565,7 @@ if (isset($_GET['get_questions'])) {
             if (empty($pd_questions)) {
                 throw new Exception(
                     "No questions have been set up for this person yet. " .
-                    "Please ask the admin to add questions under Questionnaire → Student Evaluation → School Head → $pd_target_type."
+                    "Please ask the admin to add questions under Questionnaire → Dean / Principal → $pd_target_type."
                 );
             }
 
@@ -584,7 +586,7 @@ if (isset($_GET['get_questions'])) {
             $q = $mysqli->prepare(
                 "SELECT id,question_text,category,'user' AS question_source
                  FROM user_questions
-                 WHERE user_id=? AND target_type='Staff' AND eval_type='student'
+                 WHERE user_id=? AND target_type='Staff' AND eval_type='general'
                  ORDER BY category,id"
             );
             $q->bind_param('i',$target_id);
@@ -605,7 +607,7 @@ if (isset($_GET['get_questions'])) {
         $q = $mysqli->prepare(
             "SELECT id,question_text,category,'evaluation' AS question_source
              FROM evaluation_questions
-             WHERE target_type='Teacher' AND eval_type='student'
+             WHERE target_type='Faculty' AND eval_type='general'
              ORDER BY category,id"
         );
         $q->execute();
@@ -718,7 +720,7 @@ foreach ($eligible_school_head_roles as $role_value => $role_label) {
 // everyone in that group. Staff, Principal, and Dean are per-person sets
 // in user_questions, so they're looked up individually.
 $teacherQCount = $mysqli->query(
-    "SELECT COUNT(*) AS c FROM evaluation_questions WHERE target_type='Teacher' AND eval_type='student'"
+    "SELECT COUNT(*) AS c FROM evaluation_questions WHERE target_type='Faculty' AND eval_type='general'"
 )->fetch_assoc()['c'] ?? 0;
 $facultyHasQuestions = $teacherQCount > 0;
 
@@ -726,7 +728,7 @@ $perUserQCounts = [];
 $puq = $mysqli->query(
     "SELECT user_id, target_type, COUNT(*) AS c
      FROM user_questions
-     WHERE eval_type='student' AND target_type IN ('Staff','Principal','Dean')
+     WHERE eval_type='general' AND target_type IN ('Staff','Principal','Dean')
      GROUP BY user_id, target_type"
 );
 if ($puq) {
