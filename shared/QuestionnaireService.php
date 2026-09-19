@@ -415,12 +415,6 @@ if (!function_exists('qn_migrate_legacy_once')) {
                     }
                 }
 
-                $src = $mysqli->query("SELECT category, question_text, sort_order
-                    FROM user_questions
-                    WHERE user_id=? AND target_type='EA' AND eval_type <> 'general'");
-                $dummy = $src; // placeholder to keep the migration flow explicit
-                if ($dummy) $dummy->free();
-
                 $stmt = $mysqli->prepare("SELECT category, question_text, sort_order
                     FROM user_questions
                     WHERE user_id=? AND target_type='EA' AND eval_type <> 'general'");
