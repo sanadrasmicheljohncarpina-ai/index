@@ -1,0 +1,15 @@
+name: Temporary PHP Syntax Check
+
+on:
+  push:
+    branches:
+      - feature/generalized-questionnaire
+
+jobs:
+  php-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint PHP
+        run: |
+          find admin dean faculty principal student shared -type f -name '*.php' -print0 | xargs -0 -n1 php -l
