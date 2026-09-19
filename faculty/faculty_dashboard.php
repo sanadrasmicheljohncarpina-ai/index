@@ -408,7 +408,8 @@ if ($page === 'peer_eval' && isset($_GET['tid'])) {
                 WHERE user_id=? AND target_type=? AND eval_type='general'
                 ORDER BY category ASC, sort_order ASC, id ASC
             ");
-            $qs->bind_param("is", $tid, $peer_eval_group);
+            $schoolHeadTargetType = $peer_eval_group === 'principal' ? 'Principal' : 'Dean';
+            $qs->bind_param("is", $tid, $schoolHeadTargetType);
             $qs->execute();
             $peer_questions = $qs->get_result()->fetch_all(MYSQLI_ASSOC);
             $qs->close();
