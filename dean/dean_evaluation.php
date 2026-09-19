@@ -19,6 +19,8 @@ session_start();
 require_once 'db.php';
 require_once dirname(__DIR__) . '/shared/system_settings_service.php';
 require_once dirname(__DIR__) . '/shared/ea_personnel_service.php';
+require_once dirname(__DIR__) . '/shared/QuestionnaireService.php';
+qn_migrate_legacy_once($mysqli);
 
 if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'dean') {
     header('Location: dean_login.php');
@@ -144,14 +146,14 @@ if ($structureActive) {
         $eaUsers[] = $ea;
     }
 
-    $questionCounts['faculty'] = (int)($mysqli->query("SELECT COUNT(*) c FROM evaluation_questions WHERE eval_type='school_head' AND evaluator_role='dean' AND target_type='Faculty'")->fetch_assoc()['c'] ?? 0);
-    $questionCounts['executive_assistant'] = (int)($mysqli->query("SELECT COUNT(*) c FROM evaluation_questions WHERE eval_type='school_head' AND evaluator_role='dean' AND target_type='EA'")->fetch_assoc()['c'] ?? 0);
+    $questionCounts['faculty'] = (int)($mysqli->query("SELECT COUNT(*) c FROM evaluation_questions WHERE eval_type='general' AND evaluator_role='shared' AND target_type='Faculty'")->fetch_assoc()['c'] ?? 0);
+    $questionCounts['executive_assistant'] = (int)($mysqli->query("SELECT COUNT(*) c FROM user_questions WHERE eval_type='general' AND target_type='EA'")->fetch_assoc()['c'] ?? 0);
 
     if (!empty($staffUsers)) {
         $ids = array_map(fn($u) => (int)$u['id'], $staffUsers);
         $ph = implode(',', array_fill(0, count($ids), '?'));
         $types = str_repeat('i', count($ids));
-        $stmt = $mysqli->prepare("SELECT user_id, COUNT(*) AS total FROM user_questions WHERE eval_type='school_head' AND target_type='Staff' AND user_id IN ($ph) GROUP BY user_id");
+        $stmt = $mysqli->prepare("SELECT user_id, COUNT(*) AS total FROM user_questions WHERE eval_type='general' AND target_type='Staff' AND user_id IN ($ph) GROUP BY user_id");
         if ($stmt) {
             $stmt->bind_param($types, ...$ids);
             $stmt->execute();
