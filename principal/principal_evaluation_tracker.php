@@ -182,7 +182,7 @@ if ($structureActive) {
     // section below may still list the personnel even when that bank is empty.
     $studentFacultyQuestionCount = (int)(safe_scalar($mysqli,
         "SELECT COUNT(*) FROM evaluation_questions
-         WHERE eval_type='student' AND target_type IN ('Teacher','Faculty')"
+         WHERE target_type='Faculty' AND eval_type='general' AND evaluator_role='shared' AND is_active=1"
     ) ?? 0);
 
     foreach ($personnel as $uid => $u) {
@@ -204,7 +204,7 @@ if ($structureActive) {
         if ($isFaculty && $studentFacultyQuestionCount > 0) $facultyIds[$uid] = true;
         if ($isStaff) {
             $staffHasQuestions = (int)(safe_scalar($mysqli,
-                "SELECT COUNT(*) FROM user_questions WHERE user_id=? AND eval_type='student' AND target_type='Staff'",
+                "SELECT COUNT(*) FROM user_questions WHERE user_id=? AND target_type='Staff' AND eval_type='general'",
                 'i', [$uid]
             ) ?? 0) > 0;
             if ($staffHasQuestions) $staffIds[$uid] = true;
@@ -214,7 +214,7 @@ if ($structureActive) {
         // already in the Principal's Faculty scope can contribute here.
         if ($isFaculty) {
             $hasMrQuestions = (int)(safe_scalar($mysqli,
-                "SELECT COUNT(*) FROM user_questions WHERE user_id=? AND eval_type='student' AND target_type='Multi-Role'",
+                "SELECT COUNT(*) FROM user_questions WHERE user_id=? AND target_type IN ('Staff','Dean','Principal','EA') AND eval_type='general'",
                 'i', [$uid]
             ) ?? 0) > 0;
             if ($hasMrQuestions) $multiIds[$uid] = true;
@@ -254,7 +254,7 @@ if ($structureActive) {
     // leadership target for JHS/SHS students. It is intentionally absent from
     // the Dean/College tracker.
     $principalQuestionCount = (int)(safe_scalar($mysqli,
-        "SELECT COUNT(*) FROM user_questions WHERE user_id=? AND eval_type='student' AND target_type='Principal'",
+        "SELECT COUNT(*) FROM user_questions WHERE user_id=? AND target_type='Principal' AND eval_type='general'",
         'i', [$principalId]
     ) ?? 0);
     $requiredPrincipal = $principalQuestionCount > 0 ? 1 : 0;
@@ -482,7 +482,7 @@ if ($structureActive) {
     // ── OPTIONAL PRINCIPAL-TO-FACULTY STATUS ─────────────────────────
     $facultyQuestionCount = (int)(safe_scalar($mysqli,
         "SELECT COUNT(*) FROM evaluation_questions
-         WHERE eval_type='school_head' AND evaluator_role='principal' AND target_type='Faculty'"
+         WHERE target_type='Faculty' AND eval_type='general' AND evaluator_role='shared' AND is_active=1"
     ) ?? 0);
 
     if ($hasPeriod && !empty($faculty)) {
