@@ -398,15 +398,10 @@ require_once '../shared/EvaluationContextService.php';
     //   - Staff: non-teaching Staff only (shared pool).
     //   - EA: the current Executive Assistant account (shared pool).
     //
-    // NOTE: admin/ea_evaluate.php's EA-evaluates-Principal/Dean flow still
-    // reads user_questions where eval_type='school_head' AND
-    // target_type IN ('Principal','Dean') — that per-person pool has no
-    // assignment path from this tab any more (this UI now only writes
-    // target_type IN ('Faculty','EA') here). Old Principal/Dean rows, if
-    // any, are unaffected in the DB but effectively orphaned from Manage
-    // Questions. Flag to the client: ea_evaluate.php's Principal/Dean
-    // flow needs its own follow-up fix (or intentional retirement) since
-    // the evaluation direction has been reversed.
+    // Executive Assistant Evaluation is a separate evaluation direction.
+    // The EA evaluates Staff, Dean, and Principal. Its per-person questions
+    // are stored under user_questions with eval_type='ea' and are managed
+    // by the Executive Assistant Evaluation section below.
     $system_categories = ['Teacher', 'Staff', 'School Head'];
     // Peer-to-Peer's "Staff" card is filtered down to Non-Teaching Staff only
     // (see hasNonTeachingStaffFunction() below) and displayed under that label.
@@ -2032,7 +2027,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
                                 <span class="eval-type-icon ea-icon"><i class="fa-solid fa-user-shield"></i></span>
                                 <div>
                                     <div class="eval-type-name">Executive Assistant Evaluation</div>
-                                    <div class="eval-type-tag">Authorized personnel evaluate the EA</div>
+                                    <div class="eval-type-tag">The Executive Assistant evaluates Staff, Dean, and Principal</div>
                                 </div>
                             </div>
                         </td>
@@ -2636,9 +2631,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
                     $uq_target = $selected_target === 'School Head'
                         ? ($tu['role'] === 'principal' ? 'Principal' : 'Dean')
                         : $selected_target;
-                    $uq_eval = ($active_eval === 'ea')
-                        ? (($uq_target === 'Staff') ? 'student' : 'school_head')
-                        : $active_eval;
+                    $uq_eval = $active_eval;
                     $cnt = $user_q_counts[$tu['id']][$uq_target][$uq_eval] ?? 0;
                     if ($cnt === 0) {
                         $missing_q_people[] = $tu['full_name'] . ($selected_target === 'School Head' ? ' (' . $uq_target . ')' : '');
@@ -2674,9 +2667,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
                                     $uq_target = $selected_target === 'School Head'
                                         ? ($tu['role'] === 'principal' ? 'Principal' : 'Dean')
                                         : $selected_target;
-                                    $uq_eval = ($active_eval === 'ea')
-                                        ? (($uq_target === 'Staff') ? 'student' : 'school_head')
-                                        : $active_eval;
+                                    $uq_eval = $active_eval;
                                     $uq_cnt = $user_q_counts[$tu['id']][$uq_target][$uq_eval] ?? 0;
                                 } else {
                                     $uq_cnt = count($questions_list);
