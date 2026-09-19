@@ -734,10 +734,10 @@ qn_migrate_legacy_once($mysqli);
                 // category resolve_target_type() returns - the admin tool never
                 // stores questions under those values).
                 if ($peer_eval_group === 'staff') {
-                    $qs = $mysqli->prepare("SELECT * FROM user_questions WHERE user_id=? AND eval_type='peer' ORDER BY category ASC, sort_order ASC, id ASC");
+                    $qs = $mysqli->prepare("SELECT * FROM user_questions WHERE user_id=? AND target_type='Staff' AND eval_type='general' ORDER BY category ASC, sort_order ASC, id ASC");
                     $qs->bind_param("i", $tid); $qs->execute();
                 } else {
-                    $qs = $mysqli->prepare("SELECT * FROM evaluation_questions WHERE target_type='Teacher' AND eval_type='peer' ORDER BY category ASC, id ASC");
+                    $qs = $mysqli->prepare("SELECT * FROM evaluation_questions WHERE target_type='Faculty' AND eval_type='general' AND evaluator_role='shared' AND is_active=1 ORDER BY category ASC, id ASC");
                     $qs->execute();
                 }
                 $peer_questions = $qs->get_result()->fetch_all(MYSQLI_ASSOC); $qs->close();
@@ -818,10 +818,10 @@ qn_migrate_legacy_once($mysqli);
             // for Staff targets, shared 'Teacher'-bucket evaluation_questions
             // otherwise.
             if ($submitted_group === 'staff') {
-                $validQStmt = $mysqli->prepare("SELECT id FROM user_questions WHERE user_id=? AND eval_type='peer'");
+                $validQStmt = $mysqli->prepare("SELECT id FROM user_questions WHERE user_id=? AND target_type='Staff' AND eval_type='general'");
                 $validQStmt->bind_param("i", $tid);
             } else {
-                $validQStmt = $mysqli->prepare("SELECT id FROM evaluation_questions WHERE target_type='Teacher' AND eval_type='peer'");
+                $validQStmt = $mysqli->prepare("SELECT id FROM evaluation_questions WHERE target_type='Faculty' AND eval_type='general' AND evaluator_role='shared' AND is_active=1");
             }
             $validQStmt->execute();
             $validQRes = $validQStmt->get_result();
@@ -855,11 +855,14 @@ $trk->bind_param("iiiissds", $user_id, $tid, $peer_form_id, $period_id, $eval_ty
 $trk->execute();
 $tracker_id = $mysqli->insert_id; $trk->close();
 
-                    $ins = $mysqli->prepare("INSERT INTO questionnaire_answers (tracker_id, question_id, answer_score, submitted_at) VALUES (?,?,?,NOW())");
+                    $questionSource = $submitted_group === 'teacher' ? 'evaluation' : 'user';
+                    $ins = $mysqli->prepare("INSERT INTO questionnaire_answers (tracker_id, question_id, question_source, user_question_id, answer_score, submitted_at) VALUES (?, ?, ?, ?, ?, NOW())");
                     foreach ($ratings as $qid => $rating) {
                         $qid   = intval($qid);
                         $score = min(5, max(1, intval($rating)));
-                        $ins->bind_param("iid", $tracker_id, $qid, $score);
+                        $questionId = $questionSource === 'evaluation' ? $qid : null;
+                        $userQuestionId = $questionSource === 'user' ? $qid : null;
+                        $ins->bind_param("iisii", $tracker_id, $questionId, $questionSource, $userQuestionId, $score);
                         $ins->execute();
                     }
                     $ins->close();
