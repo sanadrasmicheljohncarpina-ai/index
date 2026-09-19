@@ -80,6 +80,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    if ($action === 'rename_shared_category' && $scope === 'faculty') {
+        $id = (int)($_POST['category_id'] ?? 0);
+        $newName = trim($_POST['category_name'] ?? '');
+        if ($id > 0 && $newName !== '') {
+            $stmt = $mysqli->prepare("SELECT category_name FROM question_categories WHERE id=? AND target_type='Faculty' AND eval_type='general' AND evaluator_role='shared' LIMIT 1");
+            $stmt->bind_param('i', $id); $stmt->execute(); $old = $stmt->get_result()->fetch_assoc(); $stmt->close();
+            if ($old) {
+                $stmt = $mysqli->prepare("UPDATE question_categories SET category_name=? WHERE id=?");
+                $stmt->bind_param('si', $newName, $id); $stmt->execute(); $stmt->close();
+                $stmt = $mysqli->prepare("UPDATE evaluation_questions SET category=? WHERE target_type='Faculty' AND eval_type='general' AND evaluator_role='shared' AND category=?");
+                $stmt->bind_param('ss', $newName, $old['category_name']); $stmt->execute(); $stmt->close();
+            }
+            qxm_redirect($scope, null, 'Category renamed.');
+        }
+    }
+
     if ($action === 'delete_shared_category' && $scope === 'faculty') {
         $id = (int)($_POST['category_id'] ?? 0);
         if ($id > 0) {
@@ -164,6 +180,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         qxm_redirect($scope, $selectedUser, 'Question removed.');
+    }
+
+    if ($action === 'rename_user_category') {
+        if ($selectedUser <= 0) qxm_redirect($scope, null, 'Select a target person first.');
+        $catId = (int)($_POST['category_id'] ?? 0);
+        $newName = trim($_POST['category_name'] ?? '');
+        $targetType = qxm_selected_user_scope($scope, $selectedUser);
+        if ($scope === 'school_head') {
+            $stmt = $mysqli->prepare("SELECT role FROM users WHERE id=? AND role IN ('dean','principal') LIMIT 1");
+            $stmt->bind_param('i', $selectedUser); $stmt->execute(); $u = $stmt->get_result()->fetch_assoc(); $stmt->close();
+            $targetType = $u ? ucfirst(strtolower($u['role'])) : null;
+        }
+        if ($scope === 'ea') $targetType = 'EA';
+        if ($catId > 0 && $newName !== '' && $targetType) {
+            $stmt = $mysqli->prepare("SELECT category_name FROM user_question_categories WHERE id=? AND user_id=? AND target_type=? AND eval_type='general' LIMIT 1");
+            $stmt->bind_param('iis', $catId, $selectedUser, $targetType);
+            $stmt->execute(); $old = $stmt->get_result()->fetch_assoc(); $stmt->close();
+            if ($old) {
+                $stmt = $mysqli->prepare("UPDATE user_question_categories SET category_name=? WHERE id=?");
+                $stmt->bind_param('si', $newName, $catId); $stmt->execute(); $stmt->close();
+                $stmt = $mysqli->prepare("UPDATE user_questions SET category=? WHERE user_id=? AND target_type=? AND eval_type='general' AND category=?");
+                $stmt->bind_param('siss', $newName, $selectedUser, $targetType, $old['category_name']); $stmt->execute(); $stmt->close();
+            }
+        }
+        qxm_redirect($scope, $selectedUser, 'Category renamed.');
+    }
+
+    if ($action === 'delete_user_category') {
+        if ($selectedUser <= 0) qxm_redirect($scope, null, 'Select a target person first.');
+        $catId = (int)($_POST['category_id'] ?? 0);
+        $targetType = qxm_selected_user_scope($scope, $selectedUser);
+        if ($scope === 'school_head') {
+            $stmt = $mysqli->prepare("SELECT role FROM users WHERE id=? AND role IN ('dean','principal') LIMIT 1");
+            $stmt->bind_param('i', $selectedUser); $stmt->execute(); $u = $stmt->get_result()->fetch_assoc(); $stmt->close();
+            $targetType = $u ? ucfirst(strtolower($u['role'])) : null;
+        }
+        if ($scope === 'ea') $targetType = 'EA';
+        if ($catId > 0 && $targetType) {
+            $stmt = $mysqli->prepare("SELECT category_name FROM user_question_categories WHERE id=? AND user_id=? AND target_type=? AND eval_type='general' LIMIT 1");
+            $stmt->bind_param('iis', $catId, $selectedUser, $targetType);
+            $stmt->execute(); $old = $stmt->get_result()->fetch_assoc(); $stmt->close();
+            if ($old) {
+                $stmt = $mysqli->prepare("UPDATE user_questions SET category='General' WHERE user_id=? AND target_type=? AND eval_type='general' AND category=?");
+                $stmt->bind_param('iss', $selectedUser, $targetType, $old['category_name']); $stmt->execute(); $stmt->close();
+                $stmt = $mysqli->prepare("DELETE FROM user_question_categories WHERE id=?");
+                $stmt->bind_param('i', $catId); $stmt->execute(); $stmt->close();
+                qn_ensure_user_category($mysqli, $selectedUser, $targetType, 'General', 0);
+            }
+        }
+        qxm_redirect($scope, $selectedUser, 'Category removed; questions moved to General.');
     }
 
     if ($action === 'add_user_category') {
@@ -324,7 +390,17 @@ $selectedPersonName = $selectedPerson['full_name'] ?? '';
         <div class="catbar">
           <?php foreach ($facultyCategories as $cat): ?>
             <span class="chip">
-              <?= qxm_e($cat['category_name']) ?>
+              <details style="display:inline">
+                <summary class="btn small" style="display:inline-block"><?= qxm_e($cat['category_name']) ?></summary>
+                <form method="post" class="form" style="min-width:240px">
+                  <input type="hidden" name="csrf_token" value="<?= qxm_e($csrf) ?>">
+                  <input type="hidden" name="scope" value="faculty">
+                  <input type="hidden" name="category_id" value="<?= (int)$cat['id'] ?>">
+                  <input type="hidden" name="action" value="rename_shared_category">
+                  <input class="field" name="category_name" value="<?= qxm_e($cat['category_name']) ?>" required>
+                  <button class="btn small" type="submit">Rename</button>
+                </form>
+              </details>
               <form method="post" style="display:inline" onsubmit="return confirm('Delete this category? Questions will move to General.');">
                 <input type="hidden" name="csrf_token" value="<?= qxm_e($csrf) ?>">
                 <input type="hidden" name="scope" value="faculty">
@@ -406,7 +482,26 @@ $selectedPersonName = $selectedPerson['full_name'] ?? '';
             <div class="empty"><i class="fa-solid fa-hand-pointer"></i><div>Select a target to manage its questionnaire.</div></div>
           <?php else: ?>
             <div class="catbar">
-              <?php foreach($personCategories as $cat): ?><span class="chip"><?= qxm_e($cat['category_name']) ?></span><?php endforeach; ?>
+              <?php foreach($personCategories as $cat): ?>
+                <span class="chip">
+                  <details style="display:inline">
+                    <summary class="btn small" style="display:inline-block"><?= qxm_e($cat['category_name']) ?></summary>
+                    <form method="post" class="form" style="min-width:240px">
+                      <input type="hidden" name="csrf_token" value="<?= qxm_e($csrf) ?>">
+                      <input type="hidden" name="scope" value="<?= qxm_e($scope) ?>">
+                      <input type="hidden" name="user_id" value="<?= (int)$selectedUser ?>">
+                      <input type="hidden" name="category_id" value="<?= (int)$cat['id'] ?>">
+                      <input type="hidden" name="action" value="rename_user_category">
+                      <input class="field" name="category_name" value="<?= qxm_e($cat['category_name']) ?>" required>
+                      <button class="btn small" type="submit">Rename</button>
+                    </form>
+                  </details>
+                  <form method="post" style="display:inline" onsubmit="return confirm('Delete this category? Questions will move to General.');">
+                    <input type="hidden" name="csrf_token" value="<?= qxm_e($csrf) ?>"><input type="hidden" name="scope" value="<?= qxm_e($scope) ?>"><input type="hidden" name="user_id" value="<?= (int)$selectedUser ?>"><input type="hidden" name="category_id" value="<?= (int)$cat['id'] ?>"><input type="hidden" name="action" value="delete_user_category">
+                    <button class="btn small danger" type="submit">×</button>
+                  </form>
+                </span>
+              <?php endforeach; ?>
             </div>
             <form method="post" class="form">
               <input type="hidden" name="csrf_token" value="<?= qxm_e($csrf) ?>"><input type="hidden" name="scope" value="<?= qxm_e($scope) ?>"><input type="hidden" name="user_id" value="<?= (int)$selectedUser ?>"><input type="hidden" name="action" value="add_user_category">
