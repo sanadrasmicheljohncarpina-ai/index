@@ -12,6 +12,7 @@
         require_once 'db.php';
         require_once '../shared/eligibility.php';
         require_once '../shared/ea_personnel_service.php';
+require_once '../shared/QuestionnaireService.php';
         // ── AUTH GUARD ────────────────────────────────────────────────
         if (empty($_SESSION['user_id']) || $_SESSION['role'] !== 'staff') {
             header("Location: faculty_login.php"); exit;
@@ -20,6 +21,8 @@
         $user_id     = $_SESSION['user_id'];
         $full_name   = $_SESSION['full_name']   ?? 'Staff';
         $designation = $_SESSION['designation'] ?? 'Staff';
+
+qn_migrate_legacy_once($mysqli);
         $page        = $_GET['page'] ?? 'dashboard';
         // NOTE: 'peer' / 'peer_eval' are live pages in their own right (the
         // Peer Evaluation feature below) and must NOT be aliased away — only
@@ -335,12 +338,13 @@
         if (in_array($page, ['staff_eval','staff_eval_form'], true) && $staff_eval_target) {
             $q = $mysqli->prepare("
                 SELECT id, category, question_text
-                FROM evaluation_questions
-                WHERE eval_type='staff'
+                FROM user_questions
+                WHERE user_id=?
                   AND target_type=?
-                ORDER BY category ASC, id ASC
+                  AND eval_type='general'
+                ORDER BY category ASC, sort_order ASC, id ASC
             ");
-            $q->bind_param('s', $staff_eval_target['target_type']);
+            $q->bind_param('is', $staff_eval_target['id'], $staff_eval_target['target_type']);
             $q->execute();
             $staff_eval_questions = $q->get_result()->fetch_all(MYSQLI_ASSOC);
             $q->close();
@@ -391,12 +395,18 @@
         $res_stmt->close();
 
         $cat_stmt = $mysqli->prepare("
-            SELECT eq.category, AVG(qa.answer_score) as avg_cat
+            SELECT COALESCE(uq.category, eq.category, 'General') AS category,
+                   AVG(qa.answer_score) AS avg_cat
             FROM questionnaire_answers qa
             JOIN evaluation_tracker et ON et.id = qa.tracker_id
-            JOIN evaluation_questions eq ON eq.id = qa.question_id
+            LEFT JOIN user_questions uq
+              ON qa.question_source='user'
+             AND uq.id = COALESCE(qa.user_question_id, qa.question_id)
+            LEFT JOIN evaluation_questions eq
+              ON qa.question_source='evaluation'
+             AND eq.id = qa.question_id
             WHERE et.target_user_id = ?
-            GROUP BY eq.category
+            GROUP BY COALESCE(uq.category, eq.category, 'General')
         ");
         $cat_stmt->bind_param("i", $user_id);
         $cat_stmt->execute();
@@ -532,11 +542,12 @@
             } else {
                 $validStmt = $mysqli->prepare("
                     SELECT id
-                    FROM evaluation_questions
-                    WHERE eval_type='staff'
+                    FROM user_questions
+                    WHERE user_id=?
+                      AND eval_type='general'
                       AND target_type=?
                 ");
-                $validStmt->bind_param('s', $target['target_type']);
+                $validStmt->bind_param('is', $target['id'], $target['target_type']);
                 $validStmt->execute();
                 $validRes = $validStmt->get_result();
                 $valid_question_ids = [];
@@ -604,7 +615,7 @@
                     $ans = $mysqli->prepare("
                         INSERT INTO questionnaire_answers
                         (tracker_id,question_id,question_source,user_question_id,answer_score,submitted_at)
-                        VALUES (?,?,'evaluation',NULL,?,NOW())
+                        VALUES (?,NULL,'user',?,?,NOW())
                     ");
                     foreach ($ratings as $qid => $rating) {
                         $qid = (int)$qid;
@@ -729,10 +740,10 @@
                 // category resolve_target_type() returns - the admin tool never
                 // stores questions under those values).
                 if ($peer_eval_group === 'staff') {
-                    $qs = $mysqli->prepare("SELECT * FROM user_questions WHERE user_id=? AND eval_type='peer' ORDER BY category ASC, sort_order ASC, id ASC");
+                    $qs = $mysqli->prepare("SELECT * FROM user_questions WHERE user_id=? AND target_type='Staff' AND eval_type='general' ORDER BY category ASC, sort_order ASC, id ASC");
                     $qs->bind_param("i", $tid); $qs->execute();
                 } else {
-                    $qs = $mysqli->prepare("SELECT * FROM evaluation_questions WHERE target_type='Teacher' AND eval_type='peer' ORDER BY category ASC, id ASC");
+                    $qs = $mysqli->prepare("SELECT * FROM evaluation_questions WHERE target_type='Faculty' AND eval_type='general' AND evaluator_role='shared' AND is_active=1 ORDER BY category ASC, id ASC");
                     $qs->execute();
                 }
                 $peer_questions = $qs->get_result()->fetch_all(MYSQLI_ASSOC); $qs->close();
@@ -813,10 +824,10 @@
             // for Staff targets, shared 'Teacher'-bucket evaluation_questions
             // otherwise.
             if ($submitted_group === 'staff') {
-                $validQStmt = $mysqli->prepare("SELECT id FROM user_questions WHERE user_id=? AND eval_type='peer'");
+                $validQStmt = $mysqli->prepare("SELECT id FROM user_questions WHERE user_id=? AND target_type='Staff' AND eval_type='general'");
                 $validQStmt->bind_param("i", $tid);
             } else {
-                $validQStmt = $mysqli->prepare("SELECT id FROM evaluation_questions WHERE target_type='Teacher' AND eval_type='peer'");
+                $validQStmt = $mysqli->prepare("SELECT id FROM evaluation_questions WHERE target_type='Faculty' AND eval_type='general' AND evaluator_role='shared' AND is_active=1");
             }
             $validQStmt->execute();
             $validQRes = $validQStmt->get_result();
@@ -850,11 +861,14 @@ $trk->bind_param("iiiissds", $user_id, $tid, $peer_form_id, $period_id, $eval_ty
 $trk->execute();
 $tracker_id = $mysqli->insert_id; $trk->close();
 
-                    $ins = $mysqli->prepare("INSERT INTO questionnaire_answers (tracker_id, question_id, answer_score, submitted_at) VALUES (?,?,?,NOW())");
+                    $questionSource = $submitted_group === 'teacher' ? 'evaluation' : 'user';
+                    $ins = $mysqli->prepare("INSERT INTO questionnaire_answers (tracker_id, question_id, question_source, user_question_id, answer_score, submitted_at) VALUES (?, ?, ?, ?, ?, NOW())");
                     foreach ($ratings as $qid => $rating) {
                         $qid   = intval($qid);
                         $score = min(5, max(1, intval($rating)));
-                        $ins->bind_param("iid", $tracker_id, $qid, $score);
+                        $questionId = $questionSource === 'evaluation' ? $qid : null;
+                        $userQuestionId = $questionSource === 'user' ? $qid : null;
+                        $ins->bind_param("iisii", $tracker_id, $questionId, $questionSource, $userQuestionId, $score);
                         $ins->execute();
                     }
                     $ins->close();
@@ -1879,8 +1893,8 @@ $tracker_id = $mysqli->insert_id; $trk->close();
                                 if ($doneRow) { $done = true; $last_eval = $doneRow['submitted_at']; }
                                 $chk->close();
                             }
-                            $qc = $mysqli->prepare("SELECT COUNT(*) AS c FROM evaluation_questions WHERE eval_type='staff' AND target_type=?");
-                            $qc->bind_param('s', $target['target_type']);
+                            $qc = $mysqli->prepare("SELECT COUNT(*) AS c FROM user_questions WHERE user_id=? AND target_type=? AND eval_type='general'");
+                            $qc->bind_param('is', $target['id'], $target['target_type']);
                             $qc->execute();
                             $qCount = (int)($qc->get_result()->fetch_assoc()['c'] ?? 0);
                             $qc->close();

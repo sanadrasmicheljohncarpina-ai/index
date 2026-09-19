@@ -159,14 +159,14 @@ if ($structureActive) {
     // (legacy) and target_type='Faculty' (current questionnaire model). Treat
     // either as the Faculty questionnaire so Required never collapses to 0.
     $teacherQuestionCount = (int)(safe_scalar($mysqli,
-        "SELECT COUNT(*) FROM evaluation_questions WHERE eval_type='student' AND target_type IN ('Teacher','Faculty')"
+        "SELECT COUNT(*) FROM evaluation_questions WHERE target_type='Faculty' AND eval_type='general' AND evaluator_role='shared' AND is_active=1"
     ) ?? 0);
     $multiRoleQuestionCount = (int)(safe_scalar($mysqli,
-        "SELECT COUNT(*) FROM evaluation_questions WHERE eval_type='student' AND target_type='Multi-Role'"
+        "SELECT COUNT(*) FROM evaluation_questions WHERE target_type='Faculty' AND eval_type='general' AND evaluator_role='shared' AND is_active=1"
     ) ?? 0);
     if ($multiRoleQuestionCount === 0) {
         $multiRoleQuestionCount = (int)(safe_scalar($mysqli,
-            "SELECT COUNT(*) FROM user_questions WHERE eval_type='student' AND target_type='Multi-Role'"
+            "SELECT COUNT(*) FROM user_questions WHERE eval_type='general' AND target_type='Staff'"
         ) ?? 0);
     }
 
@@ -207,7 +207,7 @@ if ($structureActive) {
           AND EXISTS (
               SELECT 1 FROM user_questions uq
               WHERE uq.user_id=u.id
-                AND uq.eval_type='student'
+                AND uq.eval_type='general'
                 AND uq.target_type='Staff'
           )
     ") ?? 0);
@@ -250,7 +250,7 @@ if ($structureActive) {
           AND EXISTS (
               SELECT 1 FROM user_questions uq
               WHERE uq.user_id=u.id
-                AND uq.eval_type='student'
+                AND uq.eval_type='general'
                 AND uq.target_type='Dean'
           )
     ") ?? 0);
@@ -314,8 +314,8 @@ if ($structureActive) {
                           FROM questionnaire_answers qam
                           JOIN user_questions uqm ON uqm.id=qam.user_question_id
                           WHERE qam.tracker_id=et.id
-                            AND uqm.eval_type='student'
-                            AND uqm.target_type='Multi-Role'
+                            AND uqm.eval_type='general'
+                            AND uqm.target_type IN ('Staff','Dean','Principal')
                       )
                     THEN CONCAT('multi:', et.target_user_id) END) AS multi_completed,
                 COUNT(DISTINCT CASE

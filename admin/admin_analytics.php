@@ -3,6 +3,7 @@
 session_start();
 require_once 'db.php';
 require_once '../shared/EvaluationContextService.php';
+require_once '../shared/QuestionnaireService.php';
 
 // ── AUTH GUARD ───────────────────────────────────────────────
 // Evaluation scores and archive/restore actions are sensitive —
@@ -740,18 +741,15 @@ if ($view === 'sheet' && $target_id && $tracker_id) {
 
     if (!empty($missingTextIndexes)) {
         $fallbackQuestions = [];
-        $fq = $mysqli->prepare("
-            SELECT question_text, category
-            FROM user_questions
-            WHERE user_id=? AND eval_type='student'
-            ORDER BY category ASC, sort_order ASC, id ASC
-        ");
-        if ($fq) {
-            $fq->bind_param('i', $target_id);
-            $fq->execute();
-            $fqRes = $fq->get_result();
-            if ($fqRes) $fallbackQuestions = $fqRes->fetch_all(MYSQLI_ASSOC);
-            $fq->close();
+        $targetRole = strtolower((string)($tgt['role'] ?? ''));
+        if (in_array($targetRole, ['teacher','faculty'], true)) {
+            $fallbackQuestions = qn_get_faculty_questions($mysqli);
+        } elseif ($targetRole === 'staff') {
+            $fallbackQuestions = qn_get_person_questions($mysqli, $target_id, 'Staff');
+        } elseif (in_array($targetRole, ['dean','principal'], true)) {
+            $fallbackQuestions = qn_get_person_questions($mysqli, $target_id, ucfirst($targetRole));
+        } elseif ($targetRole === 'superadmin') {
+            $fallbackQuestions = qn_get_person_questions($mysqli, $target_id, 'EA');
         }
 
         // Map the unresolved submitted answers to the corresponding Student
