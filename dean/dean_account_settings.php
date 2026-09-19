@@ -226,6 +226,7 @@ body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,
 .password-note{font-size:12px;color:var(--muted);margin:-5px 0 18px}.info-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:20px}.info-item{padding:14px;border-radius:10px;background:rgba(10,25,47,.42);border:1px solid rgba(255,255,255,.06)}.info-item span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:5px}.info-item strong{font-size:14px;color:#fff;font-weight:600;word-break:break-word}
 @media(max-width:900px){.sidebar{width:220px}.main{padding:28px 24px}.form-grid,.info-grid{grid-template-columns:1fr}}@media(max-width:650px){body{display:block}.sidebar{width:100%;min-height:auto;padding:18px}.sb-nav{display:grid;grid-template-columns:repeat(2,1fr)}.sb-logout{margin-top:12px}.main{padding:24px 16px}.profile-card{align-items:flex-start;flex-direction:column}.form-grid,.info-grid{grid-template-columns:1fr}}
 </style>
+<link rel="stylesheet" href="includes/dean_light_theme.css"/>
 </head>
 <body>
 <?php $photo_src = $photoUrl; include __DIR__ . '/includes/dean_sidebar.php'; ?>
@@ -297,5 +298,6 @@ body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,
     </div>
 </main>
 </body>
+<link rel="stylesheet" href="includes/dean_light_theme.css" id="dean-light-theme-final"/>
 </html>
 <?php $mysqli->close(); ?>

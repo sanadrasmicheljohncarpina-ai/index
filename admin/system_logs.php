@@ -45,17 +45,17 @@ if ($mysqli->ping()) $mysqli->close();
 .page-header p{color:var(--text-dim);margin:6px 0 0;font-size:13px}
 .refresh-badge{background:var(--accent-bg);border:1px solid var(--accent-border);color:var(--accent);padding:8px 16px;border-radius:20px;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:8px;white-space:nowrap}
 
-.logs-table-wrap{background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;overflow:hidden;box-shadow:var(--card-shadow)}
-.logs-table{width:100%;border-collapse:collapse;font-size:13px}
+.logs-table-wrap{background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;overflow-x:auto;box-shadow:var(--card-shadow)}
+.logs-table{width:100%;min-width:760px;border-collapse:collapse;font-size:13px}
 .logs-table thead th{padding:13px 18px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);text-align:left;white-space:nowrap;border-bottom:1px solid var(--card-border);background:var(--inner)}
 .logs-table tbody td{padding:14px 18px;vertical-align:top;border-bottom:1px solid var(--card-border);color:var(--text-dark)}
 .logs-table tbody tr:last-child td{border-bottom:none}
 .logs-table tbody tr:hover td{background:var(--page-bg)}
 .log-datetime{color:var(--text-dim);white-space:nowrap}
-.log-action{display:inline-flex;align-items:center;gap:6px;font-weight:600;white-space:nowrap}
-.log-action-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.log-action{display:inline-flex;align-items:flex-start;gap:6px;font-weight:600;white-space:normal;word-break:break-word}
+.log-action-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:6px}
 .log-user{font-weight:600;white-space:nowrap}
-.log-details{color:var(--text-dim)}
+.log-details{color:var(--text-dim);word-break:break-word}
 .logs-empty{padding:40px 20px;text-align:center;color:var(--text-dim);font-size:13.5px}
 .logs-error{color:#b91c1c}
 .logs-retry{margin-left:8px;padding:5px 10px;border:1px solid currentColor;border-radius:6px;background:transparent;color:inherit;font-weight:600;cursor:pointer}
@@ -64,6 +64,30 @@ if ($mysqli->ping()) $mysqli->close();
 </style>
 <link rel="stylesheet" href="admin_ui_theme.css">
     <link rel="stylesheet" href="admin_compact_ui.css">
+<style id="pbi-feature-scrollbar">
+
+/* PBI FEATURE SCROLLBAR — consistent with the compact page scrollbar */
+html, body {
+  scrollbar-width: thin !important;
+  scrollbar-color: #888 transparent !important;
+}
+html::-webkit-scrollbar, body::-webkit-scrollbar,
+.feature-compact ::-webkit-scrollbar { width: 10px !important; height: 10px !important; }
+html::-webkit-scrollbar-track, body::-webkit-scrollbar-track,
+.feature-compact ::-webkit-scrollbar-track { background: transparent !important; }
+html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb,
+.feature-compact ::-webkit-scrollbar-thumb {
+  background: #888 !important; border-radius: 999px !important;
+  border: 2px solid transparent !important; background-clip: padding-box !important;
+}
+html::-webkit-scrollbar-thumb:hover, body::-webkit-scrollbar-thumb:hover,
+.feature-compact ::-webkit-scrollbar-thumb:hover { background: #777 !important; background-clip: padding-box !important; }
+html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
+.feature-compact ::-webkit-scrollbar-button { display: block !important; width: 10px !important; height: 10px !important; background-color: transparent !important; }
+
+</style>
+<link rel="stylesheet" href="admin_appearance.css">
+<script src="admin_appearance.js"></script>
 </head>
 <body class="feature-compact">
 <main class="wrap">

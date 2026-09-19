@@ -13,11 +13,15 @@
 		$email      = trim($_POST['email']      ?? '');
 		$password   = $_POST['password']        ?? '';
 		$confirm_pw = $_POST['confirm_password']?? '';
-		$role       = in_array($_POST['role'] ?? '', ['teacher','staff']) ? $_POST['role'] : 'teacher';
+		$role       = $_POST['role'] ?? '';
 
 		// ── VALIDATION ───────────────────────────────────────────
-		if (empty($full_name) || empty($username) || empty($password)) {
-			$error = "Full name, username, and password are required.";
+		if (empty($full_name) || empty($username) || empty($email) || empty($password) || empty($confirm_pw) || empty($role)) {
+			$error = "All required fields must be completed, including email address and faculty/staff role.";
+		} elseif (!in_array($role, ['teacher','staff'], true)) {
+			$error = "Please select whether you are Faculty or Staff.";
+		} elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+			$error = "Please enter a valid email address.";
 		} elseif ($password !== $confirm_pw) {
 			$error = "Passwords do not match.";
 		} elseif (strlen($password) < 8) {
@@ -33,6 +37,9 @@
 
 		// ── PHOTO UPLOAD ─────────────────────────────────────────
 		$photo_filename = null;
+		if (empty($error) && (!isset($_FILES['photo']) || $_FILES['photo']['error'] !== UPLOAD_ERR_OK)) {
+			$error = "Profile photo is required.";
+		}
 		if (empty($error) && isset($_FILES['photo']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
 			$allowed   = ['image/jpeg','image/png','image/webp','image/gif'];
 			$file_type = mime_content_type($_FILES['photo']['tmp_name']);
@@ -92,7 +99,7 @@
 	<head>
 	<meta charset="UTF-8"/>
 	<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-	<title>PBI — Teacher & Staff Registration</title>
+	<title>PBI — Faculty & Staff Registration</title>
 	<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 	<style>
@@ -104,26 +111,18 @@
 	}
 	*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 	body{
-		min-height:100vh; background:var(--dark-blue) url('../bacjground.png') center center / cover no-repeat fixed;
+		min-height:100vh; background:var(--dark-blue);
 		font-family:'DM Sans',sans-serif; color:var(--light);
 		display:flex; align-items:center; justify-content:center;
 		padding:40px 20px; position:relative; overflow-x:hidden;
 	}
-	.bg-image-overlay{
-		position:fixed; inset:0; z-index:0;
-		background:rgba(10,25,47,.42); pointer-events:none;
+	.bg-grid{display:block;position:fixed;inset:0;z-index:0;
+		background-image:repeating-linear-gradient(45deg,rgba(13,148,136,.08) 0px,rgba(13,148,136,.08) 1px,transparent 1px,transparent 26px),
+						 repeating-linear-gradient(-45deg,rgba(13,148,136,.05) 0px,rgba(13,148,136,.05) 1px,transparent 1px,transparent 26px);
 	}
-	.bg-grid{display:none;position:fixed;inset:0;z-index:0;
-		background-image:linear-gradient(rgba(13,148,136,.055) 1px,transparent 1px),
-						 linear-gradient(90deg,rgba(13,148,136,.055) 1px,transparent 1px);
-		background-size:48px 48px; animation:gridShift 22s linear infinite;
-	}
-	@keyframes gridShift{0%{background-position:0 0}100%{background-position:48px 48px}}
-	.orb{display:none;position:fixed;border-radius:50%;filter:blur(90px);z-index:0;pointer-events:none;}
-	.orb-1{width:380px;height:380px;background:radial-gradient(circle,rgba(13,148,136,.18) 0%,transparent 70%);top:-80px;right:-80px;animation:o1 14s ease-in-out infinite;}
-	.orb-2{width:300px;height:300px;background:radial-gradient(circle,rgba(43,108,176,.15) 0%,transparent 70%);bottom:-60px;left:-60px;animation:o2 18s ease-in-out infinite;}
-	@keyframes o1{0%,100%{transform:translate(0,0)}50%{transform:translate(-28px,22px)}}
-	@keyframes o2{0%,100%{transform:translate(0,0)}50%{transform:translate(22px,-18px)}}
+	.hex-deco{position:fixed;z-index:0;pointer-events:none;opacity:.5;}
+	.hex-1{top:-60px;right:-60px;}
+	.hex-2{bottom:-70px;left:-70px;}
 
 	.reg-card{
 		position:relative;z-index:10;
@@ -147,22 +146,6 @@
 	.card-title{font-family:'Rajdhani',sans-serif;font-size:26px;font-weight:700;letter-spacing:2px;color:#fff;text-transform:uppercase;}
 	.card-subtitle{font-size:12px;color:var(--muted);letter-spacing:1.2px;text-transform:uppercase;margin-top:4px;}
 
-	.role-tabs{display:flex;background:rgba(10,25,47,.6);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:4px;margin-bottom:22px;}
-	.role-tab{flex:1;padding:9px 10px;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all .25s;background:transparent;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:7px;}
-	.role-tab.active{background:var(--teal);color:#fff;box-shadow:0 2px 10px rgba(13,148,136,.35);}
-	.role-tab:not(.active):hover{color:var(--light);background:rgba(255,255,255,.05);}
-
-	.divider{height:1px;background:linear-gradient(90deg,transparent,rgba(13,148,136,.4),transparent);margin-bottom:20px;}
-
-	.steps-row{display:flex;align-items:center;justify-content:center;margin-bottom:22px;}
-	.step{display:flex;flex-direction:column;align-items:center;gap:5px;flex:1;position:relative;}
-	.step:not(:last-child)::after{content:'';position:absolute;top:13px;left:60%;width:80%;height:1px;background:rgba(255,255,255,.1);}
-	.step-dot{width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,.07);border:1.5px solid rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--muted);transition:all .3s;}
-	.step.done .step-dot{background:var(--teal);border-color:var(--teal);color:#fff;}
-	.step.active .step-dot{background:rgba(13,148,136,.25);border-color:var(--teal);color:var(--teal-hover);}
-	.step-lbl{font-size:10px;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;}
-	.step.active .step-lbl,.step.done .step-lbl{color:var(--teal-hover);}
-
 	.photo-upload-area{display:flex;align-items:center;gap:18px;margin-bottom:20px;}
 	.photo-preview{width:80px;height:80px;border-radius:50%;background:var(--blue-inner);border:2px dashed rgba(13,148,136,.5);overflow:hidden;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:border-color .2s;flex-shrink:0;}
 	.photo-preview:hover{border-color:var(--teal);}
@@ -183,6 +166,10 @@
 	.form-input{width:100%;padding:11px 13px 11px 38px;background:rgba(10,25,47,.7);border:1px solid rgba(255,255,255,.1);border-radius:var(--radius);color:var(--light);font-size:14px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .25s,box-shadow .25s;}
 	.form-input::placeholder{color:rgba(160,179,198,.42);}
 	.form-input:focus{border-color:var(--teal);box-shadow:0 0 0 3px rgba(13,148,136,.18);}
+	.form-input.field-invalid{border-color:var(--danger);box-shadow:0 0 0 3px rgba(240,84,84,.12);}
+	.form-select{appearance:none;-webkit-appearance:none;cursor:pointer;padding-right:40px;}
+	.form-select option{background:var(--blue-inner);color:var(--light);}
+	.form-select:invalid{color:rgba(160,179,198,.42);}
 	.toggle-pw{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0;transition:color .2s;}
 	.toggle-pw:hover{color:var(--light);}
 
@@ -202,9 +189,6 @@
 	.card-footer{text-align:center;margin-top:22px;font-size:12px;color:var(--muted);border-top:1px solid rgba(255,255,255,.06);padding-top:18px;}
 	.card-footer a{color:var(--teal-hover);text-decoration:none;font-weight:600;}
 	.card-footer a:hover{text-decoration:underline;}
-	.secure-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);margin-top:12px;letter-spacing:.5px;}
-	.secure-badge i{color:#4ade80;font-size:10px;}
-
 	@media(max-width:540px){
 		.reg-card{padding:28px 16px 24px;}
 		.form-grid{grid-template-columns:1fr;}
@@ -213,33 +197,18 @@
 	</style>
 	</head>
 	<body>
-	<div class="bg-image-overlay"></div>
 	<div class="bg-grid"></div>
-	<div class="orb orb-1"></div>
-	<div class="orb orb-2"></div>
+	<svg class="hex-deco hex-1" width="260" height="260" viewBox="0 0 260 260"><polygon points="130,10 240,70 240,190 130,250 20,190 20,70" fill="none" stroke="#0D9488" stroke-width="1"/><polygon points="130,50 200,90 200,170 130,210 60,170 60,90" fill="none" stroke="#0D9488" stroke-width="1"/></svg>
+	<svg class="hex-deco hex-2" width="300" height="300" viewBox="0 0 300 300"><polygon points="150,10 280,80 280,220 150,290 20,220 20,80" fill="none" stroke="#2B6CB0" stroke-width="1"/><polygon points="150,60 220,100 220,200 150,240 80,200 80,100" fill="none" stroke="#2B6CB0" stroke-width="1"/></svg>
 
 	<div class="reg-card">
 		<div class="card-header">
 			<img class="logo-ring" src="../image/pbi_logo" alt="PBI Logo"/>
 			<div class="card-title">Create Your Account</div>
-			<div class="card-subtitle">Pandan Bay Institute — Teacher & Staff Portal</div>
+			<div class="card-subtitle">Pandan Bay Institute — Faculty & Staff Portal</div>
 		</div>
 
-		<div class="steps-row">
-			<div class="step done" id="step1"><div class="step-dot"><i class="fa-solid fa-user"></i></div><span class="step-lbl">Profile</span></div>
-			<div class="step active" id="step2"><div class="step-dot"><i class="fa-solid fa-lock"></i></div><span class="step-lbl">Security</span></div>
-			<div class="step" id="step3"><div class="step-dot"><i class="fa-solid fa-circle-check"></i></div><span class="step-lbl">Done</span></div>
-		</div>
 
-		<div class="role-tabs">
-			<button class="role-tab active" id="tab-teacher" type="button" onclick="setRole('teacher')">
-				<i class="fa-solid fa-chalkboard-user"></i> Faculty
-			</button>
-			<button class="role-tab" id="tab-staff" type="button" onclick="setRole('staff')">
-				<i class="fa-solid fa-briefcase"></i> Staff
-			</button>
-		</div>
-		<div class="divider"></div>
 
 		<?php if ($error): ?>
 		<div class="alert alert-error"><i class="fa-solid fa-circle-exclamation" style="flex-shrink:0;margin-top:1px"></i><span><?= htmlspecialchars($error) ?></span></div>
@@ -251,8 +220,6 @@
 		<?php endif; ?>
 
 		<form method="POST" enctype="multipart/form-data" id="regForm" autocomplete="off">
-			<input type="hidden" name="role" id="role_input" value="teacher"/>
-
 			<div class="photo-upload-area">
 				<div class="photo-preview" id="photoPreview" onclick="document.getElementById('photoFile').click()">
 					<img id="photoImg" src="" alt="Preview"/>
@@ -260,9 +227,8 @@
 				</div>
 				<div class="photo-info">
 					<p>Profile Photo</p>
-					<span>Appears on evaluation forms so students can identify you — max 10MB</span><br>
 					<label class="btn-photo" for="photoFile"><i class="fa-solid fa-upload"></i> Upload Photo</label>
-					<input type="file" id="photoFile" name="photo" accept="image/jpeg,image/png,image/webp,image/gif" onchange="previewPhoto(this)"/>
+					<input type="file" id="photoFile" name="photo" accept="image/jpeg,image/png,image/webp,image/gif" required onchange="previewPhoto(this)"/>
 				</div>
 			</div>
 
@@ -274,6 +240,17 @@
 						<i class="fa-solid fa-id-card f-icon"></i>
 					</div>
 				</div>
+				<div class="form-group full">
+					<label class="form-label" for="role">Select Role <span style="color:#f87171">*</span></label>
+					<div class="input-wrap">
+						<select class="form-input form-select" id="role" name="role" required onchange="updateRoleLabel(this.value)">
+							<option value="" disabled <?= empty($_POST['role'] ?? '') ? 'selected' : '' ?>>Select Role</option>
+							<option value="teacher" <?= (($_POST['role'] ?? '') === 'teacher') ? 'selected' : '' ?>>Faculty</option>
+							<option value="staff" <?= (($_POST['role'] ?? '') === 'staff') ? 'selected' : '' ?>>Staff</option>
+						</select>
+						<i class="fa-solid fa-users-gear f-icon"></i>
+					</div>
+				</div>
 				<div class="form-group">
 					<label class="form-label" for="username">Username <span style="color:#f87171">*</span></label>
 					<div class="input-wrap">
@@ -282,9 +259,9 @@
 					</div>
 				</div>
 				<div class="form-group">
-					<label class="form-label" for="email">Email Address</label>
+					<label class="form-label" for="email">Email Address <span style="color:#f87171">*</span></label>
 					<div class="input-wrap">
-						<input class="form-input" type="email" id="email" name="email" placeholder="your@email.com" value="<?= htmlspecialchars($_POST['email'] ?? '') ?>"/>
+						<input class="form-input" type="email" id="email" name="email" placeholder="your@email.com" required value="<?= htmlspecialchars($_POST['email'] ?? '') ?>"/>
 						<i class="fa-solid fa-envelope f-icon"></i>
 					</div>
 				</div>
@@ -310,10 +287,7 @@
 				</div>
 			</div>
 
-			<div style="background:rgba(43,108,176,.12);border:1px solid rgba(43,108,176,.25);border-radius:8px;padding:12px 14px;margin-top:14px;font-size:12px;color:var(--muted);display:flex;gap:8px;align-items:flex-start;">
-				<i class="fa-solid fa-circle-info" style="color:#60a5fa;margin-top:1px;flex-shrink:0"></i>
-				<span>Your account will be <strong style="color:var(--light)">active immediately</strong> after registration. The admin will assign your specific designation (e.g. Registrar, Librarian) before you appear on evaluation forms.</span>
-			</div>
+
 
 			<button type="submit" class="btn-register">
 				<i class="fa-solid fa-user-plus"></i>
@@ -323,24 +297,65 @@
 
 		<div class="card-footer">
 			Already have an account? <a href="faculty_login.php">Sign in here</a><br>
-			<!-- Correct cross-folder path from faculty/ to student/ -->
-			<a href="../student/student_login.php" style="color:var(--muted);">Student? Register here instead</a>
-			<br>
-			<span class="secure-badge"><i class="fa-solid fa-circle-check"></i> Secured &amp; Encrypted Connection</span>
 		</div>
 	</div>
 
 	<script>
-	function setRole(r){
-		document.getElementById('role_input').value=r;
-		document.getElementById('tab-teacher').classList.toggle('active',r==='teacher');
-		document.getElementById('tab-staff').classList.toggle('active',r==='staff');
-		document.getElementById('regBtnLabel').textContent=r==='teacher'?'Create Teacher Account':'Create Staff Account';
+	function updateRoleLabel(r){
+		document.getElementById('regBtnLabel').textContent =
+			r === 'teacher' ? 'Create Faculty Account' :
+			r === 'staff' ? 'Create Staff Account' :
+			'Create Account';
 	}
+	updateRoleLabel(document.getElementById('role').value);
+
+	const regForm = document.getElementById('regForm');
+	regForm.addEventListener('submit', function(e){
+		const requiredFields = regForm.querySelectorAll('[required]');
+		let firstInvalid = null;
+
+		requiredFields.forEach(function(field){
+			const empty = field.type === 'file'
+				? field.files.length === 0
+				: !field.value.trim();
+
+			field.classList.toggle('field-invalid', empty);
+			if (empty && !firstInvalid) firstInvalid = field;
+		});
+
+		const email = document.getElementById('email');
+		const password = document.getElementById('password');
+		const confirmPassword = document.getElementById('confirm_password');
+
+		if (!email.validity.valid) {
+			email.classList.add('field-invalid');
+			if (!firstInvalid) firstInvalid = email;
+		}
+		if (password.value.length < 8) {
+			password.classList.add('field-invalid');
+			if (!firstInvalid) firstInvalid = password;
+		}
+		if (confirmPassword.value !== password.value) {
+			confirmPassword.classList.add('field-invalid');
+			if (!firstInvalid) firstInvalid = confirmPassword;
+		}
+
+		if (firstInvalid) {
+			e.preventDefault();
+			firstInvalid.focus();
+		}
+	});
+
+	regForm.addEventListener('input', function(e){
+		if (e.target.matches('[required]')) e.target.classList.remove('field-invalid');
+	});
+	regForm.addEventListener('change', function(e){
+		if (e.target.matches('[required]')) e.target.classList.remove('field-invalid');
+	});
+
 	function togglePw(id,ic){const e=document.getElementById(id),i=document.getElementById(ic);e.type=e.type==='password'?'text':'password';i.className=e.type==='password'?'fa-solid fa-eye':'fa-solid fa-eye-slash';}
 	function previewPhoto(input){if(input.files&&input.files[0]){const r=new FileReader();r.onload=e=>{const img=document.getElementById('photoImg'),ic=document.getElementById('phIcon');img.src=e.target.result;img.style.display='block';ic.style.display='none';};r.readAsDataURL(input.files[0]);}}
 	function checkStrength(v){const b=document.getElementById('strengthFill'),l=document.getElementById('strengthLabel'),w=document.getElementById('pwStrength');w.style.display='block';let s=0;if(v.length>=8)s++;if(/[A-Z]/.test(v))s++;if(/[0-9]/.test(v))s++;if(/[^A-Za-z0-9]/.test(v))s++;const lv=[{w:'20%',bg:'#f87171',lb:'Weak'},{w:'45%',bg:'#fb923c',lb:'Fair'},{w:'70%',bg:'#facc15',lb:'Good'},{w:'100%',bg:'#4ade80',lb:'Strong'}][Math.max(0,s-1)];b.style.width=lv.w;b.style.background=lv.bg;l.textContent=lv.lb;l.style.color=lv.bg;}
-	document.getElementById('regForm').addEventListener('input',function(){const hp=document.getElementById('full_name').value.trim()&&document.getElementById('username').value.trim();const hs=document.getElementById('password').value.length>=8;document.getElementById('step1').className=hp?'step done':'step active';document.getElementById('step2').className=hs?'step done':(hp?'step active':'step');});
 	</script>
 	</body>
 	</html>

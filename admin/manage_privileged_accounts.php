@@ -708,8 +708,12 @@ tbody td{padding:14px 16px;font-size:14px;vertical-align:middle;}
 .btn-icon.block:hover{background:var(--danger-bg);}
 .btn-icon.edit:hover{border-color:var(--accent-border);color:#93C5FD;}
 .btn-icon.key:hover{border-color:var(--amber-border);color:var(--amber);}
-.btn-icon.toggle:hover{border-color:var(--success-border);color:var(--success);}
+.btn-icon.toggle-on{border-color:var(--success-border);color:var(--success);}
+.btn-icon.toggle-on:hover{background:var(--success-bg);}
+.btn-icon.toggle-off{border-color:var(--amber-border);color:var(--amber);}
+.btn-icon.toggle-off:hover{background:var(--amber-bg);}
 .btn-icon.danger:hover{border-color:var(--danger-border);color:var(--danger);}
+.action-divider{display:inline-block;width:1px;align-self:stretch;margin:2px 5px;background:var(--card-border);}
 
 .empty-state{text-align:center;padding:56px 20px;color:var(--text-dim);}
 .empty-state i{font-size:40px;margin-bottom:14px;display:block;opacity:.3;}
@@ -772,8 +776,8 @@ tbody td{padding:14px 16px;font-size:14px;vertical-align:middle;}
   --danger:#D6455D; --success:#0F9F6E; --radius:12px;
   --card-shadow:0 2px 4px rgba(30,82,144,.06),0 6px 16px rgba(30,82,144,.08);
 }
-html{background:#fff;color-scheme:light;}
-body{background:#fff !important;color:#0B1F3A !important;}
+html{background:#FFFFFF;color-scheme:light;}
+body{background:#FFFFFF !important;color:#0B1F3A !important;}
 a{color:inherit;}
 .page-header h1,.page-title,.et-title,.section-title{color:#0B1F3A !important;}
 .page-header p,.page-sub,.et-sub,.et-updated,.muted,.hint{color:#67819E !important;}
@@ -842,6 +846,70 @@ a { color:inherit; }
 </style>
     <link rel="stylesheet" href="admin_ui_theme.css">
     <link rel="stylesheet" href="admin_compact_ui.css">
+<style id="pbi-feature-scrollbar">
+
+/* PBI FEATURE SCROLLBAR — consistent with the compact page scrollbar */
+html, body {
+  scrollbar-width: thin !important;
+  scrollbar-color: #888 transparent !important;
+}
+html::-webkit-scrollbar, body::-webkit-scrollbar,
+.feature-compact ::-webkit-scrollbar {
+  width: 10px !important;
+  height: 10px !important;
+}
+html::-webkit-scrollbar-track, body::-webkit-scrollbar-track,
+.feature-compact ::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb,
+.feature-compact ::-webkit-scrollbar-thumb {
+  background: #888 !important;
+  border-radius: 999px !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
+}
+html::-webkit-scrollbar-thumb:hover, body::-webkit-scrollbar-thumb:hover,
+.feature-compact ::-webkit-scrollbar-thumb:hover {
+  background: #777 !important;
+  background-clip: padding-box !important;
+}
+html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
+.feature-compact ::-webkit-scrollbar-button {
+  display: block !important;
+  width: 10px !important;
+  height: 10px !important;
+  background-color: transparent !important;
+}
+/* Small native-looking arrow hints on classic scrollbars */
+html::-webkit-scrollbar-button:single-button:vertical:decrement,
+body::-webkit-scrollbar-button:single-button:vertical:decrement,
+.feature-compact ::-webkit-scrollbar-button:single-button:vertical:decrement {
+  background:
+    linear-gradient(135deg, transparent 50%, #777 50%) 3px 5px/5px 5px no-repeat !important;
+}
+html::-webkit-scrollbar-button:single-button:vertical:increment,
+body::-webkit-scrollbar-button:single-button:vertical:increment,
+.feature-compact ::-webkit-scrollbar-button:single-button:vertical:increment {
+  background:
+    linear-gradient(315deg, transparent 50%, #777 50%) 3px 0/5px 5px no-repeat !important;
+}
+html::-webkit-scrollbar-button:single-button:horizontal:decrement,
+body::-webkit-scrollbar-button:single-button:horizontal:decrement,
+.feature-compact ::-webkit-scrollbar-button:single-button:horizontal:decrement {
+  background:
+    linear-gradient(45deg, transparent 50%, #777 50%) 5px 3px/5px 5px no-repeat !important;
+}
+html::-webkit-scrollbar-button:single-button:horizontal:increment,
+body::-webkit-scrollbar-button:single-button:horizontal:increment,
+.feature-compact ::-webkit-scrollbar-button:single-button:horizontal:increment {
+  background:
+    linear-gradient(225deg, transparent 50%, #777 50%) 0 3px/5px 5px no-repeat !important;
+}
+
+</style>
+<link rel="stylesheet" href="admin_appearance.css">
+<script src="admin_appearance.js"></script>
 </head>
 <body class="feature-compact">
 
@@ -860,26 +928,6 @@ a { color:inherit; }
         <p>Review self-registered accounts and approve or block access — Executive Assistant, School Head, Principal, Dean, Faculty, Staff, and Student</p>
     </div>
 </div>
-
-<div class="info-banner">
-    <i class="fa-solid fa-circle-info"></i>
-    <span>
-        Everyone registers their own account. New registrations start as <strong>Pending</strong> and can't log in until you
-        approve them here. You can approve or block accounts one at a time or in bulk, and revisit a decision any time —
-        approving un-blocks, blocking revokes access.
-    </span>
-</div>
-
-<?php if (($viewRole === 'teacher' || $viewRole === 'staff') && $active_period_semester === null): ?>
-<div class="info-banner" style="background:#3f1d1d;border-color:#7f1d1d;color:#fca5a5;">
-    <i class="fa-solid fa-triangle-exclamation"></i>
-    <span>
-        <strong>No evaluation period is currently active.</strong> Until one is turned on in Manage Periods, no College
-        Faculty or Staff will be visible to any student for evaluation — regardless of their year level or period
-        assignment below.
-    </span>
-</div>
-<?php endif; ?>
 
 <div class="sector-tabs">
     <?php foreach ($valid_roles as $r):
@@ -1046,15 +1094,12 @@ a { color:inherit; }
                 <?php endif; ?>
                 <?php endif; ?>
                 <?php if ($u['account_status'] === 'approved'): ?>
-                <form method="POST" action="manage_privileged_accounts.php?role=<?= $viewRole ?>&status=<?= $viewStatus ?><?= $ylFilter ? '&yl='.urlencode($ylFilter) : '' ?><?= $levelFilter ? '&level='.urlencode($levelFilter) : '' ?>" style="display:inline;">
-                    <input type="hidden" name="action" value="toggle_active"/>
-                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>"/>
-                    <input type="hidden" name="toggle_id" value="<?= $u['id'] ?>"/>
-                    <button type="submit" class="btn-icon toggle" title="<?= $u['is_active']?'Deactivate':'Activate' ?>">
-                        <i class="fa-solid <?= $u['is_active']?'fa-user-slash':'fa-user-check' ?>"></i>
-                    </button>
-                </form>
+                <button class="btn-icon <?= $u['is_active'] ? 'toggle-off' : 'toggle-on' ?>" title="<?= $u['is_active']?'Deactivate':'Activate' ?>"
+                        onclick='openToggleModal(<?= $u["id"] ?>, <?= json_encode($u["full_name"], JSON_HEX_APOS | JSON_HEX_QUOT) ?>, <?= $u['is_active'] ? 'true' : 'false' ?>)'>
+                    <i class="fa-solid <?= $u['is_active']?'fa-user-slash':'fa-user-check' ?>"></i>
+                </button>
                 <?php endif; ?>
+                <span class="action-divider"></span>
                 <button class="btn-icon danger" title="Delete"
                         onclick="confirmDelete(<?= $u['id'] ?>, '<?= htmlspecialchars(addslashes($u['full_name'])) ?>')">
                     <i class="fa-solid fa-trash-can"></i>
@@ -1220,6 +1265,7 @@ a { color:inherit; }
         <input type="hidden" name="action" id="confirmActionInput"/>
         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>"/>
         <input type="hidden" name="user_id" id="confirmSingleUserId"/>
+        <input type="hidden" name="toggle_id" id="confirmToggleIdInput"/>
         <div id="confirmBulkIdsContainer"></div>
         <div class="modal-actions">
             <button type="button" class="btn-cancel" onclick="closeModal('confirmModal')">Cancel</button>
@@ -1358,25 +1404,35 @@ function openPeriodModal(u){
     openModal('periodModal');
 }
 
-// ── SINGLE approve/block confirmation ──────────────────────────
+// ── SINGLE approve/block/toggle confirmation ───────────────────
 function openConfirmModal(action, ids, message){
-    document.getElementById('confirmTitle').textContent = action === 'approve_account' || action === 'bulk_approve' ? 'Approve Account' : 'Block Account';
+    const titles = {approve_account:'Approve Account', bulk_approve:'Approve Accounts', block_account:'Block Account', bulk_block:'Block Accounts', toggle_active_on:'Activate Account', toggle_active_off:'Deactivate Account'};
+    document.getElementById('confirmTitle').textContent = titles[action] || 'Confirm';
     document.getElementById('confirmText').textContent = message;
-    document.getElementById('confirmActionInput').value = action;
+    document.getElementById('confirmActionInput').value = action === 'toggle_active_on' || action === 'toggle_active_off' ? 'toggle_active' : action;
 
     const btn = document.getElementById('confirmSubmitBtn');
-    const isApprove = action.includes('approve');
-    btn.className = isApprove ? 'btn-confirm-approve' : 'btn-confirm-del';
-    btn.textContent = isApprove ? 'Yes, Approve' : 'Yes, Block';
+    const btnStyles = {
+        approve_account:['btn-confirm-approve','Yes, Approve'], bulk_approve:['btn-confirm-approve','Yes, Approve'],
+        block_account:['btn-confirm-del','Yes, Block'], bulk_block:['btn-confirm-del','Yes, Block'],
+        toggle_active_on:['btn-confirm-approve','Yes, Activate'], toggle_active_off:['btn-confirm-del','Yes, Deactivate']
+    };
+    const [cls, label] = btnStyles[action] || ['btn-confirm-approve','Yes, Confirm'];
+    btn.className = cls;
+    btn.textContent = label;
 
     const singleField = document.getElementById('confirmSingleUserId');
+    const toggleField = document.getElementById('confirmToggleIdInput');
     const bulkContainer = document.getElementById('confirmBulkIdsContainer');
     bulkContainer.innerHTML = '';
+    singleField.value = '';
+    toggleField.value = '';
 
     if (action === 'approve_account' || action === 'block_account') {
         singleField.value = ids[0];
+    } else if (action === 'toggle_active_on' || action === 'toggle_active_off') {
+        toggleField.value = ids[0];
     } else {
-        singleField.value = '';
         ids.forEach(id => {
             const inp = document.createElement('input');
             inp.type = 'hidden'; inp.name = 'user_ids[]'; inp.value = id;
@@ -1384,6 +1440,14 @@ function openConfirmModal(action, ids, message){
         });
     }
     openModal('confirmModal');
+}
+
+function openToggleModal(id, name, isActive){
+    const action = isActive ? 'toggle_active_off' : 'toggle_active_on';
+    const message = isActive
+        ? `Deactivate ${name}'s account? They will lose access until reactivated — this is reversible any time.`
+        : `Activate ${name}'s account? They will be able to log in again immediately.`;
+    openConfirmModal(action, [id], message);
 }
 
 function bulkConfirm(action){

@@ -26,5 +26,4 @@ if ($col && stripos($col['Type'], 'enum') !== false) {
 }
 $mysqli->query("ALTER TABLE users ADD COLUMN IF NOT EXISTS employee_id VARCHAR(50) NULL");
 
-// ---- Shared service layer ----
-require_once dirname(__DIR__) . '/shared/AuthenticationService.php';
+

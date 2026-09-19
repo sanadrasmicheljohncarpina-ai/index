@@ -74,6 +74,19 @@ $lvlRes = $lvlQ->get_result();
 while ($lr = $lvlRes->fetch_assoc()) $my_levels[] = $lr['year_level'];
 $lvlQ->close();
 
+// ── DEAN/PRINCIPAL EVALUATOR ELIGIBILITY (by own teaching assignment) ──
+// Mirrors the admin-side Dean/Principal Evaluation targeting rule
+// (Principal <- Faculty/Teaching Staff assigned to Grade 7-12, Dean <-
+// assigned to College): a Faculty/Teaching Staff member's teaching
+// assignment(s) determine which of the two they're allowed to evaluate
+// here. JHS/SHS assignment -> can evaluate the Principal only. College
+// assignment -> can evaluate the Dean only. Assigned to both at once ->
+// can evaluate both. No assignment at all -> can evaluate neither yet.
+$jhs_shs_levels          = ['Grade 7','Grade 8','Grade 9','Grade 10','Grade 11','Grade 12'];
+$dean_principal_college_levels = ['1st Year College','2nd Year College','3rd Year College','4th Year College'];
+$can_evaluate_principal  = (bool) array_intersect($my_levels, $jhs_shs_levels);
+$can_evaluate_dean       = (bool) array_intersect($my_levels, $dean_principal_college_levels);
+
 // ── ACTIVE PERIOD ─────────────────────────────────────────────
 $period = null;
 $pr = $mysqli->query("SELECT * FROM evaluation_periods WHERE is_active=1 LIMIT 1");
@@ -206,15 +219,19 @@ function eval_type_label($eval_type, $peer_group = null) {
     switch ($eval_type) {
         case 'student':               return 'Student Evaluation';
         case 'peer':
-        case 'faculty_peer':          return 'Evaluation' . ($peer_group ? ' (' . $peer_group . ')' : '');
-        case 'school_head':           return 'School Head Evaluation';
+        case 'faculty_peer':          return 'Peer-to-Peer Evaluation' . ($peer_group ? ' (' . $peer_group . ')' : '');
+        case 'school_head':           return 'Dean / Principal Peer Evaluation';
         case 'supervisor_to_teacher':
         case 'supervisor_to_staff':                              return 'Supervisor Evaluation';
         case 'upward_to_ea':                                     return 'Executive Assistant Review';
         default:                      return ucwords(str_replace('_', ' ', $eval_type ?: 'Evaluation'));
     }
 }
-$peer_group_labels = ['teacher' => 'Faculty', 'staff' => 'Staff', 'school_head' => 'School Head'];
+$peer_group_labels = ['teacher' => 'Faculty', 'staff' => 'Staff', 'school_head' => 'Dean / Principal', 'principal' => 'Principal', 'dean' => 'Dean'];
+$peer_school_head_display = 'Dean / Principal';
+// Group values that route through the same Dean/Principal targeting +
+// question-source pipeline as the old combined 'school_head' group.
+$school_head_groups = ['principal', 'dean'];
 
 // ── ADD peer_group COLUMN TO evaluation_tracker (idempotent) ──
 // Shared table with the staff dashboard — the column may already exist
@@ -230,39 +247,57 @@ if ($colChk && $colChk->num_rows === 0) {
 // worked with. Step 2: pick a specific person from that filtered list.
 $peers_all       = [];   // eligible faculty/staff peers for the Teacher/Staff tabs
 $peers            = [];   // targets shown for the selected evaluation group
-$school_heads     = [];   // Dean + Principal targets for the School Head tab
+$school_heads     = [];   // Dean + Principal targets for the Dean / Principal tab
+$principal_targets = [];  // subset of $school_heads with role='principal'
+$dean_targets       = []; // subset of $school_heads with role='dean'
 $done_peers       = [];
 $done_school_heads = [];
 $peer_group       = null; // 'teacher' | 'staff' | 'school_head' | null
 
 if ($page === 'peer') {
-    $pr2 = $mysqli->prepare("SELECT id, full_name, designation, photo, role, secondary_role FROM users WHERE role IN ('teacher','staff','faculty') AND is_active=1 AND id != ? ORDER BY full_name ASC");
+    $pr2 = $mysqli->prepare("SELECT id, full_name, designation, photo, role, secondary_role FROM users WHERE role IN ('teacher','staff','faculty') AND is_active=1 AND account_status='approved' AND id != ? ORDER BY full_name ASC");
     $pr2->bind_param("i", $user_id);
     $pr2->execute();
     $pr2res = $pr2->get_result();
     if ($pr2res) $peers_all = $pr2res->fetch_all(MYSQLI_ASSOC);
     $pr2->close();
 
-    // School Heads come from the same users source used by the
+    // Dean / Principal targets come from the same users source used by the
     // Questionnaire / privileged-account feature.  Do not infer school-head
     // status from the free-text designation: the account role is the source
-    // of truth. Only active, approved Principal/Dean accounts are eligible.
-    $sh = $mysqli->prepare("
-        SELECT id, full_name, designation, photo, role
-        FROM users
-        WHERE role IN ('principal','dean')
-          AND is_active=1
-          AND account_status='approved'
-          AND id != ?
-        ORDER BY
-          CASE WHEN role='dean' THEN 1 ELSE 2 END,
-          full_name ASC
-    ");
-    $sh->bind_param("i", $user_id);
-    $sh->execute();
-    $shRes = $sh->get_result();
-    if ($shRes) $school_heads = $shRes->fetch_all(MYSQLI_ASSOC);
-    $sh->close();
+    // of truth. Only active, approved Principal/Dean accounts are eligible —
+    // and only for the roles this evaluator's own teaching assignment
+    // qualifies them for (see $can_evaluate_principal / $can_evaluate_dean
+    // above).
+    $eligible_sh_roles = [];
+    if ($can_evaluate_principal) $eligible_sh_roles[] = 'principal';
+    if ($can_evaluate_dean)      $eligible_sh_roles[] = 'dean';
+
+    if (!empty($eligible_sh_roles)) {
+        $roleSlots = implode(',', array_fill(0, count($eligible_sh_roles), '?'));
+        $sh = $mysqli->prepare("
+            SELECT id, full_name, designation, photo, role
+            FROM users
+            WHERE role IN ($roleSlots)
+              AND is_active=1
+              AND account_status='approved'
+              AND id != ?
+            ORDER BY
+              CASE WHEN role='dean' THEN 1 ELSE 2 END,
+              full_name ASC
+        ");
+        $shTypes = str_repeat('s', count($eligible_sh_roles)) . 'i';
+        $shArgs  = $eligible_sh_roles;
+        $shArgs[] = $user_id;
+        $sh->bind_param($shTypes, ...$shArgs);
+        $sh->execute();
+        $shRes = $sh->get_result();
+        if ($shRes) $school_heads = $shRes->fetch_all(MYSQLI_ASSOC);
+        $sh->close();
+    }
+
+    $principal_targets = array_values(array_filter($school_heads, fn($t) => strtolower($t['role'] ?? '') === 'principal'));
+    $dean_targets       = array_values(array_filter($school_heads, fn($t) => strtolower($t['role'] ?? '') === 'dean'));
 
     if ($period) {
         $period_id_int = (int)$period['id'];
@@ -274,7 +309,7 @@ if ($page === 'peer') {
         if ($dp) while ($r = $dp->fetch_assoc()) $done_peers[] = (int)$r['target_user_id'];
         $dpStmt->close();
 
-        $shDone = $mysqli->prepare("SELECT target_user_id FROM evaluation_tracker WHERE evaluator_id=? AND period_id=? AND eval_type='school_head'");
+        $shDone = $mysqli->prepare("SELECT target_user_id FROM evaluation_tracker WHERE evaluator_id=? AND period_id=? AND eval_type IN ('faculty_peer','school_head') AND (peer_group IN ('Dean / Principal','School Head','Principal','Dean') OR peer_group IS NULL)");
         $shDone->bind_param("ii", $user_id, $period_id_int);
         $shDone->execute();
         $shDoneRes = $shDone->get_result();
@@ -282,11 +317,13 @@ if ($page === 'peer') {
         $shDone->close();
     }
 
-    if (isset($_GET['group']) && in_array($_GET['group'], ['teacher', 'staff', 'school_head'], true)) {
+    if (isset($_GET['group']) && in_array($_GET['group'], ['teacher', 'staff', 'principal', 'dean'], true)) {
         $peer_group = $_GET['group'];
 
-        if ($peer_group === 'school_head') {
-            $peers = $school_heads;
+        if (in_array($peer_group, $school_head_groups, true)) {
+            $peers = array_values(array_filter($school_heads, function ($p) use ($peer_group) {
+                return strtolower($p['role'] ?? '') === $peer_group;
+            }));
         } else {
             // Classify with the same shared predicates + DB-backed
             // "Non-Teaching Staff" check admin/questionnaire.php's own
@@ -311,24 +348,29 @@ if ($page === 'peer_eval' && isset($_GET['tid'])) {
     $tid = intval($_GET['tid']);
     $req_group = $_GET['group'] ?? null;
 
-    $tu = $mysqli->prepare("SELECT * FROM users WHERE id=? AND is_active=1 LIMIT 1");
+    $tu = $mysqli->prepare("SELECT * FROM users WHERE id=? AND is_active=1 AND account_status='approved' LIMIT 1");
     $tu->bind_param("i", $tid);
     $tu->execute();
     $peer_target = $tu->get_result()->fetch_assoc();
     $tu->close();
 
-    if ($peer_target && !in_array($req_group, ['teacher', 'staff', 'school_head'], true)) {
+    if ($peer_target && !in_array($req_group, ['teacher', 'staff', 'principal', 'dean'], true)) {
         $peer_group_error = "Please select an evaluation group.";
         $peer_target = null;
     } elseif ($peer_target) {
-        if ($req_group === 'school_head') {
+        if (in_array($req_group, $school_head_groups, true)) {
             $targetRole = strtolower(trim($peer_target['role'] ?? ''));
-            $isSchoolHead = in_array($targetRole, ['dean', 'principal'], true);
-            if (!$isSchoolHead) {
-                $peer_group_error = "The selected user is not a Dean or Principal.";
+            $roleEligible = $req_group === 'principal' ? $can_evaluate_principal : $can_evaluate_dean;
+            if ($targetRole !== $req_group) {
+                $peer_group_error = "The selected user is not the " . ($req_group === 'principal' ? 'Principal' : 'Dean') . ".";
+                $peer_target = null;
+            } elseif (!$roleEligible) {
+                $peer_group_error = $req_group === 'principal'
+                    ? "Evaluating the Principal is only available to Faculty/Teaching Staff with a Grade 7-12 teaching assignment."
+                    : "Evaluating the Dean is only available to Faculty/Teaching Staff with a College teaching assignment.";
                 $peer_target = null;
             } else {
-                $peer_eval_group = 'school_head';
+                $peer_eval_group = $req_group;
             }
         } else {
             $actual_group = resolve_peer_group($mysqli, $peer_target);
@@ -342,7 +384,7 @@ if ($page === 'peer_eval' && isset($_GET['tid'])) {
     }
 
     if ($peer_target) {
-        $form_type = ($peer_eval_group === 'school_head') ? 'school_head' : 'faculty_peer';
+        $form_type = 'faculty_peer';
         $fu = $mysqli->prepare("SELECT id FROM questionnaire_forms WHERE eval_type=? AND is_active=1 ORDER BY id DESC LIMIT 1");
         $fu->bind_param("s", $form_type);
         $fu->execute();
@@ -353,48 +395,43 @@ if ($page === 'peer_eval' && isset($_GET['tid'])) {
         }
         $fu->close();
 
-        // Questionnaire is the source of truth for Evaluation questions.
-        // Prefer questions assigned directly to this exact user. The
-        // target_type is intentionally not used for normal faculty/staff
-        // lookups because the Questionnaire feature may label a person as
-        // Faculty, Teacher, Staff, etc.; user_id + eval_type identifies the
-        // actual assignment.
-        if ($peer_eval_group === 'school_head') {
-            $targetType = (strtolower($peer_target['role'] ?? '') === 'dean') ? 'Dean' : 'Principal';
+        // Questionnaire is the single source of truth for Peer-to-Peer questions.
+        // Mirror admin/questionnaire.php exactly:
+        //   Faculty -> shared evaluation_questions (Teacher / peer)
+        //   Staff -> per-user user_questions (Staff / peer)
+        //   Dean/Principal -> per-user user_questions (School / peer)
+        if (in_array($peer_eval_group, $school_head_groups, true)) {
             $qs = $mysqli->prepare("
                 SELECT * FROM user_questions
-                WHERE user_id=? AND target_type=? AND eval_type='school_head'
-                ORDER BY category ASC, sort_order ASC, id ASC
-            ");
-            $qs->bind_param("is", $tid, $targetType);
-            $qs->execute();
-            $peer_questions = $qs->get_result()->fetch_all(MYSQLI_ASSOC);
-            $qs->close();
-        } else {
-            $qs = $mysqli->prepare("
-                SELECT * FROM user_questions
-                WHERE user_id=? AND eval_type='peer'
+                WHERE user_id=? AND target_type='School' AND eval_type='peer'
                 ORDER BY category ASC, sort_order ASC, id ASC
             ");
             $qs->bind_param("i", $tid);
             $qs->execute();
             $peer_questions = $qs->get_result()->fetch_all(MYSQLI_ASSOC);
             $qs->close();
-
-            // Backward-compatible shared questionnaire fallback. It is used
-            // only when this specific user has no Questionnaire assignment.
-            if (empty($peer_questions)) {
-                $fallbackTarget = ($peer_eval_group === 'teacher') ? 'Teacher' : 'Staff';
-                $qs = $mysqli->prepare("
-                    SELECT * FROM evaluation_questions
-                    WHERE target_type=? AND eval_type='peer' AND is_active=1
-                    ORDER BY category ASC, id ASC
-                ");
-                $qs->bind_param("s", $fallbackTarget);
-                $qs->execute();
-                $peer_questions = $qs->get_result()->fetch_all(MYSQLI_ASSOC);
-                $qs->close();
-            }
+        } elseif ($peer_eval_group === 'staff') {
+            $qs = $mysqli->prepare("
+                SELECT * FROM user_questions
+                WHERE user_id=? AND target_type='Staff' AND eval_type='peer'
+                ORDER BY category ASC, sort_order ASC, id ASC
+            ");
+            $qs->bind_param("i", $tid);
+            $qs->execute();
+            $peer_questions = $qs->get_result()->fetch_all(MYSQLI_ASSOC);
+            $qs->close();
+        } else {
+            // Faculty is the shared Peer-to-Peer questionnaire bank.
+            // Do not fall back to per-user questions: that would bypass the
+            // questionnaire configured by the admin.
+            $qs = $mysqli->prepare("
+                SELECT * FROM evaluation_questions
+                WHERE target_type='Teacher' AND eval_type='peer' AND is_active=1
+                ORDER BY category ASC, id ASC
+            ");
+            $qs->execute();
+            $peer_questions = $qs->get_result()->fetch_all(MYSQLI_ASSOC);
+            $qs->close();
         }
 
     }
@@ -485,13 +522,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_peer'])) {
     $ratings = $_POST['ratings'] ?? [];
     $comment = trim($_POST['comment'] ?? '');
 
-    if (!in_array($submitted_group, ['teacher', 'staff', 'school_head'], true)) {
+    if (!in_array($submitted_group, ['teacher', 'staff', 'principal', 'dean'], true)) {
         $_SESSION['toast_error'] = "Please select an evaluation group.";
         header("Location: faculty_dashboard.php?page=peer"); exit;
     }
 
-    $eval_type = ($submitted_group === 'school_head') ? 'school_head' : 'faculty_peer';
-    $form_type = ($submitted_group === 'school_head') ? 'school_head' : 'faculty_peer';
+    $eval_type = 'faculty_peer';
+    $form_type = 'faculty_peer';
     $fid = 0;
 
     $formStmt = $mysqli->prepare("SELECT id FROM questionnaire_forms WHERE eval_type=? AND is_active=1 ORDER BY id DESC LIMIT 1");
@@ -511,10 +548,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_peer'])) {
         header("Location: faculty_dashboard.php?page=peer&group=" . urlencode($submitted_group)); exit;
     }
 
-    // Re-validate the target server-side. School Head targets are strictly
-    // limited to Dean/Principal; normal faculty evaluation keeps its
-    // existing Teacher/Staff eligibility rules.
-    if ($submitted_group === 'school_head') {
+    // Re-validate the target server-side. Dean/Principal targets are strictly
+    // limited to the specific role requested, and the evaluator must
+    // currently be eligible for that role by their own teaching assignment —
+    // re-derived here (not trusted from the submitted form), since an
+    // assignment can change between page load and submit.
+    if (in_array($submitted_group, $school_head_groups, true)) {
+        $roleEligible = $submitted_group === 'principal' ? $can_evaluate_principal : $can_evaluate_dean;
+        if (!$roleEligible) {
+            $_SESSION['toast_error'] = $submitted_group === 'principal'
+                ? "Evaluating the Principal is only available to Faculty/Teaching Staff with a Grade 7-12 teaching assignment."
+                : "Evaluating the Dean is only available to Faculty/Teaching Staff with a College teaching assignment.";
+            header("Location: faculty_dashboard.php?page=peer"); exit;
+        }
+
         $tchk = $mysqli->prepare("SELECT id, full_name, designation, role FROM users WHERE id=? AND is_active=1 LIMIT 1");
         $tchk->bind_param("i", $tid);
         $tchk->execute();
@@ -522,23 +569,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_peer'])) {
         $tchk->close();
 
         $targetRole = strtolower(trim($tchkRow['role'] ?? ''));
-        $isSchoolHead = $tchkRow && in_array($targetRole, ['dean', 'principal'], true);
 
-        if (!$tchkRow || !$isSchoolHead || $tid === (int)$user_id) {
-            $_SESSION['toast_error'] = "The selected School Head is no longer available.";
-            header("Location: faculty_dashboard.php?page=peer&group=school_head"); exit;
+        if (!$tchkRow || $targetRole !== $submitted_group || $tid === (int)$user_id) {
+            $_SESSION['toast_error'] = "The selected " . ($submitted_group === 'principal' ? 'Principal' : 'Dean') . " is no longer available.";
+            header("Location: faculty_dashboard.php?page=peer&group=" . urlencode($submitted_group)); exit;
         }
 
-        // The Questionnaire feature is the sole source of valid School Head
-        // questions. The target_type is tied to the actual role so Dean and
-        // Principal question sets cannot be mixed.
-        $targetType = ($targetRole === 'dean') ? 'Dean' : 'Principal';
+        // Peer-to-Peer Questionnaire -> Dean / Principal uses the per-user
+        // School target under eval_type='peer'. This is deliberately separate
+        // from the Dean/Principal Evaluation (school_head) questionnaire.
         $validQStmt = $mysqli->prepare("
             SELECT id
             FROM user_questions
-            WHERE user_id=? AND target_type=? AND eval_type='school_head'
+            WHERE user_id=? AND target_type='School' AND eval_type='peer'
         ");
-        $validQStmt->bind_param("is", $tid, $targetType);
+        $validQStmt->bind_param("i", $tid);
         $validQStmt->execute();
         $validQRes = $validQStmt->get_result();
         $valid_question_ids = [];
@@ -547,8 +592,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_peer'])) {
         $question_source = 'user';
 
         if (empty($valid_question_ids)) {
-            $_SESSION['toast_error'] = "No School Head questions have been assigned to this " . $targetType . " in Questionnaire.";
-            header("Location: faculty_dashboard.php?page=peer&group=school_head"); exit;
+            $_SESSION['toast_error'] = "No " . ($submitted_group === 'principal' ? 'Principal' : 'Dean') . " questions have been assigned to this target in the Peer-to-Peer Questionnaire.";
+            header("Location: faculty_dashboard.php?page=peer&group=" . urlencode($submitted_group)); exit;
         }
     } else {
         [$eligible, $eligMsg] = canPeerEvaluate($mysqli, $user_id, $tid);
@@ -568,25 +613,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_peer'])) {
             header("Location: faculty_dashboard.php?page=peer&group=" . urlencode($submitted_group)); exit;
         }
 
-        // Match the exact question source used to build the form.
-        $validQStmt = $mysqli->prepare("SELECT id FROM user_questions WHERE user_id=? AND eval_type='peer'");
-        $validQStmt->bind_param("i", $tid);
-        $validQStmt->execute();
-        $validQRes = $validQStmt->get_result();
+        // Match the exact Peer-to-Peer Questionnaire source used to build
+        // the form. Faculty is the shared Teacher pool; Staff is the selected
+        // person's Staff pool.
         $valid_question_ids = [];
-        if ($validQRes) while ($vq = $validQRes->fetch_assoc()) $valid_question_ids[] = (int)$vq['id'];
-        $validQStmt->close();
-        $question_source = 'user';
-
-        if (empty($valid_question_ids)) {
-            $fallbackTarget = ($submitted_group === 'teacher') ? 'Teacher' : 'Staff';
-            $validQStmt = $mysqli->prepare("SELECT id FROM evaluation_questions WHERE target_type=? AND eval_type='peer' AND is_active=1");
-            $validQStmt->bind_param("s", $fallbackTarget);
+        if ($submitted_group === 'teacher') {
+            $validQStmt = $mysqli->prepare("SELECT id FROM evaluation_questions WHERE target_type='Teacher' AND eval_type='peer' AND is_active=1");
             $validQStmt->execute();
             $validQRes = $validQStmt->get_result();
             if ($validQRes) while ($vq = $validQRes->fetch_assoc()) $valid_question_ids[] = (int)$vq['id'];
             $validQStmt->close();
             $question_source = 'evaluation';
+        } else {
+            $validQStmt = $mysqli->prepare("SELECT id FROM user_questions WHERE user_id=? AND target_type='Staff' AND eval_type='peer'");
+            $validQStmt->bind_param("i", $tid);
+            $validQStmt->execute();
+            $validQRes = $validQStmt->get_result();
+            if ($validQRes) while ($vq = $validQRes->fetch_assoc()) $valid_question_ids[] = (int)$vq['id'];
+            $validQStmt->close();
+            $question_source = 'user';
         }
     }
 
@@ -637,8 +682,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_peer'])) {
 
             $mysqli->commit();
 
-            $notif_msg = ($submitted_group === 'school_head')
-                ? "You have received a new School Head evaluation."
+            $notif_msg = in_array($submitted_group, $school_head_groups, true)
+                ? "You have received a new " . ($submitted_group === 'principal' ? 'Principal' : 'Dean') . " evaluation."
                 : "You have received a new evaluation.";
             $nins = $mysqli->prepare("INSERT INTO notifications (type, user_id, message) VALUES ('evaluation_received', ?, ?)");
             $nins->bind_param("is", $tid, $notif_msg);
@@ -999,12 +1044,22 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .q-card-new{background:var(--mid);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:10px;}
 .q-no-new{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:5px;font-weight:700;}
 .q-text-new{font-size:14px;font-weight:600;color:#fff;margin-bottom:14px;line-height:1.5;}
-.rating-row-new{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;}
-.r-btn-new{padding:11px 5px;background:var(--inner);border:1px solid var(--border);border-radius:8px;color:var(--muted);font-size:14px;font-weight:800;cursor:pointer;transition:all .18s;text-align:center;font-family:'DM Sans',sans-serif;}
-.r-btn-new .r-lbl-new{display:block;font-size:10px;font-weight:600;margin-top:3px;letter-spacing:.4px;}
-.r-btn-new:hover{border-color:var(--teal);color:var(--teal-hover);background:rgba(13,148,136,.1);}
-.r-btn-new.sel{background:var(--teal);border-color:var(--teal);color:#fff;}
-.r-btn-new.sel .r-lbl-new{color:rgba(255,255,255,.8);}
+.eval-form-wrap{background:var(--mid);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin:0 0 10px}
+.eval-form-table{width:100%;border-collapse:collapse;table-layout:fixed}
+.eval-form-table th{background:rgba(255,255,255,.04);color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;text-align:center;padding:10px 6px;border-bottom:1px solid var(--border)}
+.eval-form-table th:first-child{text-align:left;width:auto;padding-left:16px}
+.eval-form-table th:not(:first-child){width:56px}
+.eval-form-table td{padding:12px 6px;border-bottom:1px solid var(--border);vertical-align:middle;text-align:center}
+.eval-form-table tr:last-child td{border-bottom:none}
+.eval-form-table td:first-child{text-align:left;padding-left:16px;padding-right:12px}
+.eval-form-qtext{font-size:13px;font-weight:600;line-height:1.5;color:var(--light)}
+.eval-form-qno{color:var(--teal-hover);font-weight:800;margin-right:6px}
+.eval-form-rating{display:flex;justify-content:center}
+.eval-form-rating input{position:absolute;opacity:0;pointer-events:none}
+.eval-form-rating label{width:38px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:8px;border:1px solid var(--border);background:var(--inner);color:var(--muted);font-size:14px;font-weight:800;cursor:pointer;transition:all .18s ease;font-family:'DM Sans',sans-serif}
+.eval-form-rating label:hover{border-color:var(--teal);color:var(--teal-hover);background:rgba(13,148,136,.1)}
+.eval-form-rating input:checked + label{background:var(--teal);border-color:var(--teal);color:#fff}
+@media(max-width:700px){.eval-form-table th:not(:first-child){width:42px}.eval-form-rating label{width:30px;height:30px;font-size:12px}.eval-form-qtext{font-size:12px}}
 .comment-box-new{background:var(--mid);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:10px;display:flex;gap:14px;align-items:flex-start;}
 .comment-box-icon{color:var(--teal-hover);font-size:17px;margin-top:2px;flex-shrink:0;}
 .comment-box-inner{flex:1;}
@@ -1553,7 +1608,12 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
         <div class="settings-card full">
             <div class="settings-card-head"><div class="sicon"><i class="fa-solid fa-circle-info"></i></div><div><h3>Faculty Evaluation Access</h3><p>What you can do in the Employee Performance Management System.</p></div></div>
             <div class="account-facts">
-                <div class="account-fact"><label>Can Evaluate</label><b>Faculty, Staff, School Head</b></div>
+                <?php
+                $canEvaluateParts = ['Faculty', 'Staff'];
+                if ($can_evaluate_principal) $canEvaluateParts[] = 'Principal';
+                if ($can_evaluate_dean)      $canEvaluateParts[] = 'Dean';
+                ?>
+                <div class="account-fact"><label>Can Evaluate</label><b><?= htmlspecialchars(implode(', ', $canEvaluateParts)) ?></b></div>
                 <div class="account-fact"><label>Can View</label><b>Own Evaluation Results</b></div>
                 <div class="account-fact"><label>Privacy</label><b>Evaluator identity remains protected</b></div>
             </div>
@@ -1633,7 +1693,7 @@ $staff_count = count(array_filter($peers_all, fn($p) => resolve_peer_group($mysq
 
 <div class="section-card">
     <div class="section-title"><i class="fa-solid fa-clipboard-check" style="color:var(--teal)"></i> Evaluation</div>
-    <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Choose who you want to evaluate. Faculty can evaluate fellow faculty, staff members, or the School Heads (Dean and Principal).</p>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Choose who you want to evaluate. Faculty can evaluate fellow faculty, staff members, or the Dean / Principal.</p>
 
     <div class="fg-label" style="margin-bottom:10px;"><i class="fa-solid fa-bolt" style="margin-right:5px"></i>Step 1: Select Evaluation Group</div>
     <div class="desig-select-chips">
@@ -1643,11 +1703,26 @@ $staff_count = count(array_filter($peers_all, fn($p) => resolve_peer_group($mysq
         <a href="faculty_dashboard.php?page=peer&group=staff" class="desig-select-chip">
             <i class="fa-solid fa-briefcase" style="color:var(--teal-hover)"></i> Staff <span class="dsc-count">(<?= $staff_count ?>)</span>
         </a>
-        <a href="faculty_dashboard.php?page=peer&group=school_head" class="desig-select-chip">
-            <i class="fa-solid fa-user-tie" style="color:var(--teal-hover)"></i> School Head <span class="dsc-count">(<?= count($school_heads) ?>)</span>
+        <?php if ($can_evaluate_principal): ?>
+        <a href="faculty_dashboard.php?page=peer&group=principal" class="desig-select-chip">
+            <i class="fa-solid fa-user-tie" style="color:var(--teal-hover)"></i> Principal <span class="dsc-count">(<?= count($principal_targets) ?>)</span>
         </a>
+        <?php endif; ?>
+        <?php if ($can_evaluate_dean): ?>
+        <a href="faculty_dashboard.php?page=peer&group=dean" class="desig-select-chip">
+            <i class="fa-solid fa-graduation-cap" style="color:var(--teal-hover)"></i> Dean <span class="dsc-count">(<?= count($dean_targets) ?>)</span>
+        </a>
+        <?php endif; ?>
     </div>
-    <div class="peer-select-hint"><i class="fa-solid fa-circle-info"></i> School Head includes the Dean and Principal.</div>
+    <?php if ($can_evaluate_principal && $can_evaluate_dean): ?>
+    <div class="peer-select-hint"><i class="fa-solid fa-circle-info"></i> You teach both JHS/SHS and College, so you can evaluate both the Principal and the Dean.</div>
+    <?php elseif ($can_evaluate_principal): ?>
+    <div class="peer-select-hint"><i class="fa-solid fa-circle-info"></i> Your JHS/SHS teaching assignment makes you eligible to evaluate the Principal. Dean evaluation is only for those with a College teaching assignment.</div>
+    <?php elseif ($can_evaluate_dean): ?>
+    <div class="peer-select-hint"><i class="fa-solid fa-circle-info"></i> Your College teaching assignment makes you eligible to evaluate the Dean. Principal evaluation is only for those with a JHS/SHS teaching assignment.</div>
+    <?php else: ?>
+    <div class="peer-select-hint"><i class="fa-solid fa-circle-info"></i> Dean/Principal evaluation isn't available yet — it opens once your teaching assignment (Role &amp; Designation) is set.</div>
+    <?php endif; ?>
 </div>
 
 <!-- ══════════ EVALUATION — STEP 2: TARGET LIST ══════════ -->
@@ -1660,23 +1735,28 @@ $staff_count = count(array_filter($peers_all, fn($p) => resolve_peer_group($mysq
 <?php endif; ?>
 
 <div class="section-card">
-    <div class="section-title"><i class="fa-solid <?= $peer_group === 'school_head' ? 'fa-user-tie' : 'fa-users' ?>" style="color:var(--teal)"></i>
-        <?= $peer_group === 'school_head' ? 'School Heads' : 'Fellow ' . htmlspecialchars($peer_group_labels[$peer_group]) . ' Members' ?>
+    <div class="section-title"><i class="fa-solid <?= in_array($peer_group, $school_head_groups, true) ? 'fa-user-tie' : 'fa-users' ?>" style="color:var(--teal)"></i>
+        <?= in_array($peer_group, $school_head_groups, true) ? htmlspecialchars($peer_group_labels[$peer_group]) : 'Fellow ' . htmlspecialchars($peer_group_labels[$peer_group]) . ' Members' ?>
     </div>
     <p style="font-size:13px;color:var(--muted);margin-bottom:18px;">
-        <?= $peer_group === 'school_head'
-            ? 'Select the Dean or Principal to evaluate. Your identity will be kept confidential.'
+        <?= in_array($peer_group, $school_head_groups, true)
+            ? 'Select the ' . htmlspecialchars($peer_group_labels[$peer_group]) . ' to evaluate. Your identity will be kept confidential.'
             : 'Select a colleague to evaluate. Your identity will be kept confidential.' ?>
     </p>
 
-    <?php if (empty($peers)): ?>
+    <?php $sh_role_eligible = $peer_group === 'principal' ? $can_evaluate_principal : ($peer_group === 'dean' ? $can_evaluate_dean : true); ?>
+    <?php if (in_array($peer_group, $school_head_groups, true) && !$sh_role_eligible): ?>
+    <div class="empty-state"><i class="fa-solid fa-lock"></i><p>
+        Evaluating the <?= htmlspecialchars($peer_group_labels[$peer_group]) ?> is only available to Faculty/Teaching Staff with a <?= $peer_group === 'principal' ? 'Grade 7-12' : 'College' ?> teaching assignment.
+    </p></div>
+    <?php elseif (empty($peers)): ?>
     <div class="empty-state"><i class="fa-solid fa-users"></i><p>
-        <?= $peer_group === 'school_head' ? 'No Dean or Principal account was found.' : 'No registered ' . htmlspecialchars(strtolower($peer_group_labels[$peer_group])) . ' members found.' ?>
+        <?= in_array($peer_group, $school_head_groups, true) ? 'No ' . htmlspecialchars($peer_group_labels[$peer_group]) . ' account was found.' : 'No registered ' . htmlspecialchars(strtolower($peer_group_labels[$peer_group])) . ' members found.' ?>
     </p></div>
     <?php else: ?>
     <div class="peer-grid">
         <?php foreach ($peers as $p):
-            $done = $peer_group === 'school_head'
+            $done = in_array($peer_group, $school_head_groups, true)
                 ? in_array((int)$p['id'], $done_school_heads, true)
                 : in_array((int)$p['id'], $done_peers, true);
         ?>
@@ -1700,7 +1780,7 @@ $staff_count = count(array_filter($peers_all, fn($p) => resolve_peer_group($mysq
         <?php endforeach; ?>
     </div>
     <?php
-        $done_in_group = $peer_group === 'school_head'
+        $done_in_group = in_array($peer_group, $school_head_groups, true)
             ? count(array_intersect(array_map('intval', array_column($peers, 'id')), $done_school_heads))
             : count(array_intersect(array_map('intval', array_column($peers, 'id')), $done_peers));
     ?>
@@ -1754,26 +1834,27 @@ $staff_count = count(array_filter($peers_all, fn($p) => resolve_peer_group($mysq
     $grouped_qs = [];
     foreach ($peer_questions as $q) $grouped_qs[$q['category'] ?? 'General'][] = $q;
     $cat_icons  = ['Work Performance'=>'fa-briefcase','Professional Ethics'=>'fa-scale-balanced','Interpersonal Skills'=>'fa-handshake','Teaching'=>'fa-chalkboard-user','Communication'=>'fa-comments','General'=>'fa-layer-group'];
-    $labels     = [5=>'ALWAYS',4=>'OFTEN',3=>'SOMETIMES',2=>'RARELY',1=>'NEVER'];
     $qno        = 1;
     foreach ($grouped_qs as $cat => $qs):
         $icon = $cat_icons[$cat] ?? 'fa-layer-group';
     ?>
     <div class="q-category-header"><i class="fa-solid <?= $icon ?>"></i><?= htmlspecialchars($cat) ?></div>
-    <?php foreach ($qs as $q): ?>
-    <div class="q-card-new">
-        <div class="q-no-new">Question <?= $qno++ ?></div>
-        <div class="q-text-new"><?= htmlspecialchars($q['question_text']) ?></div>
-        <div class="rating-row-new" id="grp_<?= $q['id'] ?>">
-            <?php foreach ([5,4,3,2,1] as $v): ?>
-            <button type="button" class="r-btn-new" data-val="<?= $v ?>" onclick="rateNew(<?= $q['id'] ?>,<?= $v ?>)">
-                <?= $v ?><span class="r-lbl-new"><?= $labels[$v] ?></span>
-            </button>
+    <div class="eval-form-wrap">
+    <table class="eval-form-table">
+        <thead><tr><th>Question</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th></tr></thead>
+        <tbody>
+        <?php foreach ($qs as $q): ?>
+        <tr>
+            <td><div class="eval-form-qtext"><span class="eval-form-qno">Q<?= $qno++ ?>.</span><?= htmlspecialchars($q['question_text']) ?></div></td>
+            <?php foreach ([5,4,3,2,1] as $v): $optId = 'r_' . $q['id'] . '_' . $v; ?>
+            <td><div class="eval-form-rating"><input type="radio" name="ratings[<?= $q['id'] ?>]" id="<?= $optId ?>" value="<?= $v ?>" required><label for="<?= $optId ?>"><?= $v ?></label></div></td>
             <?php endforeach; ?>
-        </div>
-        <input type="hidden" name="ratings[<?= $q['id'] ?>]" id="r_<?= $q['id'] ?>"/>
+        </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
     </div>
-    <?php endforeach; endforeach; ?>
+    <?php endforeach; ?>
 
     <div class="comment-box-new">
         <i class="fa-solid fa-comment-dots comment-box-icon"></i>
@@ -1808,13 +1889,6 @@ $staff_count = count(array_filter($peers_all, fn($p) => resolve_peer_group($mysq
 </main>
 
 <script>
-function rateNew(qid, val) {
-    document.querySelectorAll(`#grp_${qid} .r-btn-new`).forEach(b => {
-        b.classList.toggle('sel', parseInt(b.dataset.val) === val);
-    });
-    document.getElementById(`r_${qid}`).value = val;
-}
-
 function toggleRecentEvals() {
     const list  = document.getElementById('recentEvalsList');
     const caret = document.getElementById('recentEvalsCaret');
@@ -1832,9 +1906,14 @@ function toggleAllEvals() {
 }
 
 function checkAll() {
-    const inputs = document.querySelectorAll('#evalForm input[type="hidden"][name^="ratings"]');
-    for (const i of inputs) {
-        if (!i.value) { alert('Please rate all questions before submitting.'); return false; }
+    const radios = document.querySelectorAll('#evalForm input[type="radio"][name^="ratings"]');
+    if (!radios.length) { alert('No questions found. Please close and try again.'); return false; }
+    const names = [...new Set([...radios].map(r => r.name))];
+    for (const n of names) {
+        if (!document.querySelector(`#evalForm input[name="${CSS.escape(n)}"]:checked`)) {
+            alert('Please rate all questions before submitting.');
+            return false;
+        }
     }
     return true;
 }

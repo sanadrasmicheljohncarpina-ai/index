@@ -37,7 +37,11 @@ $navItems = [
         <?php endif; ?>
     </div>
     <nav class="sb-nav">
+        <div class="sb-section-title">MAIN</div>
         <?php foreach ($navItems as $key => [$href, $icon, $label]): ?>
+            <?php if ($key === 'settings'): ?>
+                <div class="sb-section-title sb-section-title-account">ACCOUNT</div>
+            <?php endif; ?>
             <a href="<?= htmlspecialchars($href) ?>" class="<?= (isset($active) && $active === $key) ? 'active' : '' ?>">
                 <i class="fa-solid <?= htmlspecialchars($icon) ?>"></i> <?= htmlspecialchars($label) ?>
             </a>

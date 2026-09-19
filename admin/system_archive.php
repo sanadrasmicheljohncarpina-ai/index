@@ -91,7 +91,7 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $existing = $stmt->get_result()->fetch_assoc();
             $stmt->close();
 
-            if ($existing) {
+            if ($existing && $existing['status'] === 'archived') {
                 $flash = 'This academic year already has an archive record.';
                 $flashType = 'err';
             } else {
@@ -152,11 +152,21 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 try {
                     $mysqli->begin_transaction();
 
-                    $ins = $mysqli->prepare("INSERT INTO system_archives (period_id, period_label, school_year, archived_by, archived_by_name, record_count, summary_json, payload_json) VALUES (?,?,?,?,?,?,?,?)");
-                    $ins->bind_param('issisiss', $periodId, $period['period_label'], $period['school_year'], $byId, $byName, $total, $summary, $payload);
-                    if (!$ins->execute()) throw new Exception('Could not create archive record: ' . $ins->error);
-                    $archiveId = $ins->insert_id;
-                    $ins->close();
+                    if ($existing) {
+                        // Previously restored: refresh the existing record instead of inserting a
+                        // new one, since period_id is UNIQUE in system_archives.
+                        $upd = $mysqli->prepare("UPDATE system_archives SET period_label=?, school_year=?, archived_by=?, archived_by_name=?, archived_at=NOW(), restored_at=NULL, restored_by=NULL, status='archived', record_count=?, summary_json=?, payload_json=? WHERE id=?");
+                        $upd->bind_param('ssisissi', $period['period_label'], $period['school_year'], $byId, $byName, $total, $summary, $payload, $existing['id']);
+                        if (!$upd->execute()) throw new Exception('Could not update archive record: ' . $upd->error);
+                        $archiveId = (int)$existing['id'];
+                        $upd->close();
+                    } else {
+                        $ins = $mysqli->prepare("INSERT INTO system_archives (period_id, period_label, school_year, archived_by, archived_by_name, record_count, summary_json, payload_json) VALUES (?,?,?,?,?,?,?,?)");
+                        $ins->bind_param('issisiss', $periodId, $period['period_label'], $period['school_year'], $byId, $byName, $total, $summary, $payload);
+                        if (!$ins->execute()) throw new Exception('Could not create archive record: ' . $ins->error);
+                        $archiveId = $ins->insert_id;
+                        $ins->close();
+                    }
 
                     // Delete dependent rows first. Questions, users, assignments, system settings
                     // and system logs remain intact.
@@ -191,90 +201,212 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    if ($action === 'restore') {
+    if ($action === 'restore' || $action === 'restore_selected') {
+        $requestedIds = [];
+
+        if ($action === 'restore') {
+            $oneId = (int)($_POST['archive_id'] ?? 0);
+            if ($oneId > 0) $requestedIds[] = $oneId;
+        } else {
+            $requestedIds = array_values(array_unique(array_filter(
+                array_map('intval', (array)($_POST['archive_ids'] ?? [])),
+                fn($id) => $id > 0
+            )));
+        }
+
+        if (!$requestedIds) {
+            $flash = 'No archived records were selected for restore.';
+            $flashType = 'err';
+        } else {
+            $restoreErrors = [];
+            $restored = 0;
+
+            try {
+                $mysqli->begin_transaction();
+
+                foreach ($requestedIds as $archiveId) {
+                    $stmt = $mysqli->prepare("SELECT * FROM system_archives WHERE id=? AND status='archived' LIMIT 1");
+                    if (!$stmt) {
+                        throw new Exception('Could not prepare archive lookup: ' . $mysqli->error);
+                    }
+                    $stmt->bind_param('i', $archiveId);
+                    $stmt->execute();
+                    $archive = $stmt->get_result()->fetch_assoc();
+                    $stmt->close();
+
+                    if (!$archive) {
+                        $restoreErrors[] = "Archive #$archiveId could not be found or has already been restored.";
+                        continue;
+                    }
+
+                    $payload = json_decode($archive['payload_json'], true);
+                    if (!is_array($payload)) {
+                        $restoreErrors[] = "Archive #$archiveId has an invalid archive payload.";
+                        continue;
+                    }
+
+                    $live = $mysqli->query(
+                        "SELECT COUNT(*) c FROM evaluation_tracker WHERE period_id=" . (int)$archive['period_id']
+                    );
+                    $liveCount = $live ? (int)$live->fetch_assoc()['c'] : 0;
+
+                    if ($liveCount > 0) {
+                        $restoreErrors[] = "Archive #$archiveId was skipped because {$archive['school_year']} already contains live evaluation records.";
+                        continue;
+                    }
+
+                    $order = [
+                        'evaluation_tracker',
+                        'questionnaire_answers',
+                        'evaluation_answers',
+                        'evaluation_submissions',
+                        'evaluation_results',
+                        'peer_evaluation_submissions',
+                        'peer_evaluation_results',
+                        'evaluation_reminders',
+                        'analytics_reports',
+                        'notifications',
+                    ];
+
+                    foreach ($order as $table) {
+                        $rows = $payload[$table] ?? [];
+                        foreach ($rows as $row) {
+                            if (!$row) continue;
+
+                            $columns = array_keys($row);
+                            $quotedCols = '`' . implode('`,`', array_map(
+                                fn($c) => str_replace('`', '``', $c),
+                                $columns
+                            )) . '`';
+                            $placeholders = implode(',', array_fill(0, count($columns), '?'));
+                            $sql = "INSERT IGNORE INTO `$table` ($quotedCols) VALUES ($placeholders)";
+
+                            $stmt = $mysqli->prepare($sql);
+                            if (!$stmt) {
+                                throw new Exception("Could not prepare restore for table $table: " . $mysqli->error);
+                            }
+
+                            $types = '';
+                            $values = [];
+                            foreach ($columns as $c) {
+                                $v = $row[$c];
+                                $types .= is_int($v) ? 'i' : (is_float($v) ? 'd' : 's');
+                                $values[] = $v;
+                            }
+
+                            $bind = [$types];
+                            foreach ($values as $k => $v) $bind[] = &$values[$k];
+                            call_user_func_array([$stmt, 'bind_param'], $bind);
+
+                            if (!$stmt->execute()) {
+                                $err = $stmt->error;
+                                $stmt->close();
+                                throw new Exception("Restore failed for archive #$archiveId in $table: $err");
+                            }
+                            $stmt->close();
+                        }
+                    }
+
+                    // Make the period visible only after this archive has been restored.
+                    $stmt = $mysqli->prepare("UPDATE evaluation_periods SET is_active=1 WHERE id=?");
+                    $pid = (int)$archive['period_id'];
+                    $stmt->bind_param('i', $pid);
+                    if (!$stmt->execute()) {
+                        $err = $stmt->error;
+                        $stmt->close();
+                        throw new Exception("Could not reactivate evaluation period for archive #$archiveId: $err");
+                    }
+                    $stmt->close();
+
+                    $byId = (int)$_SESSION['user_id'];
+                    $stmt = $mysqli->prepare(
+                        "UPDATE system_archives SET status='restored', restored_at=NOW(), restored_by=? WHERE id=?"
+                    );
+                    $stmt->bind_param('ii', $byId, $archiveId);
+                    if (!$stmt->execute()) {
+                        $err = $stmt->error;
+                        $stmt->close();
+                        throw new Exception("Could not mark archive #$archiveId as restored: $err");
+                    }
+                    $stmt->close();
+
+                    $actor = $mysqli->real_escape_string(
+                        $_SESSION['full_name'] ?? $_SESSION['username'] ?? 'Administrator'
+                    );
+                    $actionText = $mysqli->real_escape_string(
+                        "Restored evaluation archive #$archiveId for {$archive['school_year']}"
+                    );
+                    if (!$mysqli->query(
+                        "INSERT INTO activity_log (actor_name, actor_type, action_text, icon, color)
+                         VALUES ('$actor','admin','$actionText','fa-box-open','#0F9F6E')"
+                    )) {
+                        throw new Exception('Could not write the restore audit log: ' . $mysqli->error);
+                    }
+
+                    $restored++;
+                }
+
+                // A skipped archive is not a database failure. Commit successful restores
+                // and report any items that were not eligible.
+                $mysqli->commit();
+
+                if ($action === 'restore') {
+                    if ($restored === 1 && !$restoreErrors) {
+                        $flash = 'The selected archive was restored successfully.';
+                        $flashType = 'ok';
+                    } elseif ($restored === 0) {
+                        $flash = $restoreErrors[0] ?? 'The selected archive could not be restored.';
+                        $flashType = 'err';
+                    } else {
+                        $flash = 'The archive was restored with warnings: ' . implode(' ', $restoreErrors);
+                        $flashType = 'ok';
+                    }
+                } else {
+                    $summaryParts = [];
+                    if ($restored > 0) {
+                        $summaryParts[] = $restored . ' archive' . ($restored === 1 ? '' : 's') . ' restored successfully.';
+                    }
+                    if ($restoreErrors) {
+                        $summaryParts[] = count($restoreErrors) . ' selection' . (count($restoreErrors) === 1 ? '' : 's') . ' skipped.';
+                    }
+                    $flash = $summaryParts
+                        ? implode(' ', $summaryParts) . ($restoreErrors ? ' ' . implode(' ', $restoreErrors) : '')
+                        : 'No selected archives were restored.';
+                    $flashType = $restored > 0 ? 'ok' : 'err';
+                }
+            } catch (Throwable $ex) {
+                $mysqli->rollback();
+                $flash = 'Restore failed: ' . $ex->getMessage();
+                $flashType = 'err';
+            }
+        }
+    }
+
+    if ($action === 'delete') {
         $archiveId = (int)($_POST['archive_id'] ?? 0);
-        $stmt = $mysqli->prepare("SELECT * FROM system_archives WHERE id=? AND status='archived' LIMIT 1");
+        $stmt = $mysqli->prepare("SELECT id, school_year, period_label, status FROM system_archives WHERE id=? LIMIT 1");
         $stmt->bind_param('i', $archiveId);
         $stmt->execute();
         $archive = $stmt->get_result()->fetch_assoc();
         $stmt->close();
 
         if (!$archive) {
-            $flash = 'The archive could not be found or has already been restored.';
+            $flash = 'The archive could not be found.';
             $flashType = 'err';
         } else {
-            $payload = json_decode($archive['payload_json'], true);
-            if (!is_array($payload)) {
-                $flash = 'The archive payload is invalid.';
-                $flashType = 'err';
+            $del = $mysqli->prepare("DELETE FROM system_archives WHERE id=?");
+            $del->bind_param('i', $archiveId);
+            if ($del->execute()) {
+                $del->close();
+                $actor = $mysqli->real_escape_string($_SESSION['full_name'] ?? $_SESSION['username'] ?? 'Administrator');
+                $actionText = $mysqli->real_escape_string("Deleted evaluation archive #$archiveId for {$archive['school_year']} ({$archive['period_label']})");
+                $mysqli->query("INSERT INTO activity_log (actor_name, actor_type, action_text, icon, color) VALUES ('$actor','admin','$actionText','fa-trash','#D6455D')");
+                $flash = "Archive #$archiveId for {$archive['school_year']} was deleted.";
+                $flashType = 'ok';
             } else {
-                $live = $mysqli->query("SELECT COUNT(*) c FROM evaluation_tracker WHERE period_id=" . (int)$archive['period_id']);
-                $liveCount = $live ? (int)$live->fetch_assoc()['c'] : 0;
-                if ($liveCount > 0) {
-                    $flash = 'Restore stopped for safety because this period already contains live evaluation records.';
-                    $flashType = 'err';
-                } else {
-                    try {
-                        $mysqli->begin_transaction();
-                        $order = [
-                            'evaluation_tracker',
-                            'questionnaire_answers',
-                            'evaluation_answers',
-                            'evaluation_submissions',
-                            'evaluation_results',
-                            'peer_evaluation_submissions',
-                            'peer_evaluation_results',
-                            'evaluation_reminders',
-                            'analytics_reports',
-                            'notifications',
-                        ];
-                        foreach ($order as $table) {
-                            $rows = $payload[$table] ?? [];
-                            foreach ($rows as $row) {
-                                if (!$row) continue;
-                                $columns = array_keys($row);
-                                $quotedCols = '`' . implode('`,`', array_map(fn($c)=>str_replace('`','``',$c), $columns)) . '`';
-                                $placeholders = implode(',', array_fill(0, count($columns), '?'));
-                                $sql = "INSERT IGNORE INTO `$table` ($quotedCols) VALUES ($placeholders)";
-                                $stmt = $mysqli->prepare($sql);
-                                if (!$stmt) continue;
-                                $types = '';
-                                $values = [];
-                                foreach ($columns as $c) {
-                                    $v = $row[$c];
-                                    $types .= is_int($v) ? 'i' : (is_float($v) ? 'd' : 's');
-                                    $values[] = $v;
-                                }
-                                $bind = [$types];
-                                foreach ($values as $k=>$v) $bind[] = &$values[$k];
-                                call_user_func_array([$stmt, 'bind_param'], $bind);
-                                $stmt->execute();
-                                $stmt->close();
-                            }
-                        }
-                        // Make the period visible only after the restore has completed.
-                        $stmt = $mysqli->prepare("UPDATE evaluation_periods SET is_active=1 WHERE id=?");
-                        $pid = (int)$archive['period_id'];
-                        $stmt->bind_param('i', $pid);
-                        $stmt->execute();
-                        $stmt->close();
-                        $byId = (int)$_SESSION['user_id'];
-                        $stmt = $mysqli->prepare("UPDATE system_archives SET status='restored', restored_at=NOW(), restored_by=? WHERE id=?");
-                        $stmt->bind_param('ii', $byId, $archiveId);
-                        $stmt->execute();
-                        $stmt->close();
-                        $actor = $mysqli->real_escape_string($_SESSION['full_name'] ?? $_SESSION['username'] ?? 'Administrator');
-                        $actionText = $mysqli->real_escape_string("Restored evaluation archive #$archiveId for {$archive['school_year']}");
-                        $mysqli->query("INSERT INTO activity_log (actor_name, actor_type, action_text, icon, color) VALUES ('$actor','admin','$actionText','fa-box-open','#0F9F6E')");
-                        $mysqli->commit();
-                        $flash = "Archive #$archiveId was restored successfully.";
-                        $flashType = 'ok';
-                    } catch (Throwable $ex) {
-                        $mysqli->rollback();
-                        $flash = 'Restore failed: ' . $ex->getMessage();
-                        $flashType = 'err';
-                    }
-                }
+                $flash = 'Delete failed: ' . $del->error;
+                $flashType = 'err';
+                $del->close();
             }
         }
     }
@@ -298,14 +430,14 @@ $periods = [];
 // at least one live evaluation record, and nothing already archived.
 $res = $mysqli->query("
     SELECT ep.id, ep.period_label, ep.semester, ep.school_year, ep.is_active,
-           ep.start_date, ep.end_date, COUNT(et.id) AS live_count
+           ep.date_start, ep.date_end, COUNT(et.id) AS live_count
     FROM evaluation_periods ep
     INNER JOIN evaluation_tracker et ON et.period_id = ep.id
     LEFT JOIN system_archives sa ON sa.period_id = ep.id AND sa.status = 'archived'
     WHERE sa.id IS NULL
       AND ep.school_year REGEXP '^[0-9]{4}-[0-9]{4}$'
       AND ep.semester IN ('1st Semester','2nd Semester','Summer','School Year')
-    GROUP BY ep.id, ep.period_label, ep.semester, ep.school_year, ep.is_active, ep.start_date, ep.end_date
+    GROUP BY ep.id, ep.period_label, ep.semester, ep.school_year, ep.is_active, ep.date_start, ep.date_end
     HAVING COUNT(et.id) > 0
     ORDER BY ep.school_year DESC, FIELD(ep.semester,'1st Semester','2nd Semester','Summer','School Year'), ep.id DESC
 ");
@@ -330,12 +462,36 @@ foreach ($periods as $p) if ((int)$p['is_active'] === 1) { $activePeriod = $p; b
 <link rel="stylesheet" href="admin_compact_ui.css">
 <style>
 :root{--bg:#F5F8FC;--card:#fff;--line:#D8E5F4;--text:#102746;--muted:#67819E;--blue:#2563EB;--blue-soft:#EEF4FF;--green:#0F9F6E;--green-soft:#EAF9F2;--amber:#C77A08;--amber-soft:#FFF7E6;--red:#D6455D;--red-soft:#FFF0F2;--shadow:0 3px 14px rgba(30,82,144,.08)}
-*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font:13px/1.5 Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}.wrap{max-width:1240px;margin:0 auto;padding:24px 28px 44px}.back{display:inline-flex;gap:8px;align-items:center;color:var(--muted);text-decoration:none;font-size:12px;font-weight:600;margin-bottom:15px}.hero{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:16px}.hero h1{font-size:25px;margin:0 0 3px;letter-spacing:-.025em}.hero p{margin:0;color:var(--muted);font-size:13px}.badge{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border-radius:999px;border:1px solid #C9D9EF;background:#fff;color:var(--blue);font-weight:700;font-size:11px}.grid{display:grid;grid-template-columns:1.25fr .75fr;gap:14px}.card{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:17px}.card h2{font-size:14px;margin:0 0 4px}.sub{color:var(--muted);font-size:11.5px}.label{display:block;font-size:11px;font-weight:700;color:#405A76;margin:14px 0 6px;text-transform:uppercase;letter-spacing:.04em}.select{width:100%;padding:9px 11px;border:1px solid #B9CDE5;border-radius:8px;background:#fff;color:var(--text);font:600 12px Inter}.actions{display:flex;gap:8px;align-items:center;margin-top:13px;flex-wrap:wrap}.btn{border:1px solid #B9CDE5;background:#fff;border-radius:8px;padding:9px 12px;font:700 12px Inter;color:var(--text);cursor:pointer}.btn.primary{border-color:var(--blue);background:var(--blue);color:#fff}.btn.danger{border-color:#F1B7C0;background:#FFF6F7;color:var(--red)}.btn:disabled{opacity:.45;cursor:not-allowed}.warn{display:flex;gap:8px;align-items:flex-start;margin-top:12px;padding:9px 10px;background:var(--amber-soft);border:1px solid #F5D48A;border-radius:8px;color:#8D5D00;font-size:11.5px}.success{display:flex;gap:8px;align-items:flex-start;padding:9px 10px;background:var(--green-soft);border:1px solid #BDE9D4;border-radius:8px;color:#08734F;font-size:11.5px}.archive-table{margin-top:14px;border:1px solid var(--line);border-radius:10px;overflow:auto;background:#fff}.archive-table table{width:100%;border-collapse:collapse;min-width:760px}.archive-table th,.archive-table td{padding:10px 11px;border-bottom:1px solid #EAF0F7;text-align:left;font-size:11.5px;white-space:nowrap}.archive-table th{background:#F8FAFC;color:#49647F;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}.archive-table tr:last-child td{border-bottom:0}.status{display:inline-flex;padding:4px 8px;border-radius:999px;font-size:10px;font-weight:800}.status.archived{background:var(--green-soft);color:var(--green)}.status.restored{background:var(--blue-soft);color:var(--blue)}.empty{padding:25px;text-align:center;color:var(--muted)}.detail{margin-top:14px}.detail-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.mini{padding:11px;border:1px solid var(--line);background:#FBFDFF;border-radius:8px}.mini b{display:block;font-size:16px}.mini span{color:var(--muted);font-size:10.5px}.notice{margin-bottom:14px;padding:10px 12px;border-radius:9px;border:1px solid #C9D9EF;background:var(--blue-soft);color:#2855A4;font-size:11.5px;display:flex;gap:8px}.restricted{max-width:620px;margin:60px auto;text-align:center}.restricted .icon{font-size:30px;color:var(--red);margin-bottom:8px}@media(max-width:900px){.grid{grid-template-columns:1fr}.detail-grid{grid-template-columns:repeat(2,1fr)}}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font:13px/1.5 Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}.wrap{max-width:1240px;margin:0 auto;padding:24px 28px 44px}.back{display:inline-flex;gap:8px;align-items:center;color:var(--muted);text-decoration:none;font-size:12px;font-weight:600;margin-bottom:15px}.hero{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:16px}.hero h1{font-size:25px;margin:0 0 3px;letter-spacing:-.025em}.hero p{margin:0;color:var(--muted);font-size:13px}.badge{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border-radius:999px;border:1px solid #C9D9EF;background:#fff;color:var(--blue);font-weight:700;font-size:11px}.grid{display:grid;grid-template-columns:1.25fr .75fr;gap:14px}.card{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:17px}.card h2{font-size:14px;margin:0 0 4px}.sub{color:var(--muted);font-size:11.5px}.label{display:block;font-size:11px;font-weight:700;color:#405A76;margin:14px 0 6px;text-transform:uppercase;letter-spacing:.04em}.select{width:100%;padding:9px 11px;border:1px solid #B9CDE5;border-radius:8px;background:#fff;color:var(--text);font:600 12px Inter}.actions{display:flex;gap:8px;align-items:center;margin-top:13px;flex-wrap:wrap}.btn{border:1px solid #B9CDE5;background:#fff;border-radius:8px;padding:9px 12px;font:700 12px Inter;color:var(--text);cursor:pointer}.btn.primary{border-color:var(--blue);background:var(--blue);color:#fff}.btn.danger{border-color:#F1B7C0;background:#FFF6F7;color:var(--red)}.btn:disabled{opacity:.45;cursor:not-allowed}.warn{display:flex;gap:8px;align-items:flex-start;margin-top:12px;padding:9px 10px;background:var(--amber-soft);border:1px solid #F5D48A;border-radius:8px;color:#8D5D00;font-size:11.5px}.success{display:flex;gap:8px;align-items:flex-start;padding:9px 10px;background:var(--green-soft);border:1px solid #BDE9D4;border-radius:8px;color:#08734F;font-size:11.5px}.archive-table{margin-top:14px;border:1px solid var(--line);border-radius:10px;overflow:auto;background:#fff}.archive-table table{width:100%;border-collapse:collapse;min-width:760px}.archive-table th,.archive-table td{padding:10px 11px;border-bottom:1px solid #EAF0F7;text-align:left;font-size:11.5px;white-space:nowrap}.archive-table th.select-col,.archive-table td.select-col{width:38px;text-align:center;padding-left:10px;padding-right:4px}.archive-table input.archive-check,.archive-table input#selectAllArchives{width:15px;height:15px;accent-color:var(--blue);cursor:pointer}.bulk-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.selection-count{font-size:11px;color:var(--muted);font-weight:600}.archive-table th{background:#F8FAFC;color:#49647F;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}.archive-table tr:last-child td{border-bottom:0}.status{display:inline-flex;padding:4px 8px;border-radius:999px;font-size:10px;font-weight:800}.status.archived{background:var(--green-soft);color:var(--green)}.status.restored{background:var(--blue-soft);color:var(--blue)}.empty{padding:25px;text-align:center;color:var(--muted)}.detail{margin-top:14px}.detail-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.mini{padding:11px;border:1px solid var(--line);background:#FBFDFF;border-radius:8px}.mini b{display:block;font-size:16px}.mini span{color:var(--muted);font-size:10.5px}.notice{margin-bottom:14px;padding:10px 12px;border-radius:9px;border:1px solid #C9D9EF;background:var(--blue-soft);color:#2855A4;font-size:11.5px;display:flex;gap:8px}.restricted{max-width:620px;margin:60px auto;text-align:center}.restricted .icon{font-size:30px;color:var(--red);margin-bottom:8px}@media(max-width:900px){.grid{grid-template-columns:1fr}.detail-grid{grid-template-columns:repeat(2,1fr)}}
 </style>
+<style id="pbi-feature-scrollbar">
+
+/* PBI FEATURE SCROLLBAR — consistent with the compact page scrollbar */
+html, body {
+  scrollbar-width: thin !important;
+  scrollbar-color: #888 transparent !important;
+}
+html::-webkit-scrollbar, body::-webkit-scrollbar,
+.feature-compact ::-webkit-scrollbar { width: 10px !important; height: 10px !important; }
+html::-webkit-scrollbar-track, body::-webkit-scrollbar-track,
+.feature-compact ::-webkit-scrollbar-track { background: transparent !important; }
+html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb,
+.feature-compact ::-webkit-scrollbar-thumb {
+  background: #888 !important; border-radius: 999px !important;
+  border: 2px solid transparent !important; background-clip: padding-box !important;
+}
+html::-webkit-scrollbar-thumb:hover, body::-webkit-scrollbar-thumb:hover,
+.feature-compact ::-webkit-scrollbar-thumb:hover { background: #777 !important; background-clip: padding-box !important; }
+html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
+.feature-compact ::-webkit-scrollbar-button { display: block !important; width: 10px !important; height: 10px !important; background-color: transparent !important; }
+
+</style>
+<link rel="stylesheet" href="admin_appearance.css">
+<script src="admin_appearance.js"></script>
 </head>
 <body class="feature-compact">
 <div class="wrap">
-<a class="back" href="admin_dashboard.php"><i class="fa-solid fa-arrow-left"></i> Back to Dashboard</a>
+<a class="back" href="admin_dashboard.php" onclick="if(window.top&&window.top!==window&&window.top.showPage){window.top.showPage('dashboard',window.top.document.getElementById('link-dashboard'));return false;}"><i class="fa-solid fa-arrow-left"></i> Back to Dashboard</a>
 <?php if (!$allowed): ?>
 <div class="card restricted"><div class="icon"><i class="fa-solid fa-lock"></i></div><h1>System Archive is restricted</h1><p class="sub">Only the Super Admin, or an Admin explicitly granted the <strong>System Archive</strong> edit permission, can archive or restore evaluation data.</p></div>
 <?php else: ?>
@@ -367,15 +523,15 @@ foreach ($periods as $p) if ((int)$p['is_active'] === 1) { $activePeriod = $p; b
 <div class="detail-grid" style="margin-top:12px">
 <?php foreach (($viewArchive['summary']??[]) as $k=>$v): ?><div class="mini"><span><?= e(ucwords(str_replace('_',' ',$k))) ?></span><b><?= number_format((int)$v) ?></b></div><?php endforeach; ?>
 </div>
-<div class="actions"><a class="btn" href="system_archive.php"><i class="fa-solid fa-arrow-left"></i> Back to Archive</a><?php if ($viewArchive['status']==='archived'): ?><form method="POST" onsubmit="return confirmRestore()"><input type="hidden" name="action" value="restore"><input type="hidden" name="archive_id" value="<?= (int)$viewArchive['id'] ?>"><button class="btn danger" type="submit"><i class="fa-solid fa-box-open"></i> Restore This Archive</button></form><?php endif; ?></div>
+<div class="actions"><a class="btn" href="system_archive.php"><i class="fa-solid fa-arrow-left"></i> Back to Archive</a><?php if ($viewArchive['status']==='archived'): ?><form method="POST" onsubmit="return confirmRestore()"><input type="hidden" name="action" value="restore"><input type="hidden" name="archive_id" value="<?= (int)$viewArchive['id'] ?>"><button class="btn danger" type="submit"><i class="fa-solid fa-box-open"></i> Restore This Archive</button></form><?php endif; ?><form method="POST" onsubmit="return confirmDelete(<?= json_encode($viewArchive['school_year'] . ' — ' . $viewArchive['period_label']) ?>)"><input type="hidden" name="action" value="delete"><input type="hidden" name="archive_id" value="<?= (int)$viewArchive['id'] ?>"><button class="btn danger" type="submit"><i class="fa-solid fa-trash"></i> Delete This Archive</button></form></div>
 </div>
 <?php endif; ?>
 
-<div class="card" style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:end;gap:12px"><div><h2>Archived Records</h2><div class="sub">View or restore archived evaluation data by academic year.</div></div><div class="sub"><?= count($archives) ?> archive<?= count($archives)===1?'':'s' ?></div></div>
+<div class="card" style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:end;gap:12px"><div><h2>Archived Records</h2><div class="sub">Select one or more archived evaluation periods to restore.</div></div><div class="bulk-actions"><span class="selection-count" id="selectionCount">0 selected</span><form method="POST" id="bulkRestoreForm" onsubmit="return confirmBulkRestore()"><input type="hidden" name="action" value="restore_selected"><div id="bulkRestoreInputs"></div><button class="btn primary" type="submit" id="bulkRestoreBtn" disabled><i class="fa-solid fa-box-open"></i> Restore Selected</button></form><div class="sub"><?= count($archives) ?> archive<?= count($archives)===1?'':'s' ?></div></div></div>
 <div class="archive-table">
-<table><thead><tr><th>Academic Year</th><th>Archived On</th><th>Archived By</th><th>Records</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-<?php if (!$archives): ?><tr><td colspan="6" class="empty">No archived evaluation years yet.</td></tr>
-<?php else: foreach ($archives as $a): ?><tr><td><strong><?= e($a['school_year']) ?></strong><br><span style="color:#91A6BE;font-size:10.5px"><?= e($a['period_label']) ?></span></td><td><?= e($a['archived_at']) ?></td><td><?= e($a['archived_by_name']) ?></td><td><?= number_format((int)$a['record_count']) ?></td><td><span class="status <?= e($a['status']) ?>"><?= ucfirst(e($a['status'])) ?></span></td><td><a class="btn" href="system_archive.php?view=<?= (int)$a['id'] ?>"><i class="fa-solid fa-eye"></i> View</a></td></tr><?php endforeach; endif; ?>
+<table><thead><tr><th class="select-col"><input type="checkbox" id="selectAllArchives" title="Select all archived records"></th><th>Academic Year</th><th>Archived On</th><th>Archived By</th><th>Records</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+<?php if (!$archives): ?><tr><td colspan="7" class="empty">No archived evaluation years yet.</td></tr>
+<?php else: foreach ($archives as $a): ?><tr><td class="select-col"><?php if ($a['status']==='archived'): ?><input type="checkbox" class="archive-check" value="<?= (int)$a['id'] ?>" data-label="<?= e($a['school_year'] . ' — ' . $a['period_label']) ?>"><?php else: ?><span style="color:#B7C5D5">—</span><?php endif; ?></td><td><strong><?= e($a['school_year']) ?></strong><br><span style="color:#91A6BE;font-size:10.5px"><?= e($a['period_label']) ?></span></td><td><?= e($a['archived_at']) ?></td><td><?= e($a['archived_by_name']) ?></td><td><?= number_format((int)$a['record_count']) ?></td><td><span class="status <?= e($a['status']) ?>"><?= ucfirst(e($a['status'])) ?></span></td><td style="display:flex;gap:6px;align-items:center"><?php if ($a['status']==='archived'): ?><form method="POST" onsubmit="return confirmRestore()"><input type="hidden" name="action" value="restore"><input type="hidden" name="archive_id" value="<?= (int)$a['id'] ?>"><button class="btn primary" type="submit"><i class="fa-solid fa-box-open"></i> Restore</button></form><?php else: ?><span style="font-size:11px;color:#7A90AA;font-weight:600"><i class="fa-solid fa-circle-check"></i> Restored</span><?php endif; ?><form method="POST" onsubmit="return confirmDelete(<?= json_encode($a['school_year'] . ' — ' . $a['period_label']) ?>)"><input type="hidden" name="action" value="delete"><input type="hidden" name="archive_id" value="<?= (int)$a['id'] ?>"><button class="btn danger" type="submit"><i class="fa-solid fa-trash"></i> Delete</button></form></td></tr><?php endforeach; endif; ?>
 </tbody></table></div></div>
 
 <div class="card" style="margin-top:14px"><h2>Archive Protection Rules</h2><div class="sub" style="margin-bottom:7px">What changes — and what stays.</div><div class="detail-grid">
@@ -392,6 +548,41 @@ function sync(){if(!sel)return;pid.value=sel.value;btn.disabled=!sel.value;}
 if(sel){sel.addEventListener('change',sync);sync();}
 function confirmArchive(){const o=sel.options[sel.selectedIndex];if(!o||!o.value)return false;return confirm(`Confirm Archive\n\nYou are about to archive all evaluation data for ${o.dataset.year || o.text}.\n\nThis will:\n✓ Clear live evaluation submissions and results\n✓ Keep questions, users, assignments and settings intact\n✓ Keep system logs for audit history\n✓ Store the archived data in System Archive\n\nThis action cannot be undone from the live dashboards. Continue?`);}
 function confirmRestore(){return confirm('Restore this archive back into the live evaluation tables?\n\nThis is allowed only when the selected period has no live evaluation records.');}
+const archiveChecks=[...document.querySelectorAll('.archive-check')];
+const selectAllArchives=document.getElementById('selectAllArchives');
+const bulkRestoreBtn=document.getElementById('bulkRestoreBtn');
+const bulkRestoreForm=document.getElementById('bulkRestoreForm');
+const bulkRestoreInputs=document.getElementById('bulkRestoreInputs');
+const selectionCount=document.getElementById('selectionCount');
+
+function syncArchiveSelection(){
+    if(!bulkRestoreBtn || !bulkRestoreForm) return;
+    const selected=archiveChecks.filter(c=>c.checked);
+    if(selectionCount) selectionCount.textContent=`${selected.length} selected`;
+    bulkRestoreBtn.disabled=selected.length===0;
+    if(selectAllArchives){
+        selectAllArchives.checked=archiveChecks.length>0 && selected.length===archiveChecks.length;
+        selectAllArchives.indeterminate=selected.length>0 && selected.length<archiveChecks.length;
+    }
+    if(bulkRestoreInputs){
+        bulkRestoreInputs.innerHTML=selected.map(c=>`<input type="hidden" name="archive_ids[]" value="${c.value}">`).join('');
+    }
+}
+archiveChecks.forEach(c=>c.addEventListener('change',syncArchiveSelection));
+if(selectAllArchives){
+    selectAllArchives.addEventListener('change',()=>{
+        archiveChecks.forEach(c=>c.checked=selectAllArchives.checked);
+        syncArchiveSelection();
+    });
+}
+function confirmBulkRestore(){
+    const selected=archiveChecks.filter(c=>c.checked);
+    if(!selected.length) return false;
+    const labels=selected.map(c=>c.dataset.label || `Archive #${c.value}`);
+    return confirm(`Restore ${selected.length} selected archive${selected.length===1?'':'s'}?\n\n${labels.join('\n')}\n\nEach selected period must have no live evaluation records. Continue?`);
+}
+syncArchiveSelection();
+function confirmDelete(label){return confirm(`Delete Archive\n\nYou are about to permanently delete the archive for ${label}.\n\nThis removes the archived snapshot itself and cannot be undone. If this period is still marked "Archived" (not yet restored), this is the only copy of that evaluation data.\n\nContinue?`);}
 </script>
 </body>
 </html>

@@ -226,8 +226,8 @@ tbody td{padding:13px 16px;font-size:14px;vertical-align:middle;}
   --danger:#D6455D; --success:#0F9F6E; --radius:12px;
   --card-shadow:0 2px 4px rgba(30,82,144,.06),0 6px 16px rgba(30,82,144,.08);
 }
-html{background:#fff;color-scheme:light;}
-body{background:#fff !important;color:#0B1F3A !important;}
+html{background:#FFFFFF;color-scheme:light;}
+body{background:#FFFFFF !important;color:#0B1F3A !important;}
 a{color:inherit;}
 .page-header h1,.page-title,.et-title,.section-title{color:#0B1F3A !important;}
 .page-header p,.page-sub,.et-sub,.et-updated,.muted,.hint{color:#67819E !important;}
@@ -278,6 +278,28 @@ a { color:inherit; }
 </style>
     <link rel="stylesheet" href="admin_ui_theme.css">
     <link rel="stylesheet" href="admin_compact_ui.css">
+<style id="pbi-feature-scrollbar">
+
+/* PBI FEATURE SCROLLBAR — consistent with the compact page scrollbar */
+html, body {
+  scrollbar-width: thin !important;
+  scrollbar-color: #888 transparent !important;
+}
+html::-webkit-scrollbar, body::-webkit-scrollbar,
+.feature-compact ::-webkit-scrollbar { width: 10px !important; height: 10px !important; }
+html::-webkit-scrollbar-track, body::-webkit-scrollbar-track,
+.feature-compact ::-webkit-scrollbar-track { background: transparent !important; }
+html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb,
+.feature-compact ::-webkit-scrollbar-thumb {
+  background: #888 !important; border-radius: 999px !important;
+  border: 2px solid transparent !important; background-clip: padding-box !important;
+}
+html::-webkit-scrollbar-thumb:hover, body::-webkit-scrollbar-thumb:hover,
+.feature-compact ::-webkit-scrollbar-thumb:hover { background: #777 !important; background-clip: padding-box !important; }
+html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
+.feature-compact ::-webkit-scrollbar-button { display: block !important; width: 10px !important; height: 10px !important; background-color: transparent !important; }
+
+</style>
 </head>
 <body class="feature-compact">
 

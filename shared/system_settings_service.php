@@ -1,50 +1,52 @@
 <?php
 /**
- * system_settings_service.php
- * ─────────────────────────────────────────────────────────────────────────
- * SINGLE SOURCE OF TRUTH for academic/evaluation configuration.
+ * Shared evaluation scheduling service.
  *
- * The Executive Assistant (admin_dashboard.php) is the only writer of this
- * configuration. Every role dashboard (Dean today; Principal, Teacher,
- * Staff, Student next) is a READ-ONLY consumer via get_system_settings().
+ * All schedule comparisons are made in Asia/Manila.  The submission decision
+ * is computed from the persisted control_mode on every request so:
+ *   schedule -> [start, end) according to configured datetimes
+ *   open     -> always open (Force Open)
+ *   closed   -> always closed (Force Closed)
  *
- * Include this AFTER db.php (needs $mysqli) and BEFORE you use any of its
- * functions. Safe to include multiple times per request (has its own guard).
- *
- * WHY THIS FILE ALSO TOUCHES `evaluation_periods`:
- * Today, student_dashboard.php gates evaluation submission (and stamps
- * evaluation_tracker.period_id) purely off `evaluation_periods.is_active` —
- * it does not know `system_settings` exists. If we only used
- * `system_settings` to drive what the Dean *displays*, an admin could set
- * "Force Closed" and the Dean would show that, while students could still
- * submit, because nothing told `evaluation_periods` to close too. That is a
- * lie-to-the-Dean bug, not just a display bug.
- *
- * ss_sync_evaluation_period() closes that gap by keeping exactly one active
- * row in `evaluation_periods` in agreement with whatever the Executive
- * Assistant just configured. Call it once, right after a "System & Period"
- * settings save. Every dashboard's queries (including the existing student
- * submission gate) then stay correct without needing their own changes.
- * ─────────────────────────────────────────────────────────────────────────
+ * The closing instant is exclusive: at the exact configured end time, new
+ * submissions are blocked.
  */
 
-if (!defined('SYSTEM_SETTINGS_SERVICE_LOADED')) {
-define('SYSTEM_SETTINGS_SERVICE_LOADED', true);
+const SS_TIMEZONE = 'Asia/Manila';
 
-// ems_get_active_period() already exists in EvaluationAnalyticsService.php —
-// reuse it here instead of a second "what's the active period" query.
-// __DIR__ always resolves to shared/ regardless of which dashboard includes
-// this file, so this works from dean/, principal/, etc. unchanged.
-require_once __DIR__ . '/EvaluationAnalyticsService.php';
+date_default_timezone_set(SS_TIMEZONE);
 
-// ── STATIC REFERENCE DATA ───────────────────────────────────────────────
+function ss_timezone(): DateTimeZone {
+    static $tz = null;
+    if ($tz === null) $tz = new DateTimeZone(SS_TIMEZONE);
+    return $tz;
+}
 
-function ss_structure_labels(): array {
-    return [
-        'college' => 'College',
-        'jhs'     => 'Junior High School',
-        'shs'     => 'Senior High School',
+function ss_now(): DateTimeImmutable {
+    return new DateTimeImmutable('now', ss_timezone());
+}
+
+function ss_parse_datetime(?string $raw): ?DateTimeImmutable {
+    $raw = trim((string)$raw);
+    if ($raw === '') return null;
+
+    $formats = [
+        'Y-m-d\\TH:i',
+        'Y-m-d H:i',
+        'Y-m-d H:i:s',
+        'Y-m-d',
     ];
+
+    foreach ($formats as $format) {
+        $dt = DateTimeImmutable::createFromFormat('!' . $format, $raw, ss_timezone());
+        $errors = DateTimeImmutable::getLastErrors();
+        $hasErrors = is_array($errors) && ($errors['warning_count'] > 0 || $errors['error_count'] > 0);
+        if ($dt instanceof DateTimeImmutable && !$hasErrors) {
+            return $dt->setTimezone(ss_timezone());
+        }
+    }
+
+    return null;
 }
 
 function ss_structure_terms(): array {
@@ -55,269 +57,293 @@ function ss_structure_terms(): array {
     ];
 }
 
-function ss_defaults(): array {
+function ss_structure_labels(): array {
     return [
-        'acad_year'      => date('Y') . '-' . (date('Y') + 1),
-        'acad_structure' => 'college',
-        'acad_term'      => '1st Semester',
-        'auto_schedule'  => 1,
-        'control_mode'   => 'schedule',   // schedule | open | closed
-        'eval_start'     => '',
-        'eval_end'       => '',
-        'maintenance'    => 0,
-        'rule_only_during_period' => 1,
-        'rule_edit_after_submit'  => 0,
-        'rule_one_submission'     => 1,
-        'rule_require_all'        => 1,
-        'rule_auto_lock'          => 1,
-        'rule_countdown'          => 1,
-        'rule_prevent_late'       => 1,
-        'publish_state'           => 'published', // draft | published
-        'notify_eval_open'        => 1,
-        'notify_eval_closing'     => 1,
-        'notify_faculty_complete' => 1,
-        'notify_reminders'        => 0,
+        'college' => 'College',
+        'jhs'     => 'Junior High School',
+        'shs'     => 'Senior High School',
     ];
 }
 
-// ── RAW SETTINGS (from system_settings key/value table) ────────────────
-
 function ss_raw(mysqli $mysqli): array {
-    $sys = ss_defaults();
+    $defaults = [
+        'acad_year' => date('Y') . '-' . (date('Y') + 1),
+        'acad_structure' => 'college',
+        'acad_term' => '1st Semester',
+        'auto_schedule' => 1,
+        'control_mode' => 'schedule',
+        'eval_start' => '',
+        'eval_end' => '',
+        'maintenance' => 0,
+        'rule_only_during_period' => 1,
+        'rule_edit_after_submit' => 0,
+        'rule_one_submission' => 1,
+        'rule_require_all' => 1,
+        'rule_auto_lock' => 1,
+        'rule_countdown' => 1,
+        'rule_prevent_late' => 1,
+        'publish_state' => 'published',
+        'notify_eval_open' => 1,
+        'notify_eval_closing' => 1,
+        'notify_faculty_complete' => 1,
+        'notify_reminders' => 0,
+    ];
 
-    $stbl = $mysqli->query("SHOW TABLES LIKE 'system_settings'");
-    if ($stbl && $stbl->num_rows > 0) {
-        $sr = $mysqli->query("SELECT setting_key, setting_value FROM system_settings");
-        if ($sr) {
-            while ($row = $sr->fetch_assoc()) {
-                $sys[$row['setting_key']] = $row['setting_value'];
-            }
+    $defaults['auto_schedule'] = (int)$defaults['auto_schedule'];
+    // Scheduling always uses the application timezone; never trust a stored or browser timezone.
+    $defaults['schedule_timezone'] = SS_TIMEZONE;
+
+    $table = @$mysqli->query("SHOW TABLES LIKE 'system_settings'");
+    if (!$table || $table->num_rows === 0) return $defaults;
+
+    $res = @$mysqli->query("SELECT setting_key, setting_value FROM system_settings");
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            $key = (string)$row['setting_key'];
+            if (array_key_exists($key, $defaults)) $defaults[$key] = $row['setting_value'];
+            else $defaults[$key] = $row['setting_value'];
+        }
+        $res->free();
+    }
+
+    if (!isset($defaults['control_mode']) || !in_array($defaults['control_mode'], ['schedule','open','closed'], true)) {
+        $defaults['control_mode'] = 'schedule';
+    }
+    $defaults['auto_schedule'] = (int)!empty($defaults['auto_schedule']);
+    $defaults['maintenance'] = (int)!empty($defaults['maintenance']);
+
+    return $defaults;
+}
+
+/**
+ * Return the live submission state. Schedule mode ignores server timezone,
+ * auto DST behavior, and MySQL timezone because all comparisons use Manila.
+ */
+function ss_schedule_state(array $sys, ?DateTimeImmutable $now = null): array {
+    $mode = $sys['control_mode'] ?? 'schedule';
+    $now = $now ? $now->setTimezone(ss_timezone()) : ss_now();
+
+    if ($mode === 'open') {
+        return [
+            'open' => true,
+            'mode' => 'open',
+            'reason' => 'force_open',
+            'now' => $now,
+            'start' => null,
+            'end' => null,
+        ];
+    }
+
+    if ($mode === 'closed') {
+        return [
+            'open' => false,
+            'mode' => 'closed',
+            'reason' => 'force_closed',
+            'now' => $now,
+            'start' => null,
+            'end' => null,
+        ];
+    }
+
+    $start = ss_parse_datetime($sys['eval_start'] ?? '');
+    $end   = ss_parse_datetime($sys['eval_end'] ?? '');
+
+    if (!$start || !$end || $end <= $start) {
+        return [
+            'open' => false,
+            'mode' => 'schedule',
+            'reason' => 'invalid_schedule',
+            'now' => $now,
+            'start' => $start,
+            'end' => $end,
+        ];
+    }
+
+    // [start, end): exact start opens, exact end closes.
+    $open = $now >= $start && $now < $end;
+    return [
+        'open' => $open,
+        'mode' => 'schedule',
+        'reason' => $open ? 'scheduled_open' : ($now < $start ? 'before_start' : 'after_end'),
+        'now' => $now,
+        'start' => $start,
+        'end' => $end,
+    ];
+}
+
+function ss_evaluation_is_open(array $sys): bool {
+    return (bool)ss_schedule_state($sys)['open'];
+}
+
+function ss_is_submission_open(mysqli $mysqli): bool {
+    // Fresh DB read on every submission attempt prevents a stale page from
+    // submitting after the configured closing instant.
+    $sys = ss_raw($mysqli);
+    return ss_evaluation_is_open($sys);
+}
+
+function ss_period_columns(mysqli $mysqli): array {
+    $cols = [];
+    $res = @$mysqli->query("SHOW COLUMNS FROM evaluation_periods");
+    if ($res) {
+        while ($row = $res->fetch_assoc()) $cols[strtolower($row['Field'])] = true;
+        $res->free();
+    }
+    return [
+        'start' => isset($cols['date_start']) ? 'date_start' : (isset($cols['start_date']) ? 'start_date' : null),
+        'end'   => isset($cols['date_end']) ? 'date_end' : (isset($cols['end_date']) ? 'end_date' : null),
+    ];
+}
+
+/**
+ * Keep the selected academic period synchronized with the configured year /
+ * term and schedule dates.  is_active identifies the current period; it is
+ * not used as the submission-open flag.
+ */
+function ss_sync_evaluation_period(mysqli $mysqli, array $sys): int {
+    $exists = @$mysqli->query("SHOW TABLES LIKE 'evaluation_periods'");
+    if (!$exists || $exists->num_rows === 0) return 0;
+
+    $year = trim((string)($sys['acad_year'] ?? ''));
+    $structure = (string)($sys['acad_structure'] ?? 'college');
+    $term = trim((string)($sys['acad_term'] ?? '1st Semester'));
+    $terms = ss_structure_terms();
+    if (!isset($terms[$structure]) || !in_array($term, $terms[$structure], true)) {
+        $term = $terms[$structure][0] ?? '1st Semester';
+    }
+
+    $label = trim($year . ' — ' . $term, ' —');
+    $stmt = @$mysqli->prepare("SELECT id FROM evaluation_periods WHERE school_year=? AND semester=? ORDER BY id DESC LIMIT 1");
+    $periodId = 0;
+    if ($stmt) {
+        $stmt->bind_param('ss', $year, $term);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $periodId = (int)($row['id'] ?? 0);
+        $stmt->close();
+    }
+
+    $start = ss_parse_datetime($sys['eval_start'] ?? '');
+    $end = ss_parse_datetime($sys['eval_end'] ?? '');
+    $cols = ss_period_columns($mysqli);
+
+    if ($periodId <= 0) {
+        $stmt = @$mysqli->prepare("INSERT INTO evaluation_periods (period_label, school_year, semester) VALUES (?,?,?)");
+        if (!$stmt) return 0;
+        $stmt->bind_param('sss', $label, $year, $term);
+        $stmt->execute();
+        $periodId = (int)$mysqli->insert_id;
+        $stmt->close();
+    }
+
+    if ($periodId > 0 && $cols['start'] && $cols['end'] && $start && $end) {
+        $sql = "UPDATE evaluation_periods SET {$cols['start']}=?, {$cols['end']}=?, period_label=? WHERE id=?";
+        $stmt = @$mysqli->prepare($sql);
+        if ($stmt) {
+            $startDate = $start->format('Y-m-d');
+            $endDate = $end->format('Y-m-d');
+            $stmt->bind_param('sssi', $startDate, $endDate, $label, $periodId);
+            $stmt->execute();
+            $stmt->close();
         }
     }
 
-    // Guard against a stale/invalid Structure+Term combination left in the DB.
-    $terms = ss_structure_terms();
-    if (!isset($terms[$sys['acad_structure']])) $sys['acad_structure'] = 'college';
-    if (!in_array($sys['acad_term'], $terms[$sys['acad_structure']], true)) {
-        $sys['acad_term'] = $terms[$sys['acad_structure']][0];
+    @$mysqli->query("UPDATE evaluation_periods SET is_active=0");
+    $stmt = @$mysqli->prepare("UPDATE evaluation_periods SET is_active=1 WHERE id=?");
+    if ($stmt) {
+        $stmt->bind_param('i', $periodId);
+        $stmt->execute();
+        $stmt->close();
     }
 
+    return $periodId;
+}
+
+function ss_sync_from_database(mysqli $mysqli): array {
+    $sys = ss_raw($mysqli);
+    ss_sync_evaluation_period($mysqli, $sys);
     return $sys;
 }
 
-// ── RESOLVED STATUS (identical logic to admin_dashboard.php's
-//    compute_eval_health / compute_eval_status — moved here so there is
-//    exactly one implementation every dashboard shares) ──────────────────
-
-function ss_health(array $sys): array {
-    $base = ['duration_days' => null, 'remaining_days' => null, 'elapsed_days' => null, 'days_until_start' => null];
-
-    if (!empty($sys['maintenance'])) {
-        return array_merge($base, ['label' => 'MAINTENANCE', 'cls' => 'gray',
-            'headline' => 'System is in maintenance mode.', 'sub' => 'All non-admin access is locked.']);
-    }
-    if (($sys['publish_state'] ?? 'published') === 'draft') {
-        return array_merge($base, ['label' => 'DRAFT', 'cls' => 'gray',
-            'headline' => 'Evaluation is saved as a draft.', 'sub' => 'Not visible to students or faculty yet.']);
-    }
+function get_system_settings(mysqli $mysqli): array {
+    $sys = ss_raw($mysqli);
+    $periodId = ss_sync_evaluation_period($mysqli, $sys);
+    $state = ss_schedule_state($sys);
 
     $mode = $sys['control_mode'] ?? 'schedule';
-    if ($mode === 'open') {
-        return array_merge($base, ['label' => 'LIVE · FORCED OPEN', 'cls' => 'green',
-            'headline' => 'Evaluation is manually forced open.', 'sub' => 'Accepting submissions regardless of the schedule.']);
-    }
-    if ($mode === 'closed') {
-        return array_merge($base, ['label' => 'CLOSED · FORCED', 'cls' => 'red',
-            'headline' => 'Evaluation is manually forced closed.', 'sub' => 'Blocking submissions regardless of the schedule.']);
-    }
-    if (empty($sys['auto_schedule'])) {
-        return array_merge($base, ['label' => 'CLOSED · MANUAL', 'cls' => 'gray',
-            'headline' => 'Automatic scheduling is off.', 'sub' => 'Status will not change until a schedule is enabled.']);
-    }
-
-    $start = $sys['eval_start'] ?? '';
-    $end   = $sys['eval_end']   ?? '';
-    if (!$start || !$end) {
-        return array_merge($base, ['label' => 'NOT CONFIGURED', 'cls' => 'gray',
-            'headline' => 'No evaluation window is configured.', 'sub' => 'Set an opening and closing date to enable scheduling.']);
-    }
-    $ts = strtotime($start); $te = strtotime($end);
-    if ($ts === false || $te === false) {
-        return array_merge($base, ['label' => 'NOT CONFIGURED', 'cls' => 'gray',
-            'headline' => 'The configured dates could not be read.', 'sub' => 'Re-check the opening and closing date fields.']);
-    }
-
-    $now = time();
-    $duration_days = max(0, (int)round(($te - $ts) / 86400));
-
-    if ($now < $ts) {
-        $days = max(1, (int)ceil(($ts - $now) / 86400));
-        return array_merge($base, ['label' => 'SCHEDULED', 'cls' => 'yellow', 'duration_days' => $duration_days,
-            'days_until_start' => $days,
-            'headline' => 'Evaluation has not started yet.', 'sub' => 'Starts in ' . $days . ' day' . ($days === 1 ? '' : 's') . '.']);
-    }
-    if ($now > $te) {
-        $days = max(1, (int)floor(($now - $te) / 86400));
-        return array_merge($base, ['label' => 'CLOSED', 'cls' => 'red', 'duration_days' => $duration_days,
-            'elapsed_days' => $days,
-            'headline' => 'Evaluation period has ended.', 'sub' => 'Ended ' . ($days === 1 ? 'yesterday' : $days . ' days ago') . '.']);
-    }
-    $remaining = max(0, (int)ceil(($te - $now) / 86400));
-    return array_merge($base, ['label' => 'LIVE', 'cls' => 'green', 'duration_days' => $duration_days,
-        'remaining_days' => $remaining,
-        'headline' => 'Evaluation is currently accepting submissions.', 'sub' => $remaining . ' day' . ($remaining === 1 ? '' : 's') . ' remaining.']);
-}
-
-function ss_status(array $sys): array {
-    $h = ss_health($sys);
-    $map = ['green' => 'open', 'red' => 'closed', 'yellow' => 'amber', 'gray' => 'gray'];
-    $label = $h['label'];
-    if ($label === 'LIVE') $label = 'OPEN';
-    if ($label === 'LIVE · FORCED OPEN') $label = 'FORCED OPEN';
-    if ($label === 'CLOSED · FORCED') $label = 'FORCED CLOSED';
-    if ($label === 'SCHEDULED') $label = 'UPCOMING';
-    if ($label === 'CLOSED') $label = 'CLOSED · ENDED';
-    if ($label === 'DRAFT') $label = 'DRAFT · HIDDEN';
-    return ['label' => $label, 'cls' => $map[$h['cls']] ?? 'gray'];
-}
-
-// Plain-language headline + sub-message any dashboard can show, keyed off
-// the same 5 states called out for the Dean dashboard (Scheduled / Open /
-// Closed / Force Open / Force Closed) plus the extra system-level states
-// (Draft / Maintenance / Not Configured) that can also legitimately occur.
-function ss_status_message(array $health): array {
-    switch ($health['label']) {
-        case 'LIVE':
-            return ['headline' => 'Evaluation is currently open.', 'sub' => $health['remaining_days'] . ' day' . ($health['remaining_days'] === 1 ? '' : 's') . ' remaining.'];
-        case 'LIVE · FORCED OPEN':
-            return ['headline' => 'Evaluation has been manually opened by the Executive Assistant.', 'sub' => 'Accepting submissions regardless of the schedule.'];
-        case 'CLOSED · FORCED':
-            return ['headline' => 'Evaluation has been temporarily closed by the Executive Assistant.', 'sub' => 'Blocking submissions regardless of the schedule.'];
-        case 'SCHEDULED':
-            return ['headline' => 'Evaluation has not started.', 'sub' => 'Opens in ' . $health['days_until_start'] . ' day' . ($health['days_until_start'] === 1 ? '' : 's') . '.'];
-        case 'CLOSED':
-            return ['headline' => 'Evaluation period has ended.', 'sub' => 'Submissions are no longer accepted.'];
-        case 'DRAFT':
-            return ['headline' => 'Evaluation is saved as a draft.', 'sub' => 'Not visible yet.'];
-        case 'MAINTENANCE':
-            return ['headline' => 'System is in maintenance mode.', 'sub' => 'Access is temporarily locked.'];
-        default:
-            return ['headline' => $health['headline'] ?? 'Evaluation status unavailable.', 'sub' => $health['sub'] ?? ''];
-    }
-}
-
-// ── SELF-HEALING SCHEMA ──────────────────────────────────────────────────
-// `evaluation_periods.semester` was created as ENUM('1st Semester','2nd
-// Semester','Summer') — it predates JHS/SHS ever being selectable, so it
-// has no 'School Year' member. Widen it idempotently, same pattern as the
-// ALTER-TABLE-on-load already used in dean_dashboard.php.
-function ss_ensure_schema(mysqli $mysqli): void {
-    $res = @$mysqli->query("SHOW COLUMNS FROM evaluation_periods LIKE 'semester'");
-    $col = $res ? $res->fetch_assoc() : null;
-    if ($col && strpos($col['Type'], "'School Year'") === false) {
-        @$mysqli->query("ALTER TABLE evaluation_periods MODIFY semester ENUM('1st Semester','2nd Semester','Summer','School Year') NOT NULL");
-    }
-}
-
-// ── SYNC BRIDGE: system_settings  →  evaluation_periods ────────────────
-// Call this once after a "System & Period" settings save. Returns the
-// evaluation_periods.id that is now the single active row (or null if the
-// current settings resolve to nothing being open/scheduled at all).
-function ss_sync_evaluation_period(mysqli $mysqli, array $sys): ?int {
-    ss_ensure_schema($mysqli);
-
-    $health = ss_health($sys);
-    $shouldBeOpen = in_array($health['label'], ['LIVE', 'LIVE · FORCED OPEN'], true);
-
-    $year = $sys['acad_year'] !== '' ? $sys['acad_year'] : ss_defaults()['acad_year'];
-    $term = $sys['acad_term'];
-    $label = trim($year . ' — ' . $term);
-    $start = $sys['eval_start'] ? date('Y-m-d', strtotime($sys['eval_start'])) : null;
-    $end   = $sys['eval_end']   ? date('Y-m-d', strtotime($sys['eval_end']))   : null;
-
-    $stmt = $mysqli->prepare("SELECT id FROM evaluation_periods WHERE school_year=? AND semester=? LIMIT 1");
-    $stmt->bind_param("ss", $year, $term);
-    $stmt->execute();
-    $row = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    $active = $shouldBeOpen ? 1 : 0;
-
-    if ($row) {
-        $id = (int)$row['id'];
-        $upd = $mysqli->prepare("UPDATE evaluation_periods SET period_label=?, date_start=?, date_end=?, is_active=? WHERE id=?");
-        $upd->bind_param("sssii", $label, $start, $end, $active, $id);
-        $upd->execute();
-        $upd->close();
-    } else {
-        $ins = $mysqli->prepare("INSERT INTO evaluation_periods (period_label, school_year, semester, date_start, date_end, is_active) VALUES (?,?,?,?,?,?)");
-        $ins->bind_param("sssssi", $label, $year, $term, $start, $end, $active);
-        $ins->execute();
-        $id = $mysqli->insert_id;
-        $ins->close();
-    }
-
-    // Enforce a single active row so every dashboard's
-    // `WHERE is_active=1 LIMIT 1` keeps meaning exactly what it always has.
-    if ($shouldBeOpen) {
-        $mysqli->query("UPDATE evaluation_periods SET is_active=0 WHERE id<>" . (int)$id);
-    } else {
-        $mysqli->query("UPDATE evaluation_periods SET is_active=0 WHERE id=" . (int)$id);
-    }
-
-    return $shouldBeOpen ? $id : null;
-}
-
-function ss_active_period_id(mysqli $mysqli): ?int {
-    $period = ems_get_active_period($mysqli);
-    return $period ? (int)$period['id'] : null;
-}
-
-// ── GENERIC SCHEDULE-DRIVEN NOTIFICATIONS ───────────────────────────────
-// Shared across dashboards. Role-specific notices (e.g. "Engineering has
-// pending submissions") stay in each dashboard, since only that dashboard
-// knows its own analytics.
-function ss_schedule_notifications(array $health): array {
-    $out = [];
-    if ($health['label'] === 'LIVE' && $health['remaining_days'] !== null && $health['remaining_days'] <= 2) {
-        $out[] = 'Evaluation closes in ' . $health['remaining_days'] . ' day' . ($health['remaining_days'] === 1 ? '' : 's') . '.';
-    }
-    if ($health['label'] === 'SCHEDULED' && $health['days_until_start'] !== null && $health['days_until_start'] <= 1) {
-        $out[] = 'Evaluation opens ' . ($health['days_until_start'] === 1 ? 'tomorrow' : 'today') . '.';
-    }
-    if ($health['label'] === 'CLOSED · FORCED') {
-        $out[] = 'Evaluation has been manually closed by the Executive Assistant.';
-    }
-    if ($health['label'] === 'LIVE · FORCED OPEN') {
-        $out[] = 'Evaluation has been manually opened by the Executive Assistant.';
-    }
-    return $out;
-}
-
-// ── MAIN ENTRY POINT ─────────────────────────────────────────────────────
-// This is the ONLY function most dashboards should ever need to call.
-function get_system_settings(mysqli $mysqli): array {
-    $sys    = ss_raw($mysqli);
-    $health = ss_health($sys);
-    $status = ss_status($sys);
-    $msg    = ss_status_message($health);
-
-    return [
-        'raw'                      => $sys, // escape hatch for anything not modeled below
-        'academic_year'            => $sys['acad_year'],
-        'academic_structure'       => $sys['acad_structure'],
-        'academic_structure_label' => ss_structure_labels()[$sys['acad_structure']] ?? 'College',
-        'academic_term'            => $sys['acad_term'],
-        'eval_start'               => $sys['eval_start'],
-        'eval_end'                 => $sys['eval_end'],
-        'status'                   => $status,   // ['label','cls'] — short badge
-        'health'                   => $health,   // richer detail — durations, counts
-        'message'                  => $msg,      // ['headline','sub'] — plain language
-        'countdown_enabled'        => !empty($sys['rule_countdown']),
-        'is_open_for_submission'   => in_array($health['label'], ['LIVE', 'LIVE · FORCED OPEN'], true),
-        'notifications'            => ss_schedule_notifications($health),
-        'period_id'                => ss_active_period_id($mysqli), // the id evaluation_tracker.period_id joins against
+    $isScheduledBeforeStart = ($mode === 'schedule' && $state['reason'] === 'before_start');
+    $status = [
+        'label' => $isScheduledBeforeStart ? 'Scheduled' : ($state['open'] ? 'Open' : 'Closed'),
+        'cls' => $isScheduledBeforeStart ? 'scheduled' : ($state['open'] ? 'open' : 'closed'),
+        'mode' => $mode,
+        'reason' => $state['reason'],
     ];
+
+    $evalStartDt = $state['start'] instanceof DateTimeImmutable ? $state['start']->setTimezone(ss_timezone()) : null;
+    $evalEndDt   = $state['end'] instanceof DateTimeImmutable ? $state['end']->setTimezone(ss_timezone()) : null;
+    $formatSchedule = static function (?DateTimeImmutable $dt): string {
+        return $dt ? $dt->format('F j, Y \· g:i A') . ' (Asia/Manila)' : '';
+    };
+
+    if ($mode === 'open') {
+        $message = [
+            'headline' => 'Evaluation is open.',
+            'sub' => 'Force Open is overriding the configured schedule.'
+        ];
+    } elseif ($mode === 'closed') {
+        $message = [
+            'headline' => 'Evaluation is closed.',
+            'sub' => 'Force Closed is overriding the configured schedule.'
+        ];
+    } elseif ($state['reason'] === 'before_start' && $state['start']) {
+        $message = [
+            'headline' => 'Evaluation is scheduled to open.',
+            'sub' => 'Opens ' . $state['start']->format('M j, Y g:i A') . ' (Asia/Manila).'
+        ];
+    } elseif ($state['reason'] === 'after_end' && $state['end']) {
+        $message = [
+            'headline' => 'Evaluation is closed.',
+            'sub' => 'The scheduled window ended ' . $state['end']->format('M j, Y g:i A') . ' (Asia/Manila).'
+        ];
+    } elseif ($state['reason'] === 'invalid_schedule') {
+        $message = [
+            'headline' => 'No valid evaluation schedule is configured.',
+            'sub' => 'Configure the opening and closing date/time in System Settings.'
+        ];
+    } else {
+        $message = [
+            'headline' => 'Evaluation is open.',
+            'sub' => 'The current time is inside the configured schedule (Asia/Manila).'
+        ];
+    }
+
+    return array_merge($sys, [
+        'academic_year' => $sys['acad_year'] ?? '',
+        'academic_term' => $sys['acad_term'] ?? '',
+        'academic_structure' => $sys['acad_structure'] ?? 'college',
+        'academic_structure_label' => ss_structure_labels()[$sys['acad_structure'] ?? 'college'] ?? 'College',
+        'period_id' => $periodId,
+        'is_open_for_submission' => (int)$state['open'],
+        'eval_start' => $sys['eval_start'] ?? '',
+        'eval_end' => $sys['eval_end'] ?? '',
+        'countdown_enabled' => (int)!empty($sys['rule_countdown']),
+        'status' => $status,
+        'message' => $message,
+        'notifications' => [],
+        'schedule_timezone' => SS_TIMEZONE,
+        'eval_start_display' => $formatSchedule($evalStartDt),
+        'eval_end_display' => $formatSchedule($evalEndDt),
+    ]);
 }
 
-} // SYSTEM_SETTINGS_SERVICE_LOADED guard
+/**
+ * Compatibility accessor for Principal/Dean school-head evaluation pages.
+ *
+ * The school-head pages need the exact same academic-period and scheduling
+ * state as the global system settings. The role argument is retained for
+ * compatibility with existing callers; it does not create a second source of
+ * truth or change Force Open / Force Closed behavior.
+ */
+function get_school_head_settings(mysqli $mysqli, string $role = 'principal'): array {
+    return get_system_settings($mysqli);
+}

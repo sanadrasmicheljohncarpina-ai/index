@@ -59,9 +59,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = 'Unable to validate the account details. Please try again.';
             }
         }
-
-        // Optional profile photo, matching the shared registration layout.
+        // Required profile photo.
         $photo_filename = null;
+        if (empty($error) && (!isset($_FILES['photo']) || $_FILES['photo']['error'] === UPLOAD_ERR_NO_FILE)) {
+            $error = 'Profile photo is required.';
+        }
         if (empty($error) && isset($_FILES['photo']) && $_FILES['photo']['error'] !== UPLOAD_ERR_NO_FILE) {
             if ($_FILES['photo']['error'] !== UPLOAD_ERR_OK) {
                 $error = 'Failed to upload profile photo.';
@@ -134,7 +136,7 @@ $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 :root{
     --dark-blue:#0A192F; --blue-mid:#172A45; --blue-inner:#0F1F3D;
     --blue-accent:#2B6CB0; --violet:#7C5FD9; --violet-hover:#9C85F0;
-    --light:#E0E6F0; --muted:#A0B3C6; --danger:#F05454; --radius:10px;
+    --light:#E0E6F0; --muted:#A0B3C6; --danger:#F05454; --radius:8px;
     --shadow:0 8px 32px rgba(0,0,0,.45);
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -143,7 +145,7 @@ body{
     background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,.84)),url('../background.png') center/cover no-repeat fixed;
     font-family:'DM Sans',sans-serif;color:var(--light);
     display:flex;align-items:center;justify-content:center;
-    padding:40px 20px;position:relative;overflow-x:hidden;
+    padding:28px 20px;position:relative;overflow-x:hidden;
 }
 .bg-grid{position:fixed;inset:0;z-index:0;background-image:linear-gradient(rgba(124,95,217,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(124,95,217,.045) 1px,transparent 1px);background-size:48px 48px;animation:gridShift 22s linear infinite;}
 @keyframes gridShift{0%{background-position:0 0}100%{background-position:48px 48px}}
@@ -151,53 +153,49 @@ body{
 .orb-1{width:380px;height:380px;background:radial-gradient(circle,rgba(124,95,217,.13) 0%,transparent 70%);top:-80px;right:-80px;}
 .orb-2{width:300px;height:300px;background:radial-gradient(circle,rgba(43,108,176,.15) 0%,transparent 70%);bottom:-60px;left:-60px;}
 .reg-card{
-    position:relative;z-index:10;width:100%;max-width:650px;
+    position:relative;z-index:10;width:100%;max-width:540px;
     background:rgba(23,42,69,.9);backdrop-filter:blur(20px);
-    border:1px solid rgba(255,255,255,.09);border-radius:20px;
-    padding:36px 40px 30px;box-shadow:var(--shadow),0 0 0 1px rgba(124,95,217,.12);
+    border:1px solid rgba(255,255,255,.09);border-radius:16px;
+    padding:26px 30px 22px;box-shadow:var(--shadow),0 0 0 1px rgba(124,95,217,.12);
 }
-.card-header{text-align:center;margin-bottom:22px;}
-.logo-ring{width:68px;height:68px;border-radius:50%;border:2.5px solid var(--violet);box-shadow:0 0 20px rgba(124,95,217,.4);margin:0 auto 14px;display:block;object-fit:cover;}
-.card-title{font-family:'Rajdhani',sans-serif;font-size:26px;font-weight:700;letter-spacing:2px;color:#fff;text-transform:uppercase;}
-.card-subtitle{font-size:12px;color:var(--muted);letter-spacing:1.1px;text-transform:uppercase;margin-top:4px;}
-.divider{height:1px;background:linear-gradient(90deg,transparent,rgba(124,95,217,.42),transparent);margin:0 0 20px;}
+.card-header{text-align:center;margin-bottom:16px;}
+.logo-ring{width:54px;height:54px;border-radius:50%;border:2px solid var(--violet);box-shadow:0 0 16px rgba(124,95,217,.4);margin:0 auto 10px;display:block;object-fit:cover;}
+.card-title{font-family:'Rajdhani',sans-serif;font-size:21px;font-weight:700;letter-spacing:1.6px;color:#fff;text-transform:uppercase;}
+.card-subtitle{font-size:10.5px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-top:3px;}
+.divider{height:1px;background:linear-gradient(90deg,transparent,rgba(124,95,217,.42),transparent);margin:0 0 15px;}
 .section-title{font-family:'Rajdhani',sans-serif;color:var(--violet-hover);font-size:17px;letter-spacing:1px;text-transform:uppercase;display:flex;align-items:center;gap:8px;margin-bottom:4px;}
 .section-sub{font-size:12px;color:var(--muted);margin-bottom:18px;}
-.photo-upload-area{display:flex;align-items:center;gap:18px;margin-bottom:20px;}
-.photo-preview{width:78px;height:78px;border-radius:50%;background:var(--blue-inner);border:2px dashed rgba(124,95,217,.5);overflow:hidden;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:border-color .2s;flex-shrink:0;}
+.photo-upload-area{display:flex;align-items:center;gap:14px;margin-bottom:16px;}
+.photo-preview{width:62px;height:62px;border-radius:50%;background:var(--blue-inner);border:2px dashed rgba(124,95,217,.5);overflow:hidden;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:border-color .2s;flex-shrink:0;}
 .photo-preview:hover{border-color:var(--violet);}
 .photo-preview img{width:100%;height:100%;object-fit:cover;display:none;}
-.photo-preview .ph-icon{color:var(--muted);font-size:23px;}
-.photo-info p{font-size:13px;color:var(--light);font-weight:600;margin-bottom:3px;}
-.photo-info span{font-size:11px;color:var(--muted);}
-.btn-photo{display:inline-flex;align-items:center;gap:6px;background:rgba(124,95,217,.12);border:1px solid rgba(124,95,217,.35);color:var(--violet-hover);padding:7px 14px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;margin-top:7px;}
+.photo-preview .ph-icon{color:var(--muted);font-size:19px;}
+.photo-info p{font-size:12px;color:var(--light);font-weight:600;margin-bottom:3px;}
+.photo-info span{font-size:10px;color:var(--muted);}
+.btn-photo{display:inline-flex;align-items:center;gap:6px;background:rgba(124,95,217,.12);border:1px solid rgba(124,95,217,.35);color:var(--violet-hover);padding:6px 12px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;margin-top:6px;}
 input[type=file]{display:none;}
-.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
 .form-grid .full{grid-column:1/-1;}
-.form-group{display:flex;flex-direction:column;gap:6px;}
-.form-label{font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);}
+.form-group{display:flex;flex-direction:column;gap:5px;}
+.form-label{font-size:10px;font-weight:600;letter-spacing:1.1px;text-transform:uppercase;color:var(--muted);}
 .input-wrap{position:relative;}
-.input-wrap .f-icon{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;pointer-events:none;}
-.form-input{width:100%;padding:11px 13px 11px 38px;background:rgba(10,25,47,.7);border:1px solid rgba(255,255,255,.1);border-radius:var(--radius);color:var(--light);font-size:14px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .25s,box-shadow .25s;}
+.input-wrap .f-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;pointer-events:none;}
+.form-input{width:100%;padding:9px 11px 9px 34px;background:rgba(10,25,47,.7);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:var(--light);font-size:13px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .25s,box-shadow .25s;}
 .form-input::placeholder{color:rgba(160,179,198,.42);}
 .form-input:focus{border-color:var(--violet);box-shadow:0 0 0 3px rgba(124,95,217,.15);}
-.toggle-pw{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0;}
-.pw-strength{margin-top:6px;display:none;}
-.strength-bar{height:4px;border-radius:2px;background:rgba(255,255,255,.08);overflow:hidden;margin-bottom:4px;}
+.toggle-pw{position:absolute;right:11px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:0;}
+.pw-strength{margin-top:5px;display:none;}
+.strength-bar{height:3px;border-radius:2px;background:rgba(255,255,255,.08);overflow:hidden;margin-bottom:4px;}
 .strength-fill{height:100%;border-radius:2px;width:0%;transition:width .3s,background .3s;}
-.strength-label{font-size:11px;color:var(--muted);}
-.alert{display:flex;align-items:flex-start;gap:9px;border-radius:8px;padding:11px 14px;font-size:13px;margin-bottom:16px;}
+.strength-label{font-size:10px;color:var(--muted);}
+.alert{display:flex;align-items:flex-start;gap:8px;border-radius:8px;padding:9px 12px;font-size:12px;margin-bottom:14px;}
 .alert-error{background:rgba(240,84,84,.12);border:1px solid rgba(240,84,84,.3);color:#fca5a5;}
 .alert-success{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.28);color:#86efac;}
-.info-box{background:rgba(43,108,176,.12);border:1px solid rgba(43,108,176,.25);border-radius:8px;padding:12px 14px;margin-top:16px;font-size:12px;color:var(--muted);display:flex;gap:8px;align-items:flex-start;line-height:1.5;}
-.info-box i{color:var(--violet-hover);margin-top:1px;flex-shrink:0;}
-.btn-register{width:100%;padding:13px;background:var(--violet);border:none;border-radius:var(--radius);color:#fff;font-size:15px;font-weight:700;font-family:'DM Sans',sans-serif;letter-spacing:.4px;cursor:pointer;margin-top:18px;transition:background .2s,transform .15s,box-shadow .2s;box-shadow:0 4px 16px rgba(124,95,217,.28);display:flex;align-items:center;justify-content:center;gap:8px;}
+.btn-register{width:100%;padding:11px;background:var(--violet);border:none;border-radius:8px;color:#fff;font-size:14px;font-weight:700;font-family:'DM Sans',sans-serif;letter-spacing:.4px;cursor:pointer;margin-top:14px;transition:background .2s,transform .15s,box-shadow .2s;box-shadow:0 4px 16px rgba(124,95,217,.28);display:flex;align-items:center;justify-content:center;gap:8px;}
 .btn-register:hover{background:var(--violet-hover);transform:translateY(-1px);box-shadow:0 6px 22px rgba(124,95,217,.38);}
-.card-footer{text-align:center;margin-top:20px;font-size:12px;color:var(--muted);border-top:1px solid rgba(255,255,255,.06);padding-top:17px;}
+.card-footer{text-align:center;margin-top:16px;font-size:11px;color:var(--muted);border-top:1px solid rgba(255,255,255,.06);padding-top:13px;}
 .card-footer a{color:var(--violet-hover);text-decoration:none;font-weight:600;}
-.secure-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);margin-top:10px;letter-spacing:.5px;}
-.secure-badge i{color:#4ade80;font-size:10px;}
-@media(max-width:600px){.reg-card{padding:28px 18px 24px}.form-grid{grid-template-columns:1fr}.form-grid .full{grid-column:1}.photo-upload-area{align-items:flex-start}}
+@media(max-width:600px){.reg-card{padding:22px 16px 18px}.form-grid{grid-template-columns:1fr}.form-grid .full{grid-column:1}.photo-upload-area{align-items:flex-start}}
 </style>
 </head>
 <body>
@@ -223,11 +221,7 @@ input[type=file]{display:none;}
         <?php if ($error): ?>
             <div class="alert alert-error"><i class="fa-solid fa-circle-exclamation"></i><span><?= htmlspecialchars($error) ?></span></div>
         <?php endif; ?>
-
-        <div class="section-title"><i class="fa-solid fa-user-plus"></i> Account Information</div>
-        <div class="section-sub">Please provide your account details to register.</div>
-
-        <form method="POST" action="dean_register.php" enctype="multipart/form-data" id="regForm">
+<form method="POST" action="dean_register.php" enctype="multipart/form-data" id="regForm">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
 
             <div class="photo-upload-area">
@@ -237,9 +231,8 @@ input[type=file]{display:none;}
                 </div>
                 <div class="photo-info">
                     <p>Profile Photo</p>
-                    <span>Optional profile photo — max 10MB</span><br>
                     <label class="btn-photo" for="photoFile"><i class="fa-solid fa-upload"></i> Upload Photo</label>
-                    <input type="file" id="photoFile" name="photo" accept="image/jpeg,image/png,image/webp,image/gif" onchange="previewPhoto(this)"/>
+                    <input type="file" id="photoFile" name="photo" accept="image/jpeg,image/png,image/webp,image/gif" required onchange="previewPhoto(this)"/>
                 </div>
             </div>
 
@@ -291,11 +284,6 @@ input[type=file]{display:none;}
                 </div>
             </div>
 
-            <div class="info-box">
-                <i class="fa-solid fa-circle-info"></i>
-                <span>Your dean account will be submitted for <strong style="color:var(--light)">administrator approval</strong>. Additional employment details are not required during registration and can be managed later by an authorized administrator.</span>
-            </div>
-
             <button type="submit" class="btn-register">
                 <i class="fa-solid fa-user-plus"></i>
                 <span>Create Dean Account</span>
@@ -304,7 +292,6 @@ input[type=file]{display:none;}
 
         <div class="card-footer">
             Already have an account? <a href="dean_login.php">Sign in here</a><br>
-            <span class="secure-badge"><i class="fa-solid fa-circle-check"></i> Secured &amp; Encrypted Connection</span>
         </div>
     <?php endif; ?>
 </div>

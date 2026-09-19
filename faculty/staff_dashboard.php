@@ -21,8 +21,11 @@
         $full_name   = $_SESSION['full_name']   ?? 'Staff';
         $designation = $_SESSION['designation'] ?? 'Staff';
         $page        = $_GET['page'] ?? 'dashboard';
-        if ($page === 'peer') $page = 'ea_eval';
-        if ($page === 'peer_eval') $page = 'ea_eval_form';
+        // NOTE: 'peer' / 'peer_eval' are live pages in their own right (the
+        // Peer Evaluation feature below) and must NOT be aliased away — only
+        // the old EA-only URLs collapse into the unified Staff Evaluation page.
+        if ($page === 'ea_eval') $page = 'staff_eval';
+        if ($page === 'ea_eval_form') $page = 'staff_eval_form';
 
         // ── CSRF TOKEN ────────────────────────────────────────────────
         if (empty($_SESSION['csrf_token'])) {
@@ -62,6 +65,56 @@
         $lvlRes = $lvlQ->get_result();
         while ($lr = $lvlRes->fetch_assoc()) $my_levels[] = $lr['year_level'];
         $lvlQ->close();
+
+        // ── DERIVE TEACHING SCOPE (College vs JHS/SHS) ──────────────────
+        // A Staff account that has been assigned to teach one or more year
+        // levels (user_year_levels — set via admin/manage_privileged_accounts.php's
+        // "Year Level(s) Responsible For / Teaching") is Teaching Staff. Which
+        // supervisor(s) that Staff account evaluates depends on WHICH levels:
+        // any College level ('1st Year College'..'4th Year College') means
+        // they evaluate the Dean; any Grade level ('Grade 7'..'Grade 12', i.e.
+        // JHS/SHS) means they evaluate the Principal; teaching both scopes at
+        // once means they evaluate both the Dean and the Principal. Staff with
+        // zero teaching assignments are non-teaching Staff and instead
+        // evaluate the Executive Assistant. Teaching Staff (of any scope)
+        // additionally get Peer Evaluation (evaluating fellow Teacher/Staff),
+        // which non-teaching Staff do not. Enforced both in the render
+        // (below) and again in the submit handlers, since those must never
+        // trust page state alone.
+        $staff_has_teaching_assignment = !empty($my_levels);
+        $staff_teaches_college  = false;
+        $staff_teaches_basic_ed = false; // JHS/SHS (Grade 7–12)
+        foreach ($my_levels as $lvl) {
+            if (stripos($lvl, 'College') !== false) $staff_teaches_college  = true;
+            if (stripos($lvl, 'Grade') !== false)   $staff_teaches_basic_ed = true;
+        }
+
+        // Human-readable summary of who this Staff account can currently
+        // evaluate, used on the Role & Designation page.
+        $staff_can_evaluate_parts = [];
+        if ($staff_teaches_college)  $staff_can_evaluate_parts[] = 'Dean';
+        if ($staff_teaches_basic_ed) $staff_can_evaluate_parts[] = 'Principal';
+        if ($staff_has_teaching_assignment) $staff_can_evaluate_parts[] = 'Fellow Teacher/Staff (Peer Evaluation)';
+        if (empty($staff_can_evaluate_parts)) $staff_can_evaluate_parts[] = 'Executive Assistant';
+        $staff_can_evaluate_label = implode(', ', $staff_can_evaluate_parts);
+
+        // ── STAFF EVALUATION "HOME" PAGE ─────────────────────────────
+        // Non-teaching Staff evaluate the EA under the dedicated Staff
+        // Evaluation page/nav item. Teaching Staff no longer get a separate
+        // Staff Evaluation nav item — their Dean/Principal evaluation is
+        // folded into the Peer Evaluation page instead (rendered above the
+        // Teacher/Staff designation picker), so every link/redirect that
+        // used to point at 'staff_eval' for them now points at 'peer'.
+        $staff_eval_home_page = $staff_has_teaching_assignment ? 'peer' : 'staff_eval';
+        $staff_eval_feature_label = $staff_has_teaching_assignment ? 'Evaluation' : 'Staff Evaluation';
+
+        // Teaching Staff no longer have a standalone Staff Evaluation landing
+        // page — Dean/Principal evaluation now lives inside Peer Evaluation's
+        // Step 1 designation picker. Send old bookmarks/links straight there
+        // instead of showing an interstitial "this moved" screen.
+        if ($staff_has_teaching_assignment && $page === 'staff_eval') {
+            header('Location: staff_dashboard.php?page=peer'); exit;
+        }
 
         // ── AUTO-CREATE notifications table ──────────────────────────
         $mysqli->query("CREATE TABLE IF NOT EXISTS notifications (
@@ -209,43 +262,108 @@
         $pr = $mysqli->query("SELECT * FROM evaluation_periods WHERE is_active=1 LIMIT 1");
         if ($pr) $period = $pr->fetch_assoc();
 
-        // ── STAFF -> EXECUTIVE ASSISTANT EVALUATION ─────────────────────
-        // Staff members may evaluate the Executive Assistant only in the
-        // Staff evaluation workspace. The target is resolved from the live
-        // database through the same EA personnel helper used by Dean/Principal.
-        $ea_list = ea_get_executive_assistants($mysqli, (int)($period['id'] ?? 0));
-        $ea_target = $ea_list[0] ?? null;
-        if ($ea_target && isset($_GET['tid'])) {
-            $requestedEaId = (int)$_GET['tid'];
-            foreach ($ea_list as $candidate) {
-                if ((int)$candidate['id'] === $requestedEaId) { $ea_target = $candidate; break; }
+        // ── STAFF EVALUATION QUESTIONNAIRE ─────────────────────────────
+        // Non-teaching Staff evaluate the Executive Assistant. Teaching Staff
+        // instead evaluate the Dean and/or Principal, chosen by which
+        // level(s) they teach (see $staff_teaches_college / $staff_teaches_basic_ed
+        // above) — never the EA. The Questionnaire feature is the single
+        // source of truth: questions are read directly from evaluation_questions
+        // using eval_type='staff' and the selected target_type (Dean / Principal / EA).
+        $staff_eval_targets = [];
+
+        if ($staff_has_teaching_assignment) {
+            $wanted_roles = [];
+            if ($staff_teaches_college)  $wanted_roles[] = 'dean';
+            if ($staff_teaches_basic_ed) $wanted_roles[] = 'principal';
+
+            if (!empty($wanted_roles)) {
+                $rolesInClause = "'" . implode("','", array_map(fn($r) => $mysqli->real_escape_string($r), $wanted_roles)) . "'";
+                $dnprStmt = $mysqli->query("
+                    SELECT id, full_name, designation, photo, role
+                    FROM users
+                    WHERE role IN ($rolesInClause)
+                      AND is_active=1
+                      AND account_status='approved'
+                    ORDER BY FIELD(role,'dean','principal'), full_name ASC
+                ");
+                if ($dnprStmt) {
+                    while ($row = $dnprStmt->fetch_assoc()) {
+                        $staff_eval_targets[] = [
+                            'id' => (int)$row['id'],
+                            'full_name' => $row['full_name'],
+                            'designation' => $row['designation'] ?? '',
+                            'photo' => $row['photo'] ?? '',
+                            'target_type' => strtolower($row['role']) === 'dean' ? 'Dean' : 'Principal',
+                            'target_label' => ucfirst(strtolower($row['role']))
+                        ];
+                    }
+                    $dnprStmt->free();
+                }
+            }
+        } else {
+            $ea_candidates = ea_get_executive_assistants($mysqli, (int)($period['id'] ?? 0));
+            foreach ($ea_candidates as $ea) {
+                $staff_eval_targets[] = [
+                    'id' => (int)$ea['id'],
+                    'full_name' => $ea['full_name'] ?? 'Executive Assistant',
+                    'designation' => $ea['position'] ?? ($ea['designation'] ?? ''),
+                    'photo' => $ea['photo'] ?? '',
+                    'target_type' => 'EA',
+                    'target_label' => 'Executive Assistant'
+                ];
             }
         }
-        $ea_form = null;
-        $ea_questions = [];
-        $ea_already_done = false;
-        if (in_array($page, ['ea_eval','ea_eval_form'], true) && $ea_target) {
-            // 'upward_to_ea': Staff evaluating the EA (Super Admin, the
-            // highest-privilege role) is an upward review, not a
-            // supervisor-to-subordinate one — see principal_evaluate.php.
-            $eaFormStmt = $mysqli->prepare("SELECT id, title FROM questionnaire_forms WHERE eval_type='upward_to_ea' AND is_active=1 ORDER BY id DESC LIMIT 1");
-            if ($eaFormStmt) {
-                $eaFormStmt->execute();
-                $ea_form = $eaFormStmt->get_result()->fetch_assoc();
-                $eaFormStmt->close();
+
+        $staff_eval_target = null;
+        if (isset($_GET['tid'])) {
+            $requestedStaffTargetId = (int)$_GET['tid'];
+            foreach ($staff_eval_targets as $candidate) {
+                if ((int)$candidate['id'] === $requestedStaffTargetId) {
+                    $staff_eval_target = $candidate;
+                    break;
+                }
             }
-            if ($ea_form) {
-                $q = $mysqli->prepare("SELECT id, question_no, question, type, max_score, is_required FROM questionnaire_questions WHERE form_id=? ORDER BY question_no, id");
-                $q->bind_param('i', $ea_form['id']);
-                $q->execute();
-                $ea_questions = $q->get_result()->fetch_all(MYSQLI_ASSOC);
-                $q->close();
+        }
+        if (!$staff_eval_target && !empty($staff_eval_targets)) {
+            $staff_eval_target = $staff_eval_targets[0];
+        }
+
+        $staff_eval_questions = [];
+        $staff_eval_categories = [];
+        $staff_eval_already_done = false;
+
+        if (in_array($page, ['staff_eval','staff_eval_form'], true) && $staff_eval_target) {
+            $q = $mysqli->prepare("
+                SELECT id, category, question_text
+                FROM evaluation_questions
+                WHERE eval_type='staff'
+                  AND target_type=?
+                ORDER BY category ASC, id ASC
+            ");
+            $q->bind_param('s', $staff_eval_target['target_type']);
+            $q->execute();
+            $staff_eval_questions = $q->get_result()->fetch_all(MYSQLI_ASSOC);
+            $q->close();
+
+            foreach ($staff_eval_questions as $qrow) {
+                $cat = trim($qrow['category'] ?? '') ?: 'General';
+                $staff_eval_categories[$cat][] = $qrow;
             }
+
             if ($period) {
-                $d = $mysqli->prepare("SELECT id FROM evaluation_tracker WHERE evaluator_id=? AND target_user_id=? AND period_id=? AND eval_type='upward_to_ea' AND status='submitted' LIMIT 1");
-                $d->bind_param('iii', $user_id, $ea_target['id'], $period['id']);
+                $d = $mysqli->prepare("
+                    SELECT id
+                    FROM evaluation_tracker
+                    WHERE evaluator_id=?
+                      AND target_user_id=?
+                      AND period_id=?
+                      AND eval_type='staff'
+                      AND status='submitted'
+                    LIMIT 1
+                ");
+                $d->bind_param('iii', $user_id, $staff_eval_target['id'], $period['id']);
                 $d->execute();
-                $ea_already_done = (bool)$d->get_result()->fetch_assoc();
+                $staff_eval_already_done = (bool)$d->get_result()->fetch_assoc();
                 $d->close();
             }
         }
@@ -340,7 +458,7 @@
         function resolve_peer_group($desig, $map, $cats, $fallback_role = null) {
             return resolve_target_type($desig, $map, $cats, $fallback_role) === 'Faculty' ? 'teacher' : 'staff';
         }
-        $peer_group_labels = ['teacher' => 'Teacher', 'staff' => 'Staff'];
+        $peer_group_labels = ['teacher' => 'Teacher', 'staff' => 'Staff', 'dean' => 'Dean', 'principal' => 'Principal'];
 
         // ── ADD peer_group COLUMN TO evaluation_tracker (idempotent) ──
         // Stores which of the two designation groups (Teacher/Staff) the
@@ -361,73 +479,183 @@
             $mysqli->query("ALTER TABLE evaluation_tracker ADD UNIQUE INDEX uniq_eval_submission (evaluator_id, target_user_id, eval_type, period_id)");
         }
 
-        // ── SUBMIT STAFF -> EXECUTIVE ASSISTANT EVALUATION ───────────
-        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_ea_evaluation'])) {
+        // ── REPAIR LEGACY STAFF-EVALUATION TRACKER ROWS ───────────────
+        // Older Staff Evaluation submissions were written with the target
+        // type (Dean/Principal/EA) in evaluation_tracker.eval_type instead
+        // of the dedicated 'staff' evaluation type. Normalize those rows so
+        // the Staff Evaluation report and completion checks can see them.
+        // Do not touch a row if a correct 'staff' row already exists for the
+        // same evaluator/target/period, avoiding a unique-key collision.
+        $mysqli->query("
+            UPDATE evaluation_tracker bad
+            LEFT JOIN evaluation_tracker good
+              ON good.evaluator_id = bad.evaluator_id
+             AND good.target_user_id = bad.target_user_id
+             AND good.period_id = bad.period_id
+             AND good.eval_type = 'staff'
+            SET bad.eval_type = 'staff'
+            WHERE bad.peer_group = 'Staff Evaluation'
+              AND bad.eval_type IN ('Dean','Principal','EA')
+              AND good.id IS NULL
+        ");
+
+        // ── SUBMIT STAFF EVALUATION ────────────────────────────────────
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_staff_evaluation'])) {
             if (!csrf_check()) {
                 $_SESSION['toast_error'] = "Your session expired or the request could not be verified. Please try again.";
-                header("Location: staff_dashboard.php?page=ea_eval"); exit;
+                header("Location: staff_dashboard.php?page=$staff_eval_home_page"); exit;
             }
+
+            // No teaching-assignment gate here: $staff_eval_targets was just
+            // freshly re-derived above from $my_levels/$staff_teaches_college/
+            // $staff_teaches_basic_ed on THIS request, so the foreach lookup
+            // below already rejects any target_id that isn't currently valid
+            // for this Staff account (EA for non-teaching, Dean/Principal
+            // matching their current teaching scope) — no separate re-check
+            // is needed.
+
             $tid = (int)($_POST['target_id'] ?? 0);
             $target = null;
-            foreach ($ea_list as $candidate) {
-                if ((int)$candidate['id'] === $tid) { $target = $candidate; break; }
+            foreach ($staff_eval_targets as $candidate) {
+                if ((int)$candidate['id'] === $tid) {
+                    $target = $candidate;
+                    break;
+                }
             }
+
             $ratings = $_POST['ratings'] ?? [];
             $comments = trim($_POST['comments'] ?? '');
             $errors = [];
-            if (!$period || !$target || !$ea_form || empty($ea_questions)) {
-                $errors[] = 'The Executive Assistant evaluation is not currently available.';
-            } elseif ($ea_already_done) {
-                $errors[] = 'You have already evaluated the Executive Assistant for this period.';
+
+            if (!$period || !$target) {
+                $errors[] = "The {$staff_eval_feature_label} target is not currently available.";
             } else {
-                foreach ($ea_questions as $q) {
-                    if (($q['type'] ?? 'rating') === 'rating') {
-                        $score = isset($ratings[$q['id']]) ? (int)$ratings[$q['id']] : 0;
-                        $max = (int)($q['max_score'] ?? 5);
-                        if ($score < 1 || $score > $max) { $errors[] = 'Please answer every required rating question.'; break; }
-                    }
-                }
-            }
-            if (!$errors) {
-                $sum=0.0; $count=0;
-                foreach ($ea_questions as $q) {
-                    if (($q['type'] ?? 'rating') === 'rating') { $sum += (float)$ratings[$q['id']]; $count++; }
-                }
-                $overallScore = $count ? round($sum / $count, 2) : null;
-                $mysqli->begin_transaction();
-                try {
-                    $ins=$mysqli->prepare("INSERT INTO evaluation_tracker (evaluator_id,target_user_id,form_id,period_id,score,remarks,eval_type,status,submitted_at) VALUES (?,?,?,?,?,?,'upward_to_ea','submitted',NOW())");
-                    $formId=(int)$ea_form['id']; $periodId=(int)$period['id'];
-                    $ins->bind_param('iiiids',$user_id,$tid,$formId,$periodId,$overallScore,$comments);
-                    $ins->execute(); $trackerId=$mysqli->insert_id; $ins->close();
-                    $ans=$mysqli->prepare("INSERT INTO questionnaire_answers (tracker_id,question_id,answer_score,submitted_at) VALUES (?,?,?,NOW())");
-                    foreach ($ea_questions as $q) {
-                        if (($q['type'] ?? 'rating') === 'rating') {
-                            $qid=(int)$q['id']; $score=(int)$ratings[$qid];
-                            $ans->bind_param('iii',$trackerId,$qid,$score); $ans->execute();
+                $validStmt = $mysqli->prepare("
+                    SELECT id
+                    FROM evaluation_questions
+                    WHERE eval_type='staff'
+                      AND target_type=?
+                ");
+                $validStmt->bind_param('s', $target['target_type']);
+                $validStmt->execute();
+                $validRes = $validStmt->get_result();
+                $valid_question_ids = [];
+                while ($vq = $validRes->fetch_assoc()) $valid_question_ids[] = (int)$vq['id'];
+                $validStmt->close();
+
+                $ratings = array_filter($ratings, function($val, $qid) use ($valid_question_ids) {
+                    return in_array((int)$qid, $valid_question_ids, true);
+                }, ARRAY_FILTER_USE_BOTH);
+
+                if (empty($valid_question_ids) || count($ratings) !== count($valid_question_ids)) {
+                    $errors[] = 'Please rate all questions before submitting.';
+                } else {
+                    foreach ($ratings as $qid => $score) {
+                        $score = (int)$score;
+                        if ($score < 1 || $score > 5) {
+                            $errors[] = 'Please use a rating from 1 to 5 for every question.';
+                            break;
                         }
                     }
-                    $ans->close(); $mysqli->commit();
-                    $_SESSION['toast']='Executive Assistant evaluation submitted successfully.';
-                    header('Location: staff_dashboard.php?page=ea_eval'); exit;
-                } catch (Throwable $e) {
-                    $mysqli->rollback();
-                    error_log('[staff_dashboard] submit EA evaluation failed for evaluator=' . $user_id . ': ' . $e->getMessage());
-                    $_SESSION['toast_error']='Unable to submit the Executive Assistant evaluation. Please try again.';
-                    header('Location: staff_dashboard.php?page=ea_eval'); exit;
+                }
+
+                if (!$errors && in_array($target['target_type'], ['Dean','Principal','EA'], true)) {
+                    $dup = $mysqli->prepare("
+                        SELECT id
+                        FROM evaluation_tracker
+                        WHERE evaluator_id=?
+                          AND target_user_id=?
+                          AND period_id=?
+                          AND eval_type='staff'
+                        LIMIT 1
+                    ");
+                    $dup->bind_param('iii', $user_id, $tid, $period['id']);
+                    $dup->execute();
+                    $already = (bool)$dup->get_result()->fetch_assoc();
+                    $dup->close();
+                    if ($already) $errors[] = 'You have already evaluated this person for this period.';
                 }
             }
-            $_SESSION['toast_error']=implode(' ',$errors);
-            header('Location: staff_dashboard.php?page=ea_eval_form&tid=' . $tid); exit;
+
+            if (!$errors) {
+                $overallScore = round(array_sum($ratings) / count($ratings), 2);
+                $periodId = (int)$period['id'];
+
+                // Use a real active form id when available for tracker compatibility.
+                $formId = 0;
+                $formLookup = $mysqli->query("SELECT id FROM questionnaire_forms WHERE is_active=1 ORDER BY id DESC LIMIT 1");
+                if ($formLookup && ($fr = $formLookup->fetch_assoc())) $formId = (int)$fr['id'];
+                if ($formLookup) $formLookup->free();
+
+                $mysqli->begin_transaction();
+                try {
+                    $trk = $mysqli->prepare("
+                        INSERT INTO evaluation_tracker
+                        (evaluator_id,target_user_id,form_id,period_id,eval_type,peer_group,score,remarks,status,submitted_at)
+                        VALUES (?,?,?,?,?,?,?,?,'submitted',NOW())
+                    ");
+                    $peerGroupLabel = 'Staff Evaluation';
+                    $evalType = 'staff';
+                    $trk->bind_param('iiiissds', $user_id, $tid, $formId, $periodId, $evalType, $peerGroupLabel, $overallScore, $comments);
+                    $trk->execute();
+                    $trackerId = $mysqli->insert_id;
+                    $trk->close();
+
+                    $ans = $mysqli->prepare("
+                        INSERT INTO questionnaire_answers
+                        (tracker_id,question_id,question_source,user_question_id,answer_score,submitted_at)
+                        VALUES (?,?,'evaluation',NULL,?,NOW())
+                    ");
+                    foreach ($ratings as $qid => $rating) {
+                        $qid = (int)$qid;
+                        $score = min(5, max(1, (int)$rating));
+                        $ans->bind_param('iii', $trackerId, $qid, $score);
+                        $ans->execute();
+                    }
+                    $ans->close();
+
+                    $mysqli->commit();
+
+                    $targetLabel = $target['target_label'];
+                    $notifMsg = "You have received a new Staff Evaluation.";
+                    $nins = $mysqli->prepare("INSERT INTO notifications (type, user_id, message, extra_data) VALUES ('evaluation_received', ?, ?, ?)");
+                    $extra = json_encode([
+                        'evaluation_type' => 'staff',
+                        'target_type' => $target['target_type'],
+                        'target_label' => $targetLabel
+                    ]);
+                    $nins->bind_param('iss', $tid, $notifMsg, $extra);
+                    $nins->execute();
+                    $nins->close();
+
+                    $_SESSION['toast'] = "{$staff_eval_feature_label} for {$target['target_label']} submitted successfully.";
+                    header("Location: staff_dashboard.php?page=$staff_eval_home_page"); exit;
+                } catch (Throwable $e) {
+                    $mysqli->rollback();
+                    error_log('[staff_dashboard] submit staff evaluation failed for evaluator=' . $user_id . ' target=' . $tid . ': ' . $e->getMessage());
+                    $_SESSION['toast_error'] = "Unable to submit the {$staff_eval_feature_label}. Please try again.";
+                    header('Location: staff_dashboard.php?page=staff_eval_form&tid=' . $tid); exit;
+                }
+            }
+
+            $_SESSION['toast_error'] = implode(' ', $errors);
+            header('Location: staff_dashboard.php?page=staff_eval_form&tid=' . $tid); exit;
         }
 
         // ── PEER EVALUATION ───────────────────────────────────────────
-        $peers_all  = [];   // all eligible peers, unfiltered — used for the sidebar badge count
-        $peers      = [];   // peers filtered down to the selected group (Teacher/Staff)
+        // 'dean' and 'principal' are Peer Evaluation designations too now
+        // (folded in from the old Staff Evaluation page) — they use
+        // $staff_eval_targets (already scoped to this Staff account's
+        // teaching level) instead of the teacher/staff peers query, and
+        // their "done" state comes from eval_type='staff' (the existing
+        // Dean/Principal tracker rows), not 'staff_peer'.
+        $peers_all  = [];   // all eligible Teacher/Staff peers, unfiltered — used for counts
+        $peers      = [];   // peers/targets filtered down to the selected group
         $done_peers = [];
-        $peer_group = null; // 'teacher' | 'staff' | null (Step 1 not yet completed)
+        $done_supervisors = []; // Dean/Principal target_user_ids already evaluated this period
+        $peer_group = null; // 'teacher' | 'staff' | 'dean' | 'principal' | null (Step 1 not yet completed)
 
-        if ($page === 'peer') {
+        if ($page === 'peer' && $staff_has_teaching_assignment) {
             $pr2 = $mysqli->prepare("SELECT id, full_name, designation, photo, role FROM users WHERE role IN ('teacher','staff') AND is_active=1 AND id != ? ORDER BY full_name ASC");
             $pr2->bind_param("i", $user_id);
             $pr2->execute();
@@ -443,11 +671,24 @@
             if ($dp) while ($r = $dp->fetch_assoc()) $done_peers[] = $r['target_user_id'];
             $dpStmt->close();
 
-            if (isset($_GET['group']) && in_array($_GET['group'], ['teacher', 'staff'], true)) {
+            // Done if already has an eval_type='staff' tracker entry (Dean/Principal)
+            $dsStmt = $mysqli->prepare("SELECT target_user_id FROM evaluation_tracker WHERE evaluator_id=? AND eval_type='staff'");
+            $dsStmt->bind_param("i", $user_id);
+            $dsStmt->execute();
+            $ds = $dsStmt->get_result();
+            if ($ds) while ($r = $ds->fetch_assoc()) $done_supervisors[] = $r['target_user_id'];
+            $dsStmt->close();
+
+            if (isset($_GET['group']) && in_array($_GET['group'], ['teacher', 'staff', 'dean', 'principal'], true)) {
                 $peer_group = $_GET['group'];
-                $peers = array_values(array_filter($peers_all, function ($p) use ($peer_group, $token_to_target, $system_categories) {
-                    return resolve_peer_group($p['designation'] ?? '', $token_to_target, $system_categories, $p['role'] ?? null) === $peer_group;
-                }));
+                if (in_array($peer_group, ['dean', 'principal'], true)) {
+                    $wantedTargetType = ucfirst($peer_group);
+                    $peers = array_values(array_filter($staff_eval_targets, fn($t) => $t['target_type'] === $wantedTargetType));
+                } else {
+                    $peers = array_values(array_filter($peers_all, function ($p) use ($peer_group, $token_to_target, $system_categories) {
+                        return resolve_peer_group($p['designation'] ?? '', $token_to_target, $system_categories, $p['role'] ?? null) === $peer_group;
+                    }));
+                }
             }
         }
 
@@ -458,7 +699,7 @@
         $peer_eval_group   = null;  // group carried over from Step 1, validated below
         $peer_group_error  = '';    // set when tid/group don't match, shown in the invalid-target view
 
-        if ($page === 'peer_eval' && isset($_GET['tid'])) {
+        if ($page === 'peer_eval' && $staff_has_teaching_assignment && isset($_GET['tid'])) {
             $tid = intval($_GET['tid']);
             $req_group = $_GET['group'] ?? null;
 
@@ -508,6 +749,15 @@
                 $_SESSION['toast_error'] = "Your session expired or the request could not be verified. Please try again.";
                 header("Location: staff_dashboard.php?page=peer"); exit;
             }
+
+            // Strict re-check, mirroring the Staff Evaluation submit handler:
+            // eligibility can change between page load and submit, so this is
+            // re-derived from $my_levels, never trusted from the rendered form.
+            if (!$staff_has_teaching_assignment) {
+                $_SESSION['toast_error'] = "Peer Evaluation is only available to Staff with a teaching assignment.";
+                header("Location: staff_dashboard.php?page=dashboard"); exit;
+            }
+
             $submitted_group = $_POST['group'] ?? '';
             $tid_raw         = $_POST['target_id'] ?? '';
             $ratings         = $_POST['ratings'] ?? [];
@@ -1019,7 +1269,7 @@ $tracker_id = $mysqli->insert_id; $trk->close();
         .star-btn{flex:1;min-width:78px;display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 6px;border-radius:8px;border:2px solid var(--border);background:var(--inner);color:var(--muted);cursor:pointer;transition:all .18s;font-family:'DM Sans',sans-serif;}
         .star-btn .sb-num{font-size:14px;font-weight:700;}
         .star-btn .sb-txt{font-size:10px;font-weight:600;letter-spacing:.3px;text-transform:uppercase;}
-        .star-btn:hover,.star-btn.sel{background:var(--teal);border-color:var(--teal);color:#fff;transform:translateY(-1px);}
+        .star-btn:hover,.star-btn.sel,.star-btn.selected{background:var(--teal);border-color:var(--teal);color:#fff;transform:translateY(-1px);}
         .comments-card{background:var(--mid);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:18px;}
         .comments-box{width:100%;min-height:90px;resize:vertical;background:var(--inner);border:1px solid var(--border);border-radius:8px;color:var(--light);font-family:'DM Sans',sans-serif;font-size:13px;padding:12px 14px;outline:none;transition:border-color .2s;}
         .comments-box:focus{border-color:var(--teal);}
@@ -1027,6 +1277,47 @@ $tracker_id = $mysqli->insert_id; $trk->close();
         .submit-row{background:var(--mid);border:1px solid var(--border);border-radius:12px;padding:18px 22px;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;}
         .btn-submit{background:var(--teal);color:#fff;border:none;padding:12px 30px;border-radius:var(--radius);font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:8px;font-family:'DM Sans',sans-serif;}
         .btn-submit:hover{background:var(--teal-hover);transform:translateY(-1px);}
+
+        /* ══ STAFF EVALUATION ══ */
+        .ea-eval-wrap{width:100%;max-width:1180px;}
+        .ea-tab-row{display:flex;align-items:stretch;gap:10px;margin-bottom:18px;flex-wrap:wrap;}
+        .ea-tab{display:flex;align-items:center;gap:9px;min-width:190px;padding:12px 16px;border:1px solid rgba(99,102,241,.25);border-radius:12px;background:rgba(99,102,241,.08);color:var(--muted);text-decoration:none;font-size:13px;font-weight:700;transition:all .2s ease;}
+        .ea-tab i{font-size:15px;color:var(--teal-hover);}
+        .ea-tab:hover{background:rgba(99,102,241,.14);border-color:rgba(129,140,248,.45);color:var(--light);transform:translateY(-1px);}
+        .ea-tab.active{background:linear-gradient(135deg,rgba(99,102,241,.24),rgba(99,102,241,.12));border-color:var(--teal);box-shadow:0 8px 24px rgba(0,0,0,.18);color:#fff;}
+        .ea-tab.active i{color:#fff;}
+        .ea-tab .count{margin-left:auto;min-width:24px;height:24px;padding:0 7px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;background:rgba(255,255,255,.08);color:var(--light);font-size:11px;font-weight:800;}
+        .ea-tab.active .count{background:rgba(255,255,255,.16);color:#fff;}
+        .ea-toolbar{display:flex;align-items:center;justify-content:space-between;gap:18px;background:var(--mid);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:18px;box-shadow:var(--shadow);}
+        .ea-toolbar > div:first-child{min-width:0;}
+        .ea-status{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;padding:8px 12px;border-radius:999px;background:rgba(250,204,21,.10);border:1px solid rgba(250,204,21,.18);color:#facc15;font-size:12px;font-weight:700;}
+        .ea-status.done{background:rgba(34,197,94,.10);border-color:rgba(34,197,94,.2);color:#86efac;}
+        .ea-table-card{background:var(--mid);border:1px solid var(--border);border-radius:14px;overflow:hidden;box-shadow:var(--shadow);}
+        .ea-table{width:100%;border-collapse:collapse;}
+        .ea-table th{padding:13px 16px;background:var(--inner);color:var(--muted);text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.9px;font-weight:800;}
+        .ea-table td{padding:16px;border-top:1px solid var(--border);color:var(--light);font-size:13px;vertical-align:middle;}
+        .ea-table tbody tr{transition:background .18s ease;}
+        .ea-table tbody tr:hover{background:rgba(99,102,241,.05);}
+        .ea-profile{display:flex;align-items:center;gap:12px;min-width:220px;}
+        .ea-avatar{width:42px;height:42px;flex:0 0 42px;border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;background:var(--inner);border:1px solid rgba(129,140,248,.26);color:var(--teal-hover);}
+        img.ea-avatar{object-fit:cover;display:block;}
+        .ea-name{font-size:14px;font-weight:700;color:#fff;line-height:1.25;}
+        .ea-sub{font-size:11px;color:var(--muted);margin-top:3px;}
+        .ea-role-pill{display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;background:rgba(124,58,237,.12);border:1px solid rgba(124,58,237,.22);color:#c4b5fd;font-size:11px;font-weight:800;}
+        .ea-evaluate-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:8px 13px;border-radius:8px;background:var(--teal);border:1px solid var(--teal);color:#fff;text-decoration:none;font-size:12px;font-weight:700;white-space:nowrap;transition:all .2s;}
+        .ea-evaluate-btn:hover{background:var(--teal-hover);border-color:var(--teal-hover);transform:translateY(-1px);}
+        .ea-evaluate-btn.done{background:rgba(34,197,94,.10);border-color:rgba(34,197,94,.2);color:#86efac;cursor:default;}
+        .ea-evaluate-btn.done:hover{transform:none;}
+        body.light-theme .ea-tab{background:rgba(124,58,237,.06);color:#5b21b6;border-color:rgba(124,58,237,.20);}
+        body.light-theme .ea-tab.active{background:rgba(124,58,237,.12);border-color:#7c3aed;color:#4c1d95;}
+        body.light-theme .ea-tab.active i{color:#5b21b6;}
+        @media(max-width:760px){
+            .ea-toolbar{align-items:flex-start;flex-direction:column;}
+            .ea-tab{flex:1 1 220px;min-width:0;}
+            .ea-table-card{overflow-x:auto;}
+            .ea-table{min-width:760px;}
+        }
+
 
         /* RESPONSIVE */
         @media(max-width:900px){.sidebar{transform:translateX(-100%);}.sidebar.open{transform:translateX(0);}.top-nav{left:0;}.main{margin-left:0;}.hamburger{display:block;}}
@@ -1077,6 +1368,16 @@ $tracker_id = $mysqli->insert_id; $trk->close();
         .account-fact{background:var(--mid);border:1px solid var(--border);border-radius:10px;padding:12px;}
         .account-fact label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:4px;} .account-fact b{color:var(--light);font-size:12.5px;}
         @media(max-width:760px){.settings-grid{grid-template-columns:1fr}.settings-card.full{grid-column:auto}.account-facts{grid-template-columns:1fr}}
+
+/* Shared compact questionnaire tables (Staff + Peer evaluations) */
+.compact-eval-table-wrap{background:var(--mid);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:16px;}
+.compact-eval-table{width:100%;border-collapse:collapse;table-layout:fixed;}
+.compact-eval-table th{background:rgba(255,255,255,.035);color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;text-align:center;padding:11px 7px;border-bottom:1px solid var(--border)}
+.compact-eval-table th:first-child{text-align:left;width:auto;padding-left:15px}.compact-eval-table th:not(:first-child){width:60px}
+.compact-eval-table td{padding:10px 7px;border-bottom:1px solid rgba(255,255,255,.06);vertical-align:middle;text-align:center}.compact-eval-table tr:last-child td{border-bottom:none}.compact-eval-table td:first-child{text-align:left;padding-left:15px;padding-right:12px}
+.compact-eval-qtext{font-size:13px;color:var(--light);line-height:1.45}.compact-eval-qno{color:var(--teal-hover);font-weight:800;margin-right:7px}.compact-eval-rating{display:flex;justify-content:center}.compact-eval-rating button{width:38px;height:32px;padding:0;border-radius:7px;border:1px solid var(--border);background:var(--inner);color:var(--muted);font-size:13px;font-weight:800;cursor:pointer;transition:.15s ease}.compact-eval-rating button:hover{border-color:var(--teal);background:rgba(20,184,166,.08)}.compact-eval-rating button.selected{background:var(--teal);border-color:var(--teal);color:#fff}
+@media(max-width:760px){.compact-eval-table th:not(:first-child){width:48px}.compact-eval-rating button{width:32px;height:30px}.compact-eval-qtext{font-size:12px}}
+
 </style>
         </head>
         <body>
@@ -1126,12 +1427,18 @@ $tracker_id = $mysqli->insert_id; $trk->close();
                 <a href="staff_dashboard.php?page=my_results" class="nav-link <?= $page==='my_results'?'active':'' ?>">
                     <i class="fa-solid fa-chart-bar nav-icon-green"></i> My Results
                 </a>
-                <a href="staff_dashboard.php?page=ea_eval" class="nav-link <?= in_array($page,['ea_eval','ea_eval_form'])?'active':'' ?>">
-                    <i class="fa-solid fa-user-tie nav-icon-orange"></i> EA Evaluation
-                    <?php if (!empty($ea_list) && $page==='ea_eval'): ?>
-                    <span class="badge"><?= count($ea_list) ?></span>
+                <?php if (!$staff_has_teaching_assignment): ?>
+                <a href="staff_dashboard.php?page=staff_eval" class="nav-link <?= in_array($page,['staff_eval','staff_eval_form'])?'active':'' ?>">
+                    <i class="fa-solid fa-users nav-icon-orange"></i> Staff Evaluation
+                    <?php if (!empty($staff_eval_targets) && $page==='staff_eval'): ?>
+                    <span class="badge"><?= count($staff_eval_targets) ?></span>
                     <?php endif; ?>
                 </a>
+                <?php else: ?>
+                <a href="staff_dashboard.php?page=peer" class="nav-link <?= in_array($page,['peer','peer_eval','staff_eval','staff_eval_form'])?'active':'' ?>">
+                    <i class="fa-solid fa-people-arrows nav-icon-orange"></i> Peer Evaluation
+                </a>
+                <?php endif; ?>
 
             </nav>
 
@@ -1197,7 +1504,10 @@ $tracker_id = $mysqli->insert_id; $trk->close();
                 </button>
                 <div class="nav-page-title">
                     <?php
-                    $titles = ['dashboard'=>'Dashboard','profile'=>'Role & Designation','my_results'=>'My Evaluation Results','ea_eval'=>'EA Evaluation','ea_eval_form'=>'Evaluate Executive Assistant'];
+                    $titles = ['dashboard'=>'Dashboard','profile'=>'Role & Designation','my_results'=>'My Evaluation Results',
+                        'staff_eval'=> $staff_has_teaching_assignment ? 'Peer Evaluation' : 'Staff Evaluation',
+                        'staff_eval_form'=> $staff_has_teaching_assignment ? 'Peer Evaluation' : 'Staff Evaluation',
+                        'peer'=>'Peer Evaluation','peer_eval'=>'Peer Evaluation'];
                     echo $titles[$page] ?? 'Dashboard';
                     ?>
                 </div>
@@ -1421,10 +1731,10 @@ $tracker_id = $mysqli->insert_id; $trk->close();
         </div>
 
         <div class="settings-grid">
-            <div class="settings-card full"><div class="settings-card-head"><div class="sicon"><i class="fa-solid fa-user-shield"></i></div><div><h3>Account Overview</h3><p>Your access is controlled by the System Admin.</p></div></div><div class="account-facts"><div class="account-fact"><label>Account Name</label><b><?= htmlspecialchars($full_name) ?></b></div><div class="account-fact"><label>System Role</label><b>Staff</b></div><div class="account-fact"><label>Evaluation Access</label><b>Executive Assistant</b></div></div></div>
+            <div class="settings-card full"><div class="settings-card-head"><div class="sicon"><i class="fa-solid fa-user-shield"></i></div><div><h3>Account Overview</h3><p>Your access is controlled by the System Admin.</p></div></div><div class="account-facts"><div class="account-fact"><label>Account Name</label><b><?= htmlspecialchars($full_name) ?></b></div><div class="account-fact"><label>System Role</label><b>Staff</b></div><div class="account-fact"><label>Evaluation Access</label><b><?= htmlspecialchars($staff_can_evaluate_label) ?></b></div></div></div>
             <div class="settings-card"><div class="settings-card-head"><div class="sicon"><i class="fa-solid fa-bell"></i></div><div><h3>Notifications</h3><p>Choose the updates that matter to you.</p></div></div><form method="POST"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>"><input type="hidden" name="save_preferences" value="1"><div class="setting-row"><div><strong>Designation updates</strong><span>Notify me about designation changes.</span></div><label class="setting-toggle"><input type="checkbox" name="email_on_designation_update" <?= !empty($user_prefs['email_on_designation_update'])?'checked':'' ?>><span class="slider"></span></label></div><div class="setting-row"><div><strong>New evaluation results</strong><span>Notify me when a new evaluation is received.</span></div><label class="setting-toggle"><input type="checkbox" name="email_on_new_evaluation" <?= !empty($user_prefs['email_on_new_evaluation'])?'checked':'' ?>><span class="slider"></span></label></div><div class="setting-row"><div><strong>Evaluation details</strong><span>Show detailed entries in My Results.</span></div><label class="setting-toggle"><input type="checkbox" name="show_result_details" <?= !empty($user_prefs['show_result_details'])?'checked':'' ?>><span class="slider"></span></label></div><div class="settings-actions"><button class="settings-save" type="submit"><i class="fa-solid fa-check"></i> Save Preferences</button></div></form></div>
             <div class="settings-card"><div class="settings-card-head"><div class="sicon"><i class="fa-solid fa-lock"></i></div><div><h3>Security</h3><p>Keep your staff account protected.</p></div></div><div class="setting-row"><div><strong>Password</strong><span>Update your password securely.</span></div><a href="change_password.php" class="settings-save">Change</a></div><div class="setting-row"><div><strong>Role protection</strong><span>Your system role remains administrator-controlled.</span></div><i class="fa-solid fa-shield-halved" style="color:var(--success)"></i></div></div>
-            <div class="settings-card full"><div class="settings-card-head"><div class="sicon"><i class="fa-solid fa-briefcase"></i></div><div><h3>Staff Evaluation Access</h3><p>Your permitted actions in the Employee Performance Management System.</p></div></div><div class="account-facts"><div class="account-fact"><label>Can Evaluate</label><b>Executive Assistant</b></div><div class="account-fact"><label>Can View</label><b>Own Evaluation Results</b></div><div class="account-fact"><label>Privacy</label><b>Evaluator identity remains protected</b></div></div></div>
+            <div class="settings-card full"><div class="settings-card-head"><div class="sicon"><i class="fa-solid fa-briefcase"></i></div><div><h3>Staff Evaluation Access</h3><p>Your permitted actions in the Employee Performance Management System.</p></div></div><div class="account-facts"><div class="account-fact"><label>Can Evaluate</label><b><?= htmlspecialchars($staff_can_evaluate_label) ?></b></div><div class="account-fact"><label>Can View</label><b>Own Evaluation Results</b></div><div class="account-fact"><label>Privacy</label><b>Evaluator identity remains protected</b></div></div></div>
         </div>
 
         <!-- ══════════ MY RESULTS ══════════ -->
@@ -1503,187 +1813,194 @@ $tracker_id = $mysqli->insert_id; $trk->close();
             <?php endwhile; $allStmt->close(); endif; ?>
         </div>
 
-        <!-- ══════════ EXECUTIVE ASSISTANT EVALUATION ══════════ -->
-        <?php elseif ($page === 'ea_eval'): ?>
-        <style>
-            .ea-eval-wrap{display:flex;flex-direction:column;gap:18px;}
-            .ea-tab-row{display:flex;align-items:center;gap:8px;}
-            .ea-tab{display:inline-flex;align-items:center;gap:10px;padding:14px 22px;border-radius:12px 12px 0 0;background:rgba(124,58,237,.18);color:#fff;border:1px solid rgba(124,58,237,.32);border-bottom-color:transparent;font-weight:700;}
-            .ea-tab .count{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:22px;padding:0 7px;border-radius:999px;background:rgba(255,255,255,.13);font-size:11px;}
-            .ea-toolbar{background:rgba(15,35,68,.86);border:1px solid var(--border);border-radius:14px;padding:18px 22px;display:flex;align-items:end;gap:18px;box-shadow:var(--shadow);}
-            .ea-search{flex:1;}
-            .ea-toolbar label{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px;}
-            .ea-search-input-wrap{position:relative;}
-            .ea-search-input{width:100%;height:46px;background:#102247;border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:0 44px 0 14px;color:#fff;outline:none;}
-            .ea-search-input:focus{border-color:rgba(124,58,237,.65);box-shadow:0 0 0 3px rgba(124,58,237,.12);}
-            .ea-search-icon{position:absolute;right:14px;top:50%;transform:translateY(-50%);color:#9ca3af;}
-            .ea-export-btn{height:46px;display:inline-flex;align-items:center;gap:9px;padding:0 16px;border-radius:10px;border:1px solid rgba(124,58,237,.42);background:rgba(124,58,237,.16);color:#c4b5fd;font-weight:700;cursor:pointer;}
-            .ea-table-card{overflow:hidden;background:rgba(15,35,68,.82);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);}
-            .ea-table{width:100%;border-collapse:collapse;table-layout:fixed;}
-            .ea-table th{background:#0f2043;color:#9fb2d1;text-align:left;padding:15px 18px;font-size:11px;text-transform:uppercase;letter-spacing:.9px;}
-            .ea-table td{padding:16px 18px;border-top:1px solid rgba(255,255,255,.06);color:#eef3ff;font-size:13px;vertical-align:middle;}
-            .ea-table tr:hover{background:rgba(124,58,237,.05);}
-            .ea-profile{display:flex;align-items:center;gap:14px;}
-            .ea-avatar{width:44px;height:44px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,.12);background:#243b68;display:flex;align-items:center;justify-content:center;color:#c4b5fd;flex:0 0 44px;}
-            .ea-name{font-weight:700;color:#fff;}
-            .ea-sub{font-size:11px;color:var(--muted);margin-top:3px;}
-            .ea-role-pill{display:inline-flex;align-items:center;padding:5px 10px;border-radius:999px;background:rgba(124,58,237,.16);color:#c4b5fd;border:1px solid rgba(124,58,237,.24);font-weight:700;font-size:11px;}
-            .ea-status{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;background:rgba(148,163,184,.12);color:#cbd5e1;font-weight:700;font-size:11px;}
-            .ea-status.done{background:rgba(74,222,128,.13);color:#86efac;}
-            .ea-evaluate-btn{display:inline-flex;align-items:center;gap:8px;padding:9px 15px;border-radius:9px;background:#7c3aed;color:#fff;text-decoration:none;font-weight:700;border:1px solid rgba(255,255,255,.08);}
-            .ea-evaluate-btn:hover{background:#6d28d9;}
-            .ea-evaluate-btn.done{background:rgba(34,197,94,.12);color:#86efac;border-color:rgba(34,197,94,.2);cursor:default;}
-            .ea-table-footer{padding:14px 18px;color:#9fb2d1;font-size:12px;border-top:1px solid rgba(255,255,255,.06);}
-            @media(max-width:900px){.ea-toolbar{align-items:stretch;flex-direction:column}.ea-table{min-width:980px}.ea-table-card{overflow-x:auto}.ea-toolbar .ea-export-btn{align-self:flex-start}}
-        </style>
+        <!-- ══════════ STAFF EVALUATION (EA / Dean / Principal, per role) ══════════ -->
+        <?php elseif ($page === 'staff_eval' && !$staff_has_teaching_assignment): ?>
 
+        <!-- ══════════ STAFF EVALUATION (Executive Assistant, non-teaching Staff only) ══════════ -->
         <div class="ea-eval-wrap">
             <div class="ea-tab-row">
-                <div class="ea-tab"><i class="fa-solid fa-user-tie"></i> Executive Assistant <span class="count"><?= count($ea_list) ?></span></div>
+                <?php foreach ($staff_eval_targets as $target): ?>
+                    <?php $isDoneTarget = false;
+                    if ($period) {
+                        $chk = $mysqli->prepare("SELECT id FROM evaluation_tracker WHERE evaluator_id=? AND target_user_id=? AND period_id=? AND eval_type='staff' AND status='submitted' LIMIT 1");
+                        $chk->bind_param('iii', $user_id, $target['id'], $period['id']);
+                        $chk->execute();
+                        $isDoneTarget = (bool)$chk->get_result()->fetch_assoc();
+                        $chk->close();
+                    }
+                    ?>
+                    <a class="ea-tab <?= $staff_eval_target && $staff_eval_target['target_type'] === $target['target_type'] ? 'active' : '' ?>"
+                       href="staff_dashboard.php?page=<?= $staff_eval_home_page ?>&tid=<?= (int)$target['id'] ?>">
+                        <i class="fa-solid <?= $target['target_type']==='Dean' ? 'fa-graduation-cap' : ($target['target_type']==='Principal' ? 'fa-user-tie' : 'fa-user-shield') ?>"></i>
+                        <?= htmlspecialchars($target['target_label']) ?>
+                        <span class="count"><?= $isDoneTarget ? '✓' : '1' ?></span>
+                    </a>
+                <?php endforeach; ?>
             </div>
 
             <div class="ea-toolbar">
-                <div class="ea-search">
-                    <label for="eaSearch">Search</label>
-                    <div class="ea-search-input-wrap">
-                        <input id="eaSearch" class="ea-search-input" type="search" placeholder="Search by name or department..." autocomplete="off">
-                        <i class="fa-solid fa-magnifying-glass ea-search-icon"></i>
-                    </div>
+                <div>
+                    <div style="font-size:12px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);font-weight:700;">Staff Evaluation</div>
+                    <div style="font-size:14px;color:var(--light);margin-top:4px;">Evaluate the Executive Assistant using the questionnaire configured by the admin.</div>
                 </div>
-                <button type="button" class="ea-export-btn" id="eaExportBtn"><i class="fa-solid fa-download"></i> Export List</button>
+                <span class="ea-status <?= $staff_eval_already_done ? 'done' : '' ?>">
+                    <i class="fa-solid <?= $staff_eval_already_done ? 'fa-circle-check' : 'fa-clipboard-list' ?>"></i>
+                    <?= $staff_eval_already_done ? 'Completed' : 'Ready' ?>
+                </span>
             </div>
 
             <div class="ea-table-card">
-                <table class="ea-table" id="eaEvalTable">
-                    <thead>
-                        <tr>
-                            <th style="width:28%">Profile &amp; Full Name</th>
-                            <th style="width:16%">Position</th>
-                            <th style="width:17%">Role</th>
-                            <th style="width:16%">Evaluation Status</th>
-                            <th style="width:13%">Last Evaluation Date</th>
-                            <th style="width:10%">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    <?php if (empty($ea_list)): ?>
-                        <tr><td colspan="6"><div class="empty-state"><i class="fa-solid fa-user-tie"></i><p>No active Executive Assistant account is available.</p></div></td></tr>
-                    <?php else: ?>
-                        <?php foreach ($ea_list as $ea): ?>
+                <?php if (empty($staff_eval_targets)): ?>
+                    <div class="empty-state">
+                        <i class="fa-solid fa-users"></i>
+                        <p>No Executive Assistant is currently available for Staff Evaluation.</p>
+                    </div>
+                <?php else: ?>
+                    <table class="ea-table">
+                        <thead>
+                            <tr>
+                                <th style="width:31%">Target</th>
+                                <th style="width:18%">Role</th>
+                                <th style="width:18%">Questionnaire</th>
+                                <th style="width:18%">Evaluation Status</th>
+                                <th style="width:15%">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach ($staff_eval_targets as $target): ?>
+                            <?php if (!$staff_eval_target || (int)$target['id'] !== (int)$staff_eval_target['id']) continue; ?>
                             <?php
-                            $done = false; $last_eval = null;
+                            $done = false; $last_eval = null; $qCount = 0;
                             if ($period) {
-                                $chk=$mysqli->prepare("SELECT submitted_at FROM evaluation_tracker WHERE evaluator_id=? AND target_user_id=? AND period_id=? AND eval_type='upward_to_ea' AND status='submitted' ORDER BY submitted_at DESC LIMIT 1");
-                                $chk->bind_param('iii',$user_id,$ea['id'],$period['id']);
+                                $chk = $mysqli->prepare("SELECT submitted_at FROM evaluation_tracker WHERE evaluator_id=? AND target_user_id=? AND period_id=? AND eval_type='staff' AND status='submitted' ORDER BY submitted_at DESC LIMIT 1");
+                                $chk->bind_param('iii', $user_id, $target['id'], $period['id']);
                                 $chk->execute();
-                                $doneRow=$chk->get_result()->fetch_assoc();
-                                if ($doneRow) { $done=true; $last_eval=$doneRow['submitted_at']; }
+                                $doneRow = $chk->get_result()->fetch_assoc();
+                                if ($doneRow) { $done = true; $last_eval = $doneRow['submitted_at']; }
                                 $chk->close();
                             }
-                            $search_blob = strtolower(trim(($ea['full_name'] ?? '').' '.($ea['position'] ?? '').' Executive Assistant'));
+                            $qc = $mysqli->prepare("SELECT COUNT(*) AS c FROM evaluation_questions WHERE eval_type='staff' AND target_type=?");
+                            $qc->bind_param('s', $target['target_type']);
+                            $qc->execute();
+                            $qCount = (int)($qc->get_result()->fetch_assoc()['c'] ?? 0);
+                            $qc->close();
                             ?>
-                            <tr data-search="<?= htmlspecialchars($search_blob, ENT_QUOTES) ?>">
+                            <tr>
                                 <td>
                                     <div class="ea-profile">
-                                        <?php if (!empty($ea['photo'])): ?>
-                                            <img class="ea-avatar" src="../image/<?= htmlspecialchars($ea['photo']) ?>" alt="<?= htmlspecialchars($ea['full_name']) ?>">
+                                        <?php if (!empty($target['photo'])): ?>
+                                            <img class="ea-avatar" src="../image/<?= htmlspecialchars($target['photo']) ?>" alt="">
                                         <?php else: ?>
-                                            <div class="ea-avatar"><i class="fa-solid fa-user-tie"></i></div>
+                                            <div class="ea-avatar"><i class="fa-solid <?= $target['target_type']==='Dean' ? 'fa-graduation-cap' : ($target['target_type']==='Principal' ? 'fa-user-tie' : 'fa-user-shield') ?>"></i></div>
                                         <?php endif; ?>
-                                        <div><div class="ea-name"><?= htmlspecialchars($ea['full_name']) ?></div><div class="ea-sub">Executive Assistant</div></div>
+                                        <div>
+                                            <div class="ea-name"><?= htmlspecialchars($target['full_name']) ?></div>
+                                            <div class="ea-sub"><?= htmlspecialchars($target['designation'] ?: $target['target_label']) ?></div>
+                                        </div>
                                     </div>
                                 </td>
-                                <td><?= htmlspecialchars($ea['position'] ?: '—') ?></td>
-                                <td><span class="ea-role-pill">Executive Assistant</span></td>
+                                <td><span class="ea-role-pill"><?= htmlspecialchars($target['target_label']) ?></span></td>
+                                <td><?= $qCount ?> question<?= $qCount === 1 ? '' : 's' ?></td>
                                 <td><span class="ea-status <?= $done ? 'done' : '' ?>"><i class="fa-solid <?= $done ? 'fa-circle-check' : 'fa-hourglass-half' ?>"></i><?= $done ? 'Evaluated' : 'Not Started' ?></span></td>
-                                <td><?= $last_eval ? htmlspecialchars(date('M d, Y g:i A', strtotime($last_eval))) : '—' ?></td>
                                 <td>
                                     <?php if ($done): ?>
                                         <span class="ea-evaluate-btn done"><i class="fa-solid fa-check"></i> Evaluated</span>
                                     <?php else: ?>
-                                        <a class="ea-evaluate-btn" href="staff_dashboard.php?page=ea_eval_form&tid=<?= (int)$ea['id'] ?>"><i class="fa-solid fa-pen"></i> Evaluate</a>
+                                        <a class="ea-evaluate-btn" href="staff_dashboard.php?page=staff_eval_form&tid=<?= (int)$target['id'] ?>"><i class="fa-solid fa-pen"></i> Evaluate</a>
                                     <?php endif; ?>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
-                    <?php endif; ?>
-                    </tbody>
-                </table>
-                <div class="ea-table-footer" id="eaFooter">Showing <?= count($ea_list) ?> executive assistant member<?= count($ea_list) === 1 ? '' : 's' ?></div>
+                        </tbody>
+                    </table>
+                <?php endif; ?>
             </div>
         </div>
 
-        <script>
-        (function(){
-            const input=document.getElementById('eaSearch');
-            const table=document.getElementById('eaEvalTable');
-            const footer=document.getElementById('eaFooter');
-            if(input && table){
-                const rows=[...table.querySelectorAll('tbody tr[data-search]')];
-                const update=()=>{
-                    const q=input.value.trim().toLowerCase(); let visible=0;
-                    rows.forEach(r=>{const show=!q || (r.dataset.search||'').includes(q); r.style.display=show?'':'none'; if(show) visible++;});
-                    if(footer) footer.textContent='Showing '+visible+' executive assistant member'+(visible===1?'':'s');
-                };
-                input.addEventListener('input',update);
-            }
-            const exp=document.getElementById('eaExportBtn');
-            if(exp){exp.addEventListener('click',()=>{
-                const table=document.getElementById('eaEvalTable');
-                if(!table) return;
-                const lines=[['Full Name','Position','Role','Evaluation Status','Last Evaluation Date']];
-                table.querySelectorAll('tbody tr[data-search]').forEach(r=>{
-                    if(r.style.display==='none') return;
-                    const c=r.children;
-                    lines.push([c[0].innerText.trim().replace(/\s+/g,' '),c[1].innerText.trim(),c[2].innerText.trim(),c[3].innerText.trim(),c[4].innerText.trim()]);
-                });
-                const csv=lines.map(a=>a.map(v=>'"'+v.replace(/"/g,'""')+'"').join(',')).join('\n');
-                const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}), url=URL.createObjectURL(blob), a=document.createElement('a');
-                a.href=url; a.download='executive-assistant-evaluation-list.csv'; a.click(); URL.revokeObjectURL(url);
-            });}
-        })();
-        </script>
+        <?php elseif ($page === 'staff_eval_form'): ?>
 
-        <?php elseif ($page === 'ea_eval_form'): ?>
-        <a href="staff_dashboard.php?page=ea_eval" class="back-link"><i class="fa-solid fa-arrow-left"></i> Back to EA Evaluation</a>
+        <a href="staff_dashboard.php?page=<?= $staff_eval_home_page ?><?= $staff_has_teaching_assignment ? '' : '&tid=' . (int)($staff_eval_target['id'] ?? 0) ?>" class="back-link"><i class="fa-solid fa-arrow-left"></i> Back to <?= $staff_has_teaching_assignment ? 'Peer Evaluation' : 'Staff Evaluation' ?></a>
         <div class="section-card">
-            <?php if (!$ea_target): ?>
-                <div class="empty-state"><i class="fa-solid fa-user-tie"></i><p>Executive Assistant not found.</p></div>
-            <?php elseif (!$ea_form || empty($ea_questions)): ?>
-                <div class="empty-state"><i class="fa-solid fa-clipboard-question"></i><p>The Executive Assistant evaluation questionnaire has not been configured yet.</p></div>
-            <?php elseif ($ea_already_done): ?>
-                <div class="empty-state"><i class="fa-solid fa-circle-check"></i><p>You have already evaluated the Executive Assistant for this period.</p></div>
+            <?php if (!$staff_eval_target): ?>
+                <div class="empty-state"><i class="fa-solid fa-users"></i><p>No <?= htmlspecialchars($staff_eval_feature_label) ?> target is available.</p></div>
+            <?php elseif (empty($staff_eval_questions)): ?>
+                <div class="empty-state"><i class="fa-solid fa-clipboard-question"></i><p>The <?= htmlspecialchars($staff_eval_target['target_label']) ?> questionnaire has not been configured yet.</p></div>
+            <?php elseif ($staff_eval_already_done): ?>
+                <div class="empty-state"><i class="fa-solid fa-circle-check"></i><p>You have already evaluated <?= htmlspecialchars($staff_eval_target['full_name']) ?> for this period.</p></div>
             <?php else: ?>
-                <div class="section-card-title"><i class="fa-solid fa-user-tie" style="color:var(--teal)"></i> Evaluate <?= htmlspecialchars($ea_target['full_name']) ?></div>
-                <p style="font-size:13px;color:var(--muted);margin-bottom:22px;">Executive Assistant evaluation • responses are confidential.</p>
-                <form method="POST" action="staff_dashboard.php?page=ea_eval_form&tid=<?= (int)$ea_target['id'] ?>">
+                <div class="section-card-title">
+                    <i class="fa-solid <?= $staff_eval_target['target_type']==='Dean' ? 'fa-graduation-cap' : ($staff_eval_target['target_type']==='Principal' ? 'fa-user-tie' : 'fa-user-shield') ?>" style="color:var(--teal)"></i>
+                    Evaluate <?= htmlspecialchars($staff_eval_target['full_name']) ?>
+                </div>
+                <p style="font-size:13px;color:var(--muted);margin-bottom:22px;">
+                    <?= htmlspecialchars($staff_eval_feature_label) ?> · <?= htmlspecialchars($staff_eval_target['target_label']) ?> · responses are confidential.
+                </p>
+
+                <form method="POST" action="staff_dashboard.php?page=staff_eval_form&tid=<?= (int)$staff_eval_target['id'] ?>">
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
-                    <input type="hidden" name="target_id" value="<?= (int)$ea_target['id'] ?>">
-                    <input type="hidden" name="submit_ea_evaluation" value="1">
-                    <?php foreach ($ea_questions as $q): ?>
-                    <div class="q-card">
-                        <div class="q-no">Question <?= (int)$q['question_no'] ?></div>
-                        <div class="q-text"><?= htmlspecialchars($q['question']) ?></div>
-                        <?php if (($q['type'] ?? 'rating') === 'rating'): ?>
-                        <div class="star-group" id="ea_grp_<?= (int)$q['id'] ?>">
-                            <?php $labels=[5=>'Always',4=>'Often',3=>'Sometimes',2=>'Rarely',1=>'Never']; for($r=5;$r>=1;$r--): ?>
-                            <button type="button" class="star-btn" data-val="<?= $r ?>" onclick="eaRate(<?= (int)$q['id'] ?>,<?= $r ?>)"><span class="sb-num"><?= $r ?></span><span class="sb-txt"><?= $labels[$r] ?></span></button>
-                            <?php endfor; ?>
+                    <input type="hidden" name="target_id" value="<?= (int)$staff_eval_target['id'] ?>">
+                    <input type="hidden" name="submit_staff_evaluation" value="1">
+
+                    <?php $staffQNo=1; foreach ($staff_eval_categories as $category => $questions): ?>
+                        <div style="font-size:12px;text-transform:uppercase;letter-spacing:.7px;color:var(--teal-hover);font-weight:700;margin:0 0 9px;"><?= htmlspecialchars($category) ?></div>
+                        <div class="compact-eval-table-wrap">
+                            <table class="compact-eval-table">
+                                <thead><tr><th>Question</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th></tr></thead>
+                                <tbody>
+                                <?php foreach ($questions as $q): ?>
+                                <tr>
+                                    <td><div class="compact-eval-qtext"><span class="compact-eval-qno"><?= $staffQNo++ ?>.</span><?= htmlspecialchars($q['question_text']) ?></div></td>
+                                    <?php for($r=5;$r>=1;$r--): ?><td><div class="compact-eval-rating"><button type="button" data-val="<?= $r ?>" onclick="staffRate(<?= (int)$q['id'] ?>,<?= $r ?>)"><?= $r ?></button></div></td><?php endfor; ?>
+                                </tr>
+                                <input type="hidden" name="ratings[<?= (int)$q['id'] ?>]" id="staff_r_<?= (int)$q['id'] ?>" required>
+                                <?php endforeach; ?>
+                                </tbody>
+                            </table>
                         </div>
-                        <input type="hidden" name="ratings[<?= (int)$q['id'] ?>]" id="ea_r_<?= (int)$q['id'] ?>" required>
-                        <?php endif; ?>
-                    </div>
                     <?php endforeach; ?>
+
                     <div class="comments-card">
-                        <div style="font-size:13px;font-weight:700;color:var(--teal-hover);margin-bottom:10px;"><i class="fa-solid fa-comment-dots"></i> Comments &amp; Suggestions <span style="font-size:11px;color:var(--muted);font-weight:500">(optional)</span></div>
-                        <textarea class="comments-box" name="comments" placeholder="Share your thoughts about the Executive Assistant's performance…"></textarea>
+                        <div style="font-size:13px;font-weight:700;color:var(--teal-hover);margin-bottom:10px;">
+                            <i class="fa-solid fa-comment-dots"></i> Comments &amp; Suggestions
+                            <span style="font-size:11px;color:var(--muted);font-weight:500">(optional)</span>
+                        </div>
+                        <textarea class="comments-box" name="comments" placeholder="Share your thoughts about this <?= htmlspecialchars($staff_eval_target['target_label']) ?>…"></textarea>
                     </div>
                     <div class="submit-row">
-                        <span style="font-size:13px;color:var(--muted);"><i class="fa-solid fa-circle-info" style="color:#60a5fa;margin-right:5px"></i>Rate each question 1 (Never) to 5 (Always).</span>
-                        <button type="submit" class="btn-submit" onclick="return checkEaAll()"><i class="fa-solid fa-paper-plane"></i> Submit Evaluation</button>
+                        <span style="font-size:13px;color:var(--muted);">
+                            <i class="fa-solid fa-circle-info" style="color:#60a5fa;margin-right:5px"></i>
+                            Rate each question 1 (Never) to 5 (Always).
+                        </span>
+                        <button type="submit" class="btn-submit" onclick="return checkStaffAll()">
+                            <i class="fa-solid fa-paper-plane"></i> Submit Evaluation
+                        </button>
                     </div>
                 </form>
             <?php endif; ?>
+        </div>
+
+        <script>
+        function staffRate(id,val){
+            const group=document.getElementById('staff_grp_'+id);
+            if(!group) return;
+            group.querySelectorAll('.star-btn').forEach(b=>b.classList.toggle('selected',Number(b.dataset.val)===val));
+            const input=document.getElementById('staff_r_'+id);
+            if(input) input.value=String(val);
+        }
+        function checkStaffAll(){
+            const form=document.querySelector('form[action*="staff_eval_form"]');
+            if(!form) return false;
+            const missing=[...form.querySelectorAll('input[name^="ratings["]')].some(i=>!i.value);
+            if(missing){ alert('Please rate every question before submitting.'); return false; }
+            return true;
+        }
+        </script>
+
+        <!-- ══════════ PEER EVALUATION — LOCKED FOR NON-TEACHING STAFF ══════════ -->
+        <?php elseif (in_array($page, ['peer','peer_eval'], true) && !$staff_has_teaching_assignment): ?>
+
+        <div class="section-card">
+            <div class="empty-state"><i class="fa-solid fa-lock"></i><p>Peer Evaluation is only available to Staff with a teaching assignment. Use Staff Evaluation instead.</p></div>
         </div>
 
         <!-- ══════════ PEER EVALUATION — STEP 1: CHOOSE DESIGNATION ══════════ -->
@@ -1693,12 +2010,16 @@ $tracker_id = $mysqli->insert_id; $trk->close();
             <div class="section-card-title"><i class="fa-solid fa-users" style="color:var(--teal)"></i> Peer Evaluation</div>
             <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">First, choose which designation you'd like to evaluate. You'll then pick a specific person from that list.</p>
 
-            <?php if (empty($peers_all)): ?>
-            <div class="empty-state"><i class="fa-solid fa-users"></i><p>No other staff members registered yet.</p></div>
-            <?php else:
-                $teacher_count = count(array_filter($peers_all, fn($p) => resolve_peer_group($p['designation'] ?? '', $token_to_target, $system_categories, $p['role'] ?? null) === 'teacher'));
-                $staff_count   = count($peers_all) - $teacher_count;
+            <?php
+                $teacher_count   = count(array_filter($peers_all, fn($p) => resolve_peer_group($p['designation'] ?? '', $token_to_target, $system_categories, $p['role'] ?? null) === 'teacher'));
+                $staff_count     = count($peers_all) - $teacher_count;
+                $dean_count      = count(array_filter($staff_eval_targets, fn($t) => $t['target_type'] === 'Dean'));
+                $principal_count = count(array_filter($staff_eval_targets, fn($t) => $t['target_type'] === 'Principal'));
+                $anything_to_evaluate = !empty($peers_all) || $staff_teaches_college || $staff_teaches_basic_ed;
             ?>
+            <?php if (!$anything_to_evaluate): ?>
+            <div class="empty-state"><i class="fa-solid fa-users"></i><p>No other staff members registered yet.</p></div>
+            <?php else: ?>
             <div class="role-chips-label"><i class="fa-solid fa-bolt" style="color:var(--teal)"></i> Step 1: Select Designation</div>
             <div class="role-chips" style="margin-bottom:4px;">
                 <a href="staff_dashboard.php?page=peer&group=teacher" class="role-chip" style="text-decoration:none;padding:14px 22px;font-size:14px;">
@@ -1707,6 +2028,16 @@ $tracker_id = $mysqli->insert_id; $trk->close();
                 <a href="staff_dashboard.php?page=peer&group=staff" class="role-chip" style="text-decoration:none;padding:14px 22px;font-size:14px;">
                     <i class="fa-solid fa-briefcase" style="margin-right:6px;color:var(--teal-hover)"></i> Staff <span style="color:var(--muted);margin-left:6px;">(<?= $staff_count ?>)</span>
                 </a>
+                <?php if ($staff_teaches_college): ?>
+                <a href="staff_dashboard.php?page=peer&group=dean" class="role-chip" style="text-decoration:none;padding:14px 22px;font-size:14px;">
+                    <i class="fa-solid fa-graduation-cap" style="margin-right:6px;color:var(--teal-hover)"></i> Dean <span style="color:var(--muted);margin-left:6px;">(<?= $dean_count ?>)</span>
+                </a>
+                <?php endif; ?>
+                <?php if ($staff_teaches_basic_ed): ?>
+                <a href="staff_dashboard.php?page=peer&group=principal" class="role-chip" style="text-decoration:none;padding:14px 22px;font-size:14px;">
+                    <i class="fa-solid fa-user-tie" style="margin-right:6px;color:var(--teal-hover)"></i> Principal <span style="color:var(--muted);margin-left:6px;">(<?= $principal_count ?>)</span>
+                </a>
+                <?php endif; ?>
             </div>
             <div class="peer-select-hint"><i class="fa-solid fa-circle-info"></i> Please select a designation before proceeding.</div>
             <?php endif; ?>
@@ -1715,21 +2046,27 @@ $tracker_id = $mysqli->insert_id; $trk->close();
         <!-- ══════════ PEER EVALUATION — STEP 2: FILTERED USER LIST (CARD GRID) ══════════ -->
         <?php elseif ($page === 'peer' && $peer_group !== null): ?>
 
+        <?php $is_supervisor_group = in_array($peer_group, ['dean', 'principal'], true); ?>
         <a href="staff_dashboard.php?page=peer" class="back-link"><i class="fa-solid fa-arrow-left"></i> Change Designation</a>
 
         <div class="section-card">
-            <div class="section-card-title"><i class="fa-solid fa-users" style="color:var(--teal)"></i> Fellow <?= htmlspecialchars($peer_group_labels[$peer_group]) ?> Members</div>
-            <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Select a colleague to evaluate. Your identity will be kept confidential.</p>
+            <div class="section-card-title">
+                <i class="fa-solid <?= $is_supervisor_group ? ($peer_group === 'dean' ? 'fa-graduation-cap' : 'fa-user-tie') : 'fa-users' ?>" style="color:var(--teal)"></i>
+                <?= $is_supervisor_group ? htmlspecialchars($peer_group_labels[$peer_group]) : 'Fellow ' . htmlspecialchars($peer_group_labels[$peer_group]) . ' Members' ?>
+            </div>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">
+                <?= $is_supervisor_group ? 'Evaluate your ' . htmlspecialchars(strtolower($peer_group_labels[$peer_group])) . ' using the questionnaire configured by the admin.' : 'Select a colleague to evaluate. Your identity will be kept confidential.' ?>
+            </p>
 
             <?php if (empty($peers)): ?>
-            <div class="empty-state"><i class="fa-solid fa-users"></i><p>No registered <?= htmlspecialchars(strtolower($peer_group_labels[$peer_group])) ?> users found.</p></div>
+            <div class="empty-state"><i class="fa-solid fa-users"></i><p>No <?= $is_supervisor_group ? htmlspecialchars(strtolower($peer_group_labels[$peer_group])) : 'registered ' . htmlspecialchars(strtolower($peer_group_labels[$peer_group])) ?><?= $is_supervisor_group ? ' is currently available for your teaching level(s).' : ' users found.' ?></p></div>
             <?php else: ?>
 
             <!-- Cards populated dynamically from active users whose designation resolves
                  to the selected group (excluding self). Newly added accounts appear
                  automatically — no code change needed. -->
             <div class="peer-card-grid">
-                <?php foreach ($peers as $p): $done = in_array($p['id'], $done_peers); ?>
+                <?php foreach ($peers as $p): $done = $is_supervisor_group ? in_array($p['id'], $done_supervisors) : in_array($p['id'], $done_peers); ?>
                 <div class="peer-card <?= $done ? 'is-done' : '' ?>">
                     <?php if (!empty($p['photo'])): ?>
                     <img class="peer-card-photo" src="../image/<?= htmlspecialchars($p['photo']) ?>" alt="<?= htmlspecialchars($p['full_name']) ?>"/>
@@ -1740,6 +2077,8 @@ $tracker_id = $mysqli->insert_id; $trk->close();
                     <div class="peer-card-desig"><?= htmlspecialchars($p['designation'] ?: $peer_group_labels[$peer_group]) ?></div>
                     <?php if ($done): ?>
                     <button type="button" class="peer-card-btn done" disabled><i class="fa-solid fa-circle-check"></i> Evaluated</button>
+                    <?php elseif ($is_supervisor_group): ?>
+                    <a href="staff_dashboard.php?page=staff_eval_form&tid=<?= (int)$p['id'] ?>" class="peer-card-btn">Evaluate</a>
                     <?php else: ?>
                     <a href="staff_dashboard.php?page=peer_eval&tid=<?= (int)$p['id'] ?>&group=<?= urlencode($peer_group) ?>" class="peer-card-btn">Evaluate</a>
                     <?php endif; ?>
@@ -1747,9 +2086,9 @@ $tracker_id = $mysqli->insert_id; $trk->close();
                 <?php endforeach; ?>
             </div>
 
-            <?php $done_in_group = count(array_intersect(array_column($peers, 'id'), $done_peers)); ?>
+            <?php $done_in_group = count(array_intersect(array_column($peers, 'id'), $is_supervisor_group ? $done_supervisors : $done_peers)); ?>
             <?php if ($done_in_group > 0): ?>
-            <div class="peer-select-hint warn" style="margin-top:18px;"><i class="fa-solid fa-circle-check"></i> You've already evaluated <?= $done_in_group ?> of <?= count($peers) ?> <?= htmlspecialchars(strtolower($peer_group_labels[$peer_group])) ?> members this period.</div>
+            <div class="peer-select-hint warn" style="margin-top:18px;"><i class="fa-solid fa-circle-check"></i> You've already evaluated <?= $done_in_group ?> of <?= count($peers) ?> <?= htmlspecialchars(strtolower($peer_group_labels[$peer_group])) ?><?= $is_supervisor_group ? '' : ' members' ?> this period.</div>
             <?php endif; ?>
 
             <?php endif; ?>
@@ -1793,24 +2132,21 @@ $tracker_id = $mysqli->insert_id; $trk->close();
             <input type="hidden" name="target_id"   value="<?= $peer_target['id'] ?>"/>
             <input type="hidden" name="group"       value="<?= htmlspecialchars($peer_eval_group) ?>"/>
 
-            <?php $qno = 1; foreach ($peer_categories as $cat_name => $cat_qs): ?>
-            <div class="cat-group">
-                <div class="cat-group-title"><i class="fa-solid fa-layer-group"></i> <?= htmlspecialchars($cat_name) ?></div>
-                <?php foreach ($cat_qs as $q): $labels = [5=>'Always',4=>'Often',3=>'Sometimes',2=>'Rarely',1=>'Never']; ?>
-                <div class="q-card">
-                    <div class="q-no">Question <?= $qno++ ?></div>
-                    <div class="q-text"><?= htmlspecialchars($q['question_text']) ?></div>
-                    <div class="star-group" id="grp_<?= $q['id'] ?>">
-                        <?php for ($r=5;$r>=1;$r--): ?>
-                        <button type="button" class="star-btn" data-val="<?= $r ?>" onclick="rate(<?= $q['id'] ?>,<?= $r ?>)">
-                            <span class="sb-num"><?= $r ?></span>
-                            <span class="sb-txt"><?= $labels[$r] ?></span>
-                        </button>
-                        <?php endfor; ?>
-                    </div>
+            <?php $qno=1; foreach ($peer_categories as $cat_name => $cat_qs): ?>
+            <div class="cat-group-title" style="margin-bottom:9px;"><i class="fa-solid fa-layer-group"></i> <?= htmlspecialchars($cat_name) ?></div>
+            <div class="compact-eval-table-wrap">
+                <table class="compact-eval-table">
+                    <thead><tr><th>Question</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th></tr></thead>
+                    <tbody>
+                    <?php foreach($cat_qs as $q): ?>
+                    <tr>
+                        <td><div class="compact-eval-qtext"><span class="compact-eval-qno"><?= $qno++ ?>.</span><?= htmlspecialchars($q['question_text']) ?></div></td>
+                        <?php for($r=5;$r>=1;$r--): ?><td><div class="compact-eval-rating"><button type="button" data-val="<?= $r ?>" onclick="rate(<?= (int)$q['id'] ?>,<?= $r ?>)"><?= $r ?></button></div></td><?php endfor; ?>
+                    </tr>
                     <input type="hidden" name="ratings[<?= $q['id'] ?>]" id="r_<?= $q['id'] ?>" required/>
-                </div>
-                <?php endforeach; ?>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
             </div>
             <?php endforeach; ?>
 

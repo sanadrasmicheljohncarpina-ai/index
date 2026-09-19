@@ -1,708 +1,769 @@
 <?php
 // principal_evaluation_tracker.php
-// Redesigned to match dean_evaluation_tracker.php's actual design system
-// and functional pattern (same underlying evaluation_tracker /
-// evaluation_reminders schema, same filter-bar/stat-card/sortable-table/
-// bulk-reminder UX) — kept in the Principal's amber theme instead of the
-// Dean's violet, and scoped to Basic Ed (Grade 7-12) instead of College.
-//
-// Differences from the Dean version, on purpose:
-//   - Grade Level (7-12, capped to this Principal's own JHS/SHS scope)
-//     replaces Year Level as the single scope filter — no separate
-//     School Level dropdown, matching Dean's one-filter-per-dimension
-//     pattern instead of the two-dropdown layout from the earlier draft.
-//   - No "ID Number" column — same reason as Dean's version: student
-//     accounts don't collect one at registration, so it's not faked.
-//   - Reminders write to evaluation_reminders(recipient_id, period_id,
-//     created_at) — the SAME shared table/columns dean_send_reminder.php
-//     uses (confirmed from its SELECT), not the different schema this
-//     page used in a previous draft.
-//   - This page still calls out to a companion `principal_send_reminder.php`
-//     for the actual send, mirroring dean_send_reminder.php's contract
-//     (POST JSON {student_ids, csrf_token} -> {success, sent[], skipped[]}
-//     / GET ?student_id= fallback). That companion file is NOT included
-//     here yet — see the note at the bottom of this response.
+// PRIMARY PURPOSE: track JHS/SHS student participation in Student Evaluation.
+// OPTIONAL PURPOSE: show the Principal's own Faculty/Teaching Staff evaluation
+// progress as a secondary section. Optional faculty work never changes the
+// student-participation totals above it.
 
 require_once 'principal_common.php';
 
-$user_id = $_SESSION['user_id'];
+$principalId = (int)$_SESSION['user_id'];
 
-const REMINDER_COOLDOWN_HOURS = 24; // must match principal_send_reminder.php
+$settings       = $schoolHeadSettings;
+$period_id_int  = (int)($settings['period_id'] ?? 0);
+$hasPeriod      = $period_id_int > 0;
+$evalOpen       = !empty($settings['is_open_for_submission']);
 
-@$mysqli->query("
-    CREATE TABLE IF NOT EXISTS evaluation_reminders (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        recipient_id INT NOT NULL,
-        period_id INT NOT NULL,
-        sender_id INT NULL,
-        created_at DATETIME NOT NULL,
-        KEY idx_recipient_period (recipient_id, period_id)
-    )
-");
-
-// ── FILTER + SORT + PAGE INPUT (GET) ──────────────────────────────────
+// ── FILTER / SORT INPUT FOR THE PRIMARY STUDENT TRACKER ──────────────
 $search = trim($_GET['search'] ?? '');
-$gradeFilter = trim($_GET['grade'] ?? '');
-if ($gradeFilter !== '' && !in_array($gradeFilter, $scopeGrades, true)) $gradeFilter = '';
-$status = trim($_GET['status'] ?? '');
-if (!in_array($status, ['', 'submitted', 'pending'], true)) $status = '';
-
-// Level filter (Junior High / Senior High) — only meaningful for a
-// Principal whose own scope covers both ($myLevel === 'both'); a
-// JHS-only or SHS-only Principal already has $scopeAcademicLevels
-// pinned to a single level, so this stays empty/no-op for them.
 $levelFilter = trim($_GET['level'] ?? '');
-if (!in_array($levelFilter, ['', 'junior_high', 'senior_high'], true)) $levelFilter = '';
+$gradeFilter = trim($_GET['grade'] ?? '');
+$status = trim($_GET['status'] ?? '');
+
 if ($myLevel !== 'both') $levelFilter = '';
+if (!in_array($levelFilter, ['', 'junior_high', 'senior_high'], true)) $levelFilter = '';
+if (!in_array($gradeFilter, $scopeGrades, true)) $gradeFilter = '';
+if (!in_array($status, ['', 'not_started', 'in_progress', 'completed'], true)) $status = '';
 
-$sortableColumns = ['name' => 'full_name', 'grade' => 'year_level'];
+$studentSorts = ['name','grade','status'];
 $sort = $_GET['sort'] ?? 'name';
-if (!in_array($sort, array_merge(array_keys($sortableColumns), ['status']), true)) $sort = 'name';
-$dir = (strtolower($_GET['dir'] ?? 'asc') === 'desc') ? 'desc' : 'asc';
-
+if (!in_array($sort, $studentSorts, true)) $sort = 'name';
+$dir = strtolower($_GET['dir'] ?? 'asc') === 'desc' ? 'desc' : 'asc';
 $page = max(1, (int)($_GET['page'] ?? 1));
-$perPage = 15;
+$perPage = 5;
 
-$gradeOptions = [];
-foreach ($scopeGrades as $g) $gradeOptions[$g] = "Grade {$g}";
+// ── PRIMARY TRACKER OUTPUTS ─────────────────────────────────────────
+$students = [];
+$pageStudents = [];
+$studentsAssigned = 0;
+$studentsSubmitted = 0;
+$pendingStudents = 0;
+$completionPct = 0;
+$requiredTotal = 0;
+$totalPages = 1;
+$jhsStudentCount = 0;
+$shsStudentCount = 0;
+$requiredFaculty = 0;
+$requiredStaff = 0;
+$requiredMulti = 0;
+$requiredPrincipal = 0;
 
-$students = []; $pageStudents = [];
-$studentsAssigned = 0; $studentsSubmitted = 0; $pendingStudents = 0; $remainingStudents = 0;
-$completionPct = 0; $submittedPct = 0; $pendingPct = 0; $totalPages = 1;
-$juniorHighCount = 0; $seniorHighCount = 0;
+// ── SECONDARY OPTIONAL FACULTY TRACKER OUTPUTS ──────────────────────
+$faculty = [];
+$facultyAssigned = 0;
+$facultyEvaluated = 0;
+$pendingFaculty = 0;
+$facultyCompletionPct = 0;
+$facultyQuestionCount = 0;
+
+function ptr_user_levels(mysqli $mysqli, int $userId): array {
+    $rows = safe_rows($mysqli,
+        "SELECT year_level FROM user_year_levels WHERE user_id=? ORDER BY year_level ASC",
+        'i', [$userId]
+    );
+    $out = [];
+    foreach ($rows as $row) {
+        $v = trim((string)($row['year_level'] ?? ''));
+        if ($v !== '') $out[] = $v;
+    }
+    return array_values(array_unique($out));
+}
+
+function ptr_grade(string $value): ?string {
+    $value = trim($value);
+    if (preg_match('/grade[[:space:]_-]*(7|8|9|10|11|12)\b/i', $value, $m)) return $m[1];
+    return null;
+}
+
+function ptr_is_teaching(mysqli $mysqli, array $u): bool {
+    if (($u['role'] ?? '') === 'teacher') return true;
+    if (strtolower((string)($u['secondary_role'] ?? '')) === 'teacher') return true;
+    if (strcasecmp((string)($u['sector'] ?? ''), 'Teacher') === 0) return true;
+
+    $uid = (int)($u['id'] ?? 0);
+    if ($uid <= 0) return false;
+    $rows = safe_rows($mysqli, "
+        SELECT 1 FROM teaching_assignments WHERE user_id=?
+        UNION ALL
+        SELECT 1 FROM user_year_levels WHERE user_id=?
+        LIMIT 1
+    ", 'ii', [$uid, $uid]);
+    return !empty($rows);
+}
+
+function ptr_is_non_teaching_staff(mysqli $mysqli, int $uid): bool {
+    $rows = safe_rows($mysqli, "
+        SELECT NOT EXISTS(SELECT 1 FROM teaching_assignments WHERE user_id=?)
+           AND NOT EXISTS(SELECT 1 FROM user_year_levels WHERE user_id=?) AS ok
+    ", 'ii', [$uid, $uid]);
+    return !empty($rows) && (int)($rows[0]['ok'] ?? 0) === 1;
+}
+
+function ptr_level_bucket(string $grade): string {
+    return in_array($grade, ['7','8','9','10'], true) ? 'junior_high' : 'senior_high';
+}
+
+function ptr_level_label(array $buckets): string {
+    $j = in_array('junior_high', $buckets, true);
+    $s = in_array('senior_high', $buckets, true);
+    if ($j && $s) return 'JHS & SHS';
+    if ($j) return 'Junior High';
+    if ($s) return 'Senior High';
+    return '—';
+}
+
+function ptr_grade_sort(array $grades): string {
+    $n = array_map('intval', $grades);
+    sort($n, SORT_NUMERIC);
+    return implode(',', $n);
+}
+
+function ptr_student_level_label(string $rawYear): string {
+    $g = ptr_grade($rawYear);
+    if ($g === null) return 'Basic Education';
+    return in_array($g, ['7','8','9','10'], true) ? 'Junior High' : 'Senior High';
+}
+
+function ptr_context_for_submission(array $row, int $principalId, array $facultyIds, array $staffIds, array $multiIds, bool $principalRequired): ?string {
+    $tid = (int)$row['target_user_id'];
+    $bucket = strtolower(trim((string)($row['eval_bucket'] ?? '')));
+    $context = strtolower(trim((string)($row['evaluation_context'] ?? '')));
+
+    // Principal is a valid School Head student-evaluation target only for the
+    // Basic Education side; College students do not belong to this tracker.
+    if ($principalRequired && $tid === $principalId &&
+        ($bucket === 'school head' || $bucket === 'school_head' || $bucket === 'principal' ||
+         $context === 'school_head' || $context === 'principal' || $bucket === '' || $context === '')) {
+        return 'school_head:' . $tid;
+    }
+
+    $explicitMulti = in_array($bucket, ['multi-role','multi_role'], true)
+        || in_array($context, ['multi-role','multi_role'], true)
+        || !empty($row['multi_answer']);
+    if ($explicitMulti && isset($multiIds[$tid])) return 'multi:' . $tid;
+
+    $explicitStaff = in_array($bucket, ['staff','non-teaching staff','non_teaching_staff'], true)
+        || $context === 'staff';
+    $explicitFaculty = in_array($bucket, ['faculty','teacher'], true)
+        || in_array($context, ['faculty','teacher'], true);
+
+    // Current Principal scope is the final authority for who belongs to the
+    // Faculty and Staff contexts. This also prevents an old/stale bucket from
+    // turning a current Non-Teaching Staff person into a Faculty completion.
+    if (isset($staffIds[$tid]) && ($explicitStaff || (!$explicitFaculty && !$explicitMulti))) {
+        return 'staff:' . $tid;
+    }
+    if (isset($facultyIds[$tid]) && ($explicitFaculty || (!$explicitStaff && !$explicitMulti))) {
+        return 'faculty:' . $tid;
+    }
+
+    return null;
+}
 
 if ($structureActive) {
-    // Junior/Senior High headline counts — always computed across the
-    // Principal's full scope (ignores grade/level/status filters) so the
-    // "All / Junior High / Senior High" tab badges and the two stat cards
-    // stay stable while the table below is being filtered.
-    // NOTE: students are matched by year_level (e.g. "Grade 7"), NOT by the
-    // academic_level/grade_level columns. Those columns exist (added by the
-    // self-healing schema above) but nothing in the registration or account
-    // management flow ever writes to them — every student row has them as
-    // NULL. year_level is the one field the accounts page actually keeps
-    // current, so that's the single source of truth here too.
-    if ($myLevel === 'both') {
-        $juniorHighCount = (int)(safe_scalar($mysqli, "
-            SELECT COUNT(*) c FROM users
-            WHERE role='student' AND is_active=1 AND account_status='approved'
-              AND year_level IN ('Grade 7','Grade 8','Grade 9','Grade 10')
-        ") ?? 0);
-        $seniorHighCount = (int)(safe_scalar($mysqli, "
-            SELECT COUNT(*) c FROM users
-            WHERE role='student' AND is_active=1 AND account_status='approved'
-              AND year_level IN ('Grade 11','Grade 12')
-        ") ?? 0);
+    // ── BUILD THE CURRENT PRINCIPAL BASIC-ED PERSONNEL CONTEXT ────────
+    $personnel = [];
+    $uRes = $mysqli->query("SELECT id, full_name, designation, photo, role, secondary_role, sector, department
+                            FROM users
+                            WHERE role IN ('teacher','staff')
+                              AND is_active=1
+                              AND account_status='approved'
+                            ORDER BY full_name ASC");
+    if ($uRes) while ($u = $uRes->fetch_assoc()) {
+        $personnel[(int)$u['id']] = $u;
     }
 
-    // Narrow the Principal's full grade scope down by any grade/level filter,
-    // then translate the surviving grade numbers into the canonical
-    // "Grade N" strings that year_level actually stores.
-    $targetGrades = $scopeGrades;
-    if ($levelFilter === 'junior_high') $targetGrades = array_intersect($targetGrades, ['7', '8', '9', '10']);
-    if ($levelFilter === 'senior_high') $targetGrades = array_intersect($targetGrades, ['11', '12']);
-    if ($gradeFilter !== '') $targetGrades = array_intersect($targetGrades, [$gradeFilter]);
-    $targetYearLevels = array_map(fn($g) => "Grade {$g}", array_values($targetGrades));
+    $facultyIds = [];
+    $staffIds = [];
+    $multiIds = [];
 
-    $yearLevelInList = esc_list($mysqli, $targetYearLevels);
-    $whereSql = "role='student' AND is_active=1 AND account_status='approved'
-        AND year_level IN ($yearLevelInList)";
-    $types = ''; $params = [];
-    if ($search !== '') { $whereSql .= " AND full_name LIKE ?"; $types .= 's'; $params[] = '%' . $search . '%'; }
+    // Faculty is required only when the Student Evaluation Faculty question
+    // bank actually contains questions. The optional Principal-to-Faculty
+    // section below may still list the personnel even when that bank is empty.
+    $studentFacultyQuestionCount = (int)(safe_scalar($mysqli,
+        "SELECT COUNT(*) FROM evaluation_questions
+         WHERE eval_type='student' AND target_type IN ('Teacher','Faculty')"
+    ) ?? 0);
 
-    $orderSql = ($sort !== 'status') ? ($sortableColumns[$sort] . ' ' . strtoupper($dir)) : 'full_name ASC';
+    foreach ($personnel as $uid => $u) {
+        $levels = ptr_user_levels($mysqli, $uid);
+        $grades = [];
+        $buckets = [];
+        foreach ($levels as $lvl) {
+            $g = ptr_grade($lvl);
+            if ($g === null || !in_array($g, $scopeGrades, true)) continue;
+            $grades[$g] = true;
+            $buckets[ptr_level_bucket($g)] = true;
+        }
 
-    $allRows = safe_rows($mysqli, "
-        SELECT id, full_name, year_level FROM users WHERE $whereSql ORDER BY $orderSql
-    ", $types, $params);
+        $hasTeaching = ptr_is_teaching($mysqli, $u);
+        $isFaculty = $hasTeaching && !empty($grades);
+        $isStaff = ($u['role'] ?? '') === 'staff' && ptr_is_non_teaching_staff($mysqli, $uid);
 
-    // ── SUBMISSION STATUS — one bulk query, same eval_type/status
-    // semantics as Dean's (status IN submitted/approved, not just "any row").
-    $submittedMap = [];
-    $allIds = array_column($allRows, 'id');
-    if ($hasPeriod && !empty($allIds)) {
-        $ph = implode(',', array_fill(0, count($allIds), '?'));
-        $subRows = safe_rows($mysqli, "
-            SELECT evaluator_id, MAX(submitted_at) v FROM evaluation_tracker
-            WHERE eval_type='student' AND status IN ('submitted','approved')
-              AND period_id=? AND evaluator_id IN ($ph)
-            GROUP BY evaluator_id
-        ", 'i' . str_repeat('i', count($allIds)), array_merge([$period_id_int], $allIds));
-        foreach ($subRows as $sr) { $submittedMap[(int)$sr['evaluator_id']] = $sr['v']; }
+        // Faculty/Teaching Staff required contexts are limited to JHS/SHS.
+        if ($isFaculty && $studentFacultyQuestionCount > 0) $facultyIds[$uid] = true;
+        if ($isStaff) {
+            $staffHasQuestions = (int)(safe_scalar($mysqli,
+                "SELECT COUNT(*) FROM user_questions WHERE user_id=? AND eval_type='student' AND target_type='Staff'",
+                'i', [$uid]
+            ) ?? 0) > 0;
+            if ($staffHasQuestions) $staffIds[$uid] = true;
+        }
+
+        // Multi-Role is a distinct student-evaluation context. Only a person
+        // already in the Principal's Faculty scope can contribute here.
+        if ($isFaculty) {
+            $hasMrQuestions = (int)(safe_scalar($mysqli,
+                "SELECT COUNT(*) FROM user_questions WHERE user_id=? AND eval_type='student' AND target_type='Multi-Role'",
+                'i', [$uid]
+            ) ?? 0) > 0;
+            if ($hasMrQuestions) $multiIds[$uid] = true;
+        }
+
+        // Optional Principal -> Faculty roster (kept separate from student
+        // participation). This is intentionally JHS/SHS only.
+        if ($isFaculty) {
+            $gradeList = array_keys($grades);
+            usort($gradeList, fn($a,$b) => (int)$a <=> (int)$b);
+            $bucketList = array_keys($buckets);
+            $faculty[] = [
+                'id' => $uid,
+                'name' => (string)$u['full_name'],
+                'photo' => (string)($u['photo'] ?? ''),
+                'designation' => (string)($u['designation'] ?? ''),
+                'department' => (string)($u['department'] ?? ''),
+                'role_label' => ($u['role'] === 'staff') ? 'Teaching Staff' : 'Faculty',
+                'grades' => $gradeList,
+                'grade_label' => implode(', ', array_map(fn($g) => 'Grade ' . $g, $gradeList)),
+                'level_label' => ptr_level_label($bucketList),
+                'level_sort' => $bucketList[0] ?? '',
+                'grade_sort' => ptr_grade_sort($gradeList),
+                'status' => 'not_started',
+                'status_label' => 'Not Started',
+                'completed' => 0,
+                'last_evaluated_at' => null,
+            ];
+        }
     }
 
-    foreach ($allRows as $s) {
+    $requiredFaculty = count($facultyIds);
+    $requiredStaff = count($staffIds);
+    $requiredMulti = count($multiIds);
+
+    // Principal's own Student Evaluation questions are a single optional
+    // leadership target for JHS/SHS students. It is intentionally absent from
+    // the Dean/College tracker.
+    $principalQuestionCount = (int)(safe_scalar($mysqli,
+        "SELECT COUNT(*) FROM user_questions WHERE user_id=? AND eval_type='student' AND target_type='Principal'",
+        'i', [$principalId]
+    ) ?? 0);
+    $requiredPrincipal = $principalQuestionCount > 0 ? 1 : 0;
+
+    // Each target/context pair is one required Student Evaluation. A person
+    // can legitimately contribute both Faculty and Multi-Role contexts.
+    $requiredTotal = $requiredFaculty + $requiredStaff + $requiredMulti + $requiredPrincipal;
+
+    // ── STUDENT ROSTER: ONLY JHS/SHS, NEVER COLLEGE ───────────────────
+    $studentRows = safe_rows($mysqli, "
+        SELECT id, full_name, photo, year_level, education_level
+        FROM users
+        WHERE role='student'
+          AND is_active=1
+          AND account_status='approved'
+        ORDER BY full_name ASC
+    ");
+
+    $eligibleStudentIds = [];
+    foreach ($studentRows as $s) {
+        $raw = trim((string)($s['year_level'] ?? ''));
+        $g = ptr_grade($raw);
+        if ($g !== null && in_array($g, $scopeGrades, true)) {
+            $eligibleStudentIds[(int)$s['id']] = true;
+        }
+    }
+
+    // If the roster stores education_level but the year_level text is blank,
+    // keep the student visible only when the Principal's scope itself is one
+    // single division; we never use a College value here.
+    if (!empty($studentRows)) {
+        foreach ($studentRows as $s) {
+            $sid = (int)$s['id'];
+            if (isset($eligibleStudentIds[$sid])) continue;
+            $edu = strtolower(trim((string)($s['education_level'] ?? '')));
+            $allowedEdu = [];
+            if (in_array('junior_high', $scopeAcademicLevels, true)) $allowedEdu[] = 'junior_high';
+            if (in_array('senior_high', $scopeAcademicLevels, true)) $allowedEdu[] = 'senior_high';
+            if (in_array($edu, $allowedEdu, true) && trim((string)($s['year_level'] ?? '')) === '') {
+                $eligibleStudentIds[$sid] = true;
+            }
+        }
+    }
+
+    $eligibleStudentRows = [];
+    foreach ($studentRows as $s) {
         $sid = (int)$s['id'];
-        $hasSubmitted = isset($submittedMap[$sid]);
-        $yl = $s['year_level'] ?? '';
-        $gradeNum = null;
-        if (preg_match('/^Grade\s*(7|8|9|10|11|12)\b/i', $yl, $m)) $gradeNum = $m[1];
-        $academicLevel = in_array($gradeNum, ['7', '8', '9', '10'], true) ? 'junior_high'
-            : (in_array($gradeNum, ['11', '12'], true) ? 'senior_high' : '');
-        $students[] = [
-            'id' => $sid, 'name' => $s['full_name'],
-            'grade' => $yl !== '' ? $yl : '—',
-            'academic_level' => $academicLevel,
-            'status' => $hasSubmitted ? 'submitted' : 'pending',
-            'submitted_at' => $submittedMap[$sid] ?? null,
+        if (!isset($eligibleStudentIds[$sid])) continue;
+        $raw = trim((string)($s['year_level'] ?? ''));
+        $g = ptr_grade($raw);
+        $level = ptr_student_level_label($raw);
+        if ($g === null) {
+            $edu = strtolower(trim((string)($s['education_level'] ?? '')));
+            if ($edu === 'junior_high') $level = 'Junior High';
+            elseif ($edu === 'senior_high') $level = 'Senior High';
+        }
+        $eligibleStudentRows[] = [
+            'id' => $sid,
+            'name' => (string)$s['full_name'],
+            'photo' => (string)($s['photo'] ?? ''),
+            'grade' => $g,
+            'year_level' => $g ? ('Grade ' . $g) : 'Basic Education',
+            'level' => $level,
         ];
     }
 
-    if ($sort === 'status') {
-        usort($students, function ($a, $b) use ($dir) {
-            $cmp = strcmp($a['status'], $b['status']);
-            return $dir === 'desc' ? -$cmp : $cmp;
-        });
+    // Stable level counters are independent of table filters.
+    foreach ($eligibleStudentRows as $s) {
+        if ($s['level'] === 'Junior High') $jhsStudentCount++;
+        if ($s['level'] === 'Senior High') $shsStudentCount++;
+    }
+
+    // ── SUBMISSIONS / PROGRESS FOR PRIMARY STUDENT TRACKER ────────────
+    $studentContextMap = [];
+    if ($hasPeriod && $requiredTotal > 0 && !empty($eligibleStudentRows)) {
+        $ids = array_map(fn($s) => (int)$s['id'], $eligibleStudentRows);
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+        $submissionRows = safe_rows($mysqli, "
+            SELECT et.id, et.evaluator_id, et.target_user_id, et.eval_bucket,
+                   et.evaluation_context, et.status, et.submitted_at, et.updated_at,
+                   EXISTS(
+                       SELECT 1
+                       FROM questionnaire_answers qam
+                       JOIN user_questions uqm ON uqm.id=qam.user_question_id
+                       WHERE qam.tracker_id=et.id
+                         AND uqm.eval_type='student'
+                         AND uqm.target_type='Multi-Role'
+                   ) AS multi_answer
+            FROM evaluation_tracker et
+            WHERE et.eval_type='student'
+              AND et.period_id=?
+              AND et.evaluator_id IN ($ph)
+              AND et.status IN ('submitted','approved','in_progress')
+            ORDER BY et.updated_at DESC, et.id DESC
+        ", 'i' . str_repeat('i', count($ids)), array_merge([$period_id_int], $ids));
+
+        $facultyKeySet = $facultyIds;
+        $staffKeySet = $staffIds;
+        $multiKeySet = $multiIds;
+
+        foreach ($submissionRows as $row) {
+            $contextKey = ptr_context_for_submission($row, $principalId, $facultyKeySet, $staffKeySet, $multiKeySet, $requiredPrincipal > 0);
+            if ($contextKey === null) continue;
+
+            $sid = (int)$row['evaluator_id'];
+            if (!isset($eligibleStudentIds[$sid])) continue;
+
+            $isCompleted = in_array($row['status'], ['submitted','approved'], true);
+            $timeValue = $row['submitted_at'] ?: ($row['updated_at'] ?? null);
+
+            if (!isset($studentContextMap[$sid][$contextKey])) {
+                $studentContextMap[$sid][$contextKey] = [
+                    'state' => $isCompleted ? 'completed' : 'in_progress',
+                    'at' => $timeValue,
+                ];
+            } elseif ($isCompleted && $studentContextMap[$sid][$contextKey]['state'] !== 'completed') {
+                $studentContextMap[$sid][$contextKey] = [
+                    'state' => 'completed',
+                    'at' => $timeValue,
+                ];
+            }
+        }
+    }
+
+    foreach ($eligibleStudentRows as $s) {
+        $sid = $s['id'];
+        $contexts = $studentContextMap[$sid] ?? [];
+        $completed = 0;
+        $started = false;
+        $latest = null;
+        foreach ($contexts as $state) {
+            if (($state['state'] ?? '') === 'completed') $completed++;
+            if (($state['state'] ?? '') === 'in_progress') $started = true;
+            if (!empty($state['at']) && (!$latest || strtotime((string)$state['at']) > strtotime((string)$latest))) {
+                $latest = $state['at'];
+            }
+        }
+
+        $completed = min($requiredTotal, $completed);
+        $progress = $requiredTotal > 0 ? min(100, (int)round(($completed / $requiredTotal) * 100)) : 0;
+        if ($requiredTotal > 0 && $completed >= $requiredTotal) {
+            $state = 'completed';
+            $label = 'Completed';
+        } elseif ($completed > 0 || $started) {
+            $state = 'in_progress';
+            $label = 'In Progress';
+        } else {
+            $state = 'not_started';
+            $label = 'Not Started';
+        }
+
+        $students[] = [
+            'id' => $sid,
+            'name' => $s['name'],
+            'photo' => $s['photo'],
+            'year_level' => $s['year_level'],
+            'level' => $s['level'],
+            'grade' => $s['grade'],
+            'required' => $requiredTotal,
+            'completed' => $completed,
+            'progress' => $progress,
+            'status' => $state,
+            'status_label' => $label,
+            'submitted_at' => $latest,
+        ];
+    }
+
+    // ── STUDENT FILTERING / SORTING / PAGINATION ──────────────────────
+    if ($search !== '') {
+        $needle = mb_strtolower($search);
+        $students = array_values(array_filter($students, function ($s) use ($needle) {
+            return str_contains(mb_strtolower($s['name'] . ' ' . $s['year_level'] . ' ' . $s['level']), $needle);
+        }));
+    }
+    if ($levelFilter !== '') {
+        $students = array_values(array_filter($students, fn($s) => $s['level'] === ($levelFilter === 'junior_high' ? 'Junior High' : 'Senior High')));
+    }
+    if ($gradeFilter !== '') {
+        $students = array_values(array_filter($students, fn($s) => $s['grade'] === $gradeFilter));
     }
     if ($status !== '') {
         $students = array_values(array_filter($students, fn($s) => $s['status'] === $status));
     }
 
-    $studentsAssigned  = count($students);
-    $studentsSubmitted = count(array_filter($students, fn($s) => $s['status'] === 'submitted'));
-    $pendingStudents   = max(0, $studentsAssigned - $studentsSubmitted);
-    $remainingStudents = $pendingStudents;
-    $completionPct     = $studentsAssigned > 0 ? (int) round($studentsSubmitted / $studentsAssigned * 100) : 0;
-    $submittedPct      = $completionPct;
-    $pendingPct        = $studentsAssigned > 0 ? (100 - $completionPct) : 0;
+    usort($students, function ($a, $b) use ($sort, $dir) {
+        if ($sort === 'grade') {
+            $av = $a['grade'] === null ? 999 : (int)$a['grade'];
+            $bv = $b['grade'] === null ? 999 : (int)$b['grade'];
+            $cmp = $av <=> $bv;
+        } elseif ($sort === 'status') {
+            $rank = ['not_started'=>1,'in_progress'=>2,'completed'=>3];
+            $cmp = ($rank[$a['status']] ?? 0) <=> ($rank[$b['status']] ?? 0);
+        } else {
+            $cmp = strnatcasecmp($a['name'], $b['name']);
+        }
+        if ($cmp === 0) $cmp = strnatcasecmp($a['name'], $b['name']);
+        return $dir === 'desc' ? -$cmp : $cmp;
+    });
 
-    // ── EXPORT (full filtered set, ignores pagination) — before any output.
+    $studentsAssigned = count($students);
+    $studentsSubmitted = count(array_filter($students, fn($s) => $s['status'] === 'completed'));
+    $pendingStudents = count(array_filter($students, fn($s) => $s['status'] !== 'completed'));
+    $completionPct = $studentsAssigned > 0 ? (int)round(($studentsSubmitted / $studentsAssigned) * 100) : 0;
+
+    // Primary export.
     if (($_GET['export'] ?? '') === 'csv') {
         header('Content-Type: text/csv; charset=utf-8');
-        header('Content-Disposition: attachment; filename="principal_tracker_export_' . date('Ymd_His') . '.csv"');
+        header('Content-Disposition: attachment; filename="principal_student_tracker_' . date('Ymd_His') . '.csv"');
         $out = fopen('php://output', 'w');
-        fputcsv($out, ['Student', 'Level', 'Grade Level', 'Status', 'Submitted At']);
+        fputcsv($out, ['Student', 'Level', 'Required', 'Completed', 'Status', 'Progress', 'Last Activity']);
         foreach ($students as $s) {
-            $levelLabel = $s['academic_level'] === 'senior_high' ? 'Senior High' : ($s['academic_level'] === 'junior_high' ? 'Junior High' : '');
-            fputcsv($out, [$s['name'], $levelLabel, $s['grade'], $s['status'], $s['submitted_at'] ?: '']);
+            fputcsv($out, [
+                $s['name'], $s['level'], $s['required'], $s['completed'] . ' / ' . $s['required'],
+                $s['status_label'], $s['progress'] . '%', $s['submitted_at'] ?? ''
+            ]);
         }
         fclose($out);
-        $mysqli->close();
         exit;
     }
 
-    $totalPages   = max(1, (int)ceil($studentsAssigned / $perPage));
-    $page         = max(1, min($totalPages, $page));
+    $totalPages = max(1, (int)ceil($studentsAssigned / $perPage));
+    $page = max(1, min($totalPages, $page));
     $pageStudents = array_slice($students, ($page - 1) * $perPage, $perPage);
 
-    // ── LAST REMINDER SENT (page rows only) ──────────────────────────
-    $lastReminderAt = [];
-    $pageIds = array_column($pageStudents, 'id');
-    if ($hasPeriod && !empty($pageIds)) {
-        $ph = implode(',', array_fill(0, count($pageIds), '?'));
-        $remRows = safe_rows($mysqli, "
-            SELECT recipient_id, MAX(created_at) v FROM evaluation_reminders
-            WHERE period_id=? AND recipient_id IN ($ph)
-            GROUP BY recipient_id
-        ", 'i' . str_repeat('i', count($pageIds)), array_merge([$period_id_int], $pageIds));
-        foreach ($remRows as $rr) { $lastReminderAt[(int)$rr['recipient_id']] = $rr['v']; }
+    // ── OPTIONAL PRINCIPAL-TO-FACULTY STATUS ─────────────────────────
+    $facultyQuestionCount = (int)(safe_scalar($mysqli,
+        "SELECT COUNT(*) FROM evaluation_questions
+         WHERE eval_type='school_head' AND evaluator_role='principal' AND target_type='Faculty'"
+    ) ?? 0);
+
+    if ($hasPeriod && !empty($faculty)) {
+        $fids = array_map(fn($f) => (int)$f['id'], $faculty);
+        $ph = implode(',', array_fill(0, count($fids), '?'));
+        $facultyStatusRows = safe_rows($mysqli, "
+            SELECT target_user_id,
+                   MAX(CASE WHEN status IN ('submitted','approved') THEN submitted_at END) AS completed_at,
+                   MAX(CASE WHEN status='in_progress' THEN updated_at END) AS progress_at
+            FROM evaluation_tracker
+            WHERE evaluator_id=?
+              AND eval_type='school_head'
+              AND period_id=?
+              AND target_user_id IN ($ph)
+            GROUP BY target_user_id
+        ", 'ii' . str_repeat('i', count($fids)), array_merge([$principalId, $period_id_int], $fids));
+
+        foreach ($facultyStatusRows as $row) {
+            $fid = (int)$row['target_user_id'];
+            foreach ($faculty as &$f) {
+                if ((int)$f['id'] !== $fid) continue;
+                if (!empty($row['completed_at'])) {
+                    $f['status'] = 'completed';
+                    $f['status_label'] = 'Completed';
+                    $f['completed'] = 1;
+                    $f['last_evaluated_at'] = $row['completed_at'];
+                } elseif (!empty($row['progress_at'])) {
+                    $f['status'] = 'in_progress';
+                    $f['status_label'] = 'In Progress';
+                    $f['last_evaluated_at'] = $row['progress_at'];
+                }
+                break;
+            }
+            unset($f);
+        }
     }
-    foreach ($pageStudents as &$ps) {
-        $ps['last_reminded_at'] = $lastReminderAt[$ps['id']] ?? null;
-        $ps['reminder_on_cooldown'] = $ps['last_reminded_at']
-            && (time() - strtotime($ps['last_reminded_at'])) / 3600 < REMINDER_COOLDOWN_HOURS;
+
+    $facultyAssigned = count($faculty);
+    $facultyEvaluated = count(array_filter($faculty, fn($f) => $f['status'] === 'completed'));
+    $pendingFaculty = count(array_filter($faculty, fn($f) => $f['status'] !== 'completed'));
+    $facultyCompletionPct = $facultyAssigned > 0 ? (int)round(($facultyEvaluated / $facultyAssigned) * 100) : 0;
+
+    // ── LIVE JSON ENDPOINT — PRIMARY STUDENT TRACKER ────────────────
+    if (($_GET['ajax'] ?? '') === '1') {
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        echo json_encode([
+            'ok' => true,
+            'hasPeriod' => $hasPeriod,
+            'evalOpen' => $evalOpen,
+            'requiredTotal' => $requiredTotal,
+            'requiredFaculty' => $requiredFaculty,
+            'requiredStaff' => $requiredStaff,
+            'requiredMulti' => $requiredMulti,
+            'requiredPrincipal' => $requiredPrincipal,
+            'studentsAssigned' => $studentsAssigned,
+            'studentsSubmitted' => $studentsSubmitted,
+            'pendingStudents' => $pendingStudents,
+            'completionPct' => $completionPct,
+            'jhsStudentCount' => $jhsStudentCount,
+            'shsStudentCount' => $shsStudentCount,
+            'totalPages' => $totalPages,
+            'page' => $page,
+            'students' => $pageStudents,
+            'facultyAssigned' => $facultyAssigned,
+            'facultyEvaluated' => $facultyEvaluated,
+            'pendingFaculty' => $pendingFaculty,
+            'facultyCompletionPct' => $facultyCompletionPct,
+            'checkedAt' => date('c'),
+        ], JSON_UNESCAPED_SLASHES);
+        exit;
     }
-    unset($ps);
 }
 
-$scopeLabel = $gradeFilter !== '' ? "Grade {$gradeFilter}" : ($myLevel === 'both' ? 'Junior High & Senior High' : ($myLevel === 'junior_high' ? 'Junior High School' : 'Senior High School'));
-
-function tracker_qs(array $overrides = []): string {
+function principal_tracker_qs(array $overrides = []): string {
     $params = array_merge($_GET, $overrides);
-    if (!isset($overrides['page'])) $params['page'] = 1;
+    $params['page'] = $overrides['page'] ?? 1;
+    unset($params['ajax']);
     return htmlspecialchars('?' . http_build_query($params));
 }
-function tracker_sort_url(string $col, string $curSort, string $curDir): string {
+function principal_tracker_sort_url(string $col, string $curSort, string $curDir): string {
     $newDir = ($curSort === $col && $curDir === 'asc') ? 'desc' : 'asc';
-    return tracker_qs(['sort' => $col, 'dir' => $newDir]);
+    return principal_tracker_qs(['sort' => $col, 'dir' => $newDir]);
 }
-function tracker_sort_icon(string $col, string $curSort, string $curDir): string {
+function principal_tracker_sort_icon(string $col, string $curSort, string $curDir): string {
     if ($curSort !== $col) return 'fa-sort';
     return $curDir === 'asc' ? 'fa-sort-up' : 'fa-sort-down';
 }
-function tracker_initials(string $name): string {
-    $parts = preg_split('/\s+/', trim($name));
-    $first = $parts[0][0] ?? '';
-    $last  = count($parts) > 1 ? $parts[count($parts) - 1][0] : '';
-    return strtoupper($first . $last);
-}
-function tracker_avatar_color(string $name): string {
-    $palette = ['#d99a2b', '#2563EB', '#10B981', '#EA580C', '#DB2777', '#0891B2', '#7C5FD9'];
-    return $palette[crc32($name) % count($palette)];
+function principal_tracker_initials(string $name): string {
+    $p = preg_split('/\s+/', trim($name));
+    return strtoupper(($p[0][0] ?? '') . (count($p) > 1 ? ($p[count($p)-1][0] ?? '') : ''));
 }
 
-$_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-
-$mysqli->close();
+html_head_open('PBI — Principal Evaluation Tracker');
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>PBI — Evaluation Tracker</title>
-<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
-<style>
-:root{--dark:#0A192F;--mid:#172A45;--inner:#0F1F3D;--amber:#d99a2b;--amber-h:#f0b84d;--amber-dark:#b8801f;--light:#E0E6F0;--muted:#A0B3C6;--radius:10px;--shadow:0 8px 32px rgba(0,0,0,0.45);--danger:#f05454;--good:#10B981;}
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,.82)),url('../background.png') center center / cover no-repeat fixed;background-color:var(--dark);font-family:'DM Sans',sans-serif;color:var(--light);display:flex;}
-
-.sidebar{width:250px;flex-shrink:0;background:rgba(23,42,69,.9);border-right:1px solid rgba(255,255,255,.08);min-height:100vh;padding:28px 20px;display:flex;flex-direction:column;}
-.sb-profile{text-align:center;margin-bottom:26px;}
-.sb-photo{width:72px;height:72px;border-radius:50%;object-fit:cover;border:2.5px solid var(--amber);box-shadow:0 0 18px rgba(217,154,43,.4);margin:0 auto 10px;display:block;}
-.sb-name{font-weight:700;font-size:15px;color:#fff;}
-.sb-role{font-size:11px;color:var(--amber-h);text-transform:uppercase;letter-spacing:.6px;margin-top:2px;}
-.sb-scope{font-size:10px;color:var(--muted);margin-top:4px;}
-.sb-nav{display:flex;flex-direction:column;gap:4px;margin-top:10px;}
-.sb-nav a{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:8px;color:var(--muted);text-decoration:none;font-size:14px;font-weight:500;transition:background .2s,color .2s;}
-.sb-nav a:hover,.sb-nav a.active{background:rgba(217,154,43,.15);color:#fff;}
-.sb-nav a i{width:18px;text-align:center;color:var(--amber-h);}
-.sb-logout{margin-top:auto;}
-.sb-logout a{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:8px;color:#fca5a5;text-decoration:none;font-size:14px;font-weight:500;transition:background .2s;}
-.sb-logout a:hover{background:rgba(240,84,84,.12);}
-
-.main{flex:1;padding:36px 44px;}
-.page-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px;flex-wrap:wrap;gap:14px;}
-.page-title{font-family:'Rajdhani',sans-serif;font-size:30px;font-weight:700;color:#fff;letter-spacing:1px;}
-.page-sub{font-size:13px;color:var(--muted);margin-top:4px;}
-
-.period-badge{background:rgba(217,154,43,.14);border:1px solid rgba(217,154,43,.3);color:var(--amber-h);padding:8px 16px;border-radius:20px;font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px;}
-.period-badge.closed{background:rgba(240,84,84,.1);border-color:rgba(240,84,84,.3);color:#fca5a5;}
-.period-badge.amber{background:rgba(217,119,6,.14);border-color:rgba(217,119,6,.3);color:#fbbf24;}
-.period-badge.gray{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.12);color:var(--muted);}
-
-.structure-note{display:flex;align-items:flex-start;gap:14px;padding:18px 20px;background:rgba(217,154,43,.08);border:1px solid rgba(217,154,43,.25);border-radius:12px;margin-bottom:26px;}
-.structure-note i{color:var(--amber-h);font-size:20px;margin-top:2px;}
-.structure-note p{font-size:13px;color:var(--light);line-height:1.6;}
-.structure-note p b{color:#fff;}
-
-.filter-bar{background:rgba(23,42,69,.85);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:18px 22px;box-shadow:var(--shadow);margin-bottom:22px;display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;}
-.filter-field{display:flex;flex-direction:column;gap:6px;}
-.filter-field label{font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);}
-.filter-field select, .filter-field input[type=text]{background:rgba(10,25,47,.7);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:var(--light);font-size:13px;font-family:'DM Sans',sans-serif;padding:9px 34px 9px 12px;outline:none;min-width:170px;}
-.filter-field select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23A0B3C6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;}
-.filter-field input[type=text]{padding-right:34px;min-width:200px;}
-.search-icon-wrap{position:relative;}
-.search-icon-wrap i{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;pointer-events:none;}
-.filter-field select:focus, .filter-field input:focus{border-color:var(--amber);}
-.btn-apply{background:var(--amber);border:none;color:#0A192F;font-size:13px;font-weight:700;padding:10px 18px;border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;font-family:'DM Sans',sans-serif;box-shadow:0 4px 14px rgba(217,154,43,.35);transition:background .2s;height:38px;}
-.btn-apply:hover{background:var(--amber-h);}
-.btn-reset{background:transparent;border:1px solid rgba(255,255,255,.16);color:var(--muted);font-size:13px;font-weight:700;padding:10px 16px;border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;font-family:'DM Sans',sans-serif;height:38px;text-decoration:none;transition:all .2s;}
-.btn-reset:hover{color:var(--light);border-color:rgba(255,255,255,.3);}
-
-.card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:16px;margin-bottom:26px;}
-.stat-card{background:rgba(23,42,69,.85);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:20px;box-shadow:var(--shadow);}
-.stat-card i{color:var(--amber-h);font-size:20px;margin-bottom:10px;}
-.stat-card .num{font-size:28px;font-weight:700;color:#fff;}
-.stat-card .label{font-size:12px;color:var(--muted);margin-top:4px;}
-.stat-card .caption{font-size:11px;color:var(--muted);opacity:.75;margin-top:2px;font-style:italic;}
-
-.section{background:rgba(23,42,69,.85);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;box-shadow:var(--shadow);margin-bottom:26px;}
-.section-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px;}
-.section h2{font-family:'Rajdhani',sans-serif;font-size:19px;color:#fff;display:flex;align-items:center;gap:8px;}
-.section h2 i{color:var(--amber-h);font-size:16px;}
-.count-note{font-size:12px;color:var(--muted);}
-.export-btn{background:rgba(217,154,43,.12);border:1px solid rgba(217,154,43,.35);color:var(--amber-h);padding:9px 14px;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:7px;transition:background .2s;}
-.export-btn:hover{background:rgba(217,154,43,.22);}
-
-.stub-note{font-size:11.5px;color:var(--amber-h);background:rgba(217,154,43,.08);border:1px dashed rgba(217,154,43,.35);border-radius:8px;padding:10px 14px;margin-bottom:16px;}
-
-.level-tabs{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;}
-.level-tabs a{background:rgba(217,154,43,.12);border:1px solid rgba(217,154,43,.35);color:var(--amber-h);padding:9px 18px;border-radius:30px;font-size:12.5px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:7px;transition:background .2s;}
-.level-tabs a:hover{background:rgba(217,154,43,.22);}
-.level-tabs a.active{background:rgba(217,154,43,.32);color:#fff;}
-.level-tabs a span{background:rgba(255,255,255,.15);border-radius:20px;padding:1px 9px;margin-left:2px;font-size:11px;}
-
-.bulk-banner{display:flex;align-items:flex-start;gap:12px;background:rgba(217,154,43,.1);border:1px solid rgba(217,154,43,.3);border-radius:12px;padding:16px 20px;margin-bottom:16px;}
-.bulk-banner i{color:var(--amber-h);font-size:16px;margin-top:2px;}
-.bulk-banner b{color:#fff;display:block;margin-bottom:2px;font-size:13px;}
-.bulk-banner p{font-size:12.5px;color:var(--muted);}
-.bulk-banner > div{flex:1;}
-.btn-bulk-remind{background:var(--amber);border:none;color:#0A192F;padding:9px 16px;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:7px;white-space:nowrap;transition:background .2s;}
-.btn-bulk-remind:hover:not(:disabled){background:var(--amber-dark);}
-.btn-bulk-remind:disabled{opacity:.4;cursor:not-allowed;}
-
-table.data{width:100%;border-collapse:collapse;font-size:13px;}
-table.data th{text-align:left;color:var(--muted);font-weight:600;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.08);text-transform:uppercase;font-size:11px;letter-spacing:.4px;white-space:nowrap;}
-table.data th a{color:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:6px;}
-table.data th a:hover{color:var(--light);}
-table.data td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.05);vertical-align:middle;}
-table.data tr:last-child td{border-bottom:none;}
-table.data th:first-child, table.data td:first-child{width:36px;}
-.stu-name{display:flex;align-items:center;gap:10px;font-weight:600;color:#fff;}
-.stu-avatar{width:32px;height:32px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;}
-.level-pill{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:rgba(37,99,235,.14);color:#60a5fa;}
-.level-pill.senior{background:rgba(124,95,217,.16);color:#a78bfa;}
-.status-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;}
-.status-pill.submitted{background:rgba(16,185,129,.14);color:var(--good);}
-.status-pill.pending{background:rgba(160,179,198,.14);color:var(--muted);}
-.btn-remind{background:var(--amber);border:none;color:#0A192F;padding:6px 12px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;transition:background .2s;}
-.btn-remind:hover{background:var(--amber-dark);}
-.btn-remind.on-cooldown{background:rgba(160,179,198,.18);color:var(--muted);cursor:default;pointer-events:none;}
-.btn-remind.sending{opacity:.6;pointer-events:none;}
-.remind-meta{font-size:10.5px;color:var(--muted);margin-top:4px;}
-.btn-more{background:transparent;border:none;color:var(--muted);font-size:16px;cursor:default;padding:4px 8px;}
-
-.reminder-toast{display:flex;align-items:flex-start;gap:10px;background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.35);color:var(--good);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:12.5px;line-height:1.6;}
-.reminder-toast.has-skips{background:rgba(217,119,6,.1);border-color:rgba(217,119,6,.3);color:#fbbf24;}
-.reminder-toast i{margin-top:2px;}
-.reminder-toast b{display:block;color:#fff;margin-bottom:2px;}
-
-.empty-note{color:var(--muted);font-size:13px;font-style:italic;}
-
-.table-footer{display:flex;justify-content:space-between;align-items:center;padding:16px 4px 4px;font-size:12.5px;color:var(--muted);flex-wrap:wrap;gap:10px;}
-.pagination{display:flex;align-items:center;gap:6px;}
-.page-btn{min-width:30px;height:30px;padding:0 8px;display:flex;align-items:center;justify-content:center;border-radius:7px;background:var(--inner);border:1px solid rgba(255,255,255,.1);color:var(--muted);text-decoration:none;font-size:12.5px;font-weight:600;}
-.page-btn.active{background:var(--amber);color:#0A192F;border-color:var(--amber);}
-.page-btn.disabled{opacity:.35;pointer-events:none;}
-.page-ellipsis{color:var(--muted);padding:0 4px;}
-
-.info-banner{display:flex;align-items:flex-start;gap:12px;background:rgba(37,99,235,.1);border:1px solid rgba(37,99,235,.3);border-radius:12px;padding:16px 20px;margin-top:22px;}
-.info-banner i{color:#60a5fa;font-size:16px;margin-top:2px;}
-.info-banner b{color:#fff;display:block;margin-bottom:2px;}
-.info-banner p{font-size:12.5px;color:var(--muted);}
-.info-banner.closed{background:rgba(240,84,84,.08);border-color:rgba(240,84,84,.25);}
-.info-banner.closed i{color:#fca5a5;}
-
-@media(max-width:768px){body{flex-direction:column;}.sidebar{width:100%;min-height:auto;}.filter-bar{flex-direction:column;align-items:stretch;}}
+<style id="principal-student-tracker">
+:root{
+  --trk-page:#F5F8FC;--trk-card:#FFF;--trk-line:#DCE7F1;--trk-line-strong:#AABCCD;
+  --trk-text:#12263A;--trk-muted:#6D8194;--trk-teal:#19B39D;--trk-teal-soft:#E9F8F5;--trk-teal-border:#74CFC3;
+  --trk-green:#0F9F6E;--trk-green-soft:#EAF8F2;--trk-amber:#B7791F;--trk-amber-soft:#FFF8E8;
+  --trk-blue:#2563EB;--trk-shadow:0 4px 16px rgba(28,64,92,.07);
+}
+html,body{background:var(--trk-page)!important;color:var(--trk-text)!important}
+.main{flex:1;min-width:0;padding:34px 40px 42px;background:var(--trk-page)!important}
+.page-header{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;flex-wrap:wrap;margin-bottom:20px}
+.page-title{font-size:28px;font-weight:700;letter-spacing:-.02em;color:var(--trk-text)!important}.page-sub{font-size:13px;color:var(--trk-muted)!important;margin-top:5px;line-height:1.5}
+.period-badge{display:inline-flex;align-items:center;gap:8px;padding:8px 13px;border-radius:999px;border:1px solid var(--trk-line);background:#fff;color:#587086;font-size:12px;font-weight:700;box-shadow:0 1px 2px rgba(15,23,42,.03)}.period-badge i{color:var(--trk-teal)!important}
+.period-badge.closed{background:#FFF4F5;border-color:#F2C7CC;color:#A94250}.period-badge.closed i{color:#D6455D!important}.period-badge.gray{color:var(--trk-muted)}
+.structure-note{display:flex;align-items:flex-start;gap:12px;padding:16px 18px;background:#fff;border:1px solid var(--trk-line);border-radius:12px;margin-bottom:18px;box-shadow:var(--trk-shadow)}.structure-note i{color:var(--trk-blue);font-size:17px;margin-top:2px}.structure-note p{font-size:13px;color:#445B70;line-height:1.6}.structure-note p b{color:var(--trk-text)}
+.stat-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:18px}.stat{background:#fff;border:1px solid var(--trk-line);border-radius:12px;padding:15px 16px;box-shadow:0 2px 8px rgba(15,23,42,.045)}.stat-icon{font-size:16px;color:var(--trk-teal);margin-bottom:8px}.stat-num{font-size:23px;font-weight:800;color:#10263A}.stat-label{font-size:11.5px;font-weight:800;color:#445B70;margin-top:2px}.stat-caption{font-size:10px;color:#8193A3;margin-top:3px}
+.tracker-card{background:#fff;border:1px solid var(--trk-line);border-radius:12px;box-shadow:var(--trk-shadow);overflow:visible;margin-bottom:18px}.tracker-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 18px 14px;border-bottom:1px solid #E7EEF4;flex-wrap:wrap}.tracker-heading{display:flex;align-items:center;gap:10px;min-width:0}.tracker-heading h2{font-size:18px;font-weight:700;color:var(--trk-text)!important}.tracker-heading .count{font-size:12px;color:var(--trk-muted)!important}.toolbar-actions{display:flex;align-items:center;gap:8px;position:relative}.filter-wrap{position:relative}.filter-toggle,.export-btn{height:36px;padding:0 13px;display:inline-flex;align-items:center;gap:8px;border-radius:8px;font-size:12px;font-weight:700;font-family:inherit;text-decoration:none;cursor:pointer}.filter-toggle{background:#fff;border:1px solid #C9D7E2;color:#334C60}.filter-toggle:hover{background:#F8FAFC;border-color:#AFC1D0}.filter-toggle.active{border-color:var(--trk-teal-border);color:#128D7E;background:var(--trk-teal-soft)}.filter-count{min-width:18px;height:18px;padding:0 5px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;background:var(--trk-teal);color:#fff;font-size:10px;line-height:1}.export-btn{background:#F4FBFA;border:1px solid #BEE6DF;color:#138D7D}.export-btn:hover{background:#E8F7F4}
+.filter-menu{position:absolute;right:0;top:44px;width:320px;background:#fff;border:1px solid var(--trk-line);border-radius:12px;box-shadow:0 12px 30px rgba(30,70,100,.12);padding:14px;z-index:30;display:none}.filter-menu.open{display:block}.filter-menu-title{font-size:12px;font-weight:800;color:var(--trk-text);margin-bottom:10px}.filter-field{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}.filter-field label{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#71869A}.filter-field input,.filter-field select{width:100%;height:36px;background:#fff;border:1px solid #C8D6E1;border-radius:8px;color:var(--trk-text);font:12px 'DM Sans',sans-serif;padding:0 11px;outline:none}.filter-field input:focus,.filter-field select:focus{border-color:var(--trk-teal-border);box-shadow:0 0 0 3px rgba(25,179,157,.10)}.filter-menu-actions{display:flex;justify-content:flex-end;gap:8px;padding-top:3px}.filter-apply,.filter-clear{height:34px;padding:0 12px;border-radius:8px;font:700 12px 'DM Sans',sans-serif;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:7px}.filter-apply{border:1px solid var(--trk-teal);background:var(--trk-teal);color:#fff}.filter-clear{border:1px solid #C8D6E1;background:#fff;color:#61768A}
+.table-wrap{overflow:auto}.table-scroll{border-top:1px solid var(--trk-line)}table.data{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;min-width:860px}table.data th{height:58px;text-align:left;color:#657A8E;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:0 15px;border-bottom:1px solid var(--trk-line-strong);background:#FCFDFE;white-space:nowrap}table.data th:first-child{padding-left:16px;width:34%}table.data th:nth-child(2){width:15%}table.data th:nth-child(3){width:12%}table.data th:nth-child(4){width:12%}table.data th:nth-child(5){width:14%}table.data th:nth-child(6){width:25%}table.data th a{color:inherit;text-decoration:none}table.data td{height:90px;padding:0 15px;border-bottom:1px solid #E4EDF4;vertical-align:middle;background:#fff;color:var(--trk-text)}table.data tbody tr:hover td{background:#FBFEFD}table.data tbody tr:last-child td{border-bottom:none}
+.stu-cell{display:flex;align-items:center;gap:12px;min-width:0}.stu-avatar{width:48px;height:48px;border-radius:50%;flex:0 0 48px;display:flex;align-items:center;justify-content:center;background:var(--trk-teal-soft);border:1px solid #B6E6DE;color:#159C8A;font-size:17px;overflow:hidden}.stu-avatar img{width:100%;height:100%;object-fit:cover}.stu-copy{min-width:0}.stu-name{font-size:14px;font-weight:700;color:#10263A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.stu-sub{font-size:11px;color:#8092A3;margin-top:3px}.level-pill{display:inline-flex;align-items:center;justify-content:center;min-width:92px;height:42px;padding:0 13px;border-radius:12px;border:1px solid var(--trk-teal-border);background:var(--trk-teal-soft);color:#128D7D;font-size:11px;font-weight:800}.req-number,.completed-number{font-size:14px;color:#344D60;font-weight:500}.status-pill{display:inline-flex;align-items:center;justify-content:center;padding:7px 12px;border-radius:999px;font-size:11px;font-weight:800;white-space:nowrap}.status-pill.not_started{background:#F3F7FA;color:#6E8396}.status-pill.in_progress{background:var(--trk-amber-soft);color:var(--trk-amber)}.status-pill.completed{background:var(--trk-green-soft);color:var(--trk-green)}.progress-cell{display:flex;align-items:center;gap:10px;min-width:0}.progress-pct{width:36px;flex:0 0 36px;font-size:12px;font-weight:600;color:#607589}.progress-main{min-width:130px;flex:1}.progress-track{width:100%;height:7px;border-radius:999px;background:#DDE7EF;overflow:hidden}.progress-fill{height:100%;border-radius:inherit;background:#15A57D;transition:width .2s}.progress-last{font-size:10.5px;color:#7C8FA0;margin-top:6px;white-space:nowrap}.progress-chevron{width:14px;flex:0 0 14px;color:#486176;font-size:17px;text-align:right}.empty-note{color:#8295A6;font-size:13px;padding:26px 16px;text-align:center}.table-footer{display:flex;justify-content:space-between;align-items:center;padding:13px 16px 14px;font-size:12px;color:#7890A3;gap:12px;flex-wrap:wrap}.pagination{display:flex;align-items:center;gap:5px}.page-btn{min-width:30px;height:30px;padding:0 8px;display:flex;align-items:center;justify-content:center;border-radius:7px;background:#fff;border:1px solid #C9D7E2;color:#6D8194;text-decoration:none;font-size:12px;font-weight:700}.page-btn.active{background:#E8F7F4;color:#118E7E;border-color:#8BD6CB}.page-btn.disabled{opacity:.35;pointer-events:none}.page-ellipsis{color:#91A2B0;padding:0 3px}
+.info-banner{display:flex;align-items:flex-start;gap:12px;background:#fff;border:1px solid var(--trk-line);border-radius:12px;padding:15px 17px;margin-top:16px;box-shadow:var(--trk-shadow)}.info-banner i{color:var(--trk-blue);font-size:15px;margin-top:2px}.info-banner b{display:block;color:var(--trk-text);font-size:12.5px;margin-bottom:2px}.info-banner p{font-size:12px;color:#74899B}.info-banner.closed{background:#FFF7F7;border-color:#F2D1D5}.info-banner.closed i{color:#D6455D}.live-tracker{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;background:#ECFDF5;border:1px solid #A7F3D0;color:#0F9F6E;font-size:10.5px;font-weight:800}.live-tracker.offline{background:#F8FAFC;border-color:#DCE7F1;color:#8092A2}.live-dot{width:6px;height:6px;border-radius:50%;background:#0F9F6E;display:inline-block;animation:livePulse 2s ease-in-out infinite}.live-tracker.offline .live-dot{background:#9AA9B5;animation:none}@keyframes livePulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.8)}}
+.optional-wrap{margin-top:22px}.optional-card{background:#fff;border:1.5px solid #E8C979;border-radius:14px;box-shadow:0 5px 20px rgba(161,98,7,.10);overflow:hidden;position:relative}.optional-card::before{content:'';display:block;height:4px;background:#D6A63A}.optional-card summary{list-style:none;cursor:pointer;min-height:82px;box-sizing:border-box;padding:19px 22px;display:flex;align-items:center;justify-content:space-between;gap:20px;background:linear-gradient(180deg,#FFFCF5 0%,#FFF9EC 100%)}.optional-card summary::-webkit-details-marker{display:none}.optional-card summary:hover{background:#FFF7E3}.optional-title{display:flex;align-items:center;gap:13px;min-width:0}.optional-title i{width:38px;height:38px;min-width:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:#FFF0C8;border:1px solid #E7C873;color:#A16207;font-size:16px}.optional-title strong{font-size:17px;font-weight:800;color:var(--trk-text);line-height:1.25}.optional-title span{display:block;font-size:12px;color:#7A6A4A;margin-top:3px}.optional-meta{display:flex;gap:9px;align-items:center;justify-content:flex-end;flex-wrap:wrap}.optional-pill{padding:7px 11px;border-radius:999px;font-size:10.5px;font-weight:800;background:#FFFDF7;color:#A16207;border:1px solid #E5C36F;white-space:nowrap}.optional-body{padding:0 22px 22px;border-top:1px solid #F0DFB2;background:#FFFEFB}.optional-note{font-size:12px;color:#6E7780;line-height:1.65;padding:14px 0}.optional-table{width:100%;border-collapse:separate;border-spacing:0;min-width:760px;font-size:12.5px}.optional-table th{padding:11px 12px;color:#657A8E;background:#FCFDFE;text-transform:uppercase;font-size:10px;border-bottom:1px solid var(--trk-line-strong);text-align:left}.optional-table td{padding:12px;border-bottom:1px solid #E8EEF3;color:#344D60;background:#fff}.optional-table tr:last-child td{border-bottom:none}.optional-person{display:flex;align-items:center;gap:10px}.optional-avatar{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#FFF8E8;border:1px solid #EBCB8A;color:#A16207;font-size:12px;font-weight:800;overflow:hidden}.optional-avatar img{width:100%;height:100%;object-fit:cover}.optional-status{font-size:10.5px;font-weight:800;padding:6px 10px;border-radius:999px}.optional-status.not_started{background:#F3F7FA;color:#6E8396}.optional-status.in_progress{background:#FFF8E8;color:#A16207}.optional-status.completed{background:#EAF8F2;color:#0F9F6E}
+@media(max-width:1100px){.stat-row{grid-template-columns:repeat(2,minmax(0,1fr))}.main{padding:26px 22px 36px}.period-badge{width:100%;justify-content:flex-start}}
+@media(max-width:768px){body{flex-direction:column}.main{padding:20px 14px 30px}.page-title{font-size:24px}.tracker-toolbar{padding:15px 14px}.toolbar-actions{width:100%;justify-content:stretch}.filter-wrap,.filter-toggle,.export-btn{flex:1}.filter-toggle,.export-btn{justify-content:center}.filter-menu{width:min(310px,calc(100vw - 28px));right:0}.stat-row{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-
-<aside class="sidebar">
-    <div class="sb-profile">
-        <img class="sb-photo" src="<?= htmlspecialchars($photo_src) ?>" alt="Profile"/>
-        <div class="sb-name"><?= htmlspecialchars($me['full_name'] ?? 'Principal') ?></div>
-        <div class="sb-role"><?= htmlspecialchars($me['designation'] ?? 'Principal') ?></div>
-        <div class="sb-scope"><?= htmlspecialchars($scopeLabel) ?></div>
-    </div>
-    <nav class="sb-nav">
-        <a href="principal_dashboard.php"><i class="fa-solid fa-gauge"></i> Dashboard</a>
-        <a href="principal_evaluations.php"><i class="fa-solid fa-clipboard-list"></i> Evaluation</a>
-        <a href="principal_evaluation_tracker.php" class="active"><i class="fa-solid fa-satellite-dish"></i> Evaluation Tracker</a>
-        <a href="principal_reports.php"><i class="fa-solid fa-chart-line"></i> Reports</a>
-        <a href="principal_account_settings.php"><i class="fa-solid fa-gear"></i> Account Settings</a>
-    </nav>
-    <div class="sb-logout">
-        <a href="principal_logout.php"><i class="fa-solid fa-right-from-bracket"></i> Log Out</a>
-    </div>
-</aside>
-
+<?php
+render_principal_sidebar('tracker', $me, $scopeLabel, $photo_src);
+?>
 <main class="main">
     <div class="page-header">
         <div>
             <div class="page-title">Evaluation Tracker</div>
-            <div class="page-sub">Monitor <?= BASIC_ED_LABEL ?> student evaluation participation.</div>
+            <div class="page-sub">Monitor JHS and SHS student participation in Student Evaluation. Your own Faculty evaluations are optional and tracked separately below.</div>
         </div>
         <?php render_period_badge($settings); ?>
     </div>
 
     <?php if (!$structureActive): ?>
-    <?php render_scope_status($settings, 'tracker'); ?>
+        <?php render_scope_status($settings, 'tracker'); ?>
     <?php else: ?>
 
-    <!-- FILTER BAR -->
-    <form class="filter-bar" method="GET" action="principal_evaluation_tracker.php">
-        <div class="filter-field">
-            <label for="search">Search</label>
-            <div class="search-icon-wrap">
-                <input type="text" id="search" name="search" placeholder="Student name..." value="<?= htmlspecialchars($search) ?>"/>
-                <i class="fa-solid fa-magnifying-glass"></i>
-            </div>
-        </div>
-        <div class="filter-field">
-            <label for="grade">Grade Level</label>
-            <select name="grade" id="grade">
-                <option value="">All Grades</option>
-                <?php foreach ($gradeOptions as $val => $lbl): ?>
-                    <option value="<?= htmlspecialchars($val) ?>" <?= $gradeFilter === $val ? 'selected' : '' ?>><?= htmlspecialchars($lbl) ?></option>
-                <?php endforeach; ?>
-            </select>
-        </div>
-        <div class="filter-field">
-            <label for="status">Status</label>
-            <select name="status" id="status">
-                <option value="" <?= $status === '' ? 'selected' : '' ?>>All</option>
-                <option value="pending" <?= $status === 'pending' ? 'selected' : '' ?>>Not Started</option>
-                <option value="submitted" <?= $status === 'submitted' ? 'selected' : '' ?>>Submitted</option>
-            </select>
-        </div>
-        <?php if ($levelFilter !== ''): ?>
-        <input type="hidden" name="level" value="<?= htmlspecialchars($levelFilter) ?>"/>
-        <?php endif; ?>
-        <button type="submit" class="btn-apply"><i class="fa-solid fa-filter"></i> Apply</button>
-        <a href="principal_evaluation_tracker.php" class="btn-reset"><i class="fa-solid fa-rotate-left"></i> Reset</a>
-    </form>
-
-    <!-- STAT CARDS -->
-    <div class="card-grid">
-        <?php if ($myLevel === 'both'): ?>
-        <div class="stat-card"><i class="fa-solid fa-child-reaching"></i><div class="num"><?= $juniorHighCount ?></div><div class="label">Junior High Students</div><div class="caption">Grades 7–10</div></div>
-        <div class="stat-card"><i class="fa-solid fa-user-graduate"></i><div class="num"><?= $seniorHighCount ?></div><div class="label">Senior High Students</div><div class="caption">Grades 11–12</div></div>
-        <?php endif; ?>
-        <div class="stat-card"><i class="fa-solid fa-users"></i><div class="num"><?= $studentsAssigned ?></div><div class="label">Students Assigned</div><div class="caption">All filtered students</div></div>
-        <div class="stat-card"><i class="fa-solid fa-circle-check"></i><div class="num"><?= $studentsSubmitted ?></div><div class="label">Students Submitted</div><div class="caption"><?= $submittedPct ?>% of total</div></div>
-        <div class="stat-card"><i class="fa-solid fa-hourglass-half"></i><div class="num"><?= $pendingStudents ?></div><div class="label">Pending Students</div><div class="caption"><?= $pendingPct ?>% of total</div></div>
-        <div class="stat-card"><i class="fa-solid fa-chart-simple"></i><div class="num"><?= $completionPct ?>%</div><div class="label">Completion %</div><div class="caption">Overall completion</div></div>
+    <div class="stat-row">
+        <div class="stat"><div class="stat-icon"><i class="fa-solid fa-users"></i></div><div class="stat-num" id="statStudentsAssigned"><?= number_format($studentsAssigned) ?></div><div class="stat-label">Students in Scope</div><div class="stat-caption">JHS / SHS only</div></div>
+        <div class="stat"><div class="stat-icon"><i class="fa-solid fa-circle-check"></i></div><div class="stat-num" id="statStudentsCompleted"><?= number_format($studentsSubmitted) ?></div><div class="stat-label">Completed</div><div class="stat-caption" id="statCompletionCaption"><?= $completionPct ?>% of students</div></div>
+        <div class="stat"><div class="stat-icon"><i class="fa-solid fa-hourglass-half"></i></div><div class="stat-num" id="statStudentsPending"><?= number_format($pendingStudents) ?></div><div class="stat-label">Pending</div><div class="stat-caption">Not fully submitted</div></div>
+        <div class="stat"><div class="stat-icon"><i class="fa-solid fa-chart-simple"></i></div><div class="stat-num" id="statStudentsCompletion"><?= $completionPct ?>%</div><div class="stat-label">Student Completion</div><div class="stat-caption"><?= number_format($requiredTotal) ?> required evaluation targets per student</div></div>
     </div>
 
-    <!-- STUDENTS TO BE EVALUATED -->
-    <div class="section">
-        <div class="section-head">
-            <h2><i class="fa-solid fa-user-graduate"></i> Students to be Evaluated</h2>
-            <div style="display:flex;align-items:center;gap:14px;">
-                <span class="count-note"><span id="selCount">0</span> of <?= $studentsAssigned ?> students</span>
-                <a class="export-btn" href="<?= tracker_qs(['export' => 'csv']) ?>"><i class="fa-solid fa-download"></i> Export List</a>
+    <div class="tracker-card">
+        <div class="tracker-toolbar">
+            <div class="tracker-heading">
+                <h2>Students Evaluation Tracker</h2>
+                <span class="count" id="trackerStudentCount"><?= number_format($studentsAssigned) ?> student<?= $studentsAssigned === 1 ? '' : 's' ?></span>
+                <span class="live-tracker" id="trackerLiveStatus"><span class="live-dot"></span> Live</span>
             </div>
-        </div>
-
-        <?php if ($myLevel === 'both'): ?>
-        <div class="level-tabs">
-            <a href="<?= tracker_qs(['level' => '']) ?>" class="<?= $levelFilter === '' ? 'active' : '' ?>">All <span><?= $juniorHighCount + $seniorHighCount ?></span></a>
-            <a href="<?= tracker_qs(['level' => 'junior_high']) ?>" class="<?= $levelFilter === 'junior_high' ? 'active' : '' ?>">Junior High <span><?= $juniorHighCount ?></span></a>
-            <a href="<?= tracker_qs(['level' => 'senior_high']) ?>" class="<?= $levelFilter === 'senior_high' ? 'active' : '' ?>">Senior High <span><?= $seniorHighCount ?></span></a>
-        </div>
-        <?php endif; ?>
-
-        <?php if ($hasPeriod && !empty($pageStudents)): ?>
-        <div class="bulk-banner">
-            <i class="fa-solid fa-circle-info"></i>
-            <div>
-                <b>Students listed below are those who still need to complete the evaluation.</b>
-                <p>You can send reminders or view student details.</p>
-            </div>
-            <button type="button" class="btn-bulk-remind" id="bulkRemindBtn" disabled>
-                <i class="fa-solid fa-paper-plane"></i> Send Bulk Reminder
-            </button>
-        </div>
-        <?php endif; ?>
-
-        <?php if (!$hasPeriod): ?>
-            <p class="empty-note">No active evaluation period right now.</p>
-        <?php else: ?>
-        <div class="stub-note">
-            <i class="fa-solid fa-circle-info"></i>
-                Reminders are logged in-system and rate-limited to one per student every <?= REMINDER_COOLDOWN_HOURS ?> hours. This app has no email/SMS system yet, so students won't get an outside message — the record just shows here. Selection is scoped to the current page only.
-            </div>
-            <div id="reminderToast" class="reminder-toast" style="display:none;"></div>
-            <?php if (empty($pageStudents)): ?>
-                <p class="empty-note">No students match the current filters.</p>
-            <?php else: ?>
-            <table class="data">
-                <thead>
-                    <tr>
-                        <th><input type="checkbox" id="selectAll" title="Select all pending on this page"/></th>
-                        <th><a href="<?= tracker_sort_url('name', $sort, $dir) ?>">Student <i class="fa-solid <?= tracker_sort_icon('name', $sort, $dir) ?>"></i></a></th>
+            <div class="toolbar-actions">
+                <div class="filter-wrap">
+                    <?php $activeFilterCount = ($search !== '' ? 1 : 0) + ($levelFilter !== '' ? 1 : 0) + ($gradeFilter !== '' ? 1 : 0) + ($status !== '' ? 1 : 0); ?>
+                    <button type="button" class="filter-toggle<?= $activeFilterCount ? ' active' : '' ?>" id="filterToggle" aria-expanded="false" aria-controls="trackerFilterMenu">
+                        <i class="fa-solid fa-filter"></i> Filter<?php if ($activeFilterCount): ?> <span class="filter-count"><?= $activeFilterCount ?></span><?php endif; ?>
+                    </button>
+                    <form class="filter-menu" id="trackerFilterMenu" method="GET" action="principal_evaluation_tracker.php">
+                        <div class="filter-menu-title">Filter Students</div>
+                        <div class="filter-field"><label for="filterSearch">Search Student</label><input id="filterSearch" type="text" name="search" placeholder="Student name..." value="<?= htmlspecialchars($search) ?>"></div>
                         <?php if ($myLevel === 'both'): ?>
-                        <th>Level</th>
+                        <div class="filter-field"><label for="filterLevel">Academic Level</label><select id="filterLevel" name="level"><option value="">All Levels</option><option value="junior_high" <?= $levelFilter === 'junior_high' ? 'selected' : '' ?>>Junior High</option><option value="senior_high" <?= $levelFilter === 'senior_high' ? 'selected' : '' ?>>Senior High</option></select></div>
                         <?php endif; ?>
-                        <th><a href="<?= tracker_sort_url('grade', $sort, $dir) ?>">Grade Level <i class="fa-solid <?= tracker_sort_icon('grade', $sort, $dir) ?>"></i></a></th>
-                        <th><a href="<?= tracker_sort_url('status', $sort, $dir) ?>">Status <i class="fa-solid <?= tracker_sort_icon('status', $sort, $dir) ?>"></i></a></th>
-                        <th>Submitted At</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($pageStudents as $s): ?>
-                    <tr>
-                        <td>
-                            <?php if ($s['status'] !== 'submitted'): ?>
-                            <input type="checkbox" class="rowSelect" value="<?= $s['id'] ?>"/>
-                            <?php endif; ?>
-                        </td>
-                        <td>
-                            <div class="stu-name">
-                                <span class="stu-avatar" style="background:<?= tracker_avatar_color($s['name']) ?>;"><?= htmlspecialchars(tracker_initials($s['name'])) ?></span>
-                                <?= htmlspecialchars($s['name']) ?>
-                            </div>
-                        </td>
-                        <?php if ($myLevel === 'both'): ?>
-                        <td><span class="level-pill<?= $s['academic_level'] === 'senior_high' ? ' senior' : '' ?>"><?= $s['academic_level'] === 'senior_high' ? 'Senior High' : 'Junior High' ?></span></td>
-                        <?php endif; ?>
-                        <td><?= htmlspecialchars($s['grade']) ?></td>
-                        <td>
-                            <?php if ($s['status'] === 'submitted'): ?>
-                                <span class="status-pill submitted"><i class="fa-solid fa-check" style="font-size:9px;"></i> Submitted</span>
-                            <?php else: ?>
-                                <span class="status-pill pending"><i class="fa-solid fa-hourglass-half" style="font-size:9px;"></i> Not Started</span>
-                            <?php endif; ?>
-                        </td>
-                        <td class="empty-note"><?= $s['submitted_at'] ? htmlspecialchars(date('M j, Y g:i A', strtotime($s['submitted_at']))) : '—' ?></td>
-                        <td>
-                            <?php if ($s['status'] !== 'submitted'):
-                                $onCooldown = $s['reminder_on_cooldown'];
-                            ?>
-                            <a class="btn-remind<?= $onCooldown ? ' on-cooldown' : '' ?>"
-                               href="principal_send_reminder.php?student_id=<?= $s['id'] ?>&csrf_token=<?= urlencode($_SESSION['csrf_token']) ?>"
-                               data-student-id="<?= $s['id'] ?>"
-                               data-remind-link
-                               <?= $onCooldown ? 'aria-disabled="true"' : '' ?>>
-                                <i class="fa-solid fa-bell"></i>
-                                <span class="remind-label"><?= $onCooldown ? 'Reminded' : 'Send Reminder' ?></span>
-                            </a>
-                            <div class="remind-meta" data-remind-meta><?= $s['last_reminded_at']
-                                ? 'Last: ' . htmlspecialchars(date('M j, g:i A', strtotime($s['last_reminded_at'])))
-                                : '' ?></div>
-                            <?php endif; ?>
-                            <button class="btn-more" title="More actions — not yet implemented">⋮</button>
-                        </td>
-                    </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-            <div class="table-footer">
-                <div>Showing <?= (($page - 1) * $perPage) + 1 ?> to <?= min($studentsAssigned, $page * $perPage) ?> of <?= $studentsAssigned ?> students</div>
-                <?php if ($totalPages > 1): ?>
-                <div class="pagination">
-                    <a class="page-btn <?= $page <= 1 ? 'disabled' : '' ?>" href="<?= tracker_qs(['page' => max(1, $page - 1)]) ?>"><i class="fa-solid fa-chevron-left"></i></a>
-                    <?php
-                    $shown = [];
-                    for ($i = 1; $i <= $totalPages; $i++) {
-                        if ($i === 1 || $i === $totalPages || abs($i - $page) <= 2) $shown[] = $i;
-                    }
-                    $prev = null;
-                    foreach ($shown as $i):
-                        if ($prev !== null && $i - $prev > 1): ?>
-                            <span class="page-ellipsis">…</span>
-                        <?php endif; ?>
-                        <a class="page-btn <?= $i === $page ? 'active' : '' ?>" href="<?= tracker_qs(['page' => $i]) ?>"><?= $i ?></a>
-                    <?php $prev = $i; endforeach; ?>
-                    <a class="page-btn <?= $page >= $totalPages ? 'disabled' : '' ?>" href="<?= tracker_qs(['page' => min($totalPages, $page + 1)]) ?>"><i class="fa-solid fa-chevron-right"></i></a>
+                        <div class="filter-field"><label for="filterGrade">Grade Level</label><select id="filterGrade" name="grade"><option value="">All Grades</option><?php foreach ($scopeGrades as $g): ?><option value="<?= htmlspecialchars($g) ?>" <?= $gradeFilter === $g ? 'selected' : '' ?>>Grade <?= htmlspecialchars($g) ?></option><?php endforeach; ?></select></div>
+                        <div class="filter-field"><label for="filterStatus">Evaluation Status</label><select id="filterStatus" name="status"><option value="">All Statuses</option><option value="not_started" <?= $status === 'not_started' ? 'selected' : '' ?>>Not Started</option><option value="in_progress" <?= $status === 'in_progress' ? 'selected' : '' ?>>In Progress</option><option value="completed" <?= $status === 'completed' ? 'selected' : '' ?>>Completed</option></select></div>
+                        <input type="hidden" name="page" value="1">
+                        <div class="filter-menu-actions"><a class="filter-clear" href="principal_evaluation_tracker.php"><i class="fa-solid fa-rotate-left"></i> Clear</a><button type="submit" class="filter-apply"><i class="fa-solid fa-check"></i> Apply Filters</button></div>
+                    </form>
                 </div>
+                <a class="export-btn" href="<?= principal_tracker_qs(['export' => 'csv']) ?>"><i class="fa-solid fa-download"></i> Export</a>
+            </div>
+        </div>
+
+        <div id="trackerTableState">
+        <?php if (!$hasPeriod): ?>
+            <div class="table-empty"><p class="empty-note">No active evaluation period right now.</p></div>
+        <?php else: ?>
+            <div class="table-wrap"><div class="table-scroll"><table class="data"><thead><tr>
+                <th><a href="<?= principal_tracker_sort_url('name', $sort, $dir) ?>">Student <i class="fa-solid <?= principal_tracker_sort_icon('name', $sort, $dir) ?>"></i></a></th>
+                <th>Level</th>
+                <th><a href="<?= principal_tracker_sort_url('grade', $sort, $dir) ?>">Grade <i class="fa-solid <?= principal_tracker_sort_icon('grade', $sort, $dir) ?>"></i></a></th>
+                <th>Required</th><th>Completed</th>
+                <th><a href="<?= principal_tracker_sort_url('status', $sort, $dir) ?>">Status <i class="fa-solid <?= principal_tracker_sort_icon('status', $sort, $dir) ?>"></i></a></th>
+                <th>Progress</th>
+            </tr></thead><tbody id="trackerTableBody">
+            <?php if (empty($pageStudents)): ?><tr><td colspan="7"><p class="empty-note">No students match the current filters.</p></td></tr>
+            <?php else: foreach ($pageStudents as $s): ?>
+                <tr>
+                    <td><div class="stu-cell"><span class="stu-avatar"><?php if ($s['photo'] !== ''): ?><img src="../image/<?= htmlspecialchars($s['photo']) ?>" alt=""><?php else: ?><i class="fa-solid fa-user"></i><?php endif; ?></span><div class="stu-copy"><div class="stu-name"><?= htmlspecialchars($s['name']) ?></div><div class="stu-sub">Student Evaluation participant</div></div></div></td>
+                    <td><span class="level-pill"><?= htmlspecialchars($s['level']) ?></span></td>
+                    <td><?= htmlspecialchars($s['year_level']) ?></td>
+                    <td><span class="req-number"><?= number_format($s['required']) ?></span></td>
+                    <td><span class="completed-number"><?= number_format($s['completed']) ?> / <?= number_format($s['required']) ?></span></td>
+                    <td><span class="status-pill <?= htmlspecialchars($s['status']) ?>"><?= htmlspecialchars($s['status_label']) ?></span></td>
+                    <td><div class="progress-cell"><span class="progress-pct"><?= (int)$s['progress'] ?>%</span><div class="progress-main"><div class="progress-track"><div class="progress-fill" style="width:<?= (int)$s['progress'] ?>%;"></div></div><?php if (!empty($s['submitted_at'])): ?><div class="progress-last">Last: <?= htmlspecialchars(date('M j, Y g:i A', strtotime($s['submitted_at']))) ?></div><?php endif; ?></div><span class="progress-chevron">›</span></div></td>
+                </tr>
+            <?php endforeach; endif; ?>
+            </tbody></table></div></div>
+            <div class="table-footer"><div id="trackerShowingText"><?php if ($studentsAssigned > 0): ?>Showing <?= (($page - 1) * $perPage) + 1 ?>–<?= min($studentsAssigned, $page * $perPage) ?> of <?= $studentsAssigned ?> students<?php else: ?>No students to display<?php endif; ?></div><div class="pagination" id="trackerPagination">
+            <?php if ($totalPages > 1): $shown=[]; for($i=1;$i<=$totalPages;$i++){ if($i===1||$i===$totalPages||abs($i-$page)<=2)$shown[]=$i; } $prev=null; ?>
+                <a class="page-btn <?= $page<=1?'disabled':'' ?>" href="<?= principal_tracker_qs(['page'=>max(1,$page-1)]) ?>"><i class="fa-solid fa-chevron-left"></i></a>
+                <?php foreach($shown as $i): ?><?php if($prev!==null&&$i-$prev>1): ?><span class="page-ellipsis">…</span><?php endif; ?><a class="page-btn <?= $i===$page?'active':'' ?>" href="<?= principal_tracker_qs(['page'=>$i]) ?>"><?= $i ?></a><?php $prev=$i; endforeach; ?>
+                <a class="page-btn <?= $page>=$totalPages?'disabled':'' ?>" href="<?= principal_tracker_qs(['page'=>min($totalPages,$page+1)]) ?>"><i class="fa-solid fa-chevron-right"></i></a>
+            <?php endif; ?></div></div>
+        <?php endif; ?>
+        </div>
+    </div>
+
+    <?php if ($hasPeriod): ?>
+    <div class="info-banner <?= $evalOpen ? '' : 'closed' ?>">
+        <i class="fa-solid fa-circle-info"></i>
+        <div>
+            <b>Student Evaluation tracking is currently <?= $evalOpen ? 'open' : 'closed' ?>.</b>
+            <p><?= $evalOpen
+                ? 'This tracker measures whether JHS/SHS students have completed the Student Evaluation contexts required for your Basic Education scope. College students are excluded, and your own Faculty evaluations do not affect these totals.'
+                : 'No new student submissions will be recorded until the evaluation window reopens.' ?></p>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <div class="optional-wrap">
+        <details class="optional-card">
+            <summary>
+                <div class="optional-title"><i class="fa-solid fa-user-pen"></i><strong>Optional: Principal Faculty Evaluations</strong><span>JHS/SHS Faculty and Teaching Staff only</span></div>
+                <div class="optional-meta"><span class="optional-pill"><?= number_format($facultyAssigned) ?> Faculty</span><span class="optional-pill"><?= number_format($facultyEvaluated) ?> Completed</span><span class="optional-pill"><?= number_format($pendingFaculty) ?> Pending</span></div>
+            </summary>
+            <div class="optional-body">
+                <div class="optional-note">These are the Principal's own school-head evaluations of Faculty/Teaching Staff. They are optional and are intentionally separated from the primary Student Evaluation participation tracker. College-only personnel are not included.</div>
+                <?php if (empty($faculty)): ?>
+                    <div class="empty-note">No JHS/SHS Faculty or Teaching Staff are currently within your evaluation scope.</div>
+                <?php else: ?>
+                <div class="table-wrap"><table class="optional-table"><thead><tr><th>Faculty / Teaching Staff</th><th>Teaching Level</th><th>Grade</th><th>Status</th><th>Last Evaluated</th></tr></thead><tbody>
+                <?php foreach($faculty as $f): ?>
+                    <tr><td><div class="optional-person"><span class="optional-avatar"><?php if($f['photo']!==''): ?><img src="../image/<?= htmlspecialchars($f['photo']) ?>" alt=""><?php else: ?><?= htmlspecialchars(principal_tracker_initials($f['name'])) ?><?php endif; ?></span><div><strong><?= htmlspecialchars($f['name']) ?></strong><div style="font-size:10.5px;color:#8092A3;margin-top:2px"><?= htmlspecialchars($f['designation'] !== '' ? $f['designation'] : $f['role_label']) ?></div></div></div></td><td><?= htmlspecialchars($f['level_label']) ?></td><td><?= htmlspecialchars($f['grade_label']) ?></td><td><span class="optional-status <?= htmlspecialchars($f['status']) ?>"><?= htmlspecialchars($f['status_label']) ?></span></td><td><?= !empty($f['last_evaluated_at']) ? htmlspecialchars(date('M j, Y g:i A', strtotime($f['last_evaluated_at']))) : '—' ?></td></tr>
+                <?php endforeach; ?>
+                </tbody></table></div>
                 <?php endif; ?>
             </div>
-            <?php endif; ?>
-            <?php endif; ?>
-        </div>
+        </details>
+    </div>
 
-        <?php if ($hasPeriod): ?>
-        <div class="info-banner <?= ($settings['is_open_for_submission'] ?? false) ? '' : 'closed' ?>">
-            <i class="fa-solid fa-circle-info"></i>
-            <div>
-                <b>Student evaluation is currently <?= ($settings['is_open_for_submission'] ?? false) ? 'open' : 'closed' ?>.</b>
-                <p><?= ($settings['is_open_for_submission'] ?? false)
-                    ? 'Remind your students to complete their evaluation. Tracking updates automatically when submissions are recorded.'
-                    : 'No new submissions will be recorded until the evaluation window reopens.' ?></p>
-            </div>
-        </div>
-        <?php endif; ?>
-
-        <?php endif; ?>
-    </main>
-    <script>
-    (function(){
-        const CSRF_TOKEN = <?= json_encode($_SESSION['csrf_token']) ?>;
-        const selectAll = document.getElementById('selectAll');
-        const bulkBtn = document.getElementById('bulkRemindBtn');
-        const countEl = document.getElementById('selCount');
-        const toast = document.getElementById('reminderToast');
-        const rowBoxes = () => Array.from(document.querySelectorAll('.rowSelect'));
-
-        function refresh(){
-            const boxes = rowBoxes();
-            const checked = boxes.filter(b => b.checked);
-            if (countEl) countEl.textContent = checked.length;
-            if (bulkBtn) bulkBtn.disabled = checked.length === 0;
-            if (selectAll) selectAll.checked = boxes.length > 0 && checked.length === boxes.length;
-        }
-        if (selectAll) {
-            selectAll.addEventListener('change', function(){
-                rowBoxes().forEach(b => { b.checked = selectAll.checked; });
-                refresh();
-            });
-        }
-        rowBoxes().forEach(b => b.addEventListener('change', refresh));
-        refresh();
-
-        function showToast(sent, skipped, errorMsg){
-            if (!toast) return;
-            toast.classList.toggle('has-skips', (skipped && skipped.length > 0) || !!errorMsg);
-            if (errorMsg) {
-                toast.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i><div><b>Couldn't send reminder</b>${escapeHtml(errorMsg)}</div>`;
-            } else {
-                let html = `<i class="fa-solid fa-paper-plane"></i><div><b>${sent.length} reminder${sent.length===1?'':'s'} sent</b>`;
-                if (skipped && skipped.length) {
-                    html += `${skipped.length} skipped: ` + skipped.map(s => `${escapeHtml(s.name || 'Student #' + s.id)} (${escapeHtml(s.reason)})`).join('; ');
-                } else {
-                    html += `Students will show as reminded below.`;
-                }
-                html += `</div>`;
-                toast.innerHTML = html;
-            }
-            toast.style.display = 'flex';
-        }
-        function escapeHtml(str){
-            const d = document.createElement('div');
-            d.textContent = str == null ? '' : String(str);
-            return d.innerHTML;
-        }
-
-        const params = new URLSearchParams(window.location.search);
-        if (params.has('reminder_sent') || params.has('reminder_error')) {
-            showToast(
-                new Array(parseInt(params.get('reminder_sent') || '0', 10)).fill(0),
-                new Array(parseInt(params.get('reminder_skipped') || '0', 10)).fill({id:0,name:null,reason:'skipped'}),
-                params.get('reminder_error')
-            );
+    <?php endif; ?>
+</main>
+<script>
+(function(){
+    const toggle=document.getElementById('filterToggle');
+    const menu=document.getElementById('trackerFilterMenu');
+    if(toggle&&menu){
+        toggle.addEventListener('click',e=>{e.stopPropagation();const open=menu.classList.toggle('open');toggle.setAttribute('aria-expanded',open?'true':'false');});
+        menu.addEventListener('click',e=>e.stopPropagation());
+        document.addEventListener('click',()=>{if(menu.classList.contains('open')){menu.classList.remove('open');toggle.setAttribute('aria-expanded','false');}});
     }
 
-    function markRowReminded(studentId, sentAtLabel){
-        const link = document.querySelector(`[data-remind-link][data-student-id="${studentId}"]`);
-        if (!link) return;
-        link.classList.remove('sending');
-        link.classList.add('on-cooldown');
-        link.setAttribute('aria-disabled', 'true');
-        const label = link.querySelector('.remind-label');
-        if (label) label.textContent = 'Reminded';
-        const row = link.closest('tr');
-        const meta = row ? row.querySelector('[data-remind-meta]') : null;
-        if (meta) meta.textContent = 'Last: ' + sentAtLabel;
-        const box = row ? row.querySelector('.rowSelect') : null;
-        if (box) { box.checked = false; box.disabled = false; }
-    }
+    const live=document.getElementById('trackerLiveStatus');
+    const body=document.getElementById('trackerTableBody');
+    const showing=document.getElementById('trackerShowingText');
+    const pagination=document.getElementById('trackerPagination');
+    if(!live||!body)return;
 
-    async function sendReminders(studentIds, triggerEl){
-        if (!studentIds.length) return;
-        if (triggerEl) { triggerEl.classList.add('sending'); triggerEl.disabled = true; }
-        try {
-            const res = await fetch('principal_send_reminder.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ student_ids: studentIds, csrf_token: CSRF_TOKEN })
-            });
-            const data = await res.json();
-            if (!data.success) {
-                showToast([], [], data.error || 'Something went wrong.');
-                return;
-            }
-            data.sent.forEach(s => markRowReminded(s.id, s.sent_at));
-            showToast(data.sent, data.skipped, null);
-            refresh();
-        } catch (e) {
-            showToast([], [], 'Network error — please try again.');
-        } finally {
-            if (triggerEl) { triggerEl.classList.remove('sending'); triggerEl.disabled = false; }
-        }
+    let busy=false,lastSig='';
+    const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+    const initials=n=>{const p=String(n||'').trim().split(/\s+/);return ((p[0]||'')[0]||'').toUpperCase()+(p.length>1?((p[p.length-1]||'')[0]||'').toUpperCase():'');};
+    const fmtDate=v=>{const d=new Date(v);if(Number.isNaN(d.getTime()))return v;return d.toLocaleString(undefined,{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});};
+    function setLive(text,off){live.classList.toggle('offline',!!off);live.innerHTML='<span class="live-dot"></span> '+esc(text);}
+    function row(s){
+        const avatar=s.photo?'<img src="../image/'+esc(s.photo)+'" alt="">':'<i class="fa-solid fa-user"></i>';
+        const last=s.submitted_at?'<div class="progress-last">Last: '+esc(fmtDate(s.submitted_at))+'</div>':'';
+        return '<tr><td><div class="stu-cell"><span class="stu-avatar">'+avatar+'</span><div class="stu-copy"><div class="stu-name">'+esc(s.name)+'</div><div class="stu-sub">Student Evaluation participant</div></div></div></td><td><span class="level-pill">'+esc(s.level)+'</span></td><td>'+esc(s.year_level)+'</td><td><span class="req-number">'+Number(s.required||0).toLocaleString()+'</span></td><td><span class="completed-number">'+Number(s.completed||0)+' / '+Number(s.required||0)+'</span></td><td><span class="status-pill '+esc(s.status)+'">'+esc(s.status_label)+'</span></td><td><div class="progress-cell"><span class="progress-pct">'+Number(s.progress||0)+'%</span><div class="progress-main"><div class="progress-track"><div class="progress-fill" style="width:'+Number(s.progress||0)+'%"></div></div>'+last+'</div><span class="progress-chevron">›</span></div></td></tr>';
     }
-
-    document.querySelectorAll('[data-remind-link]').forEach(link => {
-        link.addEventListener('click', function(e){
-            if (link.classList.contains('on-cooldown')) { e.preventDefault(); return; }
-            e.preventDefault();
-            const id = parseInt(link.dataset.studentId, 10);
-            link.classList.add('sending');
-            sendReminders([id], link);
-        });
-    });
-
-    if (bulkBtn) {
-        bulkBtn.addEventListener('click', function(){
-            const ids = rowBoxes().filter(b => b.checked).map(b => parseInt(b.value, 10));
-            sendReminders(ids, bulkBtn);
-        });
-    }
+    function pageUrl(page){const u=new URL(window.location.href);u.searchParams.set('page',String(page));u.searchParams.delete('ajax');u.searchParams.delete('export');return u.toString();}
+    function renderPagination(page,total){if(!pagination)return;if(total<=1){pagination.innerHTML='';return;}const shown=[];for(let i=1;i<=total;i++)if(i===1||i===total||Math.abs(i-page)<=2)shown.push(i);let html='<a class="page-btn '+(page<=1?'disabled':'')+'" href="'+esc(pageUrl(Math.max(1,page-1)))+'"><i class="fa-solid fa-chevron-left"></i></a>';let prev=null;shown.forEach(i=>{if(prev!==null&&i-prev>1)html+='<span class="page-ellipsis">…</span>';html+='<a class="page-btn '+(i===page?'active':'')+'" href="'+esc(pageUrl(i))+'">'+i+'</a>';prev=i;});html+='<a class="page-btn '+(page>=total?'disabled':'')+'" href="'+esc(pageUrl(Math.min(total,page+1)))+'"><i class="fa-solid fa-chevron-right"></i></a>';pagination.innerHTML=html;}
+    function signature(d){return JSON.stringify([d.requiredTotal,d.studentsAssigned,d.studentsSubmitted,d.pendingStudents,d.completionPct,d.totalPages,d.page,(d.students||[]).map(s=>[s.id,s.completed,s.required,s.progress,s.status,s.submitted_at])]);}
+    async function refresh(){if(busy)return;busy=true;try{const u=new URL(window.location.href);u.searchParams.set('ajax','1');u.searchParams.set('_ts',Date.now().toString());u.searchParams.delete('export');const res=await fetch(u.toString(),{credentials:'same-origin',cache:'no-store',headers:{'Accept':'application/json'}});if(!res.ok)throw new Error('Tracker update failed');const d=await res.json();if(!d.ok)throw new Error('Tracker update failed');const sig=signature(d);setLive('Live');if(sig===lastSig){busy=false;return;}lastSig=sig;
+        const ids=[['statStudentsAssigned',d.studentsAssigned],['statStudentsCompleted',d.studentsSubmitted],['statStudentsPending',d.pendingStudents]];ids.forEach(([id,val])=>{const el=document.getElementById(id);if(el)el.textContent=Number(val||0).toLocaleString();});
+        const pct=document.getElementById('statStudentsCompletion');if(pct)pct.textContent=Number(d.completionPct||0)+'%';const cap=document.getElementById('statCompletionCaption');if(cap)cap.textContent=Number(d.completionPct||0)+'% of students';const count=document.getElementById('trackerStudentCount');if(count)count.textContent=Number(d.studentsAssigned||0).toLocaleString()+' student'+(Number(d.studentsAssigned||0)===1?'':'s');
+        body.innerHTML=(d.students||[]).length?d.students.map(row).join(''):'<tr><td colspan="7"><p class="empty-note">No students match the current filters.</p></td></tr>';
+        if(showing){if(Number(d.studentsAssigned||0)>0){const first=((Number(d.page||1)-1)*<?= (int)$perPage ?>)+1;const last=Math.min(Number(d.studentsAssigned||0),Number(d.page||1)*<?= (int)$perPage ?>);showing.textContent='Showing '+first+'–'+last+' of '+Number(d.studentsAssigned||0).toLocaleString()+' students';}else showing.textContent='No students to display';}renderPagination(Number(d.page||1),Number(d.totalPages||1));
+    }catch(e){setLive('Offline',true);}finally{busy=false;}}
+    refresh();setInterval(refresh,5000);
 })();
 </script>
 </body>
 </html>
+<?php if($mysqli->ping())$mysqli->close(); ?>

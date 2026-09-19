@@ -7,13 +7,15 @@
 // a stat/tab/table roster here, a separate server-rendered form on
 // ea_evaluate.php. Eligibility is unchanged from before — the EA can only
 // evaluate the active Principal, the active Dean, and Staff members who
-// have no year-level/teaching assignment (Non-Teaching Staff).
+// have no year-level/teaching assignment.
 session_set_cookie_params([
     'lifetime' => 0, 'path' => '/', 'domain' => '',
     'secure' => false, 'httponly' => true, 'samesite' => 'Lax',
 ]);
 session_start();
 require_once 'db.php';
+require_once dirname(__DIR__) . '/shared/system_settings_service.php';
+
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
@@ -24,6 +26,9 @@ if (!isset($_SESSION['user_id']) ||
     header('Location: admin_login.php');
     exit;
 }
+
+// Apply the schedule before reading evaluation_periods.is_active.
+ss_sync_from_database($mysqli);
 
 $ea_id = (int)$_SESSION['user_id'];
 
@@ -53,8 +58,8 @@ $period_id = (int)($period['id'] ?? 0);
 $is_open = $period_id > 0;
 
 // ── ELIGIBLE TARGETS (unchanged) ──────────────────────────────────────
-// Principal + Dean are single-user role targets. Non-Teaching Staff =
-// primary Staff users with no year-level/teaching assignment. This is
+// Principal + Dean are single-user role targets. Staff = primary Staff
+// users with no year-level/teaching assignment. This is
 // the exact same eligibility ea_evaluate.php re-checks before accepting
 // a submission, so nobody can be evaluated here who isn't allowed.
 $heads = ['Principal'=>[], 'Dean'=>[]];
@@ -73,7 +78,7 @@ foreach ($headStmt->get_result()->fetch_all(MYSQLI_ASSOC) as $u) {
 $headStmt->close();
 
 $ntsStmt = $mysqli->prepare("
-    SELECT u.id, u.full_name, u.designation, u.photo, u.role, u.secondary_role
+    SELECT u.id, u.full_name, u.designation, u.photo, u.role
     FROM users u
     WHERE u.role='staff'
       AND u.is_active=1
@@ -89,9 +94,9 @@ $ntsStmt->close();
 $categories = [
     'Principal' => $heads['Principal'],
     'Dean' => $heads['Dean'],
-    'Non-Teaching Staff' => $nonTeaching,
+    'Staff' => $nonTeaching,
 ];
-$tabIcons = ['Principal'=>'fa-user-tie','Dean'=>'fa-graduation-cap','Non-Teaching Staff'=>'fa-users-gear'];
+$tabIcons = ['Principal'=>'fa-user-tie','Dean'=>'fa-graduation-cap','Staff'=>'fa-users-gear'];
 
 $selectedType = $_GET['type'] ?? 'Principal';
 if (!array_key_exists($selectedType, $categories)) $selectedType = 'Principal';
@@ -186,6 +191,70 @@ tbody td{padding:14px 18px;font-size:13.5px;vertical-align:middle}
 </style>
     <link rel="stylesheet" href="admin_ui_theme.css">
     <link rel="stylesheet" href="admin_compact_ui.css">
+<style id="pbi-feature-scrollbar">
+
+/* PBI FEATURE SCROLLBAR — consistent with the compact page scrollbar */
+html, body {
+  scrollbar-width: thin !important;
+  scrollbar-color: #888 transparent !important;
+}
+html::-webkit-scrollbar, body::-webkit-scrollbar,
+.feature-compact ::-webkit-scrollbar {
+  width: 10px !important;
+  height: 10px !important;
+}
+html::-webkit-scrollbar-track, body::-webkit-scrollbar-track,
+.feature-compact ::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb,
+.feature-compact ::-webkit-scrollbar-thumb {
+  background: #888 !important;
+  border-radius: 999px !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
+}
+html::-webkit-scrollbar-thumb:hover, body::-webkit-scrollbar-thumb:hover,
+.feature-compact ::-webkit-scrollbar-thumb:hover {
+  background: #777 !important;
+  background-clip: padding-box !important;
+}
+html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
+.feature-compact ::-webkit-scrollbar-button {
+  display: block !important;
+  width: 10px !important;
+  height: 10px !important;
+  background-color: transparent !important;
+}
+/* Small native-looking arrow hints on classic scrollbars */
+html::-webkit-scrollbar-button:single-button:vertical:decrement,
+body::-webkit-scrollbar-button:single-button:vertical:decrement,
+.feature-compact ::-webkit-scrollbar-button:single-button:vertical:decrement {
+  background:
+    linear-gradient(135deg, transparent 50%, #777 50%) 3px 5px/5px 5px no-repeat !important;
+}
+html::-webkit-scrollbar-button:single-button:vertical:increment,
+body::-webkit-scrollbar-button:single-button:vertical:increment,
+.feature-compact ::-webkit-scrollbar-button:single-button:vertical:increment {
+  background:
+    linear-gradient(315deg, transparent 50%, #777 50%) 3px 0/5px 5px no-repeat !important;
+}
+html::-webkit-scrollbar-button:single-button:horizontal:decrement,
+body::-webkit-scrollbar-button:single-button:horizontal:decrement,
+.feature-compact ::-webkit-scrollbar-button:single-button:horizontal:decrement {
+  background:
+    linear-gradient(45deg, transparent 50%, #777 50%) 5px 3px/5px 5px no-repeat !important;
+}
+html::-webkit-scrollbar-button:single-button:horizontal:increment,
+body::-webkit-scrollbar-button:single-button:horizontal:increment,
+.feature-compact ::-webkit-scrollbar-button:single-button:horizontal:increment {
+  background:
+    linear-gradient(225deg, transparent 50%, #777 50%) 0 3px/5px 5px no-repeat !important;
+}
+
+</style>
+<link rel="stylesheet" href="admin_appearance.css">
+<script src="admin_appearance.js"></script>
 </head>
 <body class="feature-compact">
 <main class="wrap">

@@ -105,11 +105,22 @@ $facultyCount = $teacherCount + $staffCount;
 // "Total Users" only counts Faculty + Staff + Students (excludes admin/superadmin/registrar accounts)
 $totalUsers = $facultyCount + $studentCount;
 
-// Submission progress for the current evaluation period
+// Submission progress for the current evaluation period.
+// Scoped to submissions made BY currently active students only — otherwise
+// submissions left behind by since-deactivated/removed students (or by
+// non-student evaluators) could inflate the count past the current student
+// total and push the percentage over 100%.
 $submittedCount = 0;
-$subq = $mysqli->query("SELECT COUNT(DISTINCT evaluator_id) as c FROM evaluation_tracker WHERE status='submitted'");
+$subq = $mysqli->query(
+    "SELECT COUNT(DISTINCT et.evaluator_id) as c
+     FROM evaluation_tracker et
+     INNER JOIN users u ON u.id = et.evaluator_id
+     WHERE et.status='submitted' AND u.role='student' AND u.is_active=1"
+);
 if ($subq) $submittedCount = (int)$subq->fetch_assoc()['c'];
-$submissionPct = $studentCount > 0 ? round(($submittedCount / $studentCount) * 100) : 0;
+// Belt-and-suspenders: never let the count/percentage exceed the student total.
+$submittedCount   = min($submittedCount, $studentCount);
+$submissionPct    = $studentCount > 0 ? min(100, round(($submittedCount / $studentCount) * 100)) : 0;
 $pendingEvalCount = max(0, $studentCount - $submittedCount);
 
 // Inactive counts (for the Personnel Overview panel's Active/Inactive line)
@@ -401,13 +412,18 @@ function compute_eval_health(array $sys): array {
         return array_merge($base, ['label' => 'NOT CONFIGURED', 'cls' => 'gray',
             'headline' => 'No evaluation window is configured.', 'sub' => 'Set an opening and closing date to enable scheduling.']);
     }
-    $ts = strtotime($start); $te = strtotime($end);
-    if ($ts === false || $te === false) {
+
+    $startDt = ss_parse_datetime($start);
+    $endDt   = ss_parse_datetime($end);
+    if (!$startDt || !$endDt || $endDt <= $startDt) {
         return array_merge($base, ['label' => 'NOT CONFIGURED', 'cls' => 'gray',
             'headline' => 'The configured dates could not be read.', 'sub' => 'Re-check the opening and closing date fields.']);
     }
 
-    $now = time();
+    $nowDt = ss_now();
+    $ts = $startDt->getTimestamp();
+    $te = $endDt->getTimestamp();
+    $now = $nowDt->getTimestamp();
     $duration_days = max(0, (int)round(($te - $ts) / 86400));
 
     if ($now < $ts) {
@@ -416,16 +432,17 @@ function compute_eval_health(array $sys): array {
             'days_until_start' => $days,
             'headline' => 'Evaluation has not started yet.', 'sub' => 'Starts in ' . $days . ' day' . ($days === 1 ? '' : 's') . '.']);
     }
-    if ($now > $te) {
+    if ($now >= $te) {
         $days = max(1, (int)floor(($now - $te) / 86400));
         return array_merge($base, ['label' => 'CLOSED', 'cls' => 'red', 'duration_days' => $duration_days,
             'elapsed_days' => $days,
-            'headline' => 'Evaluation period has ended.', 'sub' => 'Ended ' . ($days === 1 ? 'yesterday' : $days . ' days ago') . '.']);
+            'headline' => 'Evaluation period has ended.', 'sub' => 'Ended ' . ($days === 1 ? 'today' : $days . ' days ago') . '.']);
     }
     $remaining = max(0, (int)ceil(($te - $now) / 86400));
     return array_merge($base, ['label' => 'LIVE', 'cls' => 'green', 'duration_days' => $duration_days,
         'remaining_days' => $remaining,
         'headline' => 'Evaluation is currently accepting submissions.', 'sub' => $remaining . ' day' . ($remaining === 1 ? '' : 's') . ' remaining.']);
+
 }
 function compute_eval_status(array $sys): array {
     $h = compute_eval_health($sys);
@@ -477,30 +494,32 @@ $HEALTH_ITEMS = [
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet"/>
     <style>
     :root{
-        --dark-blue:#FFFFFF;--blue-mid:#F7FAFF;--blue-accent:#2563EB;
-        --blue-hover:#2563EB;--light:#FFFFFF;--muted:#67819E;
+        --dark-blue:#FFFFFF;--blue-mid:#F7FAFF;--blue-accent:#0F9F6E;
+        --blue-hover:#0C7F59;--light:#FFFFFF;--muted:#67819E;
         --radius:8px;--shadow:0 4px 12px rgba(15,23,42,.08);
-        --indicator-bg:rgba(59,130,246,.10);
+        --indicator-bg:rgba(15,159,110,.10);
         --sev-green:#3F8F4A;--sev-yellow:#B7791F;--sev-red:#C24141;--sev-blue:#2563EB;
         --page-bg:#FFFFFF;--card-bg:#FFFFFF;--card-border:#D8E5F4;
+        --dashboard-bg:#FFFFFF;
         --text-dark:#0B1F3A;--text-dim:#67819E;--track-bg:#D8E5F4;
         --card-shadow:0 2px 4px rgba(30,82,144,.06),0 6px 16px rgba(30,82,144,.08);
-        --sidebar-w:250px;--topbar-h:82px;
-        --sidebar-bg:#0F2E22;--sidebar-active:rgba(34,197,94,.22);
-        --sidebar-text:#E7F3EC;--sidebar-text-dim:#8FB5A2;--sidebar-border:rgba(255,255,255,.08);
+        --sidebar-w:250px;--topbar-h:82px;--sidebar-scale:0.9;
+        --sidebar-bg:#0F1E33;--sidebar-active:rgba(46,217,160,.20);--sidebar-active-solid:rgba(46,217,160,.16);
+        --sidebar-text:#F3F7FC;--sidebar-text-dim:#8FA3C0;--sidebar-border:rgba(255,255,255,.08);
         --sidebar-card-bg:rgba(255,255,255,.05);--sidebar-hover-bg:rgba(255,255,255,.07);
-        --sidebar-logo-bg:rgba(34,197,94,.18);--sidebar-logo-border:rgba(110,231,166,.4);--sidebar-icon-active:#6EE7A6;
+        --sidebar-logo-bg:rgba(46,217,160,.16);--sidebar-logo-border:rgba(46,217,160,.45);--sidebar-icon-active:#2ED9A0;
+        --accent-soft-bg:#E6F7F1;--accent-soft-border:#B9E4D3;
         --pbi-green:#16A34A;--pbi-green-dark:#0F7A38;--pbi-green-bg:#E8F8EE;--page-bg-tint:#F3FAF5;
     }
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:'Inter',sans-serif;color:var(--text-dark);min-height:100vh;background:var(--page-bg);}
+    body{font-family:'Inter',sans-serif;color:var(--text-dark);min-height:100vh;background:var(--dashboard-bg);background-attachment:fixed;}
     a{text-decoration:none;color:inherit;}
 
     /* ── TOPBAR (sits to the right of the sidebar) ── */
     .nude-nav{
         background:#FFFFFF;padding:14px 28px;
         display:flex;align-items:center;justify-content:space-between;
-        position:fixed;top:0;left:var(--sidebar-w);right:0;z-index:200;
+        position:fixed;top:0;left:calc(var(--sidebar-w) * var(--sidebar-scale));right:0;z-index:200;
         min-height:var(--topbar-h);
         box-shadow:var(--shadow);border-bottom:1px solid #D8E5F4;
         gap:20px;
@@ -516,13 +535,13 @@ $HEALTH_ITEMS = [
     .brand-avatar{
         width:48px;height:48px;border-radius:50%;
         border:2px solid var(--blue-accent);
-        box-shadow:0 0 8px rgba(59,130,246,.6);
+        box-shadow:0 0 8px rgba(15,159,110,.6);
         overflow:hidden;display:flex;align-items:center;justify-content:center;
         background:var(--blue-accent);flex-shrink:0;
         font-size:17px;font-weight:700;color:#FFFFFF;letter-spacing:.5px;
         transition:box-shadow .2s,border-color .2s;
     }
-    .brand-avatar:hover{box-shadow:0 0 14px rgba(59,130,246,.9);border-color:#2563EB;}
+    .brand-avatar:hover{box-shadow:0 0 14px rgba(15,159,110,.9);border-color:var(--blue-accent);}
     .brand-avatar img{width:100%;height:100%;object-fit:cover;display:block;}
     /* small settings gear badge on avatar */
     .avatar-gear{
@@ -535,7 +554,7 @@ $HEALTH_ITEMS = [
 
     .brand-text{display:flex;flex-direction:column;gap:4px;}
     .brand-name{font-size:15px;font-weight:700;line-height:1.1;color:#0B1F3A;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis;}
-    .brand-role{display:inline-flex;align-items:center;width:fit-content;font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--blue-accent);background:#E6F0FF;border:1px solid #C7DBFA;padding:2px 8px;border-radius:20px;line-height:1.3;}
+    .brand-role{display:inline-flex;align-items:center;width:fit-content;font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--blue-accent);background:var(--accent-soft-bg);border:1px solid var(--accent-soft-border);padding:2px 8px;border-radius:20px;line-height:1.3;}
     #digital-clock{display:none;}
     .nav-divider{width:1px;height:34px;background:#D8E5F4;flex-shrink:0;}
 
@@ -550,8 +569,8 @@ $HEALTH_ITEMS = [
     .profile-dropdown.show{opacity:1;visibility:visible;transform:translateY(0);}
     .pd-head{
         padding:16px 16px 14px;display:flex;align-items:center;gap:11px;
-        background:linear-gradient(135deg,#E6F0FF,#F8FAFC);
-        border-bottom:1px solid #DBEAFE;
+        background:linear-gradient(135deg,var(--accent-soft-bg),#F8FAFC);
+        border-bottom:1px solid var(--accent-soft-border);
     }
     .pd-head-avatar{
         width:46px;height:46px;border-radius:50%;overflow:hidden;flex-shrink:0;
@@ -562,7 +581,7 @@ $HEALTH_ITEMS = [
     .pd-head-avatar img{width:100%;height:100%;object-fit:cover;display:block;}
     .pd-head-name{font-size:13px;font-weight:700;color:#0B1F3A;line-height:1.3;}
     .pd-head-role{font-size:11px;color:var(--muted);}
-    .pd-head-badge{display:inline-flex;align-items:center;gap:3px;margin-top:4px;font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;background:rgba(59,130,246,.3);color:#2563EB;border:1px solid rgba(59,130,246,.35);text-transform:uppercase;}
+    .pd-head-badge{display:inline-flex;align-items:center;gap:3px;margin-top:4px;font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;background:rgba(15,159,110,.3);color:var(--blue-accent);border:1px solid rgba(15,159,110,.35);text-transform:uppercase;}
     .pd-menu{padding:6px 0;}
     .pd-item{
         display:flex;align-items:center;gap:11px;padding:9px 16px;
@@ -572,7 +591,7 @@ $HEALTH_ITEMS = [
     }
     .pd-item:hover{background:#F8FAFC;}
     .pd-icon{width:26px;height:26px;border-radius:6px;background:#F4F8FF;color:#67819E;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;transition:all .15s;}
-    .pd-item:hover .pd-icon{background:rgba(59,130,246,.25);color:#2563EB;}
+    .pd-item:hover .pd-icon{background:rgba(15,159,110,.25);color:var(--blue-accent);}
     .pd-divider{height:1px;background:#D8E5F4;margin:4px 12px;}
     .pd-item.danger{color:#D18C96;}
     .pd-item.danger .pd-icon{color:#BF616A;background:rgba(191,97,106,.1);}
@@ -590,7 +609,7 @@ $HEALTH_ITEMS = [
     .nav-item .icon{color:var(--blue-accent);}
     .nav-item:hover{color:#0B1F3A;background:#F1F5FF;}
     .nav-item:hover .icon{transform:translateY(-1px);}
-    .nav-item.active{color:#0B1F3A;font-weight:750;background:#E6F0FF;}
+    .nav-item.active{color:#0B1F3A;font-weight:750;background:var(--accent-soft-bg);}
     .nav-item.active .icon{filter:saturate(1.08);}
     .nav-item.logout{color:#E8927C;font-weight:600;margin-left:0;}
     .nav-item.logout .icon{color:#E8927C;}
@@ -603,26 +622,44 @@ $HEALTH_ITEMS = [
         padding:22px 16px 18px;
         display:flex;flex-direction:column;overflow-y:auto;z-index:250;
         border-right:1px solid var(--sidebar-border);
-        box-shadow:2px 0 14px rgba(0,0,0,.15);
+        box-shadow:2px 0 18px rgba(0,0,0,.28);
+        zoom:var(--sidebar-scale);
     }
     .pbi-sidebar::-webkit-scrollbar{width:5px;}
-    .pbi-sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius:4px;}
+    .pbi-sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.16);border-radius:4px;}
     .sidebar-brand{display:flex;align-items:center;gap:11px;padding:0 4px 20px;margin-bottom:14px;border-bottom:1px solid var(--sidebar-border);}
     .sidebar-logo{width:44px;height:44px;border-radius:10px;background:var(--sidebar-logo-bg);border:1.5px solid var(--sidebar-logo-border);display:flex;align-items:center;justify-content:center;font-size:19px;color:var(--sidebar-icon-active);flex-shrink:0;overflow:hidden;}
     .sidebar-logo img{width:100%;height:100%;object-fit:cover;display:block;}
     .sidebar-title{font-size:13px;font-weight:700;color:#FFFFFF;line-height:1.3;letter-spacing:.2px;}
     .sidebar-subtitle{font-size:10.5px;color:var(--sidebar-text-dim);line-height:1.4;margin-top:1px;}
 
+    /* ── SIDEBAR: CENTERED PROFILE HEADER ── */
+    .sidebar-profile{display:flex;flex-direction:column;align-items:center;text-align:center;padding:6px 8px 24px;margin-bottom:10px;border-bottom:1px solid var(--sidebar-border);}
+    .sidebar-profile-logo{width:84px;height:84px;border-radius:50%;background:var(--sidebar-logo-bg);border:3px solid var(--sidebar-logo-border);display:flex;align-items:center;justify-content:center;font-size:32px;color:var(--sidebar-icon-active);font-weight:800;flex-shrink:0;overflow:hidden;margin-bottom:14px;box-sizing:border-box;padding:0;}
+    .sidebar-profile-logo img{width:100%;height:100%;object-fit:cover;display:block;}
+    .sidebar-profile-initials{width:100%;height:100%;align-items:center;justify-content:center;color:var(--sidebar-icon-active);font-size:28px;font-weight:800;letter-spacing:.5px;}
+    .sidebar-profile-name{font-size:16px;font-weight:800;color:var(--sidebar-text);line-height:1.3;}
+    .sidebar-profile-role{font-size:12px;font-weight:700;letter-spacing:.6px;color:var(--sidebar-icon-active);margin-top:3px;text-transform:uppercase;}
+
     .sidebar-nav{display:flex;flex-direction:column;gap:4px;}
-    .nav-group-label{font-size:10.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--sidebar-text-dim);padding:14px 10px 6px;}
-    .pbi-sidebar .nav-menu{display:flex;flex-direction:column;gap:2px;list-style:none;}
+    /* Compact sidebar navigation: keep the profile/logo block unchanged, while making only the feature links smaller. */
+    .pbi-sidebar .nav-menu{display:flex;flex-direction:column;gap:5px;list-style:none;}
     .pbi-sidebar .nav-menu li{list-style:none;}
-    .pbi-sidebar .nav-item{display:flex;align-items:center;gap:11px;color:var(--sidebar-text);font-size:13.5px;font-weight:600;padding:10px 12px;border-radius:9px;transition:all .18s ease;white-space:nowrap;}
-    .pbi-sidebar .nav-item .icon{width:16px;text-align:center;color:var(--sidebar-text-dim);font-size:14px;transition:color .18s ease;}
-    .pbi-sidebar .nav-item:hover{background:var(--sidebar-hover-bg);color:#FFFFFF;}
-    .pbi-sidebar .nav-item:hover .icon{color:#FFFFFF;}
-    .pbi-sidebar .nav-item.active{background:var(--sidebar-active);color:#FFFFFF;box-shadow:none;}
+    .pbi-sidebar .nav-item{display:flex;align-items:center;justify-content:flex-start;gap:10px;color:var(--sidebar-text-dim);font-size:13px;font-weight:600;padding:8px 12px;border-radius:10px;transition:all .18s ease;white-space:nowrap;}
+    .pbi-sidebar .nav-item .nav-icon-badge{width:30px;height:30px;border-radius:50%;background:var(--sidebar-logo-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .18s ease;}
+    /* No fixed width/text-align here on purpose: different FontAwesome glyphs
+       (house, gear, clock-rotate-left, etc.) have different natural widths,
+       so forcing them into a fixed box and text-align:center left several
+       icons visibly off-center inside their circular badge. Letting the
+       badge's own flex centering (align-items/justify-content: center) do
+       all the centering keeps every icon dead-center regardless of glyph
+       shape. */
+    .pbi-sidebar .nav-item .icon{display:flex;align-items:center;justify-content:center;color:var(--sidebar-icon-active);font-size:14px;line-height:1;transition:color .18s ease;}
+    .pbi-sidebar .nav-item:hover{background:var(--sidebar-hover-bg);color:var(--sidebar-text);}
+    .pbi-sidebar .nav-item.active{background:var(--sidebar-active-solid);color:var(--sidebar-text);font-weight:700;box-shadow:none;}
+    .pbi-sidebar .nav-item.active .nav-icon-badge{background:rgba(46,217,160,.20);}
     .pbi-sidebar .nav-item.active .icon{color:var(--sidebar-icon-active);}
+
 
     /* ── SIDEBAR: CURRENT STATUS BOX ── */
     .sidebar-status{margin-top:auto;padding-top:16px;}
@@ -646,7 +683,7 @@ $HEALTH_ITEMS = [
     /* ── NOTIFICATION BELL ── */
     .notif-wrap{position:relative;display:flex;align-items:center;margin-left:4px;}
     .notif-btn{width:36px;height:36px;border-radius:50%;background:#F8FAFC;border:1px solid #D8E5F4;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:15px;cursor:pointer;transition:all .2s;position:relative;}
-    .notif-btn:hover,.notif-btn.has-unread{color:var(--blue-accent);border-color:#B8D4F8;background:#E6F0FF;}
+    .notif-btn:hover,.notif-btn.has-unread{color:var(--blue-accent);border-color:var(--accent-soft-border);background:var(--accent-soft-bg);}
     .notif-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;border-radius:9px;background:#BF616A;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px;border:2px solid #FFFFFF;opacity:0;transform:scale(0);transition:opacity .2s,transform .2s;pointer-events:none;}
     .notif-badge.show{opacity:1;transform:scale(1);}
 
@@ -669,7 +706,7 @@ $HEALTH_ITEMS = [
     .notif-item{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-bottom:1px solid #F4F8FF;position:relative;transition:background .15s;}
     .notif-item:last-child{border-bottom:none;}
     .notif-item:hover{background:#F8FAFC;}
-    .notif-item.unread{background:rgba(37,99,235,.08);}
+    .notif-item.unread{background:rgba(15,159,110,.08);}
     .notif-item.unread::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--blue-accent);border-radius:0 2px 2px 0;}
     .notif-icon{width:30px;height:30px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;margin-top:1px;}
     .notif-text{font-size:12px;color:var(--text-dark);line-height:1.45;margin-bottom:3px;word-break:break-word;}
@@ -809,15 +846,36 @@ $HEALTH_ITEMS = [
     .sf-btn-save:hover{background:#4968C8;}
 
     /* ── PAGES ── */
-    .page-content{margin-top:var(--topbar-h);margin-left:var(--sidebar-w);padding:16px 20px;}
+    .page-content{margin-top:var(--topbar-h);margin-left:calc(var(--sidebar-w) * var(--sidebar-scale));padding:16px 20px;}
     .page{display:none;background:transparent;}
     .page:has(>iframe){background:#FFFFFF;}
     .page.active{display:block;}
     .iframe-box{width:100%;height:calc(100vh - var(--topbar-h) - 20px);border:none;border-radius:var(--radius);background:#FFFFFF;}
+    html[data-theme="dark"] .page:has(>iframe){background:var(--bg)!important;}
+    html[data-theme="dark"] .iframe-box{background:var(--bg)!important;}
 
     /* ── DASHBOARD (light card theme) ── */
-    .pbi-dashboard-container{padding:30px 4px;}
+    /* ── GROUNDED DASHBOARD WORKSPACE ── */
+    #dashboard.active{background:#F3F6FA;border:1px solid #DCE5EF;border-radius:18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.9);min-height:calc(100vh - var(--topbar-h) - 28px);overflow:hidden;}
+    .pbi-dashboard-container{padding:24px 24px 34px;}
+    .pbi-dashboard-heading{padding:2px 4px 20px;margin:0;}
+    .pbi-heading-topline{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;}
+    .pbi-dashboard-greeting{margin:0 0 2px;color:#64748B;font-size:12px;font-weight:600;}
+    .pbi-dashboard-kicker{margin:0 0 5px;color:#2563EB;font-size:11px;font-weight:800;letter-spacing:.85px;text-transform:uppercase;display:flex;align-items:center;gap:7px;}
+    .pbi-dashboard-meta{display:flex;flex-direction:column;align-items:flex-end;gap:8px;padding-top:4px;white-space:nowrap;}
+    .pbi-meta-period,.pbi-meta-updated{display:inline-flex;align-items:center;gap:7px;border:1px solid #D7E2EF;background:#FFFFFF;border-radius:999px;padding:7px 11px;color:#526783;font-size:11px;font-weight:600;box-shadow:0 2px 7px rgba(15,23,42,.04);}
+    .pbi-meta-period i{color:#2563EB;}
+    .pbi-meta-updated{background:#EEF4FA;color:#71839B;border-color:#DFE8F2;}
+    .pbi-meta-updated i{color:#64748B;}
+    .pbi-stats-row{gap:14px;margin-bottom:16px;}
+    .pbi-stat-card{box-shadow:0 4px 12px rgba(15,23,42,.07);}
+    .pbi-period-box{box-shadow:0 5px 15px rgba(15,23,42,.07);margin-bottom:16px;}
+    .pbi-panel{box-shadow:0 5px 15px rgba(15,23,42,.07);}
+    @media(max-width:900px){.pbi-heading-topline{flex-direction:column;}.pbi-dashboard-meta{align-items:flex-start;flex-direction:row;flex-wrap:wrap;}.pbi-dashboard-container{padding:18px 14px 28px;}}
+
+    /* Existing dashboard styles */
     .pbi-dashboard-heading{margin:0 0 30px;}
+    .pbi-dashboard-heading{margin:0!important;padding:2px 4px 20px;}
     .pbi-dashboard-kicker{display:flex;align-items:center;gap:7px;margin:0 0 7px;color:var(--blue-accent);font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;}
     .pbi-system-title{font-size:24px;font-weight:700;margin:0 0 5px;color:var(--text-dark);}
     .pbi-system-subtitle{font-size:14px;color:var(--text-dim);margin:0;}
@@ -921,7 +979,7 @@ $HEALTH_ITEMS = [
     .pbi-period-tile-sub{font-size:11px;color:var(--text-dim);margin-top:4px;}
 
     /* ── BOTTOM 3-COLUMN ROW ── */
-    .pbi-bottom-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;align-items:start;}
+    .pbi-bottom-row{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;}
     .pbi-panel{background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;padding:18px 20px;box-shadow:var(--card-shadow);}
     .pbi-panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
     .pbi-panel-title{font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--text-dim);}
@@ -942,6 +1000,11 @@ $HEALTH_ITEMS = [
     /* Needs Attention list */
     .pbi-attention-item{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--card-border);font-size:12.5px;color:var(--text-dark);}
     .pbi-attention-item:last-child{border-bottom:none;padding-bottom:0;}
+    .pbi-attention-item.is-clickable{cursor:pointer;border-radius:8px;margin:0 -8px;padding:9px 8px;transition:background .15s;}
+    .pbi-attention-item.is-clickable:last-child{margin-bottom:-9px;}
+    .pbi-attention-item.is-clickable:hover{background:var(--sidebar-hover-bg,#F1F5FF);}
+    .pbi-attention-item.is-clickable:hover .chev{opacity:1;color:var(--blue-accent);transform:translateX(2px);}
+    .pbi-attention-item .chev{transition:transform .15s,opacity .15s,color .15s;}
     .pbi-attention-item i.dot{margin-top:2px;font-size:13px;flex-shrink:0;}
     .pbi-attention-item .warn{color:#C2542F;}
     .pbi-attention-item .info{color:#2563EB;}
@@ -1017,8 +1080,9 @@ $HEALTH_ITEMS = [
     /* ── RESPONSIVE ── */
     @media(max-width:900px){
         :root{--sidebar-w:74px;}
-        .sidebar-title,.sidebar-subtitle,.nav-group-label,.pbi-sidebar .nav-item span,.sidebar-status,.sidebar-help-text,.sidebar-help-sub{display:none;}
-        .sidebar-brand{justify-content:center;padding:0 0 16px;}
+        .sidebar-profile-name,.sidebar-profile-role,.pbi-sidebar .nav-item span,.sidebar-status,.sidebar-help-text,.sidebar-help-sub{display:none;}
+        .sidebar-profile{padding:0 0 16px;}
+        .sidebar-profile-logo{width:44px;height:44px;font-size:19px;margin-bottom:0;padding:0;}
         .pbi-sidebar .nav-item{justify-content:center;padding:11px;}
         .sidebar-help{justify-content:center;padding:11px;}
         .nav-item{padding:9px 11px;}
@@ -1033,8 +1097,8 @@ $HEALTH_ITEMS = [
     /* ── FULL-PAGE DASHBOARD LAYOUT ── */
     .page-content{
         margin-top:var(--topbar-h);
-        margin-left:var(--sidebar-w);
-        width:calc(100% - var(--sidebar-w));
+        margin-left:calc(var(--sidebar-w) * var(--sidebar-scale));
+        width:calc(100% - (var(--sidebar-w) * var(--sidebar-scale)));
         min-height:calc(100vh - var(--topbar-h));
         padding:0 24px 28px;
     }
@@ -1119,8 +1183,61 @@ input::placeholder, textarea::placeholder { color:#91A6BE; }
 }
 button, .btn { font-weight:700; }
 a { color:inherit; }
+
+/* ── FINAL DASHBOARD COMPACT VIEW ──
+   Keep the overview visible in one desktop viewport while preserving
+   the Aura/light visual treatment. The workspace heading is intentionally
+   hidden so the KPI cards can start higher on the page.
+*/
+.pbi-dashboard-heading{display:none!important;}
+.page-content{padding:8px 18px 12px!important;}
+.pbi-dashboard-container{padding:8px 0 12px!important;max-width:1500px!important;}
+.pbi-stats-row{gap:10px!important;margin-bottom:10px!important;}
+.pbi-stat-card{padding:10px 12px!important;min-height:0!important;border-radius:11px!important;}
+.pbi-stat-card .pbi-stat-icon-circle{width:30px!important;height:30px!important;font-size:12px!important;margin-bottom:7px!important;border-radius:8px!important;}
+.pbi-stat-label{font-size:9px!important;margin-bottom:3px!important;line-height:1.2!important;}
+.pbi-stat-value{font-size:21px!important;line-height:1.05!important;margin-bottom:3px!important;}
+.pbi-stat-sub{font-size:9.5px!important;line-height:1.2!important;}
+.pbi-stat-trend{font-size:8.5px!important;margin-top:4px!important;line-height:1.2!important;}
+.pbi-completion-card{display:flex!important;align-items:center!important;gap:10px!important;}
+.pbi-completion-ring{transform:scale(1.05)!important;transform-origin:left center!important;}
+.pbi-period-box{padding:11px 13px!important;margin-bottom:10px!important;border-radius:11px!important;}
+.pbi-period-top{margin-bottom:7px!important;gap:8px 16px!important;}
+.pbi-period-label{font-size:9px!important;line-height:1.2!important;}
+.pbi-period-value{font-size:15px!important;line-height:1.15!important;}
+.pbi-period-meta{font-size:9.5px!important;margin-top:3px!important;line-height:1.2!important;}
+.pbi-period-tiles{gap:7px!important;margin-top:8px!important;}
+.pbi-period-tile{padding:8px 10px!important;border-radius:9px!important;}
+.pbi-period-tile-label{font-size:9px!important;margin-bottom:3px!important;}
+.pbi-period-tile-value{font-size:16px!important;line-height:1.1!important;}
+.pbi-period-tile-sub{font-size:9px!important;margin-top:2px!important;line-height:1.15!important;}
+.pbi-progress-track{height:6px!important;margin-top:5px!important;}
+.pbi-progress-note{font-size:9px!important;margin-top:3px!important;}
+.pbi-bottom-row{gap:10px!important;}
+.pbi-panel{padding:10px 12px!important;border-radius:11px!important;}
+.pbi-panel-head{margin-bottom:6px!important;}
+.pbi-panel-title{font-size:9.5px!important;}
+.pbi-panel-viewall{font-size:9.5px!important;padding:3px 7px!important;}
+.pbi-personnel-item{padding:6px 0!important;gap:7px!important;}
+.pbi-personnel-icon{width:28px!important;height:28px!important;font-size:12px!important;}
+.pbi-personnel-name{font-size:11px!important;line-height:1.1!important;}
+.pbi-personnel-meta{font-size:8.8px!important;line-height:1.15!important;}
+.pbi-personnel-count{font-size:15px!important;}
+.pbi-attention-item{padding:6px 0!important;font-size:10.5px!important;line-height:1.25!important;}
+.pbi-quickaccess-grid{gap:6px!important;}
+.pbi-quick-btn{min-height:40px!important;padding:7px 8px!important;border-radius:8px!important;gap:7px!important;}
+.pbi-quick-btn i{width:26px!important;height:26px!important;border-radius:7px!important;font-size:11px!important;}
+.pbi-quick-btn .qa-title{font-size:10.5px!important;}
+.pbi-quick-btn .qa-sub{font-size:8.5px!important;}
+@media(max-width:900px){
+  .page-content{padding:10px 12px 16px!important;}
+  .pbi-dashboard-container{padding:8px 0 16px!important;}
+}
+
 </style>
     <link rel="stylesheet" href="admin_ui_theme.css">
+
+    <link rel="stylesheet" href="admin_aura_theme.css">
 
 <style id="friendly-dashboard-overrides">
 /* ------------------------------------------------------------------
@@ -1140,7 +1257,7 @@ a { color:inherit; }
     --fd-warning:#c47b13;
     --fd-warning-soft:#fff6e7;
 }
-body{background:var(--fd-bg)!important;color:var(--fd-text);}
+body{background:var(--dashboard-bg)!important;background-attachment:fixed!important;color:var(--fd-text);}
 .page-content{padding:24px 28px 34px!important;}
 .pbi-dashboard-container{max-width:1440px;margin:0 auto!important;}
 
@@ -1202,8 +1319,8 @@ body{background:var(--fd-bg)!important;color:var(--fd-text);}
 .pbi-progress-track{height:9px!important;border-radius:999px!important;background:#edf1f6!important;}
 .pbi-progress-fill{border-radius:999px!important;}
 
-/* Three-column working area, with clearer card hierarchy */
-.pbi-bottom-row{display:grid!important;grid-template-columns:1.05fr 1.15fr 1fr!important;gap:14px!important;margin:0!important;}
+/* Two-column working area, with clearer card hierarchy */
+.pbi-bottom-row{display:grid!important;grid-template-columns:1.05fr 1.15fr!important;gap:14px!important;margin:0!important;}
 .pbi-panel{
     min-width:0!important;
     padding:17px!important;
@@ -1244,7 +1361,6 @@ body{background:var(--fd-bg)!important;color:var(--fd-text);}
 @media(max-width:1180px){
     .pbi-stats-row{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
     .pbi-bottom-row{grid-template-columns:1fr 1fr!important;}
-    .pbi-bottom-row .pbi-panel:last-child{grid-column:1 / -1;}
 }
 @media(max-width:760px){
     .page-content{padding:18px 14px 24px!important;}
@@ -1259,9 +1375,29 @@ body{background:var(--fd-bg)!important;color:var(--fd-text);}
     .pbi-stats-row{grid-template-columns:1fr!important;}
     .pbi-period-tiles{grid-template-columns:1fr!important;}
 }
-<style id="compact-100-scale">
+/* ── FINAL DASHBOARD OVERVIEW POLISH ── */
+.pbi-dashboard-heading{display:flex!important;align-items:flex-end;justify-content:space-between;gap:24px;margin:0 0 16px!important;padding:0 2px!important;}
+.pbi-dashboard-heading-main{min-width:0;}
+.pbi-dashboard-kicker{display:flex!important;align-items:center;gap:7px;margin:0 0 5px!important;color:#2563EB!important;font-size:10px!important;font-weight:800!important;letter-spacing:.7px!important;text-transform:uppercase;}
+.pbi-dashboard-kicker i{font-size:11px;}
+.pbi-system-title{font-size:27px!important;line-height:1.15!important;margin:0 0 4px!important;color:var(--fd-text)!important;letter-spacing:-.4px!important;}
+.pbi-system-subtitle{font-size:12.5px!important;color:var(--fd-muted)!important;margin:0!important;}
+.pbi-dashboard-heading-meta{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0;padding-bottom:2px;}
+.pbi-dashboard-period-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #dce6f2;border-radius:999px;background:#fff;color:#344054;font-size:10.5px;font-weight:700;white-space:nowrap;}
+.pbi-dashboard-period-chip i{color:#2563EB;}
+.pbi-dashboard-updated{font-size:10px;color:#8793a5;white-space:nowrap;}
+.pbi-dashboard-container{background:#f5f7fb!important;border:1px solid #e3e9f2!important;border-radius:16px!important;padding:20px 22px 24px!important;box-sizing:border-box;}
+.pbi-stats-row{margin-bottom:16px!important;}
+.pbi-stat-card{box-shadow:0 2px 9px rgba(16,24,40,.045)!important;}
+.pbi-period-box,.pbi-panel{box-shadow:0 2px 9px rgba(16,24,40,.045)!important;}
+@media(max-width:760px){
+  .pbi-dashboard-heading{align-items:flex-start;flex-direction:column;gap:10px;}
+  .pbi-dashboard-heading-meta{align-items:flex-start;}
+  .pbi-dashboard-container{padding:16px!important;border-radius:12px!important;}
+}
+
 /* ── COMPACT 100% DESKTOP SCALE ── */
-:root{--sidebar-w:220px;--topbar-h:70px;}
+:root{--sidebar-w:270px;--topbar-h:70px;}
 .nude-nav{padding:10px 22px!important;min-height:var(--topbar-h)!important;}
 .nav-brand{gap:10px!important;}
 .brand-text{gap:2px!important;}
@@ -1272,62 +1408,78 @@ body{background:var(--fd-bg)!important;color:var(--fd-text);}
 .nav-item{font-size:12.5px!important;padding:7px 10px!important;gap:7px!important;}
 .notif-btn{width:32px!important;height:32px!important;font-size:13px!important;}
 .profile-trigger{min-height:32px!important;}
-.pbi-sidebar{padding:18px 14px!important;}
-.sidebar-brand{padding-bottom:15px!important;margin-bottom:9px!important;gap:9px!important;}
-.sidebar-logo{width:38px!important;height:38px!important;font-size:16px!important;border-radius:9px!important;}
-.sidebar-title{font-size:11.5px!important;}
-.sidebar-nav{gap:2px!important;}
-.nav-group-label{font-size:9px!important;padding:11px 8px 5px!important;}
-.pbi-sidebar .nav-item{font-size:12px!important;padding:8px 10px!important;gap:9px!important;border-radius:8px!important;}
-.pbi-sidebar .nav-item .icon{font-size:13px!important;width:15px!important;}
-.sidebar-status{padding-top:10px!important;}
-.sidebar-status-card{padding:11px 12px!important;margin-bottom:8px!important;border-radius:10px!important;}
-.sidebar-help{padding:9px 11px!important;border-radius:10px!important;}
+.pbi-sidebar{padding:24px 18px!important;}
+.sidebar-profile{padding-bottom:20px!important;margin-bottom:14px!important;}
+.sidebar-profile-logo{width:84px!important;height:84px!important;font-size:32px!important;margin-bottom:12px!important;padding:0!important;}
+.sidebar-profile-name{font-size:17px!important;}
+.sidebar-profile-role{font-size:12.5px!important;}
+.sidebar-nav{gap:5px!important;}
+.pbi-sidebar .nav-item{font-size:14.5px!important;padding:12px 14px!important;gap:12px!important;border-radius:10px!important;margin:0 5px!important;width:auto!important;justify-content:flex-start!important;}
+.pbi-sidebar .nav-item .nav-icon-badge{width:38px!important;height:38px!important;}
+.pbi-sidebar .nav-item .icon{font-size:16px!important;width:18px!important;}
+.sidebar-status{padding-top:14px!important;}
+.sidebar-status-card{padding:14px 15px!important;margin-bottom:10px!important;border-radius:11px!important;}
+.sidebar-help{padding:12px 14px!important;border-radius:11px!important;}
 .page-content{padding:18px 22px 24px!important;}
 .pbi-dashboard-container{padding:18px 0 24px!important;max-width:1500px!important;}
 .pbi-dashboard-heading{margin-bottom:14px!important;padding-top:0!important;}
 .pbi-system-title{font-size:23px!important;margin-bottom:4px!important;}
 .pbi-system-subtitle{font-size:12px!important;}
-.pbi-stats-row{gap:11px!important;margin-bottom:14px!important;}
-.pbi-stat-card{padding:13px 15px!important;border-radius:11px!important;}
-.pbi-stat-card .pbi-stat-icon-circle{width:34px!important;height:34px!important;font-size:13px!important;margin-bottom:10px!important;border-radius:9px!important;}
-.pbi-stat-label{font-size:9.5px!important;margin-bottom:5px!important;}
-.pbi-stat-value{font-size:24px!important;margin-bottom:4px!important;}
-.pbi-stat-sub{font-size:10.5px!important;}
-.pbi-stat-trend{font-size:9.5px!important;margin-top:5px!important;}
-.pbi-period-box{padding:14px 16px!important;margin-bottom:14px!important;border-radius:11px!important;}
-.pbi-period-top{gap:12px 22px!important;margin-bottom:10px!important;}
-.pbi-period-value{font-size:16px!important;gap:8px!important;}
-.pbi-period-label{font-size:9.5px!important;}
-.pbi-period-meta{font-size:10.5px!important;margin-top:4px!important;}
-.pbi-period-tiles{gap:8px!important;margin-top:11px!important;}
-.pbi-period-tile{padding:10px 12px!important;border-radius:9px!important;}
-.pbi-period-tile-label{font-size:9.5px!important;margin-bottom:4px!important;}
-.pbi-period-tile-value{font-size:17px!important;}
-.pbi-period-tile-sub{font-size:10px!important;margin-top:3px!important;}
-.pbi-progress-track{height:7px!important;}
-.pbi-progress-note{font-size:10px!important;margin-top:4px!important;}
-.pbi-bottom-row{gap:11px!important;}
-.pbi-panel{padding:13px 14px!important;border-radius:11px!important;}
-.pbi-panel-head{margin-bottom:9px!important;}
-.pbi-panel-title{font-size:10px!important;}
-.pbi-panel-viewall{font-size:10px!important;padding:4px 8px!important;}
-.pbi-personnel-item{padding:8px 0!important;gap:9px!important;}
-.pbi-personnel-icon{width:31px!important;height:31px!important;font-size:13px!important;}
-.pbi-personnel-name{font-size:11.5px!important;}
-.pbi-personnel-meta{font-size:9.5px!important;}
-.pbi-personnel-count{font-size:15px!important;}
-.pbi-attention-item{padding:8px 0!important;font-size:11px!important;}
-.pbi-quickaccess-grid{gap:7px!important;}
-.pbi-quick-btn{min-height:46px!important;padding:8px 9px!important;border-radius:9px!important;font-size:11px!important;gap:8px!important;}
-.pbi-quick-btn i{width:28px!important;height:28px!important;border-radius:7px!important;font-size:12px!important;}
-.pbi-quick-btn .qa-title{font-size:11px!important;}
-.pbi-quick-btn .qa-sub{font-size:9px!important;}
+.pbi-stats-row{gap:16px!important;margin-bottom:20px!important;}
+.pbi-stat-card{padding:20px 22px!important;border-radius:13px!important;}
+.pbi-stat-card .pbi-stat-icon-circle{width:44px!important;height:44px!important;font-size:17px!important;margin-bottom:14px!important;border-radius:12px!important;}
+.pbi-stat-label{font-size:11px!important;margin-bottom:7px!important;}
+.pbi-stat-value{font-size:32px!important;margin-bottom:6px!important;}
+.pbi-stat-sub{font-size:12px!important;}
+.pbi-stat-trend{font-size:11px!important;margin-top:7px!important;}
+.pbi-period-box{padding:20px 24px!important;margin-bottom:20px!important;border-radius:13px!important;}
+.pbi-period-top{gap:14px 26px!important;margin-bottom:14px!important;}
+.pbi-period-value{font-size:19px!important;gap:10px!important;}
+.pbi-period-label{font-size:11px!important;}
+.pbi-period-meta{font-size:12px!important;margin-top:6px!important;}
+.pbi-period-tiles{gap:12px!important;margin-top:16px!important;}
+.pbi-period-tile{padding:14px 16px!important;border-radius:11px!important;}
+.pbi-period-tile-label{font-size:11px!important;margin-bottom:6px!important;}
+.pbi-period-tile-value{font-size:21px!important;}
+.pbi-period-tile-sub{font-size:11px!important;margin-top:3px!important;}
+.pbi-progress-track{height:9px!important;}
+.pbi-progress-note{font-size:11px!important;margin-top:6px!important;}
+.pbi-bottom-row{gap:16px!important;}
+.pbi-panel{padding:18px 20px!important;border-radius:13px!important;}
+.pbi-panel-head{margin-bottom:13px!important;}
+.pbi-panel-title{font-size:11.5px!important;}
+.pbi-panel-viewall{font-size:11.5px!important;padding:6px 11px!important;}
+.pbi-personnel-item{padding:11px 0!important;gap:12px!important;}
+.pbi-personnel-icon{width:38px!important;height:38px!important;font-size:16px!important;}
+.pbi-personnel-name{font-size:13px!important;}
+.pbi-personnel-meta{font-size:11px!important;}
+.pbi-personnel-count{font-size:18px!important;}
+.pbi-attention-item{padding:11px 0!important;font-size:12.5px!important;}
+.pbi-quickaccess-grid{gap:10px!important;}
+.pbi-quick-btn{min-height:54px!important;padding:11px 13px!important;border-radius:11px!important;font-size:12.5px!important;gap:10px!important;}
+.pbi-quick-btn i{width:34px!important;height:34px!important;border-radius:9px!important;font-size:14px!important;}
+.pbi-quick-btn .qa-title{font-size:12.5px!important;}
+.pbi-quick-btn .qa-sub{font-size:10.5px!important;}
+
+/* ── TOPBAR: clean white navigation on the light workspace ── */
+.nude-nav{
+    background:#FFFFFF!important;
+    border-bottom:none!important;
+    box-shadow:none!important;
+    backdrop-filter:none!important;
+    -webkit-backdrop-filter:none!important;
+    justify-content:flex-end!important;
+}
+.notif-btn{background:#F8FAFC!important;border:1px solid #D8E5F4!important;color:#0B1F3A!important;}
+.notif-btn:hover,.notif-btn.has-unread{background:var(--accent-soft-bg)!important;border-color:var(--accent-soft-border)!important;color:var(--blue-accent)!important;}
+.notif-badge{border-color:#FFFFFF!important;}
+.nav-divider{background:#D8E5F4!important;}
+.brand-name{color:#0B1F3A!important;}
+.brand-role{background:var(--accent-soft-bg)!important;border-color:var(--accent-soft-border)!important;color:var(--blue-accent)!important;}
 @media(max-width:1180px){
   :root{--sidebar-w:220px;}
   .pbi-stats-row{grid-template-columns:repeat(4,minmax(0,1fr))!important;}
   .pbi-bottom-row{grid-template-columns:1fr 1fr!important;}
-  .pbi-bottom-row .pbi-panel:last-child{grid-column:1 / -1;}
 }
 @media(max-width:900px){
   :root{--sidebar-w:70px;}
@@ -1341,142 +1493,324 @@ body{background:var(--fd-bg)!important;color:var(--fd-text);}
   .pbi-stats-row{grid-template-columns:1fr!important;}
 }
 </style>
+
+    <style id="final-kpi-compact-fix">
+/* ── FINAL TOP KPI COMPACT VIEW ──
+       Compress only the four dashboard KPI cards so the overview fits
+       comfortably in one desktop viewport without changing their content.
+    */
+    .pbi-stats-row{
+        gap:10px!important;
+        margin-bottom:10px!important;
+    }
+
+    .pbi-stats-row > .pbi-stat-card{
+        min-height:82px!important;
+        height:82px!important;
+        padding:9px 11px!important;
+        border-radius:10px!important;
+        overflow:hidden!important;
+    }
+
+    /* First three KPI cards: icon on the left, information stacked compactly. */
+    .pbi-stats-row > .pbi-stat-card:not(.pbi-completion-card){
+        display:grid!important;
+        grid-template-columns:30px minmax(0,1fr)!important;
+        grid-template-rows:auto auto auto!important;
+        column-gap:9px!important;
+        align-content:center!important;
+        align-items:center!important;
+    }
+
+    .pbi-stats-row > .pbi-stat-card:not(.pbi-completion-card) .pbi-stat-icon-circle{
+        grid-column:1;
+        grid-row:1 / 4;
+        width:28px!important;
+        height:28px!important;
+        margin:0!important;
+        border-radius:8px!important;
+        font-size:12px!important;
+    }
+
+    .pbi-stats-row > .pbi-stat-card:not(.pbi-completion-card) .pbi-stat-label{
+        grid-column:2;
+        grid-row:1;
+        font-size:8.5px!important;
+        line-height:1.1!important;
+        margin:0!important;
+        letter-spacing:.45px!important;
+    }
+
+    .pbi-stats-row > .pbi-stat-card:not(.pbi-completion-card) .pbi-stat-value{
+        grid-column:2;
+        grid-row:2;
+        font-size:21px!important;
+        line-height:1!important;
+        margin:2px 0!important;
+    }
+
+    .pbi-stats-row > .pbi-stat-card:not(.pbi-completion-card) .pbi-stat-sub{
+        grid-column:2;
+        grid-row:3;
+        font-size:8.5px!important;
+        line-height:1.1!important;
+        margin:0!important;
+        white-space:nowrap!important;
+        overflow:hidden!important;
+        text-overflow:ellipsis!important;
+        display:inline-block!important;
+        max-width:58%!important;
+    }
+
+    .pbi-stats-row > .pbi-stat-card:not(.pbi-completion-card) .pbi-stat-trend{
+        grid-column:2;
+        grid-row:3;
+        justify-self:end!important;
+        font-size:8px!important;
+        line-height:1.1!important;
+        margin:0!important;
+        white-space:nowrap!important;
+    }
+
+    /* Completion card */
+    .pbi-stats-row > .pbi-completion-card{
+        gap:9px!important;
+        display:flex!important;
+        align-items:center!important;
+        justify-content:flex-start!important;
+    }
+
+    .pbi-stats-row > .pbi-completion-card .pbi-completion-ring{
+        width:50px!important;
+        height:50px!important;
+        transform:none!important;
+    }
+
+    .pbi-stats-row > .pbi-completion-card .pbi-completion-ring-inner{
+        width:38px!important;
+        height:38px!important;
+        font-size:11px!important;
+    }
+
+    .pbi-stats-row > .pbi-completion-card .pbi-completion-text{
+        min-width:0!important;
+    }
+
+    .pbi-stats-row > .pbi-completion-card .pbi-stat-label{
+        font-size:8.5px!important;
+        margin-bottom:2px!important;
+        line-height:1.1!important;
+    }
+
+    .pbi-stats-row > .pbi-completion-card .pbi-stat-sub{
+        font-size:8.5px!important;
+        line-height:1.15!important;
+        white-space:nowrap!important;
+    }
+
+    /* Give the period block a little breathing room while preserving its design. */
+    .pbi-period-box{
+        padding:10px 12px!important;
+        margin-bottom:10px!important;
+    }
+
+    .pbi-period-tiles{
+        gap:7px!important;
+        margin-top:7px!important;
+    }
+
+    .pbi-period-tile{
+        padding:7px 9px!important;
+    }
+
+    @media(max-width:900px){
+        .pbi-stats-row > .pbi-stat-card{
+            height:auto!important;
+            min-height:82px!important;
+        }
+    }
+
+    /* ── STATIC DESKTOP VIEW: NO SCROLLING ──
+       The dashboard is compressed to fit the viewport, so both the page
+       and the sidebar are locked — nothing scrolls on desktop.
+       Mobile/tablet still scroll, since the dense layout won't fit a phone screen.
+    */
+    @media(min-width:901px){
+        html, body{
+            height:100%!important;
+            overflow:hidden!important;
+        }
+        .pbi-sidebar{
+            overflow:hidden!important;
+        }
+    }
+    /* ── STRAIGHTENED SIDEBAR NAVIGATION ── */
+<style id="pbi-sidebar-straightened">
+.pbi-sidebar{box-sizing:border-box;}
+.pbi-sidebar .sidebar-nav{width:100%;margin:0;padding:0;}
+.pbi-sidebar .nav-menu{width:100%;margin:0;padding:0;display:flex;flex-direction:column;gap:5px;list-style:none;}
+.pbi-sidebar .nav-menu li{width:100%;margin:0;padding:0;list-style:none;}
+.pbi-sidebar .nav-menu .nav-section-label{
+    width:auto;
+    margin:5px 12px 1px;
+    padding:0 2px;
+    color:var(--sidebar-text-dim);
+    font-size:10px;
+    font-weight:800;
+    letter-spacing:.12em;
+    line-height:1.2;
+    text-transform:uppercase;
+    list-style:none;
+}
+.pbi-sidebar .nav-menu .nav-section-label:first-child{margin-top:0;}
+.pbi-sidebar .nav-item,
+.pbi-sidebar .nav-item:focus,
+.pbi-sidebar .nav-item:active{
+    box-sizing:border-box;
+    width:100%;
+    min-height:42px;
+    margin:0;
+    padding:5px 12px;
+    display:flex;
+    align-items:center;
+    justify-content:flex-start;
+    gap:10px;
+    border:0;
+    outline:none;
+    text-decoration:none;
+    border-radius:11px;
+    white-space:nowrap;
+    transform:none;
+}
+.pbi-sidebar .nav-item:focus-visible{
+    outline:2px solid rgba(46,217,160,.55);
+    outline-offset:2px;
+}
+.pbi-sidebar .nav-item .nav-icon-badge{
+    width:32px;
+    height:32px;
+    min-width:32px;
+    min-height:32px;
+    margin:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    border-radius:50%;
+}
+.pbi-sidebar .nav-item .icon{
+    width:16px;
+    height:16px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    margin:0;
+    font-size:14px;
+    line-height:1;
+}
+.pbi-sidebar .nav-item > span:last-child{
+    display:flex;
+    align-items:center;
+    min-width:0;
+    line-height:1.2;
+    margin:0;
+}
+@media(max-width:900px){
+    .pbi-sidebar .nav-menu .nav-section-label{margin-left:10px;margin-right:10px;}
+}
+.pbi-sidebar .nav-item:hover,
+.pbi-sidebar .nav-item.active{transform:none;}
+</style>
+<style id="pbi-dashboard-hidden-scrollbar">
+/* PBI DASHBOARD HIDDEN OUTER SCROLLBAR — dashboard/navigation stay clean */
+html, body { scrollbar-width:none !important; -ms-overflow-style:none !important; }
+html::-webkit-scrollbar, body::-webkit-scrollbar { display:none !important; width:0 !important; height:0 !important; }
+.pbi-sidebar { scrollbar-width:none !important; -ms-overflow-style:none !important; }
+.pbi-sidebar::-webkit-scrollbar { display:none !important; width:0 !important; }
+.nav-menu { scrollbar-width:none !important; -ms-overflow-style:none !important; }
+.nav-menu::-webkit-scrollbar { display:none !important; width:0 !important; height:0 !important; }
+</style>
+<link rel="stylesheet" href="admin_appearance.css">
+<script src="admin_appearance.js"></script>
+
+<style id="sidebar-navigation-balanced-spacing">
+/* BALANCED SIDEBAR NAV: slightly relaxed from the ultra-compact version, while remaining tighter than the original. */
+@media(min-width:901px){
+  .pbi-sidebar .sidebar-nav{gap:4px!important;}
+  .pbi-sidebar .nav-menu{gap:4px!important;}
+  .pbi-sidebar .nav-menu .nav-section-label{
+      margin:5px 10px 2px!important;
+      padding:0 2px!important;
+      font-size:9.5px!important;
+      line-height:1.15!important;
+  }
+  .pbi-sidebar .nav-menu .nav-section-label:first-child{margin-top:0!important;}
+  .pbi-sidebar .nav-item,
+  .pbi-sidebar .nav-item:focus,
+  .pbi-sidebar .nav-item:active{
+      min-height:42px!important;
+      height:42px!important;
+      padding:4px 12px!important;
+      gap:9px!important;
+      border-radius:10px!important;
+  }
+  .pbi-sidebar .nav-item .nav-icon-badge{
+      width:32px!important;
+      height:32px!important;
+      min-width:32px!important;
+      min-height:32px!important;
+  }
+  .pbi-sidebar .nav-item .icon{
+      width:15px!important;
+      height:15px!important;
+      font-size:13px!important;
+  }
+}
+</style>
 </head>
 <body>
 
 <!-- ═══ SIDEBAR ══════════════════════════════════════════════════════════ -->
 <aside class="pbi-sidebar">
-    <div class="sidebar-brand">
-        <div class="sidebar-logo"><i class="fa-solid fa-shield-halved"></i></div>
-        <div>
-            <div class="sidebar-title">PANDAN BAY<br>INSTITUTE, INC.</div>
+    <div class="sidebar-profile">
+        <div class="sidebar-profile-logo" title="<?= htmlspecialchars($admin_fullname, ENT_QUOTES, 'UTF-8') ?>">
+            <?php if ($photo_src): ?>
+                <img src="<?= htmlspecialchars($photo_src, ENT_QUOTES, 'UTF-8') ?>"
+                     alt="<?= htmlspecialchars($admin_fullname, ENT_QUOTES, 'UTF-8') ?>"
+                     onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"/>
+                <span class="sidebar-profile-initials" style="display:none;"><?= htmlspecialchars($initials) ?></span>
+            <?php else: ?>
+                <span class="sidebar-profile-initials"><?= htmlspecialchars($initials) ?></span>
+            <?php endif; ?>
         </div>
+        <div class="sidebar-profile-name"><?= htmlspecialchars($admin_fullname) ?></div>
+        <div class="sidebar-profile-role"><?= htmlspecialchars(strtoupper(display_role($_SESSION['role'] ?? ''))) ?></div>
     </div>
 
     <nav class="sidebar-nav">
-        <div class="nav-group-label">Main</div>
         <ul class="nav-menu">
-            <li><a href="#" id="link-dashboard" onclick="showPage('dashboard',this);return false;" class="nav-item"><i class="fa-solid fa-house icon"></i> <span>Dashboard</span></a></li>
-            <li><a href="#" id="link-reports"   onclick="showPage('reports',this);return false;"   class="nav-item"><i class="fa-solid fa-file-signature icon"></i> <span>Questionnaire</span></a></li>
+            <li class="nav-section-label">MAIN</li>
+            <li><a href="#" id="link-dashboard" onclick="showPage('dashboard',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-house icon"></i></span> <span>Dashboard</span></a></li>
+            <li><a href="#" id="link-reports"   onclick="showPage('reports',this);return false;"   class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-file-signature icon"></i></span> <span>Questionnaire</span></a></li>
+            <li><a href="#" id="link-tracker" onclick="showPage('tracker',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-user-check icon"></i></span> <span>Evaluation Tracker</span></a></li>
+            <li><a href="#" id="link-ea-eval" onclick="showPage('ea_eval',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-user-tie icon"></i></span> <span><?= $isExecutiveAssistant ? 'My Evaluations' : 'EA Evaluations' ?></span></a></li>
+            <li><a href="#" id="link-analytics" onclick="showPage('analytics',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-chart-line icon"></i></span> <span>Evaluation Reports</span></a></li>
+
+            <li class="nav-section-label">ADMINISTRATION</li>
             <?php if (($_SESSION['role'] ?? '') === 'superadmin'): ?>
-            <li><a href="#" id="link-registrations" onclick="showPage('registrations',this);return false;" class="nav-item"><i class="fa-solid fa-user-lock icon"></i> <span>Account Management</span></a></li>
+            <li><a href="#" id="link-registrations" onclick="showPage('registrations',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-user-lock icon"></i></span> <span>Account Management</span></a></li>
             <?php endif; ?>
-        </ul>
+            <li><a href="#" id="link-system_logs" onclick="showPage('system_logs',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-clock-rotate-left icon"></i></span> <span>System Logs</span></a></li>
+            <li><a href="#" id="link-settings" onclick="showPage('settings',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-gear icon"></i></span> <span>Settings</span></a></li>
 
-        <div class="nav-group-label">Evaluations</div>
-        <ul class="nav-menu">
-            <li><a href="#" id="link-tracker" onclick="showPage('tracker',this);return false;" class="nav-item"><i class="fa-solid fa-user-check icon"></i> <span>Evaluation Tracker</span></a></li>
-            <li><a href="#" id="link-ea-eval" onclick="showPage('ea_eval',this);return false;" class="nav-item"><i class="fa-solid fa-user-tie icon"></i> <span><?= $isExecutiveAssistant ? 'My Evaluations' : 'EA Evaluations' ?></span></a></li>
-            <li><a href="#" id="link-analytics" onclick="showPage('analytics',this);return false;" class="nav-item"><i class="fa-solid fa-chart-line icon"></i> <span>Evaluation Report</span></a></li>
-        </ul>
-
-        <div class="nav-group-label">System</div>
-        <ul class="nav-menu">
-            <li><a href="#" id="link-system_logs" onclick="showPage('system_logs',this);return false;" class="nav-item"><i class="fa-solid fa-clock-rotate-left icon"></i> <span>System Logs</span></a></li>
-            <li><a href="#" id="link-settings" onclick="showPage('settings',this);return false;" class="nav-item"><i class="fa-solid fa-gear icon"></i> <span>Settings</span></a></li>
+            <li class="nav-section-label">ACCOUNT</li>
+            <li><a href="../logout.php" class="nav-item logout" onclick="return confirm('Terminate your administrative session?')"><span class="nav-icon-badge"><i class="fa-solid fa-power-off icon"></i></span> <span>Log Out</span></a></li>
         </ul>
     </nav>
 
-    <div class="sidebar-status">
-        <div class="sidebar-status-card">
-            <div class="sidebar-status-title">Current Status</div>
-            <div class="sidebar-status-row">
-                <span class="sidebar-status-label">Evaluation Period</span>
-                <span class="sidebar-status-pill <?= $evalStatus['cls'] === 'open' ? 'open' : 'closed' ?>"><?= htmlspecialchars($evalStatus['label']) ?></span>
-            </div>
-            <div class="sidebar-status-row" style="margin-bottom:0;">
-                <div>
-                    <div class="sidebar-status-label" style="margin-bottom:3px;">School Year</div>
-                    <div class="sidebar-status-year"><?= htmlspecialchars($sys['acad_year']) ?></div>
-                    <div class="sidebar-status-sub"><?= htmlspecialchars($STRUCTURE_LABELS[$sys['acad_structure']] ?? 'College') ?></div>
-                </div>
-            </div>
-        </div>
-        <div class="sidebar-help">
-            <i class="fa-regular fa-comment-dots"></i>
-            <div>
-                <div class="sidebar-help-text">Need Help?</div>
-                <div class="sidebar-help-sub">System Administrator</div>
-            </div>
-        </div>
-    </div>
 </aside>
 
-<!-- ═══ TOPBAR ═══════════════════════════════════════════════════════════ -->
-<nav class="nude-nav">
-
-    <!-- LEFT: greeting -->
-    <div class="topbar-greeting-wrap">
-        <div class="topbar-greeting"><?= htmlspecialchars($greetingWord) ?>, <?= htmlspecialchars($admin_firstname) ?>! <span class="wave">👋</span></div>
-    </div>
-
-    <!-- RIGHT: bell, divider, avatar + name + clock -->
-    <div class="nav-container">
-        <div class="notif-wrap" id="notifWrap">
-            <button class="notif-btn" id="notifBtn" onclick="toggleNotifDropdown(event)" title="Notifications">
-                <i class="fa-regular fa-bell"></i>
-                <span class="notif-badge" id="notifBadge">0</span>
-            </button>
-        </div>
-
-        <div class="nav-divider"></div>
-
-        <div class="nav-brand">
-            <div class="brand-avatar-wrap" id="avatarWrap" onclick="toggleProfileDropdown()">
-                <div class="brand-avatar" id="brandAvatar">
-                    <?php if ($photo_src): ?>
-                        <img src="<?= htmlspecialchars($photo_src, ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars($admin_fullname, ENT_QUOTES, 'UTF-8') ?>" id="brandAvatarImg"
-                             onerror="this.style.display='none';document.getElementById('brandAvatarInitials').style.display='flex';"/>
-                        <span id="brandAvatarInitials" style="display:none;"><?= $initials ?></span>
-                    <?php else: ?>
-                        <img src="" alt="" id="brandAvatarImg" style="display:none;"/>
-                        <span id="brandAvatarInitials"><?= $initials ?></span>
-                    <?php endif; ?>
-                </div>
-                <div class="avatar-gear"><i class="fa-solid fa-gear"></i></div>
-            </div>
-
-            <div class="brand-text">
-                <div class="brand-name"><?= htmlspecialchars($admin_fullname) ?></div>
-                <div class="brand-role"><?= display_role($_SESSION['role'] ?? 'admin') ?></div>
-                <span id="digital-clock"></span>
-            </div>
-
-            <!-- Profile dropdown — anchored to brand, opens downward -->
-            <div class="profile-dropdown" id="profileDropdown" onclick="event.stopPropagation()">
-                <div class="pd-head">
-                    <div class="pd-head-avatar">
-                        <?php if ($photo_src): ?>
-                            <img src="<?= htmlspecialchars($photo_src, ENT_QUOTES, 'UTF-8') ?>" alt="" id="pdHeadImg"
-                             onerror="this.style.display='none';document.getElementById('pdHeadInitials')?.style.removeProperty('display');"/>
-                        <?php else: ?>
-                            <span id="pdHeadInitials"><?= $initials ?></span>
-                            <img src="" alt="" id="pdHeadImg" style="display:none;"/>
-                        <?php endif; ?>
-                    </div>
-                    <div>
-                        <div class="pd-head-name"><?= htmlspecialchars($admin_fullname) ?></div>
-                        <div class="pd-head-role">@<?= htmlspecialchars($admin_username) ?></div>
-                        <div class="pd-head-badge"><i class="fa-solid fa-shield-halved" style="font-size:8px;"></i> <?= display_role($_SESSION['role']??'admin') ?></div>
-                    </div>
-                </div>
-                <div class="pd-menu">
-                    <button class="pd-item" onclick="openSettings('profile')">
-                        <span class="pd-icon"><i class="fa-solid fa-user-pen"></i></span> Edit Profile &amp; Photo
-                    </button>
-                    <button class="pd-item" onclick="openSettings('security')">
-                        <span class="pd-icon"><i class="fa-solid fa-lock"></i></span> Change Password
-                    </button>
-                    <div class="pd-divider"></div>
-                    <a href="../logout.php" class="pd-item danger"
-                       onclick="return confirm('Terminate your administrative session?')">
-                        <span class="pd-icon"><i class="fa-solid fa-power-off"></i></span> Sign Out
-                    </a>
-                </div>
-            </div>
-        </div>
-    </div>
-</nav><!-- /.nude-nav -->
+<!-- TOPBAR INTENTIONALLY EMPTY: the notification control now lives inside the dashboard header. -->
+<nav class="nude-nav" aria-hidden="true" style="display:none;"></nav>
 
 <!-- Notification dropdown — OUTSIDE nav, position:fixed -->
 <div class="notif-dropdown" id="notifDropdown">
@@ -1844,7 +2178,7 @@ body{background:var(--fd-bg)!important;color:var(--fd-text);}
             <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;">
                 <?php foreach(['#5E81AC'=>'Ocean Blue','#4968C8'=>'Violet','#0F9F6E'=>'Emerald','#D6455D'=>'Crimson','#C77A08'=>'Amber'] as $hex=>$name): ?>
                 <label style="cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;">
-                    <input type="radio" name="accent_color" value="<?= $hex ?>" style="display:none;" onchange="applyAccent('<?= $hex ?>')" <?= $hex==='#5E81AC'?'checked':'' ?>>
+                    <input type="radio" name="accent_color" value="<?= $hex ?>" style="display:none;" onchange="applyAccent('<?= $hex ?>')" <?= $hex==='#0F9F6E'?'checked':'' ?>>
                     <span style="width:28px;height:28px;border-radius:50%;background:<?= $hex ?>;display:block;border:3px solid transparent;transition:border-color .2s;" class="clr-swatch" data-color="<?= $hex ?>"></span>
                     <span style="font-size:10px;color:var(--muted);"><?= $name ?></span>
                 </label>
@@ -1876,10 +2210,27 @@ body{background:var(--fd-bg)!important;color:var(--fd-text);}
     <div id="dashboard" class="page">
         <div class="pbi-dashboard-container">
             <header class="pbi-dashboard-heading">
-                <p class="pbi-dashboard-greeting"><?= htmlspecialchars($greeting) ?>, <?= htmlspecialchars($firstName) ?>! <span class="wave">👋</span></p>
-                <h1 class="pbi-system-title"><?= htmlspecialchars($workspaceTitle) ?></h1>
-                <p class="pbi-system-subtitle"><?= htmlspecialchars($workspaceSubtitle) ?></p>
-                <p class="pbi-system-subtitle">Here's what's happening with the evaluation system today.</p>
+                <div class="pbi-heading-topline">
+                    <div>
+                        <div class="pbi-dashboard-kicker"><i class="fa-solid fa-chart-line"></i> Dashboard Overview</div>
+                        <p class="pbi-dashboard-greeting"><?= htmlspecialchars($greeting) ?>, <?= htmlspecialchars($firstName) ?>! <span class="wave">👋</span></p>
+                        <h1 class="pbi-system-title"><?= htmlspecialchars($workspaceTitle) ?></h1>
+                        <p class="pbi-system-subtitle"><?= htmlspecialchars($workspaceSubtitle) ?></p>
+                        <p class="pbi-system-subtitle">Here's what's happening with the evaluation system today.</p>
+                    </div>
+                    <div class="pbi-dashboard-meta">
+                        <span class="pbi-meta-period"><i class="fa-regular fa-calendar"></i> <?= htmlspecialchars($sys['acad_year']) ?> · <?= htmlspecialchars($sys['acad_term']) ?></span>
+                        <span class="pbi-meta-updated"><i class="fa-solid fa-rotate"></i> Updated <?= htmlspecialchars(date('M j, Y')) ?></span>
+                        <div class="dashboard-notification-control">
+                            <div class="notif-wrap" id="notifWrap">
+                                <button class="notif-btn" id="notifBtn" onclick="toggleNotifDropdown(event)" title="Notifications" aria-label="Notifications">
+                                    <i class="fa-regular fa-bell"></i>
+                                    <span class="notif-badge" id="notifBadge">0</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </header>
 
             <!-- ── STAT CARDS ── -->
@@ -1995,49 +2346,34 @@ body{background:var(--fd-bg)!important;color:var(--fd-text);}
                         <span class="pbi-panel-title">Needs Attention</span>
                     </div>
                     <?php if ($pendingEvalCount > 0): ?>
-                    <div class="pbi-attention-item">
+                    <div class="pbi-attention-item is-clickable" onclick="showPage('tracker', document.getElementById('link-tracker'))">
                         <i class="fa-solid fa-triangle-exclamation dot warn"></i>
                         <span><?= number_format($pendingEvalCount) ?> student<?= $pendingEvalCount===1?'':'s' ?> have not yet submitted their evaluations.</span>
                         <i class="fa-solid fa-chevron-right chev"></i>
                     </div>
                     <?php endif; ?>
                     <?php if ($pendingRegCount > 0): ?>
-                    <div class="pbi-attention-item">
+                    <div class="pbi-attention-item is-clickable" onclick="showPage('registrations', document.getElementById('link-registrations'))">
                         <i class="fa-solid fa-circle-info dot info"></i>
                         <span><?= number_format($pendingRegCount) ?> personnel account<?= $pendingRegCount===1?'':'s' ?> pending verification.</span>
                         <i class="fa-solid fa-chevron-right chev"></i>
                     </div>
                     <?php else: ?>
-                    <div class="pbi-attention-item">
+                    <div class="pbi-attention-item is-clickable" onclick="showPage('registrations', document.getElementById('link-registrations'))">
                         <i class="fa-solid fa-circle-check dot ok"></i>
                         <span>All personnel accounts are verified.</span>
                         <i class="fa-solid fa-chevron-right chev"></i>
                     </div>
                     <?php endif; ?>
-                    <div class="pbi-attention-item">
+                    <div class="pbi-attention-item is-clickable" onclick="showPage('reports', document.getElementById('link-reports'))">
                         <i class="fa-solid fa-circle-check dot <?= $activeEvals > 0 ? 'ok' : 'warn' ?>"></i>
                         <span><?= $activeEvals > 0 ? 'All questionnaires are updated and ready.' : 'No questionnaires configured yet.' ?></span>
                         <i class="fa-solid fa-chevron-right chev"></i>
                     </div>
-                    <div class="pbi-attention-item">
+                    <div class="pbi-attention-item is-clickable" onclick="showPage('settings', document.getElementById('link-settings'))">
                         <i class="fa-solid fa-circle-info dot <?= !empty($sys['maintenance']) ? 'warn' : 'info' ?>"></i>
                         <span><?= !empty($sys['maintenance']) ? 'System is in maintenance mode.' : 'No system issues reported.' ?></span>
                         <i class="fa-solid fa-chevron-right chev"></i>
-                    </div>
-                </div>
-
-                <div class="pbi-panel">
-                    <div class="pbi-panel-head">
-                        <span class="pbi-panel-title">Quick Access</span>
-                    </div>
-                    <div class="pbi-quickaccess-grid">
-                        <button type="button" class="pbi-quick-btn qa-teal" onclick="showPage('reports', document.getElementById('link-reports'))"><i class="fa-solid fa-file-signature"></i><span class="qa-copy"><span class="qa-title">Questionnaire</span><span class="qa-sub">Manage evaluation forms and questions</span></span></button>
-                        <?php if (($_SESSION['role'] ?? '') === 'superadmin'): ?>
-                        <button type="button" class="pbi-quick-btn qa-violet" onclick="showPage('registrations', document.getElementById('link-registrations'))"><i class="fa-solid fa-user-lock"></i><span class="qa-copy"><span class="qa-title">Account Management</span><span class="qa-sub">Review accounts awaiting approval</span></span></button>
-                        <?php endif; ?>
-                        <button type="button" class="pbi-quick-btn qa-orange" onclick="showPage('tracker', document.getElementById('link-tracker'))"><i class="fa-solid fa-user-check"></i><span class="qa-copy"><span class="qa-title">Evaluation Tracker</span><span class="qa-sub">Monitor completion and submissions</span></span></button>
-                        <button type="button" class="pbi-quick-btn qa-teal" onclick="showPage('analytics', document.getElementById('link-analytics'))"><i class="fa-solid fa-chart-line"></i><span class="qa-copy"><span class="qa-title">Evaluation Report</span><span class="qa-sub">View trends, summaries, and results</span></span></button>
-                        <button type="button" class="pbi-quick-btn qa-gray" onclick="showPage('system_logs', document.getElementById('link-system_logs'))"><i class="fa-solid fa-clock-rotate-left"></i><span class="qa-copy"><span class="qa-title">System Logs</span><span class="qa-sub">Review recent system activity</span></span></button>
                     </div>
                 </div>
 
@@ -2060,16 +2396,7 @@ body{background:var(--fd-bg)!important;color:var(--fd-text);}
 function updateClock(){const n=new Date(),t=[n.getHours(),n.getMinutes(),n.getSeconds()].map(x=>String(x).padStart(2,'0')).join(':');const e=document.getElementById('digital-clock');if(e)e.textContent=t;}
 setInterval(updateClock,1000);updateClock();
 
-/* ── PROFILE DROPDOWN ── */
-let _pdOpen=false;
-function toggleProfileDropdown(){
-    _pdOpen=!_pdOpen;
-    document.getElementById('profileDropdown').classList.toggle('show',_pdOpen);
-}
 document.addEventListener('click',function(e){
-    if(!document.getElementById('avatarWrap')?.contains(e.target)&&!document.getElementById('profileDropdown')?.contains(e.target)){
-        _pdOpen=false;document.getElementById('profileDropdown')?.classList.remove('show');
-    }
     if(!document.getElementById('notifWrap')?.contains(e.target)&&!document.getElementById('notifDropdown')?.contains(e.target)){
         _notifOpen=false;document.getElementById('notifDropdown')?.classList.remove('show');
     }
@@ -2079,7 +2406,6 @@ document.addEventListener('click',function(e){
 
 /* ── SETTINGS MODAL ── */
 function openSettings(tab){
-    _pdOpen=false;document.getElementById('profileDropdown').classList.remove('show');
     document.getElementById('settingsOverlay').classList.add('show');
     document.body.style.overflow='hidden';
     switchTab(tab||'profile');
@@ -2110,6 +2436,62 @@ function openArchive(){
 }
 
 /* ── NAV / PAGES ── */
+
+/* ── IFRAME APPEARANCE SYNC ──────────────────────────────────────
+   Feature pages are loaded in same-origin iframes.  Their own HTML/CSS
+   can otherwise start in the light palette before the shared appearance
+   engine gets a chance to apply the saved theme.  Keep every feature iframe
+   synchronized with the dashboard's actual data-theme attribute. */
+(function initIframeAppearanceSync(){
+    function currentTheme(){
+        return document.documentElement.getAttribute('data-theme')
+            || (localStorage.getItem('pbiTheme') || 'light');
+    }
+
+    function syncFrame(frame){
+        if(!frame) return;
+        function apply(){
+            try{
+                var doc = frame.contentDocument || (frame.contentWindow && frame.contentWindow.document);
+                if(!doc || !doc.documentElement) return;
+                var theme = currentTheme();
+                doc.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
+                doc.documentElement.style.colorScheme = theme === 'dark' ? 'dark' : 'light';
+            }catch(e){}
+        }
+        frame.addEventListener('load', apply, {once:false});
+        apply();
+    }
+
+    function syncAllFrames(){
+        document.querySelectorAll('iframe.iframe-box').forEach(syncFrame);
+    }
+
+    var root = document.documentElement;
+    try{
+        new MutationObserver(function(mutations){
+            for(var i=0;i<mutations.length;i++){
+                if(mutations[i].attributeName === 'data-theme'){
+                    syncAllFrames();
+                    break;
+                }
+            }
+        }).observe(root,{attributes:true});
+    }catch(e){}
+
+    window.addEventListener('storage', function(e){
+        if(e.key === 'pbiTheme') syncAllFrames();
+    });
+
+    if(document.readyState === 'loading'){
+        document.addEventListener('DOMContentLoaded', syncAllFrames, {once:true});
+    }else{
+        syncAllFrames();
+    }
+
+    window.addEventListener('load', syncAllFrames);
+})();
+
 function showPage(pageId,element){
     document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
     document.getElementById(pageId)?.classList.add('active');
@@ -2162,7 +2544,7 @@ function togglePw(id,iconId){const el=document.getElementById(id),ic=document.ge
 
 /* ── APPEARANCE ── */
 function applyAccent(color){document.documentElement.style.setProperty('--blue-accent',color);localStorage.setItem('pbi_accent',color);document.querySelectorAll('.clr-swatch').forEach(s=>s.style.borderColor=s.dataset.color===color?'#fff':'transparent');}
-function applyCompact(on){document.querySelectorAll('.nav-item span').forEach(s=>s.style.display=on?'none':'');localStorage.setItem('pbi_compact',on?'1':'0');}
+function applyCompact(on){document.querySelectorAll('.nav-item span').forEach(s=>s.style.display=on?'none':'');document.querySelectorAll('.nav-section-label').forEach(s=>s.style.display=on?'none':'');localStorage.setItem('pbi_compact',on?'1':'0');}
 
 /* ── SYSTEM & PERIOD: dynamic Academic Term dropdown + control-mode highlight ──
    The valid Term choices depend on the selected Academic Structure. This now
@@ -2392,11 +2774,85 @@ window.onload=function(){
     showPage(saved,link);
     const accent=localStorage.getItem('pbi_accent');
     const compact=localStorage.getItem('pbi_compact');
-    if(accent)applyAccent(accent);
+    applyAccent(accent||'#0F9F6E');
     if(compact==='1'){document.getElementById('togCompact').checked=true;applyCompact(true);}
     <?php if($settings_msg):?>openSettings('system');<?php endif;?>
 };
 </script>
+<style id="topbar-force-boundary">
+/* Forced last: the top bar is the opaque primary boundary for the scrolling workspace. */
+html body .nude-nav,
+html body nav.nude-nav{
+    position:fixed!important;
+    top:0!important;
+    right:0!important;
+    left:calc(var(--sidebar-w) * var(--sidebar-scale))!important;
+    height:var(--topbar-h)!important;
+    min-height:var(--topbar-h)!important;
+    box-sizing:border-box!important;
+    z-index:20!important;
+    background:transparent!important;
+    background-image:none!important;
+    color:#0B1F3A!important;
+    border-bottom:none!important;
+    box-shadow:none!important;
+    backdrop-filter:none!important;
+    -webkit-backdrop-filter:none!important;
+}
+html body .nude-nav .brand-name,
+html body .nude-nav .brand-text,
+html body .nude-nav .topbar-greeting{color:#0B1F3A!important;}
+html body .nude-nav .brand-role{background:var(--accent-soft-bg)!important;border-color:var(--accent-soft-border)!important;color:var(--blue-accent)!important;}
+html body .nude-nav .nav-divider{background:#D8E5F4!important;}
+html body .nude-nav .notif-btn{background:#F8FAFC!important;border-color:#D8E5F4!important;color:#0B1F3A!important;}
+</style>
+<style id="dashboard-notification-edge-final">
+/* Notification stays inside the dashboard workspace and is pinned to the far-right edge. */
+.nude-nav{display:none!important;}
+.page-content{margin-top:0!important;padding-top:6px!important;}
+.pbi-dashboard-container{padding-top:8px!important;}
+.pbi-dashboard-heading{margin-bottom:12px!important;position:relative!important;}
+.pbi-dashboard-meta{
+    display:flex!important;
+    flex-direction:row!important;
+    align-items:center!important;
+    justify-content:flex-end!important;
+    gap:8px!important;
+    flex-wrap:wrap!important;
+    white-space:nowrap!important;
+    padding-right:56px!important;
+}
+.dashboard-notification-control{
+    position:absolute!important;
+    top:9px!important;
+    right:14px!important;
+    display:flex!important;
+    align-items:center!important;
+    justify-content:center!important;
+    margin:0!important;
+    order:initial!important;
+    z-index:20!important;
+}
+.dashboard-notification-control .notif-wrap{margin-left:0!important;}
+.dashboard-notification-control .notif-btn{
+    width:36px!important;
+    height:36px!important;
+    background:#fff!important;
+    border:1px solid #d8e5f4!important;
+    box-shadow:0 2px 8px rgba(30,82,144,.08)!important;
+}
+.dashboard-notification-control .notif-btn:hover,
+.dashboard-notification-control .notif-btn.has-unread{
+    background:var(--accent-soft-bg)!important;
+    border-color:var(--accent-soft-border)!important;
+}
+@media(max-width:700px){
+  .page-content{padding-top:4px!important;}
+  .pbi-dashboard-meta{justify-content:flex-start!important;white-space:normal!important;padding-right:0!important;}
+  .dashboard-notification-control{top:8px!important;right:8px!important;}
+}
+</style>
+
 </body>
 </html>
 <?php if($mysqli->ping())$mysqli->close();?>

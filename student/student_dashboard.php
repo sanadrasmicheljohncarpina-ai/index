@@ -36,106 +36,11 @@ $student_photo      = $phRow['photo'] ?? '';
 $student_level      = $phRow['education_level'] ?? null;
 $student_year_level = $phRow['year_level'] ?? null;
 
-// ── DESIGNATION TOKEN → ADMIN target_type MAPPING ─────────────
-// Mirrors admin/questionnaire.php's 3-bucket model exactly:
-//   - Teacher     -> shared pool in `evaluation_questions` (target_type='Teacher')
-//   - Staff       -> PER-PERSON questions in `user_questions`
-//   - Multi-Role  -> PER-PERSON questions in `user_questions`
-//
-// NOTE: admin/questionnaire.php's actual bucket name is 'Teacher', not
-// 'Faculty' -- $system_categories there is ['Teacher','Staff','Multi-Role'],
-// and every evaluation_questions row it writes uses target_type='Teacher'.
-// This file previously used 'Faculty' as the bucket key/value throughout,
-// which never matched any row in the table, so the questions lookup for
-// every teacher always came back empty ("No questions have been set up").
-//
-// STUDENT-FACING DISPLAY CATEGORIES (distinct from the target_type bucket
-// names above, which are only used for question lookups): the landing
-// page groups evaluatees into "Faculty" (Teacher / Staff subsections),
-// "Multi-Role", and "School Head".
-//
-// "Teacher" vs "Staff" is still resolved via resolveUserTarget()
-// (designation-based), exactly as before. A Staff user with zero
-// user_year_levels rows is non-teaching staff, eligible to every
-// student, and stays under the plain "Staff" subsection. A Staff user
-// with one or more user_year_levels rows (an active teaching
-// assignment) is pulled OUT of Staff entirely and shown under the
-// separate "Multi-Role" category instead, scoped to only the matching
-// year level(s) -- see the GROUP INTO STUDENT-FACING CATEGORIES block
-// further down for the actual rule, and get_questions below for why
-// Multi-Role people get their own per-person Multi-Role questionnaire
-// exclusively (not the ordinary per-person Staff one).
-$token_to_target = [
-    'Teacher'         => 'Teacher',
-    'Faculty'         => 'Teacher',
-    'Adviser'         => 'Teacher',
-    'Coordinator'     => 'Teacher',
-    'Department Head' => 'Teacher',
-    'Registrar'       => 'Staff',
-    'Cashier'         => 'Staff',
-    'Bookkeeper'      => 'Staff',
-    'Librarian'       => 'Staff',
-    'Guidance'        => 'Staff',
-    'Nurse'           => 'Staff',
-    'Personnel'       => 'Staff',
-    'Staff'           => 'Staff',
-];
-$keyword_to_target = [
-    'registrar'   => 'Staff',
-    'cashier'     => 'Staff',
-    'bookkeeper'  => 'Staff',
-    'librarian'   => 'Staff',
-    'guidance'    => 'Staff',
-    'nurse'       => 'Staff',
-    'teacher'     => 'Teacher',
-    'faculty'     => 'Teacher',
-    'instructor'  => 'Teacher',
-    'professor'   => 'Teacher',
-    'adviser'     => 'Teacher',
-    'advisor'     => 'Teacher',
-    'coordinator' => 'Teacher',
-    'head'        => 'Teacher',
-    'principal'   => 'Teacher',
-    'dean'        => 'Teacher',
-    'tutor'       => 'Teacher',
-];
-
-// Resolve a single designation token to 'Teacher' or 'Staff'.
-// Identical logic to admin/questionnaire.php's resolveTarget().
-function resolveTarget($raw_token, $token_to_target, $keyword_to_target, $role = 'teacher') {
-    $raw_token = trim($raw_token);
-    if (isset($token_to_target[$raw_token])) return $token_to_target[$raw_token];
-    $lower = strtolower($raw_token);
-    foreach ($keyword_to_target as $keyword => $mapped) {
-        if (strpos($lower, $keyword) !== false) return $mapped;
-    }
-    return ($role === 'teacher') ? 'Teacher' : 'Staff';
-}
-
-// Resolve a user's designation string (possibly comma-separated) down
-// to their PRIMARY bucket -- 'Faculty' or 'Staff' -- using the first
-// recognizable token. Identical to admin's per-user resolution.
-function resolveUserTarget($designation, $role, $token_to_target, $keyword_to_target) {
-    $raw = trim($designation ?? '');
-    if ($raw === '') $raw = ($role === 'teacher') ? 'Teacher' : 'Personnel';
-    $tokens = array_filter(array_map('trim', preg_split('/\\s*[,\\/|;]+\\s*/', $raw)), fn($t) => $t !== '');
-    if (empty($tokens)) $tokens = [$raw];
-    return resolveTarget($tokens[0], $token_to_target, $keyword_to_target, $role);
-}
-
-function userHasAdditionalRole(array $u): bool {
-    return ec_has_additional_role($u);
-}
-
 // ── ROLE / ASSIGNMENT-BASED ELIGIBILITY ────────────────────────
-// Base Teacher/Staff visibility and Multi-Role visibility are deliberately
-// independent:
-//   • Teacher/teaching staff -> only matching teaching assignments.
-//   • Staff with no teaching assignment -> institution-wide Staff context.
-//   • Staff with a teaching assignment -> Staff context only at matching levels.
-//   • Multi-Role -> always visible across applicable year levels when the
-//     person has an additional responsibility, regardless of their teaching
-//     assignment.  This does NOT create or replace the base context.
+// Only two personnel contexts are exposed to students:
+//   • Faculty / Teacher / Teaching Staff -> matching teaching assignment.
+//   • Staff / Non-teaching Staff          -> institution-wide Staff context.
+// Principal and Dean are each handled as their own top-level category.
 function normalizeLevelVariants($education_level) {
     $level_key = strtolower(trim($education_level ?? ''));
     $edu_bucket_map = [
@@ -203,17 +108,6 @@ function isTeachingPerson($mysqli, array $u): bool {
         || (ec_has_staff_function($u) && hasAnyYearLevelAssignment($mysqli, (int)($u['id'] ?? 0)));
 }
 
-function hasUserQuestionSet($mysqli, $target_id, $target_type, $eval_type = 'student') {
-    $stmt = $mysqli->prepare(
-        "SELECT 1 FROM user_questions WHERE user_id=? AND target_type=? AND eval_type=? LIMIT 1"
-    );
-    $stmt->bind_param('iss', $target_id, $target_type, $eval_type);
-    $stmt->execute();
-    $has = (bool)$stmt->get_result()->fetch_row();
-    $stmt->close();
-    return $has;
-}
-
 function isCollegeEducationLevel($education_level) {
     $v = strtolower(trim((string)$education_level));
     return in_array($v, [
@@ -275,12 +169,36 @@ function canStudentEvaluateTarget(
 
     /*
      * SCHOOL HEAD
+     *
+     * A student only evaluates the school head of their own department:
+     * College students evaluate the Dean only; Junior High / Senior High
+     * students evaluate the Principal only. A student whose education
+     * level is neither may evaluate no school head at all. This mirrors
+     * the Dashboard's tab visibility, but is re-checked here so a manually
+     * crafted POST (e.g. a College student's browser posting the
+     * Principal's id) can never slip through.
      */
     if (in_array($target['role'], ['principal', 'dean'], true)) {
-        return [
-            $evaluation_context === 'school_head' || $evaluation_context === '',
-            null
-        ];
+        if ($evaluation_context !== 'school_head' && $evaluation_context !== '') {
+            return [false, null];
+        }
+        $is_college_student = isCollegeEducationLevel($student_level);
+        $is_jhs_shs_student = in_array(strtolower(trim((string)$student_level)), ['junior_high', 'senior_high'], true);
+
+        if ($target['role'] === 'dean' && !$is_college_student) {
+            return [
+                false,
+                'This person is not available for evaluation.'
+            ];
+        }
+        if ($target['role'] === 'principal' && !$is_jhs_shs_student) {
+            return [
+                false,
+                'This person is not available for evaluation.'
+            ];
+        }
+
+        return [true, null];
     }
 
     /*
@@ -295,34 +213,6 @@ function canStudentEvaluateTarget(
     $has_staff   = ec_has_staff_function($target);
 
     /*
-     * MULTI-ROLE
-     *
-     * A person qualifies when:
-     *   1. They have an additional role, OR
-     *   2. They are Staff and have a teaching/year-level assignment.
-     */
-    if ($evaluation_context === 'multi_role') {
-
-        $has_multi_role =
-            ec_has_additional_role($target)
-            ||
-            (
-                $has_staff
-                && hasAnyYearLevelAssignment($mysqli, $target_id)
-            );
-
-        if (!$has_multi_role) {
-            return [false, 'This person is not configured for a Multi-Role evaluation.'];
-        }
-
-        if (!hasUserQuestionSet($mysqli, $target_id, 'Multi-Role', 'student')) {
-            return [false, 'No Multi-Role questions have been assigned to this person yet.'];
-        }
-
-        return [true, null];
-    }
-
-    /*
      * TEACHER / STAFF CONTEXT VALIDATION
      */
     if ($evaluation_context === 'teacher' && !$has_teacher) {
@@ -335,7 +225,7 @@ function canStudentEvaluateTarget(
     // College Teachers are tied to the active evaluation semester.  This
     // prevents a Teacher assigned to 2nd Semester from being evaluated by
     // a College student while the active period is 1st Semester (and vice
-    // versa).  Staff and Multi-Role contexts are intentionally unaffected.
+    // versa).  Staff context is intentionally unaffected.
     if ($evaluation_context === 'teacher'
         && $has_teacher
         && !teacherMatchesActiveSemester($mysqli, $target_id, $student_level, $active_period_semester)) {
@@ -438,6 +328,25 @@ function canStudentEvaluateTarget(
 $activePeriodRow = $mysqli->query("SELECT id, semester FROM evaluation_periods WHERE is_active=1 LIMIT 1")->fetch_assoc();
 $period_is_open  = (bool)$activePeriodRow;
 $active_period_semester = $activePeriodRow['semester'] ?? null;
+
+// ── LEVEL-SCOPED PERIOD GATING ────────────────────────────────
+// JH/SHS only evaluate once, at the end of the school year (a period
+// whose semester = 'School Year'). College evaluates per-term (1st
+// Semester / 2nd Semester / Summer). evaluation_periods.is_active is a
+// single global flag with no level of its own, so activating a College
+// term was also opening the JH/SHS window (and activating the School
+// Year period was opening the College window). Close it again here
+// whenever the active period's type doesn't match the student's own
+// level -- every other use of $period_is_open below (dashboard status,
+// card rendering, and the submit handler) reads this same variable, so
+// gating it once here is enough.
+if ($period_is_open) {
+    $is_college_student    = isCollegeEducationLevel($student_level);
+    $is_school_year_period = trim((string)$active_period_semester) === 'School Year';
+    if ($is_college_student === $is_school_year_period) {
+        $period_is_open = false;
+    }
+}
 $ctxCol=$mysqli->query("SHOW COLUMNS FROM evaluation_tracker LIKE 'evaluation_context'");
 if ($ctxCol && $ctxCol->num_rows===0) {
     $mysqli->query("ALTER TABLE evaluation_tracker ADD COLUMN evaluation_context VARCHAR(30) NOT NULL DEFAULT 'teacher'");
@@ -451,7 +360,7 @@ $submit_success = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_evaluation'])) {
     $target_id = intval($_POST['target_user_id']);
     $evaluation_context = strtolower(trim($_POST['evaluation_context'] ?? 'teacher'));
-    if (!in_array($evaluation_context,['teacher','staff','multi_role','school_head'],true)) $evaluation_context='teacher';
+    if (!in_array($evaluation_context,['teacher','staff','school_head'],true)) $evaluation_context='teacher';
 
     // SERVER-SIDE ELIGIBILITY RE-CHECK. The Evaluate view only ever renders
     // buttons for people already filtered into $all_users below, but
@@ -470,8 +379,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_evaluation']))
     if ($ctxRow) $ctxRow['id'] = $target_id;
     $has_teacher_context=$ctxRow && isTeachingPerson($mysqli,$ctxRow);
     $has_staff_context=$ctxRow && ec_has_staff_function($ctxRow);
-    $has_multi_context=$ctxRow && (userHasAdditionalRole($ctxRow) || ($has_staff_context && hasAnyYearLevelAssignment($mysqli,$target_id)));
-    $context_allowed=($evaluation_context==='teacher'&&$has_teacher_context)||($evaluation_context==='staff'&&$has_staff_context)||($evaluation_context==='multi_role'&&$has_multi_context)||($evaluation_context==='school_head'&&$ctxRow&&in_array($ctxRow['role'],['principal','dean'],true));
+    $context_allowed=($evaluation_context==='teacher'&&$has_teacher_context)||($evaluation_context==='staff'&&$has_staff_context)||($evaluation_context==='school_head'&&$ctxRow&&in_array($ctxRow['role'],['principal','dean'],true));
 
     if ($target_id <= 0) {
         $submit_error = "Invalid submission data. Please try again.";
@@ -514,15 +422,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_evaluation']))
 
                     // NOTE: `rating[q_id]` keys come straight from whichever
                     // table loadQuestions() pulled them from (evaluation_questions
-                    // for Faculty/Multi-Role, user_questions for Staff). Both
-                    // tables have their own independent auto-increment id
-                    // space, so if a Multi-Role person is ALSO a Staff member,
-                    // it is possible for a user_questions.id and an
-                    // evaluation_questions.id to collide numerically. That
-                    // edge case isn't fully solved here -- it needs either a
-                    // `question_source` column on questionnaire_answers or a
-                    // prefixed key scheme end-to-end. Flagging this rather
-                    // than silently shipping a subtle mis-attribution bug.
+                    // Faculty/Teacher questions come from evaluation_questions;
+                    // Staff questions come from user_questions. The answer stores
+                    // the source so the question id spaces remain unambiguous.
 $ins = $mysqli->prepare(
     "INSERT INTO questionnaire_answers
      (
@@ -599,13 +501,10 @@ $ins->close();
 }
 
 // ── FETCH QUESTIONS FOR A TARGET (AJAX) ──────────────────────
-// Reads from the SAME source(s) the admin actually writes to for this
-// person's resolved bucket:
-//   - Multi-Role -> user_questions (per-person, target_type='Multi-Role')
-//                   ONLY. Each Multi-Role person receives exactly the
-//                   questions assigned to that person in Questionnaire.
-//   - Staff      -> user_questions (per-person, keyed by user_id)
-//   - Teacher    -> evaluation_questions (shared pool, target_type='Teacher')
+// Reads from the same question source the admin assigns for this
+// person's student-evaluation context:
+//   - Staff   -> user_questions (per-person, target_type='Staff')
+//   - Teacher -> evaluation_questions (shared pool, target_type='Teacher')
 if (isset($_GET['get_questions'])) {
     header('Content-Type: application/json');
     try {
@@ -633,6 +532,21 @@ if (isset($_GET['get_questions'])) {
         // evaluation, just because the EA's-own-evaluation pool happened
         // to have rows in it.
         if (in_array($role, ['principal', 'dean'], true)) {
+            // Same department rule as canStudentEvaluateTarget(): College
+            // students may only fetch Dean questions, JHS/SHS students may
+            // only fetch Principal questions. Without this check, a College
+            // student could still pull up the Principal's question set (or
+            // vice versa) by requesting this endpoint directly with the
+            // right target_id, even though that tab is hidden from them.
+            $is_college_student = isCollegeEducationLevel($student_level);
+            $is_jhs_shs_student = in_array(strtolower(trim((string)$student_level)), ['junior_high', 'senior_high'], true);
+            if ($role === 'dean' && !$is_college_student) {
+                throw new Exception('This person is not available for evaluation.');
+            }
+            if ($role === 'principal' && !$is_jhs_shs_student) {
+                throw new Exception('This person is not available for evaluation.');
+            }
+
             $pd_target_type = ucfirst($role);
             $pdq = $mysqli->prepare(
                 "SELECT id, question_text, category,
@@ -658,106 +572,63 @@ if (isset($_GET['get_questions'])) {
         }
 
         $requested_context = $_GET['context'] ?? '';
-$has_teacher_context = isTeachingPerson($mysqli, $userRow);
-$has_staff_context = ec_has_staff_function($userRow);
-$has_assignment = hasAnyYearLevelAssignment($mysqli, $target_id);
-$is_multi_role = userHasAdditionalRole($userRow) || ($has_staff_context && $has_assignment);
-        if ($requested_context === 'multi_role') {
-            if (!$is_multi_role) throw new Exception('This person is not configured for a Multi-Role evaluation.');
-            $q=$mysqli->prepare("SELECT id,question_text,category,'user' AS question_source FROM user_questions WHERE user_id=? AND target_type='Multi-Role' AND eval_type='student' ORDER BY category,sort_order,id");
-            $q->bind_param('i',$target_id);
-            $q->execute(); $questions=$q->get_result()->fetch_all(MYSQLI_ASSOC); $q->close();
-            if (empty($questions)) throw new Exception('No Multi-Role questions have been set up yet.');
-            echo json_encode(['success'=>true,'questions'=>$questions]); exit;
-        }
+        $has_teacher_context = isTeachingPerson($mysqli, $userRow);
+        $has_staff_context   = ec_has_staff_function($userRow);
+        $has_assignment      = hasAnyYearLevelAssignment($mysqli, $target_id);
+
         if ($requested_context === 'staff') {
-            // Staff context is non-teaching staff only -- a Staff member
-            // with an actual teaching/year-level assignment is teaching
-            // staff and belongs under 'teacher' instead (see Dashboard's
-            // Faculty-tab grouping and canStudentEvaluateTarget()).
-            if (!$has_staff_context || $has_assignment) throw new Exception('This person is not configured for a Staff evaluation.');
-            $q=$mysqli->prepare("SELECT id,question_text,category,'user' AS question_source FROM user_questions WHERE user_id=? AND target_type='Staff' AND eval_type='student' ORDER BY category,id");
-            $q->bind_param('i',$target_id); $q->execute(); $questions=$q->get_result()->fetch_all(MYSQLI_ASSOC); $q->close();
+            // Staff context is non-teaching staff only.
+            if (!$has_staff_context || $has_assignment) {
+                throw new Exception('This person is not configured for a Staff evaluation.');
+            }
+            $q = $mysqli->prepare(
+                "SELECT id,question_text,category,'user' AS question_source
+                 FROM user_questions
+                 WHERE user_id=? AND target_type='Staff' AND eval_type='student'
+                 ORDER BY category,id"
+            );
+            $q->bind_param('i',$target_id);
+            $q->execute();
+            $questions=$q->get_result()->fetch_all(MYSQLI_ASSOC);
+            $q->close();
             if (empty($questions)) throw new Exception('No Staff questions have been set up for this person yet.');
             echo json_encode(['success'=>true,'questions'=>$questions]); exit;
         }
-        if ($requested_context === 'teacher') {
-            if (!$has_teacher_context) throw new Exception('This person is not configured for a Teacher evaluation.');
-            $q=$mysqli->prepare("SELECT id,question_text,category,'evaluation' AS question_source FROM evaluation_questions WHERE target_type='Teacher' AND eval_type='student' ORDER BY category,id");
-            $q->execute(); $questions=$q->get_result()->fetch_all(MYSQLI_ASSOC); $q->close();
-            if (empty($questions)) throw new Exception('No Teacher questions have been set up yet.');
-            echo json_encode(['success'=>true,'questions'=>$questions]); exit;
+
+        // Default personnel context is Teacher / Faculty.
+        if ($requested_context !== 'teacher') {
+            throw new Exception('Invalid evaluation context.');
         }
-        $primary = $has_staff_context && !$has_teacher_context ? 'Staff' : 'Teacher';
-
-        $questions = [];
-
-        if ($primary === 'Staff') {
-            // FIXED: this query was previously truncated with a literal "..."
-            // left in the SQL string, which threw a mysqli_sql_exception
-            // (mysqli_report is set to MYSQLI_REPORT_STRICT above) every time
-            // a Staff-bucket person was opened for evaluation. Completed it
-            // to match the shape of the Faculty/Multi-Role queries below,
-            // including the missing ORDER BY.
-            //
-            // Also restored the missing `target_type = 'Staff'` filter. Without
-            // it, this pulled EVERY user_questions row for that user_id
-            // regardless of bucket -- so a person who is both Staff and
-            // Multi-Role (Staff + a year-level assignment, per
-            // admin/questionnaire.php's own rule) would have their Multi-Role
-            // questions leak into this "Staff" form, and vice versa. The
-            // explicit ?context=staff branch above already scopes correctly;
-            // this fallback needs to match it exactly.
-          $uq = $mysqli->prepare(
-    "SELECT id, question_text, category,
-            'user' AS question_source
-     FROM user_questions
-     WHERE user_id = ? AND target_type = 'Staff' AND eval_type = 'student'
-     ORDER BY category, id"
-);
-            $uq->bind_param("i", $target_id);
-            $uq->execute();
-            $questions = array_merge($questions, $uq->get_result()->fetch_all(MYSQLI_ASSOC));
-            $uq->close();
-        } else {
-      $qs = $mysqli->prepare(
-    "SELECT id, question_text, category,
-            'evaluation' AS question_source
-     FROM evaluation_questions
-     WHERE target_type = 'Teacher' AND eval_type = 'student'
-     ORDER BY category, id"
-);
-            $qs->execute();
-            $questions = array_merge($questions, $qs->get_result()->fetch_all(MYSQLI_ASSOC));
-            $qs->close();
+        if (!$has_teacher_context) {
+            throw new Exception('This person is not configured for a Teacher evaluation.');
         }
+        $q = $mysqli->prepare(
+            "SELECT id,question_text,category,'evaluation' AS question_source
+             FROM evaluation_questions
+             WHERE target_type='Teacher' AND eval_type='student'
+             ORDER BY category,id"
+        );
+        $q->execute();
+        $questions=$q->get_result()->fetch_all(MYSQLI_ASSOC);
+        $q->close();
+        if (empty($questions)) throw new Exception('No Teacher questions have been set up yet.');
 
-        if (empty($questions)) {
-            $hint = $primary === 'Staff'
-                ? "Questionnaire → Staff → this person individually"
-                : "Questionnaire → Teacher";
-            throw new Exception(
-                "No questions have been set up for this person yet. " .
-                "Please ask the admin to add questions under $hint."
-            );
-        }
-
-        echo json_encode(['success' => true, 'questions' => $questions]);
-
+        echo json_encode(['success'=>true,'questions'=>$questions]);
+        exit;
     } catch (Exception $e) {
         http_response_code(500);
-        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        echo json_encode(['success'=>false,'error'=>$e->getMessage()]);
     }
     exit;
 }
 
+
 // ── FETCH EVALUATEES ──────────────────────────────────────────────
 // Build contexts per person instead of first filtering people and then
 // guessing their category.  This is the authoritative student visibility rule.
-// Faculty and Staff are independent top-level categories -- matching
-// admin/questionnaire.php's $system_categories exactly (Teacher/"Faculty",
-// Staff, Multi-Role, School Head are four separate tabs, never merged).
-$grouped = ['Faculty'=>[], 'Staff'=>[], 'Multi-Role'=>[]];
+// Faculty, Staff, Principal, and Dean are all independent top-level
+// categories, each shown as its own tab.
+$grouped = ['Faculty'=>[], 'Staff'=>[]];
 
 $ures = $mysqli->query("SELECT id, full_name, designation, photo, role, secondary_role, assigned_period
                         FROM users
@@ -768,83 +639,51 @@ $ures = $mysqli->query("SELECT id, full_name, designation, photo, role, secondar
 if (!$ures) throw new Exception('Failed to load evaluation personnel: '.$mysqli->error);
 
 $level_variants = normalizeLevelVariants($student_level);
-$multi_role_question_counts = [];
-$mrq = $mysqli->query("SELECT user_id, COUNT(*) AS total FROM user_questions WHERE target_type='Multi-Role' AND eval_type='student' GROUP BY user_id");
-if ($mrq) {
-    while ($r = $mrq->fetch_assoc()) $multi_role_question_counts[(int)$r['user_id']] = (int)$r['total'];
-}
 foreach ($ures->fetch_all(MYSQLI_ASSOC) as $u) {
-$has_teacher = ec_has_teacher_function($u);
-$has_staff   = ec_has_staff_function($u);
-$has_assign  = hasAnyYearLevelAssignment($mysqli, (int)$u['id']);
-$is_multi    = ec_has_additional_role($u) || ($has_staff && $has_assign);
+    $has_teacher = ec_has_teacher_function($u);
+    $has_staff   = ec_has_staff_function($u);
+    $has_assign  = hasAnyYearLevelAssignment($mysqli, (int)$u['id']);
     $base_match  = ($student_level && $student_year_level && $has_assign)
         ? isMatchedViaAssignment($mysqli, (int)$u['id'], $level_variants, $student_year_level)
         : false;
 
-    // Base Faculty context: Teacher-role people, AND "teaching staff" --
-    // Staff members who carry an actual teaching/year-level assignment --
-    // both need that assignment to match this student's year level. For
-    // College students, the person must also belong to the active
-    // evaluation semester. This mirrors admin/questionnaire.php, where a
-    // Staff account with a teaching assignment is placed in the Teacher
-    // bucket (is_teaching_staff), never left Staff-only. This is the
-    // display-side counterpart to the server-side eligibility check above.
+    // Faculty includes actual Teachers and Staff members who carry a real
+    // teaching/year-level assignment. College faculty also respects the
+    // active semester.
     $semester_match = teacherMatchesActiveSemester($mysqli, (int)$u['id'], $student_level, $active_period_semester);
     $is_teaching_person = $has_teacher || ($has_staff && $has_assign);
     if ($is_teaching_person && $base_match && $semester_match) {
         $grouped['Faculty'][] = $u;
     }
 
-    // Base Staff context: non-teaching staff ONLY -- same rule
-    // admin/questionnaire.php's Student Evaluation -> Staff card uses
-    // (isNonTeachingStaff): no teaching_assignments row and no
-    // user_year_levels row, ever. A Staff member who carries a teaching
-    // assignment is "teaching staff" and belongs in Faculty above instead,
-    // even when that assignment happens to match this student's year
-    // level -- they must never appear in both tabs for the same student.
+    // Staff means non-teaching staff only. A person with a teaching
+    // assignment belongs in Faculty, not Staff.
     if ($has_staff && !$has_assign) {
         $grouped['Staff'][] = $u;
     }
-
-    // Multi-Role context: additional responsibility is independent of the
-    // person's teaching assignment and therefore visible to students across
-    // year levels.  Visibility is NOT dependent on whether the admin has
-    // already assigned questions.  A person with zero assigned questions is
-    // still shown, but their Evaluate button is disabled with a clear
-    // 'No questionnaire assigned' state.
-    if ($is_multi) {
-        $u['_multi_role_question_count'] = $multi_role_question_counts[(int)$u['id']] ?? 0;
-        $grouped['Multi-Role'][] = $u;
-    }
 }
 
-// Attach teaching assignments for informative cards only.
-if (!empty($grouped['Multi-Role'])) {
-    $mr_ids = array_column($grouped['Multi-Role'], 'id');
-    $ph = implode(',', array_fill(0,count($mr_ids),'?'));
-    $stmt = $mysqli->prepare("SELECT user_id, GROUP_CONCAT(DISTINCT year_level ORDER BY year_level SEPARATOR ', ') levels FROM user_year_levels WHERE user_id IN ($ph) GROUP BY user_id");
-    $stmt->bind_param(str_repeat('i',count($mr_ids)), ...$mr_ids);
-    $stmt->execute();
-    $levels=[];
-    foreach($stmt->get_result()->fetch_all(MYSQLI_ASSOC) as $r) $levels[(int)$r['user_id']]=$r['levels'];
-    $stmt->close();
-    foreach($grouped['Multi-Role'] as &$u) $u['teaching_levels']=$levels[(int)$u['id']] ?? '';
-    unset($u);
-}
-
-// ── SINGLETON SCHOOL HEAD CATEGORY (Principal + Dean) ─────────
+// ── SINGLETON PRINCIPAL / DEAN CATEGORIES ─────────────────────
 // Principal and Dean aren't tied to teaching_assignments/user_year_levels
-// like Teacher/Staff -- there's exactly ONE active user per role, and
-// every student (regardless of education_level/year_level) can evaluate
-// them. They're grouped into a single "School Head" category (matching
-// the admin's "School Head Evaluation" questionnaire bucket), with each
-// person's `designation` stamped as their role ("Principal"/"Dean") so
-// they're distinguishable on the card -- but only when designation is
-// blank, so an admin-set title (e.g. "Principal, Senior High") isn't
-// clobbered.
-$school_head_members = [];
-foreach (['principal' => 'Principal', 'dean' => 'Dean'] as $role_value => $role_label) {
+// like Teacher/Staff -- there's exactly ONE active user per role. Unlike
+// Teacher/Staff though, they are NOT both open to every student: a
+// student only ever evaluates the school head of their own department.
+//   • College students          -> Dean only. Principal must not appear.
+//   • Junior High / Senior High -> Principal only. Dean must not appear.
+// A student whose education_level is neither (e.g. unset) sees neither
+// tab -- there's no school head defined for them to evaluate.
+// Each eligible role gets its own top-level category (Principal, Dean),
+// shown as its own tab alongside Faculty and Staff, with the person's
+// `designation` stamped as their role ("Principal"/"Dean") so they're
+// distinguishable on the card -- but only when designation is blank, so
+// an admin-set title (e.g. "Principal, Senior High") isn't clobbered.
+$is_college_student = isCollegeEducationLevel($student_level);
+$is_jhs_shs_student  = in_array(strtolower(trim((string)$student_level)), ['junior_high', 'senior_high'], true);
+$eligible_school_head_roles = [];
+if ($is_jhs_shs_student)  $eligible_school_head_roles['principal'] = 'Principal';
+if ($is_college_student)  $eligible_school_head_roles['dean']      = 'Dean';
+
+foreach ($eligible_school_head_roles as $role_value => $role_label) {
     $singleton = $mysqli->prepare(
         "SELECT id, full_name, designation, photo, role
          FROM users
@@ -861,18 +700,68 @@ foreach (['principal' => 'Principal', 'dean' => 'Dean'] as $role_value => $role_
             $singleton_row['designation'] = $role_label;
         }
         $all_users[]            = $singleton_row;
-        $school_head_members[]  = $singleton_row;
+        $grouped[$role_label]   = [$singleton_row];
     }
 }
-if (!empty($school_head_members)) {
-    $grouped['School Head'] = $school_head_members;
+
+// ── QUESTION-SET AVAILABILITY PRECHECK ─────────────────────────
+// A person with zero configured questions for their evaluation context
+// used to still show an "Evaluate" button -- the student would open the
+// modal, hit a dead-end "No questions have been set up..." error, and
+// nothing would ever get submitted, with no signal to the student (or
+// the admin) that anything was wrong. This stamps `_has_questions` onto
+// every person in $grouped so the button can be disabled up front
+// instead of failing after the fact.
+//
+// Teacher/Faculty draws from the single shared evaluation_questions pool
+// (target_type='Teacher', eval_type='student'), so one count covers
+// everyone in that group. Staff, Principal, and Dean are per-person sets
+// in user_questions, so they're looked up individually.
+$teacherQCount = $mysqli->query(
+    "SELECT COUNT(*) AS c FROM evaluation_questions WHERE target_type='Teacher' AND eval_type='student'"
+)->fetch_assoc()['c'] ?? 0;
+$facultyHasQuestions = $teacherQCount > 0;
+
+$perUserQCounts = [];
+$puq = $mysqli->query(
+    "SELECT user_id, target_type, COUNT(*) AS c
+     FROM user_questions
+     WHERE eval_type='student' AND target_type IN ('Staff','Principal','Dean')
+     GROUP BY user_id, target_type"
+);
+if ($puq) {
+    while ($row = $puq->fetch_assoc()) {
+        $perUserQCounts[(int)$row['user_id']][$row['target_type']] = (int)$row['c'];
+    }
+}
+
+if (!empty($grouped['Faculty'])) {
+    foreach ($grouped['Faculty'] as &$fp) { $fp['_has_questions'] = $facultyHasQuestions; }
+    unset($fp);
+}
+if (!empty($grouped['Staff'])) {
+    foreach ($grouped['Staff'] as &$sp) {
+        $sp['_has_questions'] = ($perUserQCounts[(int)$sp['id']]['Staff'] ?? 0) > 0;
+    }
+    unset($sp);
+}
+foreach (['Principal', 'Dean'] as $pd_label) {
+    if (!empty($grouped[$pd_label])) {
+        foreach ($grouped[$pd_label] as &$hp) {
+            $hp['_has_questions'] = ($perUserQCounts[(int)$hp['id']][$pd_label] ?? 0) > 0;
+        }
+        unset($hp);
+    }
 }
 
 // Drop any category that ended up with nobody in it, so students only
-// see categories with people in them. Faculty and Staff are now
-// independent -- one can be empty while the other still shows.
-if (empty($grouped['Faculty'])) unset($grouped['Faculty']);
-if (empty($grouped['Staff']))   unset($grouped['Staff']);
+// see categories with people in them. Faculty, Staff, Principal, and
+// Dean are all independent -- any one can be empty while the others
+// still show.
+if (empty($grouped['Faculty']))   unset($grouped['Faculty']);
+if (empty($grouped['Staff']))     unset($grouped['Staff']);
+if (empty($grouped['Principal'])) unset($grouped['Principal']);
+if (empty($grouped['Dean']))      unset($grouped['Dean']);
 
 // ── FETCH ALREADY EVALUATED IDs (CURRENT PERIOD ONLY) ─────────
 // evaluation_tracker.period_id scopes a submission to one evaluation
@@ -915,24 +804,23 @@ $hres->execute();
 $history = $hres->get_result()->fetch_all(MYSQLI_ASSOC);
 $hres->close();
 
-// ── GROUP ICONS / COLORS (matches admin questionnaire's 3 buckets) ──
+// ── GROUP ICONS / COLORS ──
 $group_icons = [
     'Faculty'            => 'fa-people-group',
-    'Teacher'            => 'fa-chalkboard-user',
     'Staff'              => 'fa-briefcase',
-    'Multi-Role'         => 'fa-people-arrows',
-    'School Head'        => 'fa-user-tie',
+    'Principal'          => 'fa-user-tie',
+    'Dean'               => 'fa-user-graduate',
 ];
 $group_colors = [
     'Faculty'            => '#00E5FF',
     'Teacher'            => '#00E5FF',
     'Staff'              => '#10b981',
-    'Multi-Role'         => '#F59E0B',
-    'School Head'        => '#8B5CF6',
+    'Principal'          => '#8B5CF6',
+    'Dean'               => '#F59E0B',
 ];
 
 // Progress counts evaluation contexts, not unique accounts.
-$total_evaluatees=count($grouped['Faculty']??[])+count($grouped['Staff']??[])+count($grouped['Multi-Role']??[])+count($grouped['School Head']??[]);
+$total_evaluatees=count($grouped['Faculty']??[])+count($grouped['Staff']??[])+count($grouped['Principal']??[])+count($grouped['Dean']??[]);
 $total_done=count($done_ids);
 $total_pending     = max(0, $total_evaluatees - $total_done);
 $pct              = $total_evaluatees > 0 ? round(($total_done / $total_evaluatees) * 100) : 0;
@@ -1010,7 +898,12 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 /* ── APP SHELL: SIDEBAR + MAIN ── */
 .app-shell{display:flex;align-items:flex-start;}
 
-.sidebar{width:var(--sidebar-w);flex-shrink:0;background:var(--mid);border-right:1px solid var(--border);min-height:calc(100vh - 69px);position:sticky;top:69px;padding:20px 0;}
+.sidebar{width:var(--sidebar-w);flex-shrink:0;background:var(--mid);border-right:1px solid var(--border);min-height:100vh;position:sticky;top:0;padding:20px 0;}
+.sb-logo-wrap{display:flex;justify-content:center;padding:4px 0 14px;}
+.sb-logo{width:60px;height:60px;border-radius:50%;object-fit:cover;border:2px solid var(--gold);box-shadow:0 0 18px rgba(217,119,6,.3);}
+.sb-profile{text-align:center;padding:0 18px 18px;margin-bottom:12px;border-bottom:1px solid rgba(255,255,255,.08);}
+.sb-profile-name{font-size:14px;font-weight:700;color:#fff;line-height:1.35;word-break:break-word;}
+.sb-profile-role{font-size:11px;color:#8ea3bd;margin-top:3px;text-transform:capitalize;}
 .side-section-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.3px;color:var(--muted);padding:0 20px;margin-bottom:8px;}
 .side-nav-item{display:flex;align-items:center;gap:12px;padding:11px 20px;color:var(--light);font-size:13.5px;font-weight:600;cursor:pointer;border-left:3px solid transparent;transition:all .18s;}
 .side-nav-item i{width:18px;text-align:center;color:var(--muted);font-size:15px;transition:color .18s;}
@@ -1023,6 +916,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .sidebar-overlay.open{display:block;}
 
 .main{flex:1;min-width:0;max-width:1000px;margin:0 auto;padding:36px 28px;}
+.content-topbar{display:flex;align-items:center;margin-bottom:22px;}
+.content-topbar .nav-profile{margin-left:auto;}
 .page-title{font-family:'Rajdhani',sans-serif;font-size:28px;font-weight:700;color:#fff;margin-bottom:4px;}
 .page-sub{font-size:13px;color:var(--muted);margin-bottom:32px;}
 
@@ -1134,10 +1029,18 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .gl-scale-row{display:flex;align-items:center;gap:10px;padding:6px 0;}
 .gl-scale-num{width:26px;height:26px;border-radius:6px;background:var(--gold);color:#fff;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 
+/* ── SETTINGS VIEW ── */
+.settings-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
+.settings-row .profile-dd-avatar,.settings-row .profile-dd-avatar-ph{width:64px;height:64px;font-size:24px;}
+.settings-row .profile-dd-name{font-size:16px;}
+.settings-info{flex:1;min-width:160px;}
+.btn-logout{padding:11px 22px;background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.25);border-radius:var(--radius);color:#dc2626;font-weight:700;font-size:13.5px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;text-decoration:none;transition:background .2s;}
+.btn-logout:hover{background:rgba(220,38,38,.15);}
+
 /* ── EVAL MODAL ── */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:200;display:none;align-items:center;justify-content:center;padding:20px;}
 .modal-overlay.open{display:flex;}
-.modal{background:var(--mid);border:1px solid var(--border);border-radius:18px;width:100%;max-width:640px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.6);}
+.modal{background:var(--mid);border:1px solid var(--border);border-radius:18px;width:100%;max-width:780px;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.6);}
 .modal-header{padding:24px 28px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;position:sticky;top:0;background:var(--mid);z-index:1;}
 .modal-avatar{width:52px;height:52px;border-radius:50%;object-fit:cover;border:2px solid var(--gold);}
 .modal-avatar-ph{width:52px;height:52px;border-radius:50%;background:var(--inner);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:20px;}
@@ -1176,7 +1079,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .empty i{font-size:36px;margin-bottom:12px;display:block;opacity:.3;}
 
 @media(max-width:900px){
-    .sidebar{position:fixed;top:0;left:0;height:100vh;z-index:80;transform:translateX(-100%);transition:transform .22s ease;padding-top:80px;}
+    .sidebar{position:fixed;top:0;left:0;height:100vh;z-index:80;transform:translateX(-100%);transition:transform .22s ease;padding-top:20px;}
     .sidebar.open{transform:translateX(0);box-shadow:0 0 40px rgba(0,0,0,.5);}
     .hamburger-btn{display:flex;}
     .main{padding:24px 16px;max-width:100%;}
@@ -1185,55 +1088,73 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
     .category-grid{grid-template-columns:1fr;}
     .members-grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr));}
     .modal-body,.modal-header,.modal-footer{padding-left:18px;padding-right:18px;}
-    .topnav{padding:12px 16px;}
+    .content-topbar{margin-bottom:16px;}
     .progress-wrap{flex-direction:column;align-items:flex-start;gap:8px;}
     .history-meta{align-items:flex-start;width:100%;}
 }
+
+/* Compact evaluation questionnaire table — rating cells are native radio+label
+   inputs (same markup pattern as the EA evaluation table), not JS-toggled
+   buttons. Colors/theme are unchanged from before. */
+.eval-form-table{width:100%;border-collapse:collapse;table-layout:fixed}.eval-form-table th{background:rgba(255,255,255,.04);color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;text-align:center;padding:10px 6px;border-bottom:1px solid var(--border)}.eval-form-table th:first-child{text-align:left;width:auto;padding-left:14px}.eval-form-table th:not(:first-child){width:52px}.eval-form-table td{padding:10px 6px;border-bottom:1px solid rgba(255,255,255,.06);vertical-align:middle;text-align:center}.eval-form-table tr:last-child td{border-bottom:none}.eval-form-table td:first-child{text-align:left;padding-left:14px;padding-right:10px}.eval-form-wrap{background:var(--mid);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin:0 0 16px}.eval-form-qtext{font-size:12.5px;line-height:1.45;color:var(--light)}.eval-form-qno{color:#00E5FF;font-weight:800;margin-right:6px}.eval-form-rating{display:flex;justify-content:center}.eval-form-rating input{position:absolute;opacity:0;pointer-events:none}.eval-form-rating label{width:34px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:7px;border:1px solid var(--border);background:var(--inner);color:var(--muted);font-size:12px;font-weight:800;cursor:pointer;transition:all .15s ease}.eval-form-rating label:hover{border-color:#00E5FF;background:rgba(0,229,255,.08)}.eval-form-rating input:checked + label{background:#00E5FF;border-color:#00E5FF;color:#07131f}.eval-form-cat{font-size:10px;text-transform:uppercase;letter-spacing:.9px;font-weight:800;color:#00E5FF;margin:18px 0 8px}.eval-form-cat:first-child{margin-top:0}@media(max-width:700px){.eval-form-table th:not(:first-child){width:44px}.eval-form-rating label{width:28px;height:28px}.eval-form-qtext{font-size:11.5px}}
+
+/* ══════════════════════════════════════════════════════════════
+   LIGHT THEME OVERRIDE — matches the Principal/EA dashboards'
+   white workspace + dark-navy amber sidebar look. Nothing above
+   this block was removed -- every class, tab, icon and piece of
+   text still renders exactly as before; only the colors change.
+   ══════════════════════════════════════════════════════════════ */
+:root{
+    --dark:#ffffff;--mid:#ffffff;--inner:#f5f7fb;
+    --light:#172033;--muted:#64748b;--border:#e2e8f0;
+}
+html{background:#FFFFFF;color-scheme:light;}
+body{background:#FFFFFF!important;color:#172033!important;}
+
+/* The sidebar stays the dark-navy "chrome" (matching the reference
+   screenshot); the rest of the page -- including the logo, which now
+   lives in the sidebar -- is part of the light workspace. The .main
+   column itself is a pale inset panel (#F3F6FA) so it reads as a
+   distinct workspace sitting on the pure-white outer page, with the
+   white cards (--mid) floating a shade lighter on top of it. */
+.sidebar{background:#0A192F!important;border-right:1px solid #172A45!important;}
+.main{background:#F3F6FA;border-radius:22px;margin:20px auto;min-height:calc(100vh - 40px);}
+@media(max-width:900px){.main{margin:16px;border-radius:18px;min-height:calc(100vh - 32px);}}
+.hamburger-btn{color:#475569!important;border-color:#e2e8f0!important;}
+.profile-name{color:#172033!important;}
+.profile-caret{color:#64748b!important;}
+.profile-trigger:hover{background:rgba(15,23,42,.05)!important;}
+.side-section-label{color:#A0B3C6!important;}
+.side-nav-item{color:#E0E6F0!important;}
+.side-nav-item i{color:#A0B3C6!important;}
+.side-nav-item.active i{color:var(--gold-h)!important;}
+
+/* Headings/labels that were hardcoded to white text for the old dark
+   cards now need to read dark-on-white on the new light cards. */
+.page-title,.stat-num,.dash-cta-text h3,.cat-name,.panel-header-title,
+.subgroup-header,.person-name,.history-name,.gl-card h3,.modal-name,
+.photo-modal-title,.profile-dd-name,.reminder-banner .rb-title{color:#0f172a!important;}
+.panel-close-btn:hover,.modal-close:hover,.reminder-banner .rb-dismiss:hover{color:#0f172a!important;}
+
+/* Status pills/badges used pale, low-opacity text meant for a dark
+   backdrop -- darken them so they stay legible on white/near-white. */
+.period-pill.open,.cat-done-pill,.done-badge,.alert-success{color:#16a34a!important;}
+.period-pill.closed,.alert-error{color:#dc2626!important;}
+.reminder-banner .rb-meta{color:#7c3aed!important;}
+
+/* Fill in tracks/rows that were a faint white-on-dark wash and would
+   otherwise vanish (white-on-white) now that their card is white. */
+.progress-bar-bg{background:#e2e8f0!important;}
+.scale-legend{background:#f8fafc!important;}
+.r-btn{background:#f8fafc!important;}
+.profile-dd-btn:hover{background:rgba(15,23,42,.05)!important;}
+.eval-form-table th{background:#f8fafc!important;}
+.eval-form-table td{border-bottom:1px solid #eef2f7!important;}
+
+@media print{html,body{background:#fff!important;}}
 </style>
 </head>
 <body>
-
-<nav class="topnav">
-    <div class="nav-brand">
-        <button class="hamburger-btn" onclick="toggleSidebar()"><i class="fa-solid fa-bars"></i></button>
-        <img class="nav-logo" src="../image/pbi_logo" alt="PBI" onerror="this.style.display='none'"/>
-    </div>
-    <div class="nav-right">
-        <div class="nav-profile" id="navProfile">
-            <div class="profile-trigger" onclick="toggleProfileDD()">
-                <?php if ($student_photo): ?>
-                <img class="profile-avatar" src="../image/<?= htmlspecialchars($student_photo) ?>" alt=""/>
-                <?php else: ?>
-                <div class="profile-avatar-ph"><i class="fa-solid fa-user"></i></div>
-                <?php endif; ?>
-                <span class="profile-name"><?= htmlspecialchars($student_name) ?></span>
-                <i class="fa-solid fa-chevron-down profile-caret" id="profileCaret"></i>
-            </div>
-            <div class="profile-dropdown" id="profileDropdown">
-                <div class="profile-dd-header">
-                    <?php if ($student_photo): ?>
-                    <img class="profile-dd-avatar" src="../image/<?= htmlspecialchars($student_photo) ?>" alt=""/>
-                    <?php else: ?>
-                    <div class="profile-dd-avatar-ph"><i class="fa-solid fa-user"></i></div>
-                    <?php endif; ?>
-                    <div>
-                        <div class="profile-dd-name"><?= htmlspecialchars($student_name) ?></div>
-                        <div class="profile-dd-role">Student<?= $student_year_level ? ' · ' . htmlspecialchars($student_year_level) : '' ?></div>
-                    </div>
-                </div>
-                <div class="profile-dd-body">
-                    <button class="profile-dd-btn" onclick="openPhotoModal()">
-                        <i class="fa-solid fa-camera"></i> Update Profile Photo
-                    </button>
-                    <div class="profile-dd-divider"></div>
-                    <a href="../logout.php" class="profile-dd-btn logout" style="text-decoration:none;">
-                        <i class="fa-solid fa-right-from-bracket"></i> Log out
-                    </a>
-                </div>
-            </div>
-        </div>
-    </div>
-</nav>
 
 <!-- PHOTO UPLOAD MODAL -->
 <div class="photo-modal-overlay" id="photoModal">
@@ -1271,6 +1192,13 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 
 <div class="app-shell">
     <aside class="sidebar" id="sidebar">
+        <div class="sb-logo-wrap">
+            <img class="sb-logo" src="../image/pbi_logo" alt="PBI" onerror="this.style.display='none'"/>
+        </div>
+        <div class="sb-profile">
+            <div class="sb-profile-name"><?= htmlspecialchars($student_name) ?></div>
+            <div class="sb-profile-role">Student<?= $student_year_level ? ' · ' . htmlspecialchars($student_year_level) : '' ?></div>
+        </div>
         <div class="side-section-label">Evaluations</div>
         <div class="side-nav-item active" id="nav-dashboard" onclick="switchView('dashboard')">
             <i class="fa-solid fa-house"></i> Dashboard
@@ -1285,9 +1213,16 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
         <div class="side-nav-item" id="nav-guidelines" onclick="switchView('guidelines')">
             <i class="fa-solid fa-circle-info"></i> Guidelines
         </div>
+        <div class="side-nav-item" id="nav-settings" onclick="switchView('settings')">
+            <i class="fa-solid fa-gear"></i> Settings
+        </div>
     </aside>
 
     <div class="main">
+
+        <div class="content-topbar">
+            <button class="hamburger-btn" onclick="toggleSidebar()"><i class="fa-solid fa-bars"></i></button>
+        </div>
 
         <?php if ($submit_success): ?>
         <div class="alert alert-success"><i class="fa-solid fa-circle-check"></i> <?= htmlspecialchars($submit_success) ?></div>
@@ -1344,12 +1279,13 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
         <!-- ══════════════ EVALUATE VIEW ══════════════ -->
         <div class="view-content" id="view-evaluate">
             <div class="page-title">Faculty &amp; Staff Evaluation</div>
-            <div class="page-sub">Select a category to see who is available for evaluation. A person may appear in more than one evaluation context when they have additional responsibilities.</div>
+            <div class="page-sub">Select a category to see who is available for evaluation. Faculty and Staff are evaluated separately based on their current assignment.</div>
 
             <?php
-            // Build the top-level display list: "Faculty", "Staff",
-            // "Multi-Role", and "School Head" -- four independent tabs,
-            // matching admin/questionnaire.php's category structure exactly.
+            // Build the top-level display list: Faculty, Staff, Principal, and Dean.
+            // Principal and Dean each get their own tab now, though both still
+            // submit under evaluation_context='school_head' -- the backend tells
+            // them apart by the target's actual role, not by which tab it came from.
             $top_level = [];
             if (!empty($grouped['Faculty'])) {
                 $top_level['Faculty']=array_map(fn($p)=>array_merge($p,['_evaluation_context'=>'teacher']),$grouped['Faculty']);
@@ -1357,11 +1293,11 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
             if (!empty($grouped['Staff'])) {
                 $top_level['Staff']=array_map(fn($p)=>array_merge($p,['_evaluation_context'=>'staff']),$grouped['Staff']);
             }
-            if (!empty($grouped['Multi-Role'])) {
-                $top_level['Multi-Role']=array_map(fn($p)=>array_merge($p,['_evaluation_context'=>'multi_role']),$grouped['Multi-Role']);
+            if (!empty($grouped['Principal'])) {
+                $top_level['Principal']=array_map(fn($p)=>array_merge($p,['_evaluation_context'=>'school_head']),$grouped['Principal']);
             }
-            if (!empty($grouped['School Head'])) {
-                $top_level['School Head']=array_map(fn($p)=>array_merge($p,['_evaluation_context'=>'school_head']),$grouped['School Head']);
+            if (!empty($grouped['Dean'])) {
+                $top_level['Dean']=array_map(fn($p)=>array_merge($p,['_evaluation_context'=>'school_head']),$grouped['Dean']);
             }
             ?>
 
@@ -1394,13 +1330,14 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
             </div>
 
             <?php
-            // Reusable person-card renderer, used by the Faculty
-            // subsections, the Multi-Role panel, and the School Head
-            // panel below. $p['teaching_levels'], when present (Multi-Role
-            // people only), renders as a "Teaching Assignment: ..." line.
+            // Reusable person-card renderer for Faculty, Staff, Principal, and Dean.
             function render_person_card($p, $done_ids, $period_is_open) {
                 $context=$p['_evaluation_context']??'teacher';
                 $is_done=isset($done_ids[$p['id'].'|'.$context]);
+                // Defaults to true for any group that doesn't stamp this flag,
+                // so nothing new gets hidden unless we've actually confirmed
+                // there are zero questions configured for this person.
+                $has_questions = $p['_has_questions'] ?? true;
                 $eval_args = json_encode([
                     'id'    => $p['id'],
                     'name'  => $p['full_name'],
@@ -1408,7 +1345,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
                     'photo'=>$p['photo']?'../image/'.$p['photo']:'',
                     'context'=>$p['_evaluation_context']??'teacher',
                 ]);
-                $teaching_levels = trim($p['teaching_levels'] ?? '');
                 ob_start();
                 ?>
                 <div class="person-card <?= $is_done ? 'done' : '' ?>">
@@ -1423,27 +1359,16 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
                     <?php endif; ?>
                     <div class="person-name"><?= htmlspecialchars($p['full_name']) ?></div>
                     <div class="person-desig"><?= htmlspecialchars($p['designation'] ?: '—') ?></div>
-                    <?php if ($teaching_levels !== ''): ?>
-                    <div class="person-teaching-line">Teaching Assignment: <?= htmlspecialchars($teaching_levels) ?></div>
-                    <?php endif; ?>
-
-                    <?php if (!$is_done): ?>
-                    <?php
-                    $mr_no_questions = ($context === 'multi_role' && (int)($p['_multi_role_question_count'] ?? 0) === 0);
-                    ?>
-                    <?php if ($mr_no_questions): ?>
-                    <button type="button" class="eval-btn" disabled
-                        title="No Multi-Role questionnaire has been assigned to this person yet"
-                        style="opacity:.55;cursor:not-allowed;">
-                        <i class="fa-solid fa-clipboard-question"></i> No Questionnaire Assigned
-                    </button>
-                    <?php else: ?>
+                    <?php if (!$is_done && $has_questions): ?>
                     <button type="button" class="eval-btn" onclick="openEvalFromData(this)"
                         <?= !$period_is_open ? 'disabled title="No evaluation period is currently open"' : '' ?>
                         data-eval='<?= htmlspecialchars($eval_args, ENT_QUOTES) ?>'>
                         <i class="fa-solid fa-star-half-stroke"></i> Evaluate
                     </button>
-                    <?php endif; ?>
+                    <?php elseif (!$is_done && !$has_questions): ?>
+                    <button type="button" class="eval-btn" disabled title="The admin hasn't set up evaluation questions for this person yet">
+                        <i class="fa-solid fa-hourglass-half"></i> Not available yet
+                    </button>
                     <?php endif; ?>
                 </div>
                 <?php
@@ -1478,7 +1403,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
         <!-- ══════════════ HISTORY VIEW ══════════════ -->
         <div class="view-content" id="view-history">
             <div class="page-title">Evaluation History</div>
-            <div class="page-sub">Faculty and staff you've already evaluated.</div>
+            <div class="page-sub">Faculty, staff, and school heads you've already evaluated.</div>
 
             <?php if (empty($history)): ?>
             <div class="empty"><i class="fa-solid fa-clock-rotate-left"></i><p>You haven't submitted any evaluations yet.</p></div>
@@ -1542,6 +1467,38 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
             </div>
         </div>
 
+        <!-- ══════════════ SETTINGS VIEW ══════════════ -->
+        <div class="view-content" id="view-settings">
+            <div class="page-title">Settings</div>
+            <div class="page-sub">Manage your profile and account.</div>
+
+            <div class="gl-card">
+                <h3><i class="fa-solid fa-user"></i> Profile</h3>
+                <div class="settings-row">
+                    <?php if ($student_photo): ?>
+                    <img class="profile-dd-avatar" src="../image/<?= htmlspecialchars($student_photo) ?>" alt=""/>
+                    <?php else: ?>
+                    <div class="profile-dd-avatar-ph"><i class="fa-solid fa-user"></i></div>
+                    <?php endif; ?>
+                    <div class="settings-info">
+                        <div class="profile-dd-name"><?= htmlspecialchars($student_name) ?></div>
+                        <div class="profile-dd-role">Student<?= $student_year_level ? ' · ' . htmlspecialchars($student_year_level) : '' ?></div>
+                    </div>
+                    <button class="btn-primary-cta" onclick="openPhotoModal()">
+                        <i class="fa-solid fa-camera"></i> Update Profile Photo
+                    </button>
+                </div>
+            </div>
+
+            <div class="gl-card">
+                <h3><i class="fa-solid fa-right-from-bracket"></i> Account</h3>
+                <p style="margin-bottom:14px;">Sign out of your student evaluation account on this device.</p>
+                <a href="../logout.php" class="btn-logout">
+                    <i class="fa-solid fa-right-from-bracket"></i> Log out
+                </a>
+            </div>
+        </div>
+
     </div>
 </div>
 
@@ -1597,23 +1554,8 @@ function closeSidebarMobile() {
     document.getElementById('sidebarOverlay').classList.remove('open');
 }
 
-// ── Profile dropdown ──
-function toggleProfileDD() {
-    const dd    = document.getElementById('profileDropdown');
-    const caret = document.getElementById('profileCaret');
-    dd.classList.toggle('open');
-    caret.style.transform = dd.classList.contains('open') ? 'rotate(180deg)' : '';
-}
-document.addEventListener('click', function(e) {
-    if (!document.getElementById('navProfile').contains(e.target)) {
-        document.getElementById('profileDropdown').classList.remove('open');
-        document.getElementById('profileCaret').style.transform = '';
-    }
-});
-
 // ── Photo modal ──
 function openPhotoModal() {
-    document.getElementById('profileDropdown').classList.remove('open');
     document.getElementById('photoModal').classList.add('open');
     document.body.style.overflow = 'hidden';
 }
@@ -1660,6 +1602,17 @@ function _closePanel(slug) {
 }
 function closePanel(slug) { _closePanel(slug); if (activePanel === slug) activePanel = null; }
 
+// Escape text inserted into HTML generated by the evaluation modal.
+// The table-style renderer calls this helper for category/question text.
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 // ── Eval modal ──
 function openEvalFromData(btn) {
     const d = JSON.parse(btn.getAttribute('data-eval'));
@@ -1699,7 +1652,7 @@ function loadQuestions(id,context){
             if (!data.success) {
                 document.getElementById('modalBody').innerHTML =
                     `<div class="empty"><i class="fa-solid fa-triangle-exclamation"></i>
-                     <p style="color:#fca5a5;margin-top:10px;font-size:13px">${data.error}</p></div>`;
+                     <p style="color:#dc2626;margin-top:10px;font-size:13px">${data.error}</p></div>`;
                 return;
             }
             const questions = data.questions;
@@ -1720,27 +1673,18 @@ function loadQuestions(id,context){
             let html = legend;
             let qNum = 1;
             for (const [cat, qs] of Object.entries(grouped)) {
-                html += `<div class="q-category"><i class="fa-solid fa-layer-group" style="margin-right:5px;font-size:10px"></i>${cat}</div>`;
+                html += `<div class="eval-form-cat"><i class="fa-solid fa-layer-group" style="margin-right:5px"></i>${escapeHtml(cat)}</div>`;
+                html += `<div class="eval-form-wrap"><table class="eval-form-table"><thead><tr><th>Question</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th></tr></thead><tbody>`;
                 qs.forEach(q => {
-                    html += `<div class="q-item">
-                        <div class="q-text"><span class="q-num-badge">${qNum++}.</span> ${q.question_text}</div>
-                        <div class="rating-row">
-                            ${[5,4,3,2,1].map(v =>
-                               `<button type="button"
-    class="r-btn"
-    data-qkey="${q.question_source}:${q.id}"
-    data-val="${v}"
-    onclick="selectRating(this,'${q.question_source}:${q.id}',${v})">
-                                    ${v}<span class="r-val">${labels[v]}</span>
-                                </button>`
-                            ).join('')}
-                        </div>
-                        <input type="hidden"
-       name="rating[${q.question_source}:${q.id}]"
-       id="r_${q.question_source}_${q.id}"
-       value=""/>
-                    </div>`;
+                    const qkey = `${q.question_source}:${q.id}`;
+                    html += `<tr><td><div class="eval-form-qtext"><span class="eval-form-qno">${qNum++}.</span>${escapeHtml(q.question_text)}</div></td>`;
+                    [5,4,3,2,1].forEach(v => {
+                        const optId = `r_${q.question_source}_${q.id}_${v}`;
+                        html += `<td><div class="eval-form-rating"><input type="radio" name="rating[${qkey}]" id="${optId}" value="${v}" required><label for="${optId}">${v}</label></div></td>`;
+                    });
+                    html += `</tr>`;
                 });
+                html += `</tbody></table></div>`;
             }
             html += `<div class="comment-box">
                 <div class="comment-label">
@@ -1758,23 +1702,9 @@ function loadQuestions(id,context){
         .catch(err => {
             document.getElementById('modalBody').innerHTML =
                 `<div class="empty"><i class="fa-solid fa-triangle-exclamation"></i>
-                 <p style="color:#fca5a5;margin-top:10px;font-size:13px">
+                 <p style="color:#dc2626;margin-top:10px;font-size:13px">
                     Failed to load questions.<br><small>${err.message}</small></p></div>`;
         });
-}
-
-function selectRating(btn, qkey, val) {
-    document.querySelectorAll(`.r-btn[data-qkey="${qkey}"]`)
-        .forEach(b => b.classList.remove('selected'));
-
-    btn.classList.add('selected');
-
-    const safeKey = qkey.replace(':', '_');
-    const h = document.getElementById(`r_${safeKey}`);
-
-    if (h) {
-        h.value = val;
-    }
 }
 
 document.getElementById('evalModal').addEventListener('click', function(e) {
@@ -1783,9 +1713,10 @@ document.getElementById('evalModal').addEventListener('click', function(e) {
 
 document.getElementById('evalForm').addEventListener('submit', function(e) {
     if (!questionsLoaded) { e.preventDefault(); alert('Questions are still loading. Please wait.'); return; }
-    const hiddens    = this.querySelectorAll('input[type="hidden"][name^="rating["]');
-    if (!hiddens.length) { e.preventDefault(); alert('No questions found. Please close and try again.'); return; }
-    const unanswered = [...hiddens].filter(h => !h.value);
+    const radios = this.querySelectorAll('input[type="radio"][name^="rating["]');
+    if (!radios.length) { e.preventDefault(); alert('No questions found. Please close and try again.'); return; }
+    const names      = [...new Set([...radios].map(r => r.name))];
+    const unanswered = names.filter(n => !this.querySelector(`input[name="${CSS.escape(n)}"]:checked`));
     if (unanswered.length) { e.preventDefault(); alert(`Please answer all questions. (${unanswered.length} remaining)`); return; }
 });
 

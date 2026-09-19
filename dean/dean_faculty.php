@@ -239,6 +239,7 @@ table.data tr.hidden-row{display:none;}
 
 @media(max-width:768px){body{flex-direction:column;}.sidebar{width:100%;min-height:auto;}}
 </style>
+<link rel="stylesheet" href="includes/dean_light_theme.css"/>
 </head>
 <body>
 
@@ -425,4 +426,5 @@ document.querySelectorAll('#facultyTable th[data-key]').forEach(th => {
 applyFilters();
 </script>
 </body>
+<link rel="stylesheet" href="includes/dean_light_theme.css" id="dean-light-theme-final"/>
 </html>

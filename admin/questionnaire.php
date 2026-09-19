@@ -31,7 +31,7 @@ require_once '../shared/EvaluationContextService.php';
 
     // ── ENSURE target_type COLUMNS ACCEPT Faculty/EA (School Head Eval) ──
     // These columns were originally ENUM'd to the older target list
-    // (Teacher/Staff/Multi-Role/Principal/Dean/School/...). 'Faculty' and
+    // (Teacher/Staff/Principal/Dean/School/...). 'Faculty' and
     // 'EA' were added later for School Head Evaluation, but an ENUM column
     // silently rejects/blanks out any value not in its list — INSERT IGNORE
     // swallows the warning, so the row looks "saved" but never matches the
@@ -51,12 +51,43 @@ require_once '../shared/EvaluationContextService.php';
     ec_widen_target_type_column($mysqli, 'user_question_categories');
     ec_widen_target_type_column($mysqli, 'user_questions');
 
+    // Widen eval_type as well so newly-added evaluation directions such as
+    // Staff Evaluation cannot be silently rejected by a legacy ENUM.
+    function ec_widen_eval_type_column(mysqli $mysqli, string $table): void {
+        $col = $mysqli->query("SHOW COLUMNS FROM `$table` LIKE 'eval_type'");
+        if (!$col) return;
+        $row = $col->fetch_assoc();
+        if (!$row) return;
+        if (stripos($row['Type'], 'enum') === 0) {
+            $mysqli->query("ALTER TABLE `$table` MODIFY eval_type VARCHAR(50) NOT NULL");
+        }
+    }
+    ec_widen_eval_type_column($mysqli, 'question_categories');
+    ec_widen_eval_type_column($mysqli, 'evaluation_questions');
+    ec_widen_eval_type_column($mysqli, 'user_question_categories');
+    ec_widen_eval_type_column($mysqli, 'user_questions');
+
+    // ── ENSURE evaluator_role COLUMN (Dean vs Principal own question banks) ──
+    // Dean / Principal Evaluation now keeps two independent shared banks per
+    // Faculty/Staff/EA target — one the Dean edits, one the Principal edits —
+    // instead of one bank both evaluators shared. Every other eval_type
+    // (student/peer/ea) has exactly one bank, so its rows simply carry the
+    // sentinel 'shared' and are unaffected by this split.
+    function ec_ensure_evaluator_role_column(mysqli $mysqli, string $table): void {
+        $col = $mysqli->query("SHOW COLUMNS FROM `$table` LIKE 'evaluator_role'");
+        if ($col && $col->num_rows === 0) {
+            $mysqli->query("ALTER TABLE `$table` ADD COLUMN evaluator_role VARCHAR(10) NOT NULL DEFAULT 'shared'");
+        }
+    }
+    ec_ensure_evaluator_role_column($mysqli, 'question_categories');
+    ec_ensure_evaluator_role_column($mysqli, 'evaluation_questions');
+
     // ── ENSURE question_categories IS UNIQUE PER (target_type, eval_type,
     // category_name) — NOT globally or per eval_type alone ─────────────
     // Symptom this fixes: adding "Professionalism" under Faculty/school_head
     // gets rejected as "already exists" even though the Faculty list is
     // empty, because "Professionalism" already exists as a category for a
-    // different target_type (e.g. Multi-Role/student) and an overly broad
+    // different target_type and an overly broad
     // UNIQUE key collides across target types.
     function ec_ensure_category_unique_key(mysqli $mysqli): array {
         $notices = [];
@@ -72,7 +103,7 @@ require_once '../shared/EvaluationContextService.php';
         if (empty($indexes)) {
             $notices[] = "No unique index currently exists on question_categories (besides PRIMARY).";
         }
-        $correct = ['category_name', 'eval_type', 'target_type'];
+        $correct = ['category_name', 'eval_type', 'evaluator_role', 'target_type'];
         $has_correct = false;
         foreach ($indexes as $key_name => $cols) {
             ksort($cols);
@@ -89,15 +120,78 @@ require_once '../shared/EvaluationContextService.php';
             }
         }
         if (!$has_correct) {
-            if (!$mysqli->query("ALTER TABLE question_categories ADD UNIQUE KEY uniq_category_scope (target_type, eval_type, category_name)")) {
+            if (!$mysqli->query("ALTER TABLE question_categories ADD UNIQUE KEY uniq_category_scope (target_type, eval_type, evaluator_role, category_name)")) {
                 $notices[] = "FAILED to add correct unique key uniq_category_scope: " . $mysqli->error;
             } else {
-                $notices[] = "Added correct unique key uniq_category_scope(target_type, eval_type, category_name).";
+                $notices[] = "Added correct unique key uniq_category_scope(target_type, eval_type, evaluator_role, category_name).";
             }
         }
         return $notices;
     }
     $ec_schema_heal_notices = ec_ensure_category_unique_key($mysqli);
+
+
+    // ── MIGRATE LEGACY EA QUESTION SETS INTO THE DEDICATED EA BANK ──
+    // Older builds displayed an Executive Assistant Evaluation section but
+    // stored its questions in Student/Staff or School Head pools. Copy those
+    // existing per-person questions/categories into eval_type='ea' so the EA
+    // evaluation page can now read the dedicated EA bank directly. Source
+    // rows are retained for backward compatibility and historical answers.
+    function ec_migrate_legacy_ea_bank(mysqli $mysqli): void {
+        $migrations = [
+            ['student', 'Staff'],
+            ['school_head', 'Dean'],
+            ['school_head', 'Principal'],
+        ];
+
+        foreach ($migrations as [$source_eval, $target_type]) {
+            $cat = $mysqli->prepare("
+                INSERT INTO user_question_categories
+                    (user_id, target_type, eval_type, category_name, sort_order)
+                SELECT src.user_id, src.target_type, 'ea', src.category_name, src.sort_order
+                FROM user_question_categories src
+                WHERE src.target_type=?
+                  AND src.eval_type=?
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM user_question_categories dst
+                      WHERE dst.user_id=src.user_id
+                        AND dst.target_type=src.target_type
+                        AND dst.eval_type='ea'
+                        AND dst.category_name=src.category_name
+                  )
+            ");
+            if ($cat) {
+                $cat->bind_param('ss', $target_type, $source_eval);
+                $cat->execute();
+                $cat->close();
+            }
+
+            $q = $mysqli->prepare("
+                INSERT INTO user_questions
+                    (user_id, target_type, eval_type, category, question_text, sort_order)
+                SELECT src.user_id, src.target_type, 'ea', src.category, src.question_text, src.sort_order
+                FROM user_questions src
+                WHERE src.target_type=?
+                  AND src.eval_type=?
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM user_questions dst
+                      WHERE dst.user_id=src.user_id
+                        AND dst.target_type=src.target_type
+                        AND dst.eval_type='ea'
+                        AND dst.category=src.category
+                        AND dst.question_text=src.question_text
+                  )
+            ");
+            if ($q) {
+                $q->bind_param('ss', $target_type, $source_eval);
+                $q->execute();
+                $q->close();
+            }
+        }
+    }
+    ec_migrate_legacy_ea_bank($mysqli);
 
     // ── ENSURE account_status COLUMN EXISTS ─────────────────────────
     // Same gate manage_privileged_accounts.php uses — only approved accounts
@@ -108,23 +202,12 @@ require_once '../shared/EvaluationContextService.php';
         $mysqli->query("UPDATE users SET account_status = 'approved' WHERE account_status = 'pending'");
     }
 
-    // ── ENSURE secondary_role COLUMN EXISTS ──────────────────────────
-    // Teacher/Staff accounts register with ONE primary role (users.role).
-    // After logging in, a person can self-assign the other role from their
-    // own dashboard (e.g. a Teacher who also does Staff work) — that gets
-    // recorded here.
-    $colSecondary = $mysqli->query("SHOW COLUMNS FROM users LIKE 'secondary_role'");
-    if ($colSecondary && $colSecondary->num_rows === 0) {
-        $mysqli->query("ALTER TABLE users ADD COLUMN secondary_role VARCHAR(20) NULL DEFAULT NULL");
-    }
-
     // ── FOLD LEGACY "Non-Teaching Staff" DATA INTO "Staff" ───────────
     // Non-Teaching Staff is not its own questionnaire tab — it remains a
-    // system classification only. There is no separate EA per-person
-    // question set either: EA Evaluation reuses whatever is already
-    // assigned to that person under School Head Evaluation (Principal/
-    // Dean) or Student Evaluation (Non-Teaching Staff -> Staff), so this
-    // fold-in can run unconditionally. Anything filed under
+    // system classification only. Executive Assistant Evaluation now has its
+    // own dedicated per-person question set; the legacy EA migration above
+    // copies the former source rows into that dedicated scope. Anything filed
+    // under
     // 'Non-Teaching Staff' moves into Staff; true duplicates (same
     // category name already exists under Staff) are dropped rather than
     // left orphaned. Idempotent: after the first run there is nothing left
@@ -165,44 +248,155 @@ require_once '../shared/EvaluationContextService.php';
         $ins2->close();
     }
 
-    // Seed Multi-Role default categories
-    $mr_student = $mysqli->query("SELECT COUNT(*) as c FROM question_categories WHERE target_type='Multi-Role' AND eval_type='student'")->fetch_assoc()['c'];
-    if ($mr_student == 0) {
-        $mr_cats = ['General Performance','Cross-Role Responsibilities','Professionalism','Adaptability','Communication'];
-        $ins3 = $mysqli->prepare("INSERT IGNORE INTO question_categories (target_type, category_name, eval_type, sort_order) VALUES ('Multi-Role',?,'student',?)");
-        foreach ($mr_cats as $i => $cat) { $ins3->bind_param("si", $cat, $i); $ins3->execute(); }
-        $ins3->close();
+    // ── SEED EXECUTIVE ASSISTANT EVALUATION CATEGORIES ────────────
+    $ea_cat_count = $mysqli->query("SELECT COUNT(*) as c FROM question_categories WHERE eval_type='ea' AND target_type='EA'")->fetch_assoc()['c'];
+    if ($ea_cat_count == 0) {
+        $ea_cats = ['Leadership & Coordination','Administrative Management','Communication','Professionalism','Responsiveness'];
+        $ins_ea = $mysqli->prepare("INSERT IGNORE INTO question_categories (target_type, category_name, eval_type, sort_order) VALUES ('EA',?,'ea',?)");
+        foreach ($ea_cats as $i => $cat) { $ins_ea->bind_param('si', $cat, $i); $ins_ea->execute(); }
+        $ins_ea->close();
     }
-    $mr_peer = $mysqli->query("SELECT COUNT(*) as c FROM question_categories WHERE target_type='Multi-Role' AND eval_type='peer'")->fetch_assoc()['c'];
-    if ($mr_peer == 0) {
-        $mr_peer_cats = ['Cross-Role Collaboration','Professionalism','Adaptability','Communication','Initiative'];
-        $ins4 = $mysqli->prepare("INSERT IGNORE INTO question_categories (target_type, category_name, eval_type, sort_order) VALUES ('Multi-Role',?,'peer',?)");
-        foreach ($mr_peer_cats as $i => $cat) { $ins4->bind_param("si", $cat, $i); $ins4->execute(); }
-        $ins4->close();
+
+    // ── SEED STAFF EVALUATION CATEGORIES ───────────────────────────
+    // Staff Evaluation is a staff-led evaluation direction. Staff members
+    // evaluate the Dean, Principal, and Executive Assistant using one
+    // reusable question bank per target.
+    $staff_eval_defaults = [
+        'Dean'      => ['Leadership & Governance','Communication','Professionalism','Responsiveness','Support & Decision-Making'],
+        'Principal' => ['Leadership & Governance','Communication','Professionalism','Responsiveness','Support & Decision-Making'],
+        'EA'        => ['Administrative Support','Communication','Professionalism','Responsiveness','Service & Coordination'],
+    ];
+    foreach ($staff_eval_defaults as $staff_target => $staff_cats) {
+        $staff_cat_count = $mysqli->prepare("SELECT COUNT(*) AS c FROM question_categories WHERE eval_type='staff' AND target_type=? AND evaluator_role='shared'");
+        $staff_cat_count->bind_param('s', $staff_target);
+        $staff_cat_count->execute();
+        $staff_n = (int)($staff_cat_count->get_result()->fetch_assoc()['c'] ?? 0);
+        $staff_cat_count->close();
+        if ($staff_n === 0) {
+            $staff_ins = $mysqli->prepare("INSERT IGNORE INTO question_categories (target_type, category_name, eval_type, sort_order, evaluator_role) VALUES (?,?,'staff',?,'shared')");
+            foreach ($staff_cats as $i => $cat) {
+                $staff_ins->bind_param('ssi', $staff_target, $cat, $i);
+                $staff_ins->execute();
+            }
+            $staff_ins->close();
+        }
+    }
+
+    // ── SPLIT EXISTING DEAN/PRINCIPAL BANK INTO PER-ROLE COPIES ─────
+    // Before the evaluator_role column existed, Faculty/Staff/EA under
+    // school_head was ONE bank both Dean and Principal drew from (tagged
+    // 'shared' by the column migration above). The EA now needs to edit a
+    // separate bank per evaluator, so this one-time, idempotent step
+    // duplicates every existing school_head category/question into its own
+    // 'dean' and 'principal' copy (carrying over category-tag links), then
+    // retires the old 'shared' rows. Running this twice is a safe no-op —
+    // it bails out as soon as any real dean/principal row already exists.
+    function sh_split_evaluator_role_pools(mysqli $mysqli): void {
+        $already = $mysqli->query("SELECT 1 FROM question_categories WHERE eval_type='school_head' AND evaluator_role IN ('dean','principal') LIMIT 1");
+        if ($already && $already->num_rows > 0) return;
+
+        $cat_id_map = ['dean' => [], 'principal' => []];
+        $cats = $mysqli->query("SELECT id, target_type, category_name, sort_order FROM question_categories WHERE eval_type='school_head' AND evaluator_role='shared'");
+        if ($cats && $cats->num_rows > 0) {
+            $rows = $cats->fetch_all(MYSQLI_ASSOC);
+            $ins = $mysqli->prepare("INSERT INTO question_categories (target_type, category_name, eval_type, sort_order, evaluator_role) VALUES (?,?,'school_head',?,?)");
+            foreach ($rows as $row) {
+                foreach (['dean', 'principal'] as $role) {
+                    $ins->bind_param('ssis', $row['target_type'], $row['category_name'], $row['sort_order'], $role);
+                    $ins->execute();
+                    $cat_id_map[$role][(int)$row['id']] = $ins->insert_id;
+                }
+            }
+            $ins->close();
+        }
+
+        $qs = $mysqli->query("SELECT id, target_type, category, question_text FROM evaluation_questions WHERE eval_type='school_head' AND evaluator_role='shared'");
+        if ($qs && $qs->num_rows > 0) {
+            $qrows   = $qs->fetch_all(MYSQLI_ASSOC);
+            $qins    = $mysqli->prepare("INSERT INTO evaluation_questions (target_type, category, question_text, eval_type, evaluator_role) VALUES (?,?,?,'school_head',?)");
+            $linkq   = $mysqli->prepare("SELECT category_id FROM evaluation_question_categories WHERE question_id=?");
+            $linkins = $mysqli->prepare("INSERT IGNORE INTO evaluation_question_categories (question_id, category_id) VALUES (?,?)");
+            foreach ($qrows as $qrow) {
+                $linkq->bind_param('i', $qrow['id']);
+                $linkq->execute();
+                $old_cat_ids = array_column($linkq->get_result()->fetch_all(MYSQLI_ASSOC), 'category_id');
+                foreach (['dean', 'principal'] as $role) {
+                    $qins->bind_param('ssss', $qrow['target_type'], $qrow['category'], $qrow['question_text'], $role);
+                    $qins->execute();
+                    $new_qid = $qins->insert_id;
+                    foreach ($old_cat_ids as $old_cat_id) {
+                        $new_cat_id = $cat_id_map[$role][(int)$old_cat_id] ?? null;
+                        if ($new_cat_id) {
+                            $linkins->bind_param('ii', $new_qid, $new_cat_id);
+                            $linkins->execute();
+                        }
+                    }
+                }
+            }
+            $qins->close(); $linkq->close(); $linkins->close();
+        }
+
+        $mysqli->query("DELETE FROM evaluation_questions WHERE eval_type='school_head' AND evaluator_role='shared'");
+        $mysqli->query("DELETE FROM question_categories WHERE eval_type='school_head' AND evaluator_role='shared'");
+    }
+    sh_split_evaluator_role_pools($mysqli);
+
+    // ── SEED DEAN / PRINCIPAL EVALUATION CATEGORIES ─────────────
+    // Shared question pool defaults for the supervision side: Faculty and
+    // the EA. Staff (non-teaching) is its own per-person question set (like
+    // Peer-to-Peer's Staff tab), managed via user_questions instead, so it
+    // is intentionally not seeded here. Seeded independently per evaluator
+    // role so a brand-new install gives Dean and Principal their own
+    // starting sets.
+    $dnpr_defaults = [
+        'Faculty' => ['Teaching Effectiveness','Professionalism','Communication','Classroom Management','Dependability'],
+        'EA'      => ['Leadership & Coordination','Administrative Management','Communication','Professionalism','Responsiveness'],
+    ];
+    foreach (['dean', 'principal'] as $dnpr_role) {
+        foreach ($dnpr_defaults as $dnpr_target => $dnpr_cats) {
+            $dnpr_count = $mysqli->prepare("SELECT COUNT(*) AS c FROM question_categories WHERE eval_type='school_head' AND evaluator_role=? AND target_type=?");
+            $dnpr_count->bind_param('ss', $dnpr_role, $dnpr_target);
+            $dnpr_count->execute();
+            $dnpr_n = (int)($dnpr_count->get_result()->fetch_assoc()['c'] ?? 0);
+            $dnpr_count->close();
+            if ($dnpr_n === 0) {
+                $dnpr_ins = $mysqli->prepare("INSERT IGNORE INTO question_categories (target_type, category_name, eval_type, sort_order, evaluator_role) VALUES (?,?,'school_head',?,?)");
+                foreach ($dnpr_cats as $i => $cat) {
+                    $dnpr_ins->bind_param('ssis', $dnpr_target, $cat, $i, $dnpr_role);
+                    $dnpr_ins->execute();
+                }
+                $dnpr_ins->close();
+            }
+        }
     }
 
     // ── ACTIVE EVAL TYPE ─────────────────────────────────────────
     $active_eval = $_GET['eval_type'] ?? $_POST['eval_type'] ?? 'student';
-    if (!in_array($active_eval, ['student','peer','school_head'])) $active_eval = 'student';
+    if (!in_array($active_eval, ['student','peer','school_head','ea','staff'])) $active_eval = 'student';
+
+    // ── SELECTED DEAN/PRINCIPAL EVALUATOR ROLE ──────────────────────
+    // Dean / Principal Evaluation now keeps two independent shared banks
+    // (Faculty/Staff/EA) — one per evaluator role — so the EA can give the
+    // Dean and Principal different questions. Irrelevant outside school_head,
+    // where every row is tagged with the 'shared' sentinel instead.
+    $sh_role = $_GET['sh_role'] ?? $_POST['sh_role'] ?? 'dean';
+    if (!in_array($sh_role, ['dean', 'principal'], true)) $sh_role = 'dean';
+    $sh_row_role = ($active_eval === 'school_head') ? $sh_role : 'shared';
 
     // ── CONSTANTS ─────────────────────────────────────────────────
-    // Visible questionnaire designations: Teacher, Staff, Multi-Role,
+    // Visible questionnaire designations: Teacher, Staff,
     // School Head. Non-Teaching Staff is a system classification only
     // now (see hasStaffFunction()/userHasTeachingAssignment() below) —
     // it never gets its own tab.
-    // Multi-Role is a Student Evaluation context only. It must not appear in
-    // the Peer-to-Peer questionnaire UI. Existing peer Multi-Role data is
-    // left untouched for safety, but it is no longer selectable/displayed.
     //
     // School Head Evaluation: Principal and Dean are the EVALUATORS here,
     // not evaluation targets — they are the School Heads who evaluate the
     // people under their supervision. What the EA assigns questions to
     // under this tab are those evaluation targets, not the School Heads
     // themselves:
-    //   - Faculty: every Faculty Member + Teaching Staff person (a shared
-    //     question pool, same mechanism as Teacher/Multi-Role below).
-    //   - EA: the current Executive Assistant account (also shared).
-    // Non-Teaching Staff is intentionally excluded from Faculty here.
+    //   - Faculty: every Faculty Member + Teaching Staff person (shared pool).
+    //   - Staff: non-teaching Staff only (shared pool).
+    //   - EA: the current Executive Assistant account (shared pool).
     //
     // NOTE: admin/ea_evaluate.php's EA-evaluates-Principal/Dean flow still
     // reads user_questions where eval_type='school_head' AND
@@ -213,48 +407,30 @@ require_once '../shared/EvaluationContextService.php';
     // Questions. Flag to the client: ea_evaluate.php's Principal/Dean
     // flow needs its own follow-up fix (or intentional retirement) since
     // the evaluation direction has been reversed.
-    $system_categories = ['Teacher', 'Staff', 'Multi-Role', 'School Head'];
+    $system_categories = ['Teacher', 'Staff', 'School Head'];
     // Peer-to-Peer's "Staff" card is filtered down to Non-Teaching Staff only
     // (see hasNonTeachingStaffFunction() below) and displayed under that label.
     // "School" is a Peer-only per-person context for Principal + Dean, entirely
     // separate from School Head Evaluation's Faculty/EA question pools.
     $peer_categories   = ['Teacher', 'Staff', 'School'];
-    $school_head_categories = ['Faculty', 'EA'];
+    $school_head_categories = ['Faculty', 'Staff', 'EA'];
+    $ea_categories = ['Staff', 'Dean', 'Principal'];
+    $staff_eval_categories = ['Dean', 'Principal', 'EA'];
     $active_categories = ($active_eval === 'school_head')
         ? $school_head_categories
-        : (($active_eval === 'peer') ? $peer_categories : $system_categories);
+        : (($active_eval === 'peer') ? $peer_categories : (($active_eval === 'ea') ? $ea_categories : (($active_eval === 'staff') ? $staff_eval_categories : $system_categories)));
 
 
-    // Staff, Principal, and Dean are per-person question sets. Multi-Role
-    // is a separate shared question pool and is NEVER created merely
+    // Staff, Principal, and Dean are per-person question sets.
+    // They are never created merely
     // because a person has a teaching assignment. Teaching assignments
     // only affect where a person is visible to students.
-$per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'School Head'];
-    // "Staff/non-teaching function present" per the Multi-Role spec — true
-    // for anyone whose role or self-assigned secondary role is 'staff'.
-    // This is an actual assigned function (role / secondary_role), never
+$per_user_targets = ['Staff', 'Principal', 'Dean', 'School', 'School Head'];
+    // "Staff/non-teaching function present" is based on the primary role.
     // guessed from the free-text designation field.
     function hasStaffFunction(array $u): bool {
-        return $u['role'] === 'staff' || $u['secondary_role'] === 'staff';
+        return $u['role'] === 'staff';
     }
-
-    // Additional-role detection. Personnel Registry stores multiple
-    // designations as comma-separated tags. Multi-Role is an additional
-    // evaluation context; it does not remove the person from Staff/Teacher.
-    function hasAdditionalRole(array $u): bool {
-        return ec_has_additional_role($u);
-    }
-
-    // Keep the Questionnaire Multi-Role roster aligned with the Student
-    // Dashboard. A Staff account that has a teaching/year-level assignment
-    // is also a Multi-Role evaluation context, even when its designation or
-    // secondary_role does not explicitly contain an additional-role marker.
-    // Canonical "Non-Teaching Staff" test — identical predicate to the one
-    // ea_evaluation.php already uses for its own Non-Teaching Staff roster:
-    // a Staff account with NO teaching_assignments row and NO
-    // user_year_levels row. This is the only thing that distinguishes
-    // Non-Teaching Staff from Staff who also teach/are scoped to a year
-    // level; it is unrelated to hasAnyYearLevelAssignment()'s Multi-Role use.
     function isNonTeachingStaff(mysqli $mysqli, int $user_id): bool {
         $stmt = $mysqli->prepare(
             "SELECT
@@ -299,7 +475,7 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
 
     // getSubRole is cosmetic-only: it picks a badge label from the free-text
     // `designation` field (e.g. "Registrar") to show on a Staff card/row. It
-    // has no effect on Teacher/Staff/Multi-Role bucketing.
+    // has no effect on Teacher/Staff bucketing.
     function getSubRole($u) {
         $desig = trim($u['designation'] ?? '');
         if ($desig === '') return ($u['role'] === 'teacher') ? 'Teacher' : 'Personnel';
@@ -323,7 +499,8 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
     // person's real database target type. Questions remain stored against
     // Principal/Dean, matching the existing per-person architecture.
     function resolvePerUserTargetType(mysqli $mysqli, string $requested_target, int $user_id): ?string {
-        $permitted = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School'];
+        $permitted = ['Staff', 'Principal', 'Dean', 'School'];
+        if ($requested_target === 'Teaching Staff') return 'Teacher';
         if ($requested_target !== 'School Head') {
             return in_array($requested_target, $permitted, true) ? $requested_target : null;
         }
@@ -345,18 +522,109 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
         return $row['role'] === 'principal' ? 'Principal' : 'Dean';
     }
 
+    // ── DEAN / PRINCIPAL TARGET ELIGIBILITY HELPERS ───────────────
+    // The EA controls teaching assignments through Manage Privileged.
+    // A teacher/teaching staff member is visible to:
+    //   - Principal: if assigned to any High School level (Grade 7–12)
+    //   - Dean: if assigned to any College level (1st–4th Year)
+    //   - Both: when the same person has both High School and College assignments.
+    // Non-teaching Staff and the EA are eligible for either evaluator.
+    function sh_user_year_levels(mysqli $mysqli, int $user_id): array {
+        $stmt = $mysqli->prepare("SELECT year_level FROM user_year_levels WHERE user_id=? ORDER BY year_level ASC");
+        if (!$stmt) return [];
+        $stmt->bind_param('i', $user_id);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $levels = [];
+        while ($r = $res->fetch_assoc()) $levels[] = (string)$r['year_level'];
+        $stmt->close();
+        return $levels;
+    }
+
+    function sh_school_scope(array $levels): array {
+        $high = false; $college = false;
+        foreach ($levels as $yl) {
+            $yl = trim((string)$yl);
+            if (preg_match('/^Grade\\s*(7|8|9|10|11|12)\\b/i', $yl)) $high = true;
+            if (preg_match('/college/i', $yl) || preg_match('/^(1st|2nd|3rd|4th)\\s*Year\\b/i', $yl)) $college = true;
+        }
+        return ['high_school'=>$high, 'college'=>$college];
+    }
+
+    function sh_is_non_teaching_staff(mysqli $mysqli, int $user_id): bool {
+        $stmt = $mysqli->prepare(
+            "SELECT
+                NOT EXISTS(SELECT 1 FROM teaching_assignments ta WHERE ta.user_id=?)
+                AND NOT EXISTS(SELECT 1 FROM user_year_levels yl WHERE yl.user_id=?) AS is_non_teaching"
+        );
+        if (!$stmt) return false;
+        $stmt->bind_param('ii', $user_id, $user_id);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return (bool)($row['is_non_teaching'] ?? false);
+    }
+
+    function sh_is_teaching_person(mysqli $mysqli, array $u): bool {
+        if (($u['role'] ?? '') === 'teacher') return true;
+        $uid = (int)($u['id'] ?? 0);
+        if ($uid <= 0) return false;
+        $stmt = $mysqli->prepare(
+            "SELECT EXISTS(SELECT 1 FROM teaching_assignments ta WHERE ta.user_id=?)
+                    OR EXISTS(SELECT 1 FROM user_year_levels yl WHERE yl.user_id=?) AS has_teaching"
+        );
+        if (!$stmt) return false;
+        $stmt->bind_param('ii', $uid, $uid);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return (bool)($row['has_teaching'] ?? false);
+    }
+
+    function sh_target_allowed_for_evaluator(mysqli $mysqli, int $evaluator_id, int $target_id): bool {
+        $ev = $mysqli->prepare("SELECT role FROM users WHERE id=? AND role IN ('principal','dean') AND is_active=1 AND account_status='approved' LIMIT 1");
+        if (!$ev) return false;
+        $ev->bind_param('i', $evaluator_id);
+        $ev->execute();
+        $ev_row = $ev->get_result()->fetch_assoc();
+        $ev->close();
+        if (!$ev_row) return false;
+
+        $tu = $mysqli->prepare("SELECT id, role FROM users WHERE id=? AND is_active=1 AND account_status='approved' LIMIT 1");
+        if (!$tu) return false;
+        $tu->bind_param('i', $target_id);
+        $tu->execute();
+        $target = $tu->get_result()->fetch_assoc();
+        $tu->close();
+        if (!$target) return false;
+
+        // The current Executive Assistant account is the sole EA target.
+        if (($target['role'] ?? '') === 'superadmin') {
+            return true;
+        }
+
+        if (($target['role'] ?? '') === 'staff' && sh_is_non_teaching_staff($mysqli, $target_id)) return true;
+
+        if (!sh_is_teaching_person($mysqli, $target)) return false;
+        $scope = sh_school_scope(sh_user_year_levels($mysqli, $target_id));
+        return $ev_row['role'] === 'principal' ? $scope['high_school'] : $scope['college'];
+    }
+
     // ── ACTION HANDLERS ───────────────────────────────────────────
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_action'])) {
         $action          = $_POST['form_action'];
         $redirect_target = $_POST['target_type'] ?? 'Teacher';
         $post_eval_type  = $_POST['eval_type'] ?? 'student';
-        if (!in_array($post_eval_type, ['student','peer','school_head'])) $post_eval_type = 'student';
+        if (!in_array($post_eval_type, ['student','peer','school_head','ea','staff'])) $post_eval_type = 'student';
+        $post_sh_role    = $_POST['sh_role'] ?? 'dean';
+        if (!in_array($post_sh_role, ['dean', 'principal'], true)) $post_sh_role = 'dean';
+        $post_sh_row_role = ($post_eval_type === 'school_head') ? $post_sh_role : 'shared';
         $message         = '';
         $post_user_id    = isset($_POST['user_id']) ? (int)$_POST['user_id'] : 0;
         $effective_user_target = $post_user_id > 0
             ? resolvePerUserTargetType($mysqli, $redirect_target, $post_user_id)
             : null;
-        $is_per_user_post = in_array($redirect_target, $per_user_targets, true)
+        $is_per_user_post = in_array($redirect_target, array_merge($per_user_targets, ['Teaching Staff']), true)
             && $post_user_id > 0
             && $effective_user_target !== null;
 
@@ -371,6 +639,12 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
             $evaluator_id = isset($_POST['evaluator_id']) ? (int)$_POST['evaluator_id'] : 0;
             $assignment_target_id = isset($_POST['assignment_target_id']) ? (int)$_POST['assignment_target_id'] : 0;
             $assignment_question_ids = (array)($_POST['question_ids'] ?? []);
+            if (!sh_target_allowed_for_evaluator($mysqli, $evaluator_id, $assignment_target_id)) {
+                $message = 'This target is not eligible for the selected Dean/Principal based on the assigned school levels.';
+                $redirect_e = $evaluator_id > 0 ? '&evaluator_id='.$evaluator_id : '';
+                header("Location: ?view=school_head_assignments&eval_type=school_head$redirect_e&msg=".urlencode($message));
+                exit();
+            }
             [$ok, $assignment_message] = sh_save_assignment($mysqli, $evaluator_id, $assignment_target_id, $assignment_question_ids);
             $message = $assignment_message;
             $redirect_e = $evaluator_id > 0 ? '&evaluator_id='.$evaluator_id : '';
@@ -379,10 +653,13 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
             exit();
         }
 
-        // ── PER-USER ACTIONS (Staff, Principal, Dean, Multi-Role, School Head) ──
+        // ── PER-USER ACTIONS (Staff, Principal, Dean, School Head) ──
         if ($action === 'user_insert' && $is_per_user_post) {
             $question_text = trim($_POST['question_text']);
             $category      = trim($_POST['category'] ?? 'General');
+            // EA Evaluation has its own dedicated per-person question bank.
+            // Keep its rows under eval_type='ea' so the EA evaluation form
+            // consumes exactly what is managed in this questionnaire section.
             $et            = $post_eval_type;
             $tt            = $effective_user_target;
             if (!empty($question_text)) {
@@ -468,8 +745,8 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
                     $catrow = $cs->get_result()->fetch_assoc(); $cs->close();
                     if ($catrow) $category = $catrow['category_name'];
                 }
-                $stmt = $mysqli->prepare("INSERT INTO evaluation_questions (target_type, question_text, category, eval_type) VALUES (?,?,?,?)");
-                $stmt->bind_param("ssss", $target_type, $question_text, $category, $et);
+                $stmt = $mysqli->prepare("INSERT INTO evaluation_questions (target_type, question_text, category, eval_type, evaluator_role) VALUES (?,?,?,?,?)");
+                $stmt->bind_param("sssss", $target_type, $question_text, $category, $et, $post_sh_row_role);
                 $stmt->execute();
                 $new_qid = $stmt->insert_id;
                 $stmt->close();
@@ -525,21 +802,22 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
             $target_type   = trim($_POST['target_type']);
             $category_name = trim($_POST['category_name'] ?? '');
             $et            = $post_eval_type;
+            $er            = $post_sh_row_role;
             if (!empty($category_name)) {
-                $max  = $mysqli->query("SELECT MAX(sort_order) as m FROM question_categories WHERE target_type='".mysqli_real_escape_string($mysqli,$target_type)."' AND eval_type='$et'")->fetch_assoc()['m'] ?? 0;
+                $max  = $mysqli->query("SELECT MAX(sort_order) as m FROM question_categories WHERE target_type='".mysqli_real_escape_string($mysqli,$target_type)."' AND eval_type='$et' AND evaluator_role='".mysqli_real_escape_string($mysqli,$er)."'")->fetch_assoc()['m'] ?? 0;
                 $next = $max + 1;
-                $stmt = $mysqli->prepare("INSERT IGNORE INTO question_categories (target_type, category_name, eval_type, sort_order) VALUES (?,?,?,?)");
+                $stmt = $mysqli->prepare("INSERT IGNORE INTO question_categories (target_type, category_name, eval_type, sort_order, evaluator_role) VALUES (?,?,?,?,?)");
                 if (!$stmt) {
                     $message = "DB error preparing insert: " . $mysqli->error;
                 } else {
-                    $stmt->bind_param("sssi", $target_type, $category_name, $et, $next);
+                    $stmt->bind_param("sssis", $target_type, $category_name, $et, $next, $er);
                     if (!$stmt->execute()) {
                         $message = "DB error adding category: " . $stmt->error;
                     } elseif ($stmt->affected_rows > 0) {
                         // Verify it actually landed under the target_type we sent —
                         // catches ENUM columns silently coercing the value.
-                        $verify = $mysqli->prepare("SELECT target_type FROM question_categories WHERE category_name=? AND eval_type=? ORDER BY id DESC LIMIT 1");
-                        $verify->bind_param("ss", $category_name, $et);
+                        $verify = $mysqli->prepare("SELECT target_type FROM question_categories WHERE category_name=? AND eval_type=? AND evaluator_role=? ORDER BY id DESC LIMIT 1");
+                        $verify->bind_param("sss", $category_name, $et, $er);
                         $verify->execute();
                         $vrow = $verify->get_result()->fetch_assoc();
                         $verify->close();
@@ -548,8 +826,8 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
                             ? "Category \"$category_name\" added."
                             : "Category \"$category_name\" was saved but stored under target_type=\"$stored_as\" instead of \"$target_type\" — check the target_type column definition.";
                     } else {
-                        $exists = $mysqli->prepare("SELECT 1 FROM question_categories WHERE target_type=? AND eval_type=? AND category_name=? LIMIT 1");
-                        $exists->bind_param("sss", $target_type, $et, $category_name);
+                        $exists = $mysqli->prepare("SELECT 1 FROM question_categories WHERE target_type=? AND eval_type=? AND evaluator_role=? AND category_name=? LIMIT 1");
+                        $exists->bind_param("ssss", $target_type, $et, $er, $category_name);
                         $exists->execute();
                         $already_here = (bool)$exists->get_result()->fetch_row();
                         $exists->close();
@@ -570,8 +848,8 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
             if (!empty($new_name) && $new_name !== $old_name) {
                 $stmt = $mysqli->prepare("UPDATE question_categories SET category_name=? WHERE id=?");
                 $stmt->bind_param("si", $new_name, $cat_id); $stmt->execute(); $stmt->close();
-                $stmt2 = $mysqli->prepare("UPDATE evaluation_questions SET category=? WHERE category=? AND target_type=? AND eval_type=?");
-                $stmt2->bind_param("ssss", $new_name, $old_name, $target, $et); $stmt2->execute(); $stmt2->close();
+                $stmt2 = $mysqli->prepare("UPDATE evaluation_questions SET category=? WHERE category=? AND target_type=? AND eval_type=? AND evaluator_role=?");
+                $stmt2->bind_param("sssss", $new_name, $old_name, $target, $et, $post_sh_row_role); $stmt2->execute(); $stmt2->close();
                 $message = "Category renamed. Questions assigned to it remain linked automatically.";
             }
         }
@@ -599,8 +877,9 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
 
         $view    = $_POST['view'] ?? 'manage';
         $uid_str = $post_user_id ? '&user_id='.$post_user_id : '';
-        $mr_filter_str = isset($_POST['mr_filter']) ? '&mr_filter='.urlencode($_POST['mr_filter']) : '';
-        header("Location: ?view=$view&target=".urlencode($redirect_target)."&eval_type=".urlencode($post_eval_type)."$uid_str$mr_filter_str&msg=".urlencode($message));
+        $mr_filter_str = '';
+        $sh_role_str = ($post_eval_type === 'school_head') ? '&sh_role='.urlencode($post_sh_role) : '';
+        header("Location: ?view=$view&target=".urlencode($redirect_target)."&eval_type=".urlencode($post_eval_type)."$uid_str$mr_filter_str$sh_role_str&msg=".urlencode($message));
         exit();
     }
 
@@ -608,26 +887,26 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
     $current_view    = $_GET['view']   ?? 'dashboard';
     $selected_target = $_GET['target'] ?? $active_categories[0];
     if (!in_array($selected_target, $active_categories)) $selected_target = $active_categories[0];
-    // Multi-Role is not a Peer-to-Peer questionnaire context.
     $selected_user   = isset($_GET['user_id']) ? (int)$_GET['user_id'] : null;
-    $mr_filter       = $_GET['mr_filter'] ?? 'all';
-    if (!in_array($mr_filter, ['all','teacher','staff'])) $mr_filter = 'all';
+    $mr_filter       = 'all';
 
-    // Is this a per-user target (Staff, Principal, Dean, Multi-Role)?
-    $is_per_user_target = in_array($selected_target, $per_user_targets);
+    // Is this a per-user target (Staff, Principal, Dean)?
+    $is_per_user_target = in_array($selected_target, array_merge($per_user_targets, ['Teaching Staff']), true);
 
     // ── FETCH ALL USERS ───────────────────────────────────────────
-    $card_data_student    = ['Teacher' => ['count'=>0,'users'=>[]], 'Staff' => ['count'=>0,'users'=>[]], 'Multi-Role' => ['count'=>0,'users'=>[]], 'School Head' => ['count'=>0,'users'=>[]]];
-    $card_data_peer       = ['Teacher' => ['count'=>0,'users'=>[]], 'Staff' => ['count'=>0,'users'=>[]], 'Multi-Role' => ['count'=>0,'users'=>[]]];
-    $card_data_schoolhead = ['Teacher' => ['count'=>0,'users'=>[]], 'Staff' => ['count'=>0,'users'=>[]], 'Multi-Role' => ['count'=>0,'users'=>[]]];
+    $card_data_student    = ['Teacher' => ['count'=>0,'users'=>[]], 'Staff' => ['count'=>0,'users'=>[]], 'School Head' => ['count'=>0,'users'=>[]]];
+    $card_data_peer       = ['Teacher' => ['count'=>0,'users'=>[]], 'Staff' => ['count'=>0,'users'=>[]]];
+    $card_data_schoolhead = ['Teacher' => ['count'=>0,'users'=>[]], 'Staff' => ['count'=>0,'users'=>[]]];
 
     // Per-user question counts come from user_questions. Teacher remains the
     // only shared evaluation_questions target in this questionnaire UI.
-    $res = $mysqli->query("SELECT target_type, eval_type, COUNT(*) as total FROM evaluation_questions GROUP BY target_type, eval_type");
+    $res = $mysqli->query("SELECT target_type, eval_type, evaluator_role, COUNT(*) as total FROM evaluation_questions GROUP BY target_type, eval_type, evaluator_role");
     if ($res) while ($r = $res->fetch_assoc()) {
         if ($r['eval_type'] === 'student'    && isset($card_data_student[$r['target_type']]))    $card_data_student[$r['target_type']]['count']    = $r['total'];
         if ($r['eval_type'] === 'peer'       && isset($card_data_peer[$r['target_type']]))       $card_data_peer[$r['target_type']]['count']       = $r['total'];
-        if ($r['eval_type'] === 'school_head' && isset($card_data_schoolhead[$r['target_type']])) $card_data_schoolhead[$r['target_type']]['count'] = $r['total'];
+        // school_head now has a separate bank per evaluator role — only
+        // fold the currently selected role's count into the visible badge.
+        if ($r['eval_type'] === 'school_head' && $r['evaluator_role'] === $sh_role && isset($card_data_schoolhead[$r['target_type']])) $card_data_schoolhead[$r['target_type']]['count'] = $r['total'];
     }
 
     // Faculty and Non-Teaching Staff are sourced from the exact personnel pool
@@ -637,7 +916,7 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
     // and/or Non-Teaching Staff below. Otherwise genuine Staff accounts are
     // discarded before the Non-Teaching Staff card can see them.
     $ures = $mysqli->query("
-        SELECT id, full_name, designation, photo, source, role, secondary_role, sector,
+        SELECT id, full_name, designation, photo, source, role, sector,
                COALESCE(source, 'login') as src,
                EXISTS(
                    SELECT 1
@@ -646,7 +925,7 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
                ) AS has_teaching_assignment,
                (
                    role = 'teacher'
-                   OR secondary_role = 'teacher'
+                   
                    OR sector = 'Teacher'
                    OR EXISTS(
                        SELECT 1
@@ -669,7 +948,7 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
     if ($ures) while ($u = $ures->fetch_assoc()) $all_users[] = $u;
 
     $sh_res = $mysqli->query("
-        SELECT id, full_name, designation, photo, source, role, secondary_role
+        SELECT id, full_name, designation, photo, source, role
         FROM users
         WHERE role IN ('principal','dean')
           AND is_active = 1
@@ -695,6 +974,7 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
     // roster: same has_teacher pool (Faculty Members + Teaching Staff),
     // one shared list, built once here rather than re-queried below.
     $faculty_users = [];
+    $non_teaching_staff_users = [];
     foreach ($all_users as $u) {
         // Faculty/Teaching Staff is determined by an actual teaching
         // assignment as well as the normal Teacher/Faculty role. This is
@@ -707,12 +987,6 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
         $has_teacher   = ((int)($u['is_teaching_staff'] ?? 0) === 1)
             || ec_has_teacher_function($u);
         $has_staff     = ec_has_staff_function($u);
-        // Multi-Role is an additional responsibility/context. It is not
-        // inferred from teaching assignments. A Teacher+Staff account is
-        // still Multi-Role because it explicitly carries an additional base
-        // function; otherwise use the configured designation/secondary role.
-        $is_multi_role = hasAdditionalRole($u)
-            || ($has_staff && hasAnyYearLevelAssignment($mysqli, (int)$u['id']));
         if ($has_teacher) {
             $card_data_student['Teacher']['users'][] = $u;
             $card_data_peer['Teacher']['users'][] = $u;
@@ -728,6 +1002,7 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
             $is_non_teaching_staff = isNonTeachingStaff($mysqli, (int)$u['id']);
             if ($is_non_teaching_staff) {
                 $card_data_student['Staff']['users'][] = $u;
+                $non_teaching_staff_users[] = $u;
             }
             // Peer-to-Peer's "Staff" card is Non-Teaching Staff only — a
             // Staff member who teaches or is scoped to a year level should
@@ -735,10 +1010,6 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
             if ($is_non_teaching_staff) {
                 $card_data_peer['Staff']['users'][] = $u;
             }
-        }
-        if ($is_multi_role) {
-            $card_data_student['Multi-Role']['users'][] = $u;
-            $card_data_peer['Multi-Role']['users'][] = $u;
         }
     }
 
@@ -768,22 +1039,74 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
     }
     $card_data_schoolhead = [
         'Faculty' => ['count' => 0, 'users' => $faculty_users],
+        'Staff'   => ['count' => 0, 'users' => $non_teaching_staff_users],
         'EA'      => ['count' => 0, 'users' => $current_ea ? [$current_ea] : []],
     ];
 
-    // Peer-to-Peer's "School" card: Principal + Dean together, evaluated by
-    // colleagues. Its questions (target_type='School', eval_type='peer') are
-    // a separate pool from School Head Evaluation's own Faculty/EA
-    // questions (target_type='Faculty'/'EA', eval_type='school_head').
+    // Dean / Principal Evaluation — Faculty eligibility is strictly scoped
+    // by teaching assignment: the Dean only evaluates College-assigned
+    // Faculty, the Principal only evaluates High School/Senior High
+    // (Grade 7-12) Faculty. A teacher assigned to both appears for both.
+    // Faculty with no relevant year-level assignment is eligible for
+    // neither. Staff and the EA are not scoped this way — both evaluators
+    // share the same Staff and EA targets.
+    if ($active_eval === 'school_head') {
+        $sh_scoped_faculty = [];
+        foreach ($faculty_users as $fu) {
+            $fu_scope = sh_school_scope(sh_user_year_levels($mysqli, (int)$fu['id']));
+            $eligible = ($sh_role === 'dean') ? $fu_scope['college'] : $fu_scope['high_school'];
+            if ($eligible) $sh_scoped_faculty[] = $fu;
+        }
+        $card_data_schoolhead['Faculty']['users'] = $sh_scoped_faculty;
+    }
+
+    // Executive Assistant Evaluation targets: Staff, Dean, and Principal.
+    // Staff here means the Staff roster with no teaching/year-level assignment.
+    $card_data_ea = [
+        'Staff'         => ['count' => 0, 'users' => $non_teaching_staff_users],
+        'Dean'          => ['count' => 0, 'users' => []],
+        'Principal'     => ['count' => 0, 'users' => []],
+    ];
+    foreach ($school_head_users as $shu) {
+        if (($shu['role'] ?? '') === 'dean') $card_data_ea['Dean']['users'][] = $shu;
+        if (($shu['role'] ?? '') === 'principal') $card_data_ea['Principal']['users'][] = $shu;
+    }
+
+    // Staff Evaluation targets: Staff evaluators assess the Dean, Principal,
+    // and Executive Assistant. These are direct target persons, not Staff
+    // members being evaluated.
+    $staff_eval_targets = [
+        'Dean'      => ['count' => 0, 'users' => []],
+        'Principal' => ['count' => 0, 'users' => []],
+        'EA'        => ['count' => 0, 'users' => $current_ea ? [$current_ea] : []],
+    ];
+    foreach ($school_head_users as $shu) {
+        if (($shu['role'] ?? '') === 'dean')      $staff_eval_targets['Dean']['users'] = [$shu];
+        if (($shu['role'] ?? '') === 'principal') $staff_eval_targets['Principal']['users'] = [$shu];
+    }
+
+    $staff_q_count_res = $mysqli->query("SELECT target_type, COUNT(*) AS total FROM evaluation_questions WHERE eval_type='staff' AND evaluator_role='shared' GROUP BY target_type");
+    if ($staff_q_count_res) while ($r = $staff_q_count_res->fetch_assoc()) {
+        if (isset($staff_eval_targets[$r['target_type']])) $staff_eval_targets[$r['target_type']]['count'] = (int)$r['total'];
+    }
+
+    // Peer-to-Peer's "Dean / Principal" group: Principal + Dean together,
+    // evaluated by colleagues. Its database target_type remains 'School' for
+    // compatibility, while the interface uses the clearer Dean / Principal label.
+    // Its questions remain separate from the Dean / Principal Evaluation
+    // Faculty/EA question pools.
     $card_data_peer['School'] = ['count' => 0, 'users' => $school_head_users];
 
     if ($active_eval === 'peer') {
-        // Peer-to-Peer has Teacher, Non-Teaching Staff, and School contexts.
-        // Multi-Role remains available only under Student Evaluation.
-        unset($card_data_peer['Multi-Role']);
+        // Peer-to-Peer has Faculty, Staff, and Dean / Principal contexts.
+
         $card_data = $card_data_peer;
     } elseif ($active_eval === 'school_head') {
         $card_data = $card_data_schoolhead;
+    } elseif ($active_eval === 'ea') {
+        $card_data = $card_data_ea;
+    } elseif ($active_eval === 'staff') {
+        $card_data = $staff_eval_targets;
     } else {
         $card_data = $card_data_student;
     }
@@ -807,7 +1130,7 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
     $selected_user_data   = null;
 
     if (in_array($current_view, ['manage','user_questions'])) {
-        // Shared pool categories + questions (used for Teacher + Multi-Role)
+        // Shared pool categories + questions (used for Teacher)
         // School Head is a UI grouping for Principal/Dean. Resolve the
         // selected person's real target type before reading per-person data.
         $selected_user_target = $selected_user ? resolvePerUserTargetType($mysqli, $selected_target, $selected_user) : null;
@@ -815,8 +1138,8 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
             ? $selected_user_target
             : $selected_target;
 
-        $cres = $mysqli->prepare("SELECT * FROM question_categories WHERE target_type=? AND eval_type=? ORDER BY sort_order, category_name");
-        $cres->bind_param("ss", $category_target, $active_eval); $cres->execute();
+        $cres = $mysqli->prepare("SELECT * FROM question_categories WHERE target_type=? AND eval_type=? AND evaluator_role=? ORDER BY sort_order, category_name");
+        $cres->bind_param("sss", $category_target, $active_eval, $sh_row_role); $cres->execute();
         $categories_list = $cres->get_result()->fetch_all(MYSQLI_ASSOC); $cres->close();
 
         $stmt = $mysqli->prepare("SELECT q.*,
@@ -825,24 +1148,24 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
                  FROM evaluation_questions q
                  LEFT JOIN evaluation_question_categories a ON a.question_id=q.id
                  LEFT JOIN question_categories c ON c.id=a.category_id
-                 WHERE q.target_type=? AND q.eval_type=?
+                 WHERE q.target_type=? AND q.eval_type=? AND q.evaluator_role=?
                  GROUP BY q.id
                  ORDER BY primary_category, q.id");
         $question_target = ($selected_target === 'School Head' && $selected_user_target)
             ? $selected_user_target
             : $selected_target;
-        $stmt->bind_param("ss", $question_target, $active_eval); $stmt->execute();
+        $stmt->bind_param("sss", $question_target, $active_eval, $sh_row_role); $stmt->execute();
         $questions_list = $stmt->get_result()->fetch_all(MYSQLI_ASSOC); $stmt->close();
 
         $all_target_users = $card_data[$selected_target]['users'] ?? [];
-        if ($selected_target === 'Multi-Role' && $mr_filter !== 'all') {
+        if (false) {
             $target_users = array_values(array_filter($all_target_users, fn($u) => ($mr_filter === 'teacher' ? ec_has_teacher_function($u) : ec_has_staff_function($u))));
         } else {
             $target_users = $all_target_users;
         }
 
         if ($selected_user && $is_per_user_target) {
-            $ur = $mysqli->prepare("SELECT id, full_name, designation, photo, source, role, secondary_role FROM users WHERE id=? LIMIT 1");
+            $ur = $mysqli->prepare("SELECT id, full_name, designation, photo, source, role FROM users WHERE id=? LIMIT 1");
             $ur->bind_param("i", $selected_user); $ur->execute();
             $selected_user_data = $ur->get_result()->fetch_assoc(); $ur->close();
 
@@ -850,17 +1173,19 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
             $user_target = ($selected_target === 'School Head' && $selected_user_target)
                 ? $selected_user_target
                 : $selected_target;
+            // EA Evaluation uses its dedicated per-person question set.
+            $user_eval_type = $active_eval;
             $ucres = $mysqli->prepare("SELECT * FROM user_question_categories WHERE user_id=? AND target_type=? AND eval_type=? ORDER BY sort_order, category_name");
-            $ucres->bind_param("iss", $selected_user, $user_target, $active_eval); $ucres->execute();
+            $ucres->bind_param("iss", $selected_user, $user_target, $user_eval_type); $ucres->execute();
             $user_categories_list = $ucres->get_result()->fetch_all(MYSQLI_ASSOC); $ucres->close();
 
             // Per-user questions (same scoping)
             $uqstmt = $mysqli->prepare("SELECT * FROM user_questions WHERE user_id=? AND target_type=? AND eval_type=? ORDER BY category, sort_order, id");
-            $uqstmt->bind_param("iss", $selected_user, $user_target, $active_eval); $uqstmt->execute();
+            $uqstmt->bind_param("iss", $selected_user, $user_target, $user_eval_type); $uqstmt->execute();
             $user_questions_list = $uqstmt->get_result()->fetch_all(MYSQLI_ASSOC); $uqstmt->close();
 
         } elseif ($selected_user && !$is_per_user_target) {
-            $ur = $mysqli->prepare("SELECT id, full_name, designation, photo, source, role, secondary_role FROM users WHERE id=? LIMIT 1");
+            $ur = $mysqli->prepare("SELECT id, full_name, designation, photo, source, role FROM users WHERE id=? LIMIT 1");
             $ur->bind_param("i", $selected_user); $ur->execute();
             $selected_user_data = $ur->get_result()->fetch_assoc(); $ur->close();
         }
@@ -869,27 +1194,33 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
     $icons = [
         'Teacher'             => 'fa-chalkboard-user',
         'Staff'               => 'fa-briefcase',
-        'Multi-Role'          => 'fa-layer-group',
         'Principal'           => 'fa-user-tie',
         'Dean'                => 'fa-graduation-cap',
         'School'              => 'fa-building-columns',
         'Faculty'             => 'fa-users',
         'EA'                  => 'fa-user-shield',
+        'Teaching Staff'      => 'fa-chalkboard-user',
         'School Head'          => 'fa-user-tie',
     ];
 
-    // Peer-to-Peer's "Staff" card is Non-Teaching Staff only; show that
-    // label wherever the raw target_type key would otherwise print as
-    // "Staff" in this tab. Every other tab/type displays unchanged.
+    // Visible labels are context-aware; database target keys remain unchanged.
+    // Peer-to-Peer: Staff means the non-teaching staff roster, while School
+    // represents the actual Dean/Principal targets.
     function displayTargetLabel(string $type, string $active_eval): string {
-        if ($active_eval === 'peer' && $type === 'Staff') return 'Non-Teaching Staff';
+        if ($active_eval === 'peer' && $type === 'Staff') return 'Staff';
+        if ($active_eval === 'peer' && $type === 'School') return 'Dean / Principal';
+        if ($active_eval === 'ea' && $type === 'Staff') return 'Staff';
         if ($type === 'Teacher') return 'Faculty';
+        if ($type === 'School Head') return 'Dean / Principal';
+        if ($active_eval === 'staff' && $type === 'EA') return 'Executive Assistant';
         return $type;
     }
     $eval_theme = [
         'student'     => ['label' => 'Student Evaluation',      'color' => '#3B82F6', 'bg' => 'rgba(59,130,246,.07)',  'border' => 'rgba(59,130,246,.22)', 'desc' => 'Students evaluate teacher, staff, and eligible school heads.'],
         'peer'        => ['label' => 'Peer-to-Peer Evaluation',  'color' => '#7C3AED', 'bg' => 'rgba(124,58,237,.07)', 'border' => 'rgba(124,58,237,.22)', 'desc' => 'Teacher and staff evaluate colleagues they work with directly.'],
-        'school_head' => ['label' => 'School Head Evaluation',   'color' => '#D97706', 'bg' => 'rgba(217,119,6,.08)',  'border' => 'rgba(217,119,6,.24)',  'desc' => 'The School Head (Principal/Dean) evaluates faculty, teaching staff, and the EA under their supervision.'],
+        'school_head' => ['label' => 'Dean / Principal Evaluation',   'color' => '#D97706', 'bg' => 'rgba(217,119,6,.08)',  'border' => 'rgba(217,119,6,.24)',  'desc' => 'The Dean or Principal evaluates faculty, teaching staff, and the EA under their supervision.'],
+        'ea'          => ['label' => 'Executive Assistant Evaluation', 'color' => '#0F9F6E', 'bg' => 'rgba(15,159,110,.08)', 'border' => 'rgba(15,159,110,.22)', 'desc' => 'Authorized personnel evaluate the Executive Assistant.'],
+        'staff'       => ['label' => 'Staff Evaluation',             'color' => '#0891B2', 'bg' => 'rgba(8,145,178,.08)', 'border' => 'rgba(8,145,178,.22)', 'desc' => 'Staff members evaluate the Dean, Principal, and Executive Assistant.'],
     ];
     $eval_label        = $eval_theme[$active_eval]['label'];
     $eval_color        = $eval_theme[$active_eval]['color'];
@@ -897,15 +1228,6 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
     $eval_color_border = $eval_theme[$active_eval]['border'];
     $eval_desc         = $eval_theme[$active_eval]['desc'];
 
-    $mr_all_users     = $card_data['Multi-Role']['users'] ?? [];
-    $mr_teacher_count = count(array_filter($mr_all_users, fn($u) => $u['role'] === 'teacher'));
-    $mr_staff_count   = count(array_filter($mr_all_users, fn($u) => $u['role'] === 'staff'));
-
-    // Small helper: does this row hold a role beyond their primary one?
-    function secondaryRoleLabel($u) {
-        if (empty($u['secondary_role'])) return null;
-        return $u['secondary_role'] === 'teacher' ? 'Teacher' : ($u['secondary_role'] === 'staff' ? 'Staff' : null);
-    }
     ?>
     <!DOCTYPE html>
     <html lang="en">
@@ -949,6 +1271,45 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
     .eval-tab.active-schoolhead .tab-badge{background:rgba(217,119,6,.15);color:#D97706;}
     .eval-divider{width:1px;background:var(--card-border);margin:8px 0;}
 
+    /* ── EVALUATION TYPE TABLE ── */
+    .eval-overview-wrap{background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;box-shadow:var(--card-shadow);margin-bottom:28px;overflow:hidden;}
+    .eval-overview-head{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:18px 20px;border-bottom:1px solid var(--card-border);background:linear-gradient(180deg,#fff 0%,#fbfdff 100%);}
+    .eval-overview-title{font-size:14px;font-weight:800;color:var(--text-dark);display:flex;align-items:center;gap:9px;}
+    .eval-overview-title i{color:#3B82F6;font-size:15px;}
+    .eval-overview-sub{font-size:11px;color:var(--text-dim);margin-top:4px;}
+    .eval-overview-total{font-size:11px;font-weight:700;color:var(--text-dim);padding:7px 10px;border:1px solid var(--card-border);border-radius:20px;background:#fff;white-space:nowrap;}
+    .eval-overview-total i{margin-right:5px;color:#64748B;}
+    .eval-table-scroll{width:100%;overflow-x:auto;}
+    .eval-overview-table{width:100%;border-collapse:collapse;min-width:760px;}
+    .eval-overview-table th{padding:11px 18px;background:var(--page-bg);border-bottom:1px solid var(--card-border);font-size:10px;text-transform:uppercase;letter-spacing:.9px;color:var(--text-dim);text-align:left;white-space:nowrap;}
+    .eval-overview-table th.eval-table-number,.eval-overview-table td.eval-table-number{text-align:center;width:110px;}
+    .eval-overview-table th.eval-table-action,.eval-overview-table td.eval-table-action{text-align:right;width:120px;}
+    .eval-table-row{cursor:pointer;transition:background .18s ease,box-shadow .18s ease;}
+    .eval-table-row td{padding:14px 18px;border-bottom:1px solid var(--card-border);vertical-align:middle;}
+    .eval-table-row:last-child td{border-bottom:none;}
+    .eval-table-row:hover td{background:#F8FAFC;}
+    .eval-table-row.is-active td{background:#F8FAFC;}
+    .eval-table-row.student-row.is-active{box-shadow:inset 3px 0 0 #3B82F6;}
+    .eval-table-row.peer-row.is-active{box-shadow:inset 3px 0 0 #7C3AED;}
+    .eval-table-row.schoolhead-row.is-active{box-shadow:inset 3px 0 0 #D97706;}
+    .eval-type-cell{display:flex;align-items:center;gap:11px;min-width:255px;}
+    .eval-type-icon{width:34px;height:34px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 34px;font-size:14px;}
+    .student-icon{background:rgba(59,130,246,.1);color:#2563EB;}
+    .peer-icon{background:rgba(124,58,237,.1);color:#7C3AED;}
+    .schoolhead-icon{background:rgba(217,119,6,.11);color:#D97706;}
+    .eval-type-name{font-size:13px;font-weight:800;color:var(--text-dark);line-height:1.25;}
+    .eval-type-tag{font-size:10px;color:var(--text-dim);margin-top:3px;}
+    .eval-purpose{font-size:11px;line-height:1.5;color:var(--text-dim);max-width:540px;}
+    .eval-q-badge{display:inline-flex;align-items:center;justify-content:center;min-width:50px;padding:5px 9px;border-radius:20px;font-size:10px;font-weight:800;}
+    .student-badge{background:rgba(59,130,246,.1);color:#2563EB;}
+    .peer-badge{background:rgba(124,58,237,.1);color:#7C3AED;}
+    .schoolhead-badge{background:rgba(217,119,6,.11);color:#D97706;}
+    .eval-open-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;font-size:10px;font-weight:800;white-space:nowrap;padding:7px 10px;border-radius:7px;min-width:72px;}
+    .student-open{color:#2563EB;background:rgba(59,130,246,.08);}
+    .peer-open{color:#7C3AED;background:rgba(124,58,237,.08);}
+    .schoolhead-open{color:#B45309;background:rgba(217,119,6,.09);}
+    .eval-table-row:hover .eval-open-btn{transform:translateX(2px);}
+
     /* ── PAGE HEADER ── */
     .page-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:20px;border-bottom:1px solid var(--card-border);}
     .page-header h1{font-family:'Rajdhani',sans-serif;font-size:30px;font-weight:700;color:var(--text-dark);margin-bottom:4px;}
@@ -964,7 +1325,7 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
     .sector-card{background:var(--card-bg);border:1px solid var(--card-border);border-top:4px solid var(--eval-color);border-radius:14px;padding:24px;display:flex;flex-direction:column;gap:14px;box-shadow:var(--card-shadow);transition:transform .2s,box-shadow .2s;cursor:pointer;}
     .sector-card:hover{transform:translateY(-3px);box-shadow:0 10px 24px rgba(15,23,42,.1);}
     .sector-card.staff-card{border-top-color:var(--staff);}
-    .sector-card.multi-role-card{border-top-color:var(--mr);}
+    
      .sector-card.school-head-card{border-top-color:var(--school-head);}
      .sector-label.school-head-color{color:var(--school-head);}
      .school-head-pill{background:var(--school-head-bg);border-color:var(--school-head-border);color:var(--school-head);}
@@ -1044,16 +1405,38 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
     .per-user-pill{display:inline-flex;align-items:center;gap:5px;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.22);border-radius:20px;padding:3px 10px;font-size:10px;font-weight:700;color:#3B82F6;}
     .per-user-pill.staff-pill{background:var(--staff-bg);border-color:var(--staff-border);color:var(--staff);}
 
-    /* Secondary-role badge (Multi-Role indicator inline on a row/header) */
+    /* Role badge styling */
     .secondary-role-tag{display:inline-flex;align-items:center;gap:4px;font-size:9px;font-weight:700;padding:1px 7px;border-radius:20px;background:var(--mr-bg);color:var(--mr);border:1px solid var(--mr-border);flex-shrink:0;}
 
     /* ── MANAGE LAYOUT ── */
-    .manage-layout{display:grid;grid-template-columns:300px 1fr;gap:20px;align-items:start;}
+    .manage-layout{display:grid;grid-template-columns:280px minmax(0,1fr);gap:20px;align-items:start;}
     .sidebar{background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;overflow:hidden;position:sticky;top:20px;box-shadow:var(--card-shadow);}
     .sidebar-title{padding:14px 18px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--text-dim);border-bottom:1px solid var(--card-border);display:flex;align-items:center;gap:7px;}
     .sidebar-count{background:var(--page-bg);border-radius:20px;padding:1px 8px;font-size:10px;font-weight:700;margin-left:auto;}
     .per-user-mode-notice{padding:10px 14px;background:rgba(59,130,246,.05);border-bottom:1px solid rgba(59,130,246,.15);font-size:11px;color:#3B82F6;display:flex;align-items:center;gap:6px;}
     .per-user-mode-notice.staff-notice{background:var(--staff-bg);border-color:var(--staff-border);color:var(--staff);}
+    .eval-table-status{width:112px;text-align:center;}
+    .eval-assign-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-width:148px;padding:8px 12px;border-radius:9px;text-decoration:none;font-size:11.5px;font-weight:800;border:1px solid transparent;transition:.18s ease;white-space:nowrap;}
+    .eval-assign-btn:hover{transform:translateY(-1px);box-shadow:0 5px 12px rgba(15,23,42,.10);}
+    .student-assign{background:#EFF6FF;border-color:#BFDBFE;color:#2563EB;}
+    .student-assign:hover{background:#DBEAFE;}
+    .peer-assign{background:#F5F3FF;border-color:#DDD6FE;color:#7C3AED;}
+    .peer-assign:hover{background:#EDE9FE;}
+    .schoolhead-assign{background:#FFF7ED;border-color:#FED7AA;color:#D97706;}
+    .schoolhead-assign:hover{background:#FFEDD5;}
+    .ea-icon{background:rgba(15,159,110,.10);color:#0F9F6E;}
+    .ea-badge{background:rgba(15,159,110,.10);color:#0F9F6E;}
+    .ea-open{color:#047857;background:rgba(15,159,110,.09);}
+    .eval-table-row.ea-row.is-active{box-shadow:inset 3px 0 0 #0F9F6E;}
+    .ea-assign{background:#ECFDF5;border-color:#A7F3D0;color:#059669;}
+    .ea-assign:hover{background:#D1FAE5;}
+    .staff-eval-icon{background:rgba(8,145,178,.10);color:#0891B2;}
+    .staff-eval-badge{background:rgba(8,145,178,.10);color:#0E7490;}
+    .staff-eval-open{color:#0E7490;background:rgba(8,145,178,.09);}
+    .eval-table-row.staff-eval-row.is-active{box-shadow:inset 3px 0 0 #0891B2;}
+    .staff-eval-assign{background:#ECFEFF;border-color:#A5F3FC;color:#0E7490;}
+    .staff-eval-assign:hover{background:#CFFAFE;}
+
     .mr-filter-tabs{display:flex;border-bottom:1px solid var(--card-border);}
     .mr-filter-tab{flex:1;padding:9px 0;text-align:center;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;cursor:pointer;text-decoration:none;color:var(--text-dim);transition:all .2s;border:none;background:none;}
     .mr-filter-tab:hover{color:var(--text-dark);}
@@ -1095,7 +1478,7 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
     .legend-dot{width:7px;height:7px;border-radius:50%;}
 
     /* ── CONTENT PANEL ── */
-    .content-panel{background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;padding:28px;box-shadow:var(--card-shadow);}
+    .content-panel{background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;padding:22px;box-shadow:var(--card-shadow);min-width:0;}
     .mr-notice{background:var(--mr-bg);border:1px solid var(--mr-border);border-radius:10px;padding:14px 18px;margin-bottom:20px;display:flex;gap:12px;align-items:flex-start;}
     .mr-notice i{color:var(--mr);flex-shrink:0;margin-top:2px;}
     .mr-notice p{font-size:13px;color:var(--text-dim);line-height:1.6;}
@@ -1177,13 +1560,13 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
     .category-assignment-row{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:8px;padding-top:8px;border-top:1px dashed var(--card-border);}
     .category-assignment-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);margin-right:2px;}
 
-    .questions-section{margin-bottom:24px;}
+    .questions-section{margin-bottom:18px;width:100%;}
     .section-heading{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--eval-color);margin-bottom:10px;padding-bottom:7px;border-bottom:1px solid var(--eval-border);display:flex;align-items:center;gap:8px;}
     .section-heading.staff-sh{color:var(--staff);border-color:var(--staff-border);}
     .section-heading.mr-sh{color:var(--mr);border-color:var(--mr-border);}
     .q-table{width:100%;border-collapse:collapse;}
     .q-table th{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text-dim);padding:10px 14px;background:var(--page-bg);border-bottom:1px solid var(--card-border);text-align:left;}
-    .q-table td{padding:12px 14px;border-bottom:1px solid var(--card-border);vertical-align:middle;}
+    .q-table td{padding:13px 14px;border-bottom:1px solid var(--card-border);vertical-align:middle;}
     .q-table tr:last-child td{border-bottom:none;}
     .q-table tr:hover td{background:var(--page-bg);}
     .q-num{font-size:13px;font-weight:700;color:var(--text-dim);}
@@ -1238,8 +1621,9 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
       .content-panel{padding:14px;}
       .page-header{flex-direction:column;gap:14px;}
       .page-header .btn{width:100%;justify-content:center;}
-      .eval-switcher{width:100%;overflow-x:auto;}
-      .eval-tab{padding:11px 14px;white-space:nowrap;font-size:12px;}
+      .eval-overview-head{align-items:flex-start;flex-direction:column;}
+      .eval-overview-total{align-self:flex-start;}
+      .eval-overview-table{min-width:680px;}
       .q-table{display:block;overflow-x:auto;}
       .q-table th,.q-table td{padding:10px 9px;}
       .category-picker::before{width:100%;margin-bottom:1px;}
@@ -1250,13 +1634,13 @@ $per_user_targets = ['Staff', 'Principal', 'Dean', 'Multi-Role', 'School', 'Scho
   --page-bg:#FFFFFF; --card-bg:#FFFFFF; --card-border:#E2E8F0;
   --inner:#F4F7FB; --text-dark:#172033; --text-dim:#475569;
   --light:#172033; --muted:#475569; --dark:#FFFFFF; --mid:#FFFFFF;
-  --border:#E2E8F0; --accent:#3B82F6; --blue:#3B82F6;
+  --border:#E2E8F0; --accent:#0F9F6E; --blue:#0F9F6E;
   --gold:#D97706; --gold-h:#F59E0B; --teal:#0D9488; --violet:#7C3AED;
   --danger:#DC2626; --success:#059669; --radius:12px;
   --card-shadow:0 2px 4px rgba(15,23,42,.05),0 6px 16px rgba(15,23,42,.06);
 }
-html{background:#fff;color-scheme:light;}
-body{background:#fff !important;color:#172033 !important;}
+html{background:#FFFFFF;color-scheme:light;}
+body{background:#FFFFFF !important;color:#172033 !important;}
 a{color:inherit;}
 .page-header h1,.page-title,.et-title,.section-title{color:#172033 !important;}
 .page-header p,.page-sub,.et-sub,.et-updated,.muted,.hint{color:#475569 !important;}
@@ -1321,8 +1705,179 @@ a { color:inherit; }
 .eval-tab:has(.fa-people-arrows) > i{color:#7C3AED !important;}
 .eval-tab:has(.fa-user-tie) > i{color:#D97706 !important;}
 
+
+/* ═══════════════════════════════════════════════════════════════
+   QUESTIONNAIRE 2.0 — clearer hierarchy and assignment UX
+   ═══════════════════════════════════════════════════════════════ */
+.qx-page-header{margin-top:4px;}
+.qx-scope-card,.qx-panel,.qx-assignment-card{
+  background:#fff;border:1px solid #E2E8F0;border-radius:14px;
+  box-shadow:0 4px 16px rgba(15,23,42,.06);margin-bottom:20px;
+}
+.qx-scope-head,.qx-panel-head,.qx-assignment-head{
+  display:flex;justify-content:space-between;gap:18px;align-items:flex-start;
+  padding:20px 22px;border-bottom:1px solid #E2E8F0;
+}
+.qx-eyebrow{font-size:10px;text-transform:uppercase;letter-spacing:1.2px;font-weight:800;color:var(--eval-color);display:flex;align-items:center;gap:7px;margin-bottom:6px}
+.qx-eyebrow i{font-size:10px}
+.qx-scope-head h2,.qx-panel-head h2,.qx-assignment-head h2{font-family:'Rajdhani',sans-serif;font-size:24px;line-height:1.05;color:#0F172A;margin:0 0 5px}
+.qx-scope-head p,.qx-panel-head p,.qx-assignment-head p{font-size:12px;line-height:1.6;color:#64748B;max-width:760px}
+.qx-scope-total{font-size:10px;font-weight:800;padding:6px 10px;border:1px solid #E2E8F0;border-radius:999px;color:#475569;white-space:nowrap}
+.qx-scope-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;padding:14px}
+.qx-scope-item{display:flex;align-items:center;gap:12px;padding:14px;border:1px solid #E2E8F0;border-radius:12px;text-decoration:none;background:#fff;transition:.18s ease}
+.qx-scope-item:hover{border-color:#CBD5E1;transform:translateY(-1px);box-shadow:0 6px 16px rgba(15,23,42,.06)}
+.qx-scope-item.active{background:#F8FAFC;border-color:var(--eval-color);box-shadow:0 0 0 2px var(--eval-bg)}
+.qx-scope-icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--eval-bg);color:var(--eval-color);flex:0 0 38px}
+.qx-scope-copy{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.qx-scope-copy strong{font-size:13px;color:#0F172A}
+.qx-scope-copy span{font-size:10px;color:#64748B}
+.qx-scope-count{font-size:10px;font-weight:800;color:#475569;white-space:nowrap}
+.qx-scope-arrow{font-size:10px;color:#94A3B8}
+.qx-kpi-row{display:flex;gap:8px;flex-wrap:wrap}
+.qx-kpi-row span{font-size:10px;color:#64748B;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:999px;padding:6px 9px;white-space:nowrap}
+.qx-kpi-row b{color:#0F172A}
+.qx-panel{padding:0 22px 22px}
+.qx-panel-head{margin:0 -22px 20px}
+.qx-info-banner{display:flex;gap:10px;align-items:flex-start;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:12px 14px;font-size:11px;color:#64748B;line-height:1.5;margin-bottom:18px}
+.qx-info-banner i{color:var(--eval-color);margin-top:2px}
+.qx-section-block{border:1px solid #E2E8F0;border-radius:12px;overflow:hidden;margin-bottom:18px}
+.qx-section-title{display:flex;justify-content:space-between;gap:14px;align-items:center;padding:14px 16px;background:#F8FAFC;border-bottom:1px solid #E2E8F0}
+.qx-section-title small{display:block;font-size:10px;color:#64748B;margin-top:3px}
+.qx-inline-add,.qx-new-question{display:grid;grid-template-columns:minmax(170px,260px) auto;gap:8px;align-items:center}
+.qx-new-question{grid-template-columns:220px minmax(240px,1fr) auto;padding:14px;background:#fff;border:1px solid #E2E8F0;border-radius:10px;margin-bottom:16px}
+.qx-inline-add .field{min-width:180px}
+.qx-new-question select,.qx-new-question input{padding:10px 12px;border:1px solid #CBD5E1;border-radius:8px;font:inherit;outline:none}
+.qx-new-question select:focus,.qx-new-question input:focus{border-color:var(--eval-color);box-shadow:0 0 0 3px var(--eval-bg)}
+.qx-category-table,.qx-question-table,.qx-person-table,.qx-assignment-table{width:100%;border-collapse:collapse}
+.qx-category-table th,.qx-question-table th,.qx-person-table th,.qx-assignment-table th{padding:10px 12px;text-align:left;background:#F8FAFC;color:#64748B;font-size:10px;text-transform:uppercase;letter-spacing:.7px;border-bottom:1px solid #E2E8F0}
+.qx-category-table td,.qx-question-table td,.qx-person-table td,.qx-assignment-table td{padding:12px;border-bottom:1px solid #E2E8F0;vertical-align:middle}
+.qx-category-table tr:last-child td,.qx-question-table tr:last-child td,.qx-person-table tr:last-child td,.qx-assignment-table tr:last-child td{border-bottom:none}
+.qx-category-name{font-size:12px;font-weight:700;color:#0F172A}
+.qx-count-pill{display:inline-flex;min-width:28px;justify-content:center;padding:4px 8px;border-radius:999px;background:var(--eval-bg);color:var(--eval-color);font-size:10px;font-weight:800}
+.qx-actions-cell{display:flex;gap:10px}
+.qx-action-link{border:0;background:none;color:#475569;font:700 10px Inter,sans-serif;cursor:pointer;padding:4px}
+.qx-action-link:hover{color:var(--eval-color)}
+.qx-action-link.danger:hover{color:#DC2626}
+.qx-question-block{padding-bottom:12px}
+.qx-table-wrap,.qx-category-table-wrap,.qx-person-table-wrap,.qx-assignment-table-wrap{overflow:auto}
+.qx-question-input{width:100%;padding:9px 10px;border:1px solid transparent;background:transparent;border-radius:7px;color:#0F172A;font:500 13px Inter,sans-serif;outline:none}
+.qx-question-input:focus{background:#fff;border-color:var(--eval-color);box-shadow:0 0 0 3px var(--eval-bg)}
+.qx-tag-list{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px}
+.qx-tag,.qx-chip{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;background:var(--eval-bg);border:1px solid var(--eval-border);color:var(--eval-color);font-size:9px;font-weight:700}
+.qx-muted{font-size:10px;color:#94A3B8}
+.qx-category-details summary{font-size:9px;color:#64748B;cursor:pointer;list-style:none}
+.qx-category-details summary::-webkit-details-marker{display:none}
+.qx-checkbox-grid{display:flex;gap:5px;flex-wrap:wrap;padding-top:7px}
+.qx-checkbox-grid label{font-size:9px;padding:5px 7px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;color:#475569}
+.qx-checkbox-grid input{accent-color:var(--eval-color)}
+.qx-row-actions{display:flex;gap:6px;align-items:center}
+.qx-primary-icon,.qx-danger-icon{border:1px solid #E2E8F0;border-radius:7px;background:#fff;cursor:pointer;font:700 10px Inter,sans-serif;padding:7px 9px}
+.qx-primary-icon{color:var(--eval-color);border-color:var(--eval-border)}
+.qx-danger-icon{color:#DC2626}
+.qx-empty-state{text-align:center;padding:48px 20px;color:#64748B}
+.qx-empty-state.compact{padding:30px 20px}
+.qx-empty-state i{font-size:34px;opacity:.25;margin-bottom:10px}
+.qx-empty-state h3{font-size:16px;color:#0F172A;margin-bottom:5px}
+.qx-empty-state p{font-size:11px;line-height:1.6}
+.qx-empty-mini{padding:18px 16px;color:#64748B;font-size:11px}
+.qx-person-main{display:flex;align-items:center;gap:10px;text-decoration:none}
+.qx-person-main.static{cursor:default}
+.qx-person-avatar{width:36px;height:36px;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#F8FAFC;border:1px solid #E2E8F0;color:#64748B;flex:0 0 36px}
+.qx-person-avatar.small{width:30px;height:30px;flex-basis:30px}
+.qx-person-avatar img{width:100%;height:100%;object-fit:cover}
+.qx-person-main strong{display:block;font-size:12px;color:#0F172A}
+.qx-person-main small{display:block;font-size:9px;color:#94A3B8;margin-top:2px}
+.qx-role-cell{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:10px;color:#475569}
+.qx-role-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:999px;background:#F8FAFC;border:1px solid #E2E8F0;color:#475569;font-size:9px;font-weight:700;white-space:nowrap}
+.qx-role-badge.faculty{background:#EFF6FF;border-color:#BFDBFE;color:#2563EB}
+.qx-role-badge.teaching-staff{background:#ECFDF5;border-color:#A7F3D0;color:#059669}
+.qx-role-badge.dean{background:#F5F3FF;border-color:#DDD6FE;color:#7C3AED}
+.qx-role-badge.principal{background:#FFF7ED;border-color:#FED7AA;color:#D97706}
+.qx-role-badge.ea{background:#F0FDFA;border-color:#99F6E4;color:#0F766E}
+.qx-role-badge i{font-size:8px}
+.qx-scope-badge{display:inline-flex;align-items:center;justify-content:center;padding:4px 8px;border-radius:999px;font-size:9px;font-weight:700;white-space:nowrap;border:1px solid #E2E8F0;background:#F8FAFC;color:#475569}.qx-scope-badge.high{background:#EFF6FF;border-color:#BFDBFE;color:#2563EB}.qx-scope-badge.college{background:#F0FDFA;border-color:#99F6E4;color:#0F766E}.qx-scope-badge.both{background:#F5F3FF;border-color:#DDD6FE;color:#7C3AED}.qx-scope-badge.all{background:#F8FAFC;border-color:#CBD5E1;color:#475569}
+.qx-q-count{display:inline-flex;padding:5px 8px;border-radius:999px;background:#F8FAFC;border:1px solid #E2E8F0;color:#94A3B8;font-size:9px;font-weight:800}
+.qx-q-count.has{background:var(--eval-bg);border-color:var(--eval-border);color:var(--eval-color)}
+.qx-manage-person{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 11px;border-radius:8px;text-decoration:none;background:#F8FAFC;border:1px solid #E2E8F0;color:#475569;font-size:10px;font-weight:800}
+.qx-manage-person:hover,.qx-manage-person.active{background:var(--eval-bg);border-color:var(--eval-border);color:var(--eval-color)}
+.qx-person-table tr.selected,.qx-assignment-table tr.selected{background:#FBFDFF}
+.qx-selected-person{margin-top:20px;border:1px solid #CBD5E1;border-radius:12px;padding:16px;background:#fff}
+.qx-selected-person-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;padding-bottom:14px;border-bottom:1px solid #E2E8F0;margin-bottom:14px}
+.qx-selected-person-head h3{font-family:'Rajdhani',sans-serif;font-size:22px;color:#0F172A}
+.qx-selected-person-head p{font-size:10px;color:#64748B;margin-top:4px}
+.qx-chip-row{display:flex;gap:7px;flex-wrap:wrap;padding:14px 16px}
+.qx-chip button{border:0;background:none;color:inherit;cursor:pointer;font-size:9px;padding:0 2px}
+.qx-person-question-form{margin:12px 0 16px}
+.qx-assignment-card{padding:0}
+.qx-assignment-head{margin:0}
+.qx-evaluator-tabs{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.qx-evaluator-tabs a{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #E2E8F0;border-radius:10px;text-decoration:none;background:#fff}
+.qx-evaluator-tabs a.active{border-color:var(--school-head-border);background:var(--school-head-bg)}
+.qx-evaluator-tabs a.qx-eval-dean.active{border-color:#DDD6FE;background:#F5F3FF}
+.qx-evaluator-tabs a.qx-eval-principal.active{border-color:#FED7AA;background:#FFF7ED}
+.qx-evaluator-tabs strong{display:block;font-size:10px;color:#0F172A}
+.qx-evaluator-tabs small{display:block;font-size:9px;color:#64748B;margin-top:1px}
+.qx-eval-role{display:inline-flex;align-items:center;gap:4px;margin-top:3px;padding:2px 6px;border-radius:999px;font-size:8px;font-weight:800}
+.qx-eval-role.dean{background:#F5F3FF;color:#7C3AED;border:1px solid #DDD6FE}
+.qx-eval-role.principal{background:#FFF7ED;color:#D97706;border:1px solid #FED7AA}
+.qx-assignment-table-wrap{padding:14px}
+.qx-assignment-question-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:18px}
+.qx-assignment-question{display:flex;gap:10px;align-items:flex-start;padding:14px;border:1px solid #E2E8F0;border-radius:10px;background:#fff;cursor:pointer;transition:.16s}
+.qx-assignment-question:hover{border-color:#CBD5E1;background:#FCFDFE}
+.qx-assignment-question.checked{border-color:var(--school-head-border);background:var(--school-head-bg)}
+.qx-assignment-question input{position:absolute;opacity:0;pointer-events:none}
+.qx-check-box{width:19px;height:19px;border:1px solid #CBD5E1;border-radius:5px;display:flex;align-items:center;justify-content:center;flex:0 0 19px;color:transparent;background:#fff}
+.qx-assignment-question.checked .qx-check-box{background:var(--school-head);border-color:var(--school-head);color:#fff}
+.qx-check-box i{font-size:10px}
+.qx-assignment-question-copy strong{display:block;font-size:9px;color:var(--school-head);text-transform:uppercase;letter-spacing:.7px;margin-bottom:3px}
+.qx-assignment-question-copy span{display:block;font-size:12px;line-height:1.5;color:#0F172A}
+.qx-assignment-editor{margin-top:20px}
+.qx-assignment-footer{display:flex;align-items:center;gap:12px;padding:14px 18px;border-top:1px solid #E2E8F0;background:#F8FAFC}
+.qx-assignment-footer span{font-size:10px;color:#64748B}
+.qx-schoolhead-save{background:var(--school-head)!important}
+.qx-selection-hint{display:flex;align-items:center;gap:9px;margin:14px 0 24px;padding:14px 16px;border:1px dashed var(--school-head-border);background:var(--school-head-bg);border-radius:10px;font-size:11px;color:#64748B}
+.qx-selection-hint i{color:var(--school-head)}
+@media(max-width:980px){
+ .qx-new-question{grid-template-columns:1fr}
+ .qx-inline-add{grid-template-columns:1fr}
+ .qx-assignment-question-grid{grid-template-columns:1fr}
+ .qx-scope-grid{grid-template-columns:1fr}
+ .qx-assignment-head{flex-direction:column}
+ .qx-evaluator-tabs{justify-content:flex-start}
+}
+@media(max-width:700px){
+ .qx-panel{padding:0 14px 14px}
+ .qx-panel-head{margin:0 -14px 16px;padding:16px 14px}
+ .qx-scope-head{padding:16px}
+ .qx-assignment-footer{align-items:flex-start;flex-direction:column}
+}
+
 </style>
         <link rel="stylesheet" href="admin_compact_ui.css">
+<style id="pbi-feature-scrollbar">
+
+/* PBI FEATURE SCROLLBAR — consistent with the compact page scrollbar */
+html, body {
+  scrollbar-width: thin !important;
+  scrollbar-color: #888 transparent !important;
+}
+html::-webkit-scrollbar, body::-webkit-scrollbar,
+.feature-compact ::-webkit-scrollbar { width: 10px !important; height: 10px !important; }
+html::-webkit-scrollbar-track, body::-webkit-scrollbar-track,
+.feature-compact ::-webkit-scrollbar-track { background: transparent !important; }
+html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb,
+.feature-compact ::-webkit-scrollbar-thumb {
+  background: #888 !important; border-radius: 999px !important;
+  border: 2px solid transparent !important; background-clip: padding-box !important;
+}
+html::-webkit-scrollbar-thumb:hover, body::-webkit-scrollbar-thumb:hover,
+.feature-compact ::-webkit-scrollbar-thumb:hover { background: #777 !important; background-clip: padding-box !important; }
+html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
+.feature-compact ::-webkit-scrollbar-button { display: block !important; width: 10px !important; height: 10px !important; background-color: transparent !important; }
+
+</style>
+<link rel="stylesheet" href="admin_appearance.css">
+<script src="admin_appearance.js"></script>
 </head>
     <body class="feature-compact">
 
@@ -1343,9 +1898,12 @@ a { color:inherit; }
     $total_student_q     = $mysqli->query("SELECT COUNT(*) as c FROM evaluation_questions WHERE eval_type='student'")->fetch_assoc()['c'];
     $total_peer_q        = $mysqli->query("SELECT COUNT(*) as c FROM evaluation_questions WHERE eval_type='peer'")->fetch_assoc()['c'];
     $total_schoolhead_q  = $mysqli->query("SELECT COUNT(*) as c FROM evaluation_questions WHERE eval_type='school_head'")->fetch_assoc()['c'];
+    // EA Evaluation has its own dedicated per-person question pool.
+    $total_ea_q           = (int)($mysqli->query("SELECT COUNT(*) AS c FROM user_questions WHERE eval_type='ea' AND target_type IN ('Staff','Dean','Principal')")->fetch_assoc()['c'] ?? 0);
+    $total_staff_eval_q  = $mysqli->query("SELECT COUNT(*) as c FROM evaluation_questions WHERE eval_type='staff' AND target_type IN ('Dean','Principal','EA')")->fetch_assoc()['c'];
 
-    // Teacher lives in the shared evaluation_questions pool. Staff,
-    // Principal, Dean, and Multi-Role contribute from per-person user_questions.
+    // Shared evaluation question totals are shown in the table. Staff,
+    // Principal, Dean, and Teacher/Staff contribute from per-person user_questions.
     $total_student_uq    = $mysqli->query("SELECT COUNT(*) as c FROM user_questions WHERE eval_type='student'")->fetch_assoc()['c'];
     $total_peer_uq       = $mysqli->query("SELECT COUNT(*) as c FROM user_questions WHERE eval_type='peer'")->fetch_assoc()['c'];
     $total_schoolhead_uq = $mysqli->query("SELECT COUNT(*) as c FROM user_questions WHERE eval_type='school_head'")->fetch_assoc()['c'];
@@ -1356,260 +1914,156 @@ a { color:inherit; }
     $view_param      = $current_view === 'manage' ? 'manage' : 'dashboard';
     $target_param    = $current_view === 'manage' ? '&target='.urlencode($selected_target) : '';
     $uid_param       = $selected_user ? '&user_id='.$selected_user : '';
-    $mr_param        = ($current_view === 'manage' && $selected_target === 'Multi-Role') ? '&mr_filter='.$mr_filter : '';
+    $mr_param        = '';
     ?>
-    <div class="eval-switcher">
-        <a href="?view=<?= $view_param ?>&eval_type=student<?= $target_param.$uid_param.$mr_param ?>"
-           class="eval-tab <?= $active_eval === 'student' ? 'active-student' : '' ?>">
-            <i class="fa-solid fa-graduation-cap"></i> Student Evaluation
-            <span class="tab-badge"><?= $total_student_q ?> Q</span>
-        </a>
-        <div class="eval-divider"></div>
-        <a href="?view=<?= $view_param ?>&eval_type=peer<?= $target_param.$uid_param.$mr_param ?>"
-           class="eval-tab <?= $active_eval === 'peer' ? 'active-peer' : '' ?>">
-            <i class="fa-solid fa-people-arrows"></i> Peer-to-Peer Evaluation
-            <span class="tab-badge"><?= $total_peer_q ?> Q</span>
-        </a>
-        <div class="eval-divider"></div>
-        <a href="?view=<?= $view_param ?>&eval_type=school_head<?= $target_param.$uid_param.$mr_param ?>"
-           class="eval-tab <?= $active_eval === 'school_head' ? 'active-schoolhead' : '' ?>">
-            <i class="fa-solid fa-user-tie"></i> School Head Evaluation
-            <span class="tab-badge"><?= $total_schoolhead_q ?> Q</span>
-        </a>
+    <!-- ══ EVALUATION TYPE TABLE ══ -->
+    <div class="eval-overview-wrap">
+        <div class="eval-overview-head">
+            <div>
+                <div class="eval-overview-title"><i class="fa-solid fa-table-list"></i> Evaluation Types</div>
+                <div class="eval-overview-sub">Choose an evaluation type, then manage its question bank or assignment rules.</div>
+            </div>
+            <span class="eval-overview-total"><i class="fa-solid fa-layer-group"></i> <?= (int)$total_student_q + (int)$total_peer_q + (int)$total_schoolhead_q + (int)$total_ea_q + (int)$total_staff_eval_q ?> Total Questions</span>
+        </div>
+        <div class="eval-table-scroll">
+            <table class="eval-overview-table">
+                <thead>
+                    <tr>
+                        <th>Evaluation Type</th>
+                        <th>Purpose</th>
+                        <th class="eval-table-number">Questions</th>
+                        <th class="eval-table-status">Status</th>
+                        <th class="eval-table-action">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class="eval-table-row <?= $active_eval === 'student' ? 'is-active student-row' : '' ?>"
+                        onclick="window.location='?view=<?= $view_param ?>&eval_type=student<?= $target_param.$uid_param.$mr_param ?>'">
+                        <td>
+                            <div class="eval-type-cell">
+                                <span class="eval-type-icon student-icon"><i class="fa-solid fa-graduation-cap"></i></span>
+                                <div>
+                                    <div class="eval-type-name">Student Evaluation</div>
+                                    <div class="eval-type-tag">Students evaluate personnel</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="eval-purpose">Students evaluate teacher, staff, and eligible school heads.</td>
+                        <td class="eval-table-number"><span class="eval-q-badge student-badge"><?= $total_student_q ?> Q</span></td>
+                        <td class="eval-table-status">
+                            <span class="eval-open-btn student-open"><i class="fa-solid fa-circle-check"></i> <?= $active_eval === 'student' ? 'Active' : 'Open' ?></span>
+                        </td>
+                        <td class="eval-table-action" onclick="event.stopPropagation();">
+                            <a class="eval-assign-btn student-assign" href="?view=manage&target=Teacher&eval_type=student">
+                                <i class="fa-solid fa-user-pen"></i> Manage Questionnaire
+                            </a>
+                        </td>
+                    </tr>
+                    <tr class="eval-table-row <?= $active_eval === 'peer' ? 'is-active peer-row' : '' ?>"
+                        onclick="window.location='?view=<?= $view_param ?>&eval_type=peer<?= $target_param.$uid_param.$mr_param ?>'">
+                        <td>
+                            <div class="eval-type-cell">
+                                <span class="eval-type-icon peer-icon"><i class="fa-solid fa-people-arrows"></i></span>
+                                <div>
+                                    <div class="eval-type-name">Peer-to-Peer Evaluation</div>
+                                    <div class="eval-type-tag">Colleagues evaluate colleagues</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="eval-purpose">Teacher and staff evaluate colleagues they work with directly.</td>
+                        <td class="eval-table-number"><span class="eval-q-badge peer-badge"><?= $total_peer_q ?> Q</span></td>
+                        <td class="eval-table-status">
+                            <span class="eval-open-btn peer-open"><i class="fa-solid fa-circle-check"></i> <?= $active_eval === 'peer' ? 'Active' : 'Open' ?></span>
+                        </td>
+                        <td class="eval-table-action" onclick="event.stopPropagation();">
+                            <a class="eval-assign-btn peer-assign" href="?view=manage&target=Teacher&eval_type=peer">
+                                <i class="fa-solid fa-user-pen"></i> Manage Questionnaire
+                            </a>
+                        </td>
+                    </tr>
+                    <tr class="eval-table-row <?= $active_eval === 'staff' ? 'is-active staff-eval-row' : '' ?>"
+                        onclick="window.location='?view=<?= $view_param ?>&eval_type=staff<?= $target_param.$uid_param ?>'">
+                        <td>
+                            <div class="eval-type-cell">
+                                <span class="eval-type-icon staff-eval-icon"><i class="fa-solid fa-users"></i></span>
+                                <div>
+                                    <div class="eval-type-name">Staff Evaluation</div>
+                                    <div class="eval-type-tag">Staff evaluate leadership</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="eval-purpose">Staff members evaluate the Dean, Principal, and Executive Assistant.</td>
+                        <td class="eval-table-number"><span class="eval-q-badge staff-eval-badge"><?= $total_staff_eval_q ?> Q</span></td>
+                        <td class="eval-table-status">
+                            <span class="eval-open-btn staff-eval-open"><i class="fa-solid fa-circle-check"></i> <?= $active_eval === 'staff' ? 'Active' : 'Open' ?></span>
+                        </td>
+                        <td class="eval-table-action" onclick="event.stopPropagation();">
+                            <a class="eval-assign-btn staff-eval-assign" href="?view=manage&target=Dean&eval_type=staff">
+                                <i class="fa-solid fa-user-pen"></i> Manage Questionnaire
+                            </a>
+                        </td>
+                    </tr>
+                    <tr class="eval-table-row <?= $active_eval === 'school_head' ? 'is-active schoolhead-row' : '' ?>"
+                        onclick="window.location='?view=<?= $view_param ?>&eval_type=school_head<?= $target_param.$uid_param.$mr_param ?>'">
+                        <td>
+                            <div class="eval-type-cell">
+                                <span class="eval-type-icon schoolhead-icon"><i class="fa-solid fa-user-tie"></i></span>
+                                <div>
+                                    <div class="eval-type-name">Dean / Principal Evaluation</div>
+                                    <div class="eval-type-tag">Leadership evaluation</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="eval-purpose">The Dean or Principal evaluates faculty, teaching staff, and the EA under their supervision.</td>
+                        <td class="eval-table-number"><span class="eval-q-badge schoolhead-badge"><?= $total_schoolhead_q ?> Q</span></td>
+                        <td class="eval-table-status">
+                            <span class="eval-open-btn schoolhead-open"><i class="fa-solid fa-circle-check"></i> <?= $active_eval === 'school_head' ? 'Active' : 'Open' ?></span>
+                        </td>
+                        <td class="eval-table-action" onclick="event.stopPropagation();">
+                            <a class="eval-assign-btn schoolhead-assign" href="?view=manage&target=Faculty&eval_type=school_head&sh_role=dean">
+                                <i class="fa-solid fa-user-pen"></i> Manage Questionnaire
+                            </a>
+                        </td>
+                    </tr>
+                                    <tr class="eval-table-row <?= $active_eval === 'ea' ? 'is-active ea-row' : '' ?>"
+                        onclick="window.location='?view=<?= $view_param ?>&eval_type=ea<?= $target_param.$uid_param.$mr_param ?>'">
+                        <td>
+                            <div class="eval-type-cell">
+                                <span class="eval-type-icon ea-icon"><i class="fa-solid fa-user-shield"></i></span>
+                                <div>
+                                    <div class="eval-type-name">Executive Assistant Evaluation</div>
+                                    <div class="eval-type-tag">Authorized personnel evaluate the EA</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="eval-purpose">The Executive Assistant evaluates Staff, the Dean, and the Principal.</td>
+                        <td class="eval-table-number"><span class="eval-q-badge ea-badge"><?= $total_ea_q ?> Q</span></td>
+                        <td class="eval-table-status">
+                            <span class="eval-open-btn ea-open"><i class="fa-solid fa-circle-check"></i> <?= $active_eval === 'ea' ? 'Active' : 'Open' ?></span>
+                        </td>
+                        <td class="eval-table-action" onclick="event.stopPropagation();">
+                            <a class="eval-assign-btn ea-assign" href="?view=manage&target=Staff&eval_type=ea">
+                                <i class="fa-solid fa-user-pen"></i> Manage Questionnaire
+                            </a>
+                        </td>
+                    </tr>
+</tbody>
+            </table>
+        </div>
     </div>
 
     <?php if ($current_view === 'dashboard'): ?>
-    <!-- ══ DASHBOARD ══ -->
-    <div class="page-header">
-        <div>
-            <h1><?= $eval_label ?></h1>
-            <p><?= $eval_desc ?></p>
-        </div>
-        <a href="?view=manage&target=Teacher&eval_type=<?= $active_eval ?>" class="btn btn-primary">
-            <i class="fa-solid fa-circle-plus"></i> Manage Questions
-        </a>
-    </div>
+    <!-- The evaluation-type table is now the primary questionnaire workspace.
+         Target cards/tabs were removed to keep this page focused and compact. -->
 
-    <div class="sector-row">
-    <?php
-    $student_counts = []; $peer_counts = []; $schoolhead_counts = [];
-    $qres = $mysqli->query("SELECT target_type, eval_type, COUNT(*) as total FROM evaluation_questions GROUP BY target_type, eval_type");
-    if ($qres) while ($qr = $qres->fetch_assoc()) {
-        if ($qr['eval_type'] === 'student')     $student_counts[$qr['target_type']]    = $qr['total'];
-        if ($qr['eval_type'] === 'peer')        $peer_counts[$qr['target_type']]       = $qr['total'];
-        if ($qr['eval_type'] === 'school_head') $schoolhead_counts[$qr['target_type']] = $qr['total'];
-    }
-    $counts_by_eval = ['student' => $student_counts, 'peer' => $peer_counts, 'school_head' => $schoolhead_counts];
-
-    // Per-user question totals for Staff/Principal/Dean/Multi-Role cards
-    // (Teacher alone uses the shared $counts_by_eval pool).
-    $per_user_uq_by_type_eval = [];
-    $puq_res = $mysqli->query("SELECT target_type, eval_type, COUNT(*) as total FROM user_questions GROUP BY target_type, eval_type");
-    if ($puq_res) while ($pr = $puq_res->fetch_assoc()) {
-        $per_user_uq_by_type_eval[$pr['target_type']][$pr['eval_type']] = $pr['total'];
-    }
-
-    // Cosmetic sub-role chips (Registrar/Cashier/etc.), computed for the
-    // Staff card's per-person breakdown. Only meaningful for Staff.
-    $subroles_by_type = [];
-    if (in_array('Staff', $per_user_targets)) {
-        $subroles_by_type['Staff'] = [];
-        foreach (($card_data['Staff']['users'] ?? []) as $su) {
-            $sr = getSubRole($su);
-            $subroles_by_type['Staff'][$sr] = ($subroles_by_type['Staff'][$sr] ?? 0) + 1;
-        }
-    }
-    $staff_subroles = $subroles_by_type['Staff'] ?? [];
-
-    // School Head Evaluation assignment coverage: evaluator-specific target
-    // assignments are the source of truth for what Principal/Dean can evaluate.
-    $sh_target_assignment_counts = [];
-    if ($active_eval === 'school_head') {
-        $shac = $mysqli->query("SELECT target_user_id, COUNT(DISTINCT evaluator_id) AS evaluator_count, COUNT(DISTINCT question_id) AS question_count
-            FROM school_head_evaluation_assignments GROUP BY target_user_id");
-        if ($shac) while ($ar = $shac->fetch_assoc()) $sh_target_assignment_counts[(int)$ar['target_user_id']] = $ar;
-    }
-
-    // Same cosmetic breakdown for the Peer-to-Peer "School" card: Principal
-    // vs Dean counts, shown the same way Staff shows Personnel/Cashier.
-    $school_subrole_labels = [
-        'Principal' => ['icon'=>'fa-user-tie',       'color'=>'#D97706'],
-        'Dean'      => ['icon'=>'fa-graduation-cap', 'color'=>'#D97706'],
-    ];
-    $school_subroles = [];
-    if (in_array('School', $per_user_targets)) {
-        foreach (($card_data['School']['users'] ?? []) as $su) {
-            $sr = ($su['role'] === 'principal') ? 'Principal' : 'Dean';
-            $school_subroles[$sr] = ($school_subroles[$sr] ?? 0) + 1;
-        }
-    }
-
-    foreach ($card_data as $type => $data):
-        $icon        = $icons[$type] ?? 'fa-user';
-        $users       = $data['users'];
-        $is_mr       = ($type === 'Multi-Role');
-        $is_school_head = ($type === 'School Head' && $active_eval === 'student');
-        $is_staff    = in_array($type, $per_user_targets, true) || $is_school_head;
-        $is_fac      = ($type === 'Teacher');
-        $fac_c       = $is_mr ? count(array_filter($users, fn($u) => $u['role'] === 'teacher')) : 0;
-        $sta_c       = $is_mr ? count(array_filter($users, fn($u) => $u['role'] === 'staff'))   : 0;
-        $card_class  = $is_mr ? 'multi-role-card' : ($is_school_head ? 'school-head-card' : ($is_staff ? 'staff-card' : ''));
-        $label_class = $is_mr ? 'mr-color' : ($is_school_head ? 'school-head-color' : ($is_staff ? 'staff-color' : 'dark'));
-        $icon_color  = $is_mr ? 'var(--mr)' : ($is_school_head ? 'var(--school-head)' : ($is_staff ? 'var(--staff)' : 'var(--eval-color)'));
-
-        // Badge count: per-user total for all individual targets; Teacher alone uses the shared pool.
-        if ($active_eval === 'school_head' && in_array($type, ['Faculty','EA'], true)) {
-            // School Head Evaluation assignments are evaluator-specific, so the
-            // card shows how many distinct targets have at least one assigned
-            // question rather than pretending the shared question pool itself
-            // is an assignment.
-            $assigned_target_ids = [];
-            foreach ($users as $u) {
-                if (isset($sh_target_assignment_counts[(int)$u['id']])) $assigned_target_ids[(int)$u['id']] = true;
-            }
-            $badge_count = array_sum(array_map(fn($r) => (int)$r['question_count'], array_values(array_intersect_key($sh_target_assignment_counts, $assigned_target_ids))));
-            $badge_label = 'assigned Qs';
-            $users_with_q = count($assigned_target_ids);
-        } elseif ($is_school_head) {
-            // Count only questions belonging to the currently active School
-            // Head roster so old rows for inactive heads do not inflate totals.
-            $badge_count = array_sum(array_map(function($u) use ($user_q_counts, $active_eval) {
-                $target = $u['role'] === 'principal' ? 'Principal' : 'Dean';
-                return (int)($user_q_counts[$u['id']][$target][$active_eval] ?? 0);
-            }, $users));
-            $badge_label = 'total Qs';
-            $users_with_q = count(array_filter($users, function($u) use ($user_q_counts, $active_eval) {
-                $target = $u['role'] === 'principal' ? 'Principal' : 'Dean';
-                return ($user_q_counts[$u['id']][$target][$active_eval] ?? 0) > 0;
-            }));
-        } elseif ($is_staff) {
-            $badge_count = $per_user_uq_by_type_eval[$type][$active_eval] ?? 0;
-            $badge_label = 'total Qs';
-            $users_with_q = count(array_filter($users, fn($u) => ($user_q_counts[$u['id']][$type][$active_eval] ?? 0) > 0));
-        } else {
-            $badge_count = $counts_by_eval[$active_eval][$type] ?? 0;
-            $badge_label = 'shared Qs';
-            $users_with_q = 0;
-        }
-    ?>
-    <div class="sector-card <?= $card_class ?>"
-         onclick="window.location='?view=manage&target=<?= urlencode($type) ?>&eval_type=<?= $active_eval ?>'">
-        <div class="sector-card-top">
-            <span class="sector-label <?= $label_class ?>">
-                <i class="fa-solid <?= $icon ?>" style="color:<?= $icon_color ?>"></i>
-                <?= htmlspecialchars(displayTargetLabel($type, $active_eval)) ?>
-            </span>
-            <?php if ($is_staff): ?>
-            <span class="per-user-pill <?= $is_school_head ? 'school-head-pill' : 'staff-pill' ?>">
-                <i class="fa-solid fa-user-pen" style="font-size:9px"></i> Per-Person
-            </span>
-            <?php else: ?>
-            <span class="sector-badge multi"><?= $badge_count ?> Q</span>
-            <?php endif; ?>
-        </div>
-
-        <?php if ($is_staff): ?>
-            <?php if ($type === 'Staff' && !empty($staff_subroles)): ?>
-            <div class="subrole-chips">
-                <?php foreach ($staff_subroles as $sr => $cnt): ?>
-                <span class="subrole-chip"><i class="fa-solid <?= $staff_subrole_labels[$sr]['icon'] ?? 'fa-briefcase' ?>" style="font-size:9px;color:<?= $staff_subrole_labels[$sr]['color'] ?? '#94a3b8' ?>"></i> <?= $sr ?> (<?= $cnt ?>)</span>
-                <?php endforeach; ?>
-            </div>
-            <?php elseif ($type === 'School' && !empty($school_subroles)): ?>
-            <div class="subrole-chips">
-                <?php foreach ($school_subroles as $sr => $cnt): ?>
-                <span class="subrole-chip"><i class="fa-solid <?= $school_subrole_labels[$sr]['icon'] ?? 'fa-user-tie' ?>" style="font-size:9px;color:<?= $school_subrole_labels[$sr]['color'] ?? '#D97706' ?>"></i> <?= $sr ?> (<?= $cnt ?>)</span>
-                <?php endforeach; ?>
-            </div>
-            <?php endif; ?>
-            <?php if (!empty($users)): ?>
-            <div class="card-avatars">
-                <?php $show = array_slice($users, 0, 4); $extra = count($users) - count($show);
-                foreach ($show as $cu): ?>
-                    <?php if ($cu['photo']): ?>
-                    <img class="card-avatar" src="../image/<?= htmlspecialchars($cu['photo']) ?>" title="<?= htmlspecialchars($cu['full_name']) ?>"/>
-                    <?php else: ?>
-                    <div class="card-avatar-ph <?= $is_school_head ? 'school-head-ph' : 'staff-ph' ?>" title="<?= htmlspecialchars($cu['full_name']) ?>"><i class="fa-solid fa-user" style="font-size:10px"></i></div>
-                    <?php endif; ?>
-                <?php endforeach; ?>
-                <?php if ($extra > 0): ?><div class="card-avatar-more <?= $is_school_head ? 'school-head-more' : 'staff-more' ?>">+<?= $extra ?></div><?php endif; ?>
-                <span style="font-size:11px;color:var(--text-dim);margin-left:8px;"><?= count($users) ?> person<?= count($users)>1?'s':'' ?></span>
-            </div>
-            <?php elseif ($is_school_head): ?>
-            <div style="font-size:11px;color:var(--school-head);opacity:.78;font-style:italic;">
-                <i class="fa-solid fa-user-slash" style="font-size:10px"></i> No active School Heads available.
-            </div>
-            <?php endif; ?>
-            <div class="sector-meta">
-                <div><div class="sector-stat-lbl <?= $is_school_head ? 'school-head-l' : 'staff-l' ?>">Total Questions</div><div class="sector-stat-val <?= $is_school_head ? 'school-head-v' : 'staff-v' ?>"><?= $badge_count ?></div></div>
-                <div><div class="sector-stat-lbl <?= $is_school_head ? 'school-head-l' : 'staff-l' ?>">Assigned</div><div class="sector-stat-val <?= $is_school_head ? 'school-head-v' : 'staff-v' ?>"><?= $users_with_q ?>/<?= count($users) ?></div></div>
-            </div>
-            <div class="sector-actions">
-                <button class="btn-sector <?= $is_school_head ? 'btn-view-school-head' : 'btn-view-staff' ?>" onclick="event.stopPropagation();window.location='<?= $active_eval === 'school_head' ? '?view=school_head_assignments&eval_type=school_head' : '?view=manage&target='.urlencode($type).'&eval_type='.$active_eval ?>'"><i class="fa-solid fa-user-pen"></i> <?= $active_eval === 'school_head' ? 'Assign Questions' : 'Assign Questions' ?></button>
-            </div>
-
-        <?php elseif ($is_mr): ?>
-            <div class="mr-role-chips">
-                <span class="mr-role-chip fac"><i class="fa-solid fa-chalkboard-user" style="font-size:9px"></i> <?= $fac_c ?> Teacher</span>
-                <span class="mr-role-chip sta"><i class="fa-solid fa-briefcase" style="font-size:9px"></i> <?= $sta_c ?> Staff</span>
-            </div>
-            <?php if (!empty($users)): ?>
-            <div class="card-avatars">
-                <?php $show = array_slice($users, 0, 4); $extra = count($users) - count($show);
-                foreach ($show as $cu): ?>
-                    <?php if ($cu['photo']): ?>
-                    <img class="card-avatar" src="../image/<?= htmlspecialchars($cu['photo']) ?>" title="<?= htmlspecialchars($cu['full_name']) ?>"/>
-                    <?php else: ?>
-                    <div class="card-avatar-ph mr-ph" title="<?= htmlspecialchars($cu['full_name']) ?>"><i class="fa-solid fa-user" style="font-size:10px"></i></div>
-                    <?php endif; ?>
-                <?php endforeach; ?>
-                <?php if ($extra > 0): ?><div class="card-avatar-more mr-more">+<?= $extra ?></div><?php endif; ?>
-                <span style="font-size:11px;color:var(--text-dim);margin-left:8px;"><?= count($users) ?> person<?= count($users)>1?'s':'' ?></span>
-            </div>
-            <?php else: ?>
-            <div style="font-size:11px;color:var(--mr);opacity:.7;font-style:italic;"><i class="fa-solid fa-user-slash" style="font-size:10px"></i> No multi-role users yet</div>
-            <?php endif; ?>
-            <div class="sector-meta">
-                <div><div class="sector-stat-lbl mr-l">Shared Questions</div><div class="sector-stat-val mr-v"><?= $badge_count ?></div></div>
-                <div><div class="sector-stat-lbl mr-l">People</div><div class="sector-stat-val mr-v"><?= count($users) ?></div></div>
-            </div>
-            <div class="sector-actions">
-                <button class="btn-sector btn-view-mr" onclick="event.stopPropagation();window.location='?view=manage&target=Multi-Role&eval_type=<?= $active_eval ?>'"><i class="fa-solid fa-eye"></i> View</button>
-                <button class="btn-sector btn-edit-mr" onclick="event.stopPropagation();window.location='?view=manage&target=Multi-Role&eval_type=<?= $active_eval ?>'"><i class="fa-solid fa-pen"></i> Edit</button>
-            </div>
-
-        <?php else: /* Teacher — shared pool, like Multi-Role */ ?>
-            <?php if (!empty($users)): ?>
-            <div class="card-avatars">
-                <?php $show = array_slice($users, 0, 4); $extra = count($users) - count($show);
-                foreach ($show as $cu): ?>
-                    <?php if ($cu['photo']): ?>
-                    <img class="card-avatar" src="../image/<?= htmlspecialchars($cu['photo']) ?>" title="<?= htmlspecialchars($cu['full_name']) ?>"/>
-                    <?php else: ?>
-                    <div class="card-avatar-ph" title="<?= htmlspecialchars($cu['full_name']) ?>"><i class="fa-solid fa-user"></i></div>
-                    <?php endif; ?>
-                <?php endforeach; ?>
-                <?php if ($extra > 0): ?><div class="card-avatar-more">+<?= $extra ?></div><?php endif; ?>
-                <span style="font-size:11px;color:var(--text-dim);margin-left:8px;"><?= count($users) ?> person<?= count($users)>1?'s':'' ?></span>
-            </div>
-            <?php else: ?>
-            <div style="font-size:11px;color:var(--text-dim);font-style:italic;"><i class="fa-solid fa-user-slash" style="font-size:10px"></i> No faculty users yet</div>
-            <?php endif; ?>
-            <div class="sector-meta">
-                <div><div class="sector-stat-lbl dark">Shared Questions</div><div class="sector-stat-val dark"><?= $badge_count ?></div></div>
-                <div><div class="sector-stat-lbl dark">People</div><div style="font-size:18px;font-weight:700;color:var(--text-dark);"><?= count($users) ?></div></div>
-            </div>
-            <div class="sector-actions">
-                <button class="btn-sector btn-view-dark" onclick="event.stopPropagation();window.location='?view=manage&target=Teacher&eval_type=<?= $active_eval ?>'"><i class="fa-solid fa-user-pen"></i> Assign Questions</button>
-            </div>
-        <?php endif; ?>
-    </div>
-    <?php endforeach; ?>
-    </div>
-
+    <?php /* LEGACY — superseded by the Faculty/Staff/EA shared-bank "manage"
+             view below (now split per Dean/Principal evaluator role). No
+             link in the UI points here any more; left in place, unlinked,
+             only so any still-open bookmark/tab doesn't hard-error. Safe to
+             delete outright in a future pass once confirmed unused. */ ?>
     <?php elseif ($current_view === 'school_head_assignments' && $active_eval === 'school_head'): ?>
-    <?php if (!$isAdminQuestionnaireUser) { http_response_code(403); exit('You are not authorized to manage School Head Evaluation assignments.'); } ?>
-    <!-- ══ SCHOOL HEAD EVALUATION ASSIGNMENTS ══ -->
+    <?php if (!$isAdminQuestionnaireUser) { http_response_code(403); exit('You are not authorized to manage Dean / Principal Evaluation assignments.'); } ?>
+    <!-- ══ DEAN / PRINCIPAL EVALUATION ASSIGNMENTS ══ -->
     <?php
     $sh_evaluators = [];
     $evr = $mysqli->query("SELECT id, full_name, role, designation FROM users
@@ -1618,635 +2072,770 @@ a { color:inherit; }
     if ($evr) $sh_evaluators = $evr->fetch_all(MYSQLI_ASSOC);
 
     $sh_targets = [];
+
+    // Faculty = teachers + teaching staff who have at least one school-level
+    // teaching assignment. Their eligibility is filtered per selected evaluator.
     foreach (($faculty_users ?? []) as $tu) {
         $tu['assignment_group'] = 'Faculty';
-        $tu['assignment_label'] = ($tu['role'] === 'staff') ? 'Teaching Staff' : 'Faculty';
+        $tu['assignment_label'] = (($tu['role'] ?? '') === 'staff') ? 'Teaching Staff' : 'Faculty';
+        $tu['year_levels'] = sh_user_year_levels($mysqli, (int)$tu['id']);
+        $tu['school_scope'] = sh_school_scope($tu['year_levels']);
         $sh_targets[] = $tu;
     }
+
+    // Staff = non-teaching staff only. A Staff member who teaches or has a
+    // year-level assignment remains in Faculty/Teaching Staff instead.
+    foreach (($non_teaching_staff_users ?? []) as $tu) {
+        $tu['assignment_group'] = 'Staff';
+        $tu['assignment_label'] = 'Staff';
+        $tu['year_levels'] = [];
+        $tu['school_scope'] = ['high_school'=>false,'college'=>false];
+        $sh_targets[] = $tu;
+    }
+
     if (!empty($current_ea)) {
         $ea_target = $current_ea;
         $ea_target['assignment_group'] = 'EA';
         $ea_target['assignment_label'] = 'Executive Assistant';
+        $ea_target['year_levels'] = [];
+        $ea_target['school_scope'] = ['high_school'=>false,'college'=>false];
         $sh_targets[] = $ea_target;
     }
 
     $sh_selected_evaluator = isset($_GET['evaluator_id']) ? (int)$_GET['evaluator_id'] : ($sh_evaluators[0]['id'] ?? 0);
-    $sh_selected_target = isset($_GET['assignment_target_id']) ? (int)$_GET['assignment_target_id'] : ($sh_targets[0]['id'] ?? 0);
-    if (!array_filter($sh_evaluators, fn($e) => (int)$e['id'] === $sh_selected_evaluator)) $sh_selected_evaluator = $sh_evaluators[0]['id'] ?? 0;
-    if (!array_filter($sh_targets, fn($t) => (int)$t['id'] === $sh_selected_target)) $sh_selected_target = $sh_targets[0]['id'] ?? 0;
+    if (!array_filter($sh_evaluators, fn($e) => (int)$e['id'] === $sh_selected_evaluator)) {
+        $sh_selected_evaluator = $sh_evaluators[0]['id'] ?? 0;
+    }
+
+    // Filter the target table according to the selected evaluator's scope.
+    $selected_eval_role = '';
+    foreach ($sh_evaluators as $ev) {
+        if ((int)$ev['id'] === $sh_selected_evaluator) { $selected_eval_role = $ev['role']; break; }
+    }
+    $sh_targets = array_values(array_filter($sh_targets, function(array $t) use ($selected_eval_role) {
+        if ($t['assignment_group'] === 'Staff' || $t['assignment_group'] === 'EA') return true;
+        $scope = $t['school_scope'] ?? ['high_school'=>false,'college'=>false];
+        return $selected_eval_role === 'principal' ? !empty($scope['high_school']) : !empty($scope['college']);
+    }));
+
+    $sh_selected_target = isset($_GET['assignment_target_id']) ? (int)$_GET['assignment_target_id'] : 0;
+    if ($sh_selected_target && !array_filter($sh_targets, fn($t) => (int)$t['id'] === $sh_selected_target)) {
+        $sh_selected_target = 0;
+    }
+
+    // Assignment counts for the selected Dean/Principal, used in the target table.
+    $sh_assigned_counts = [];
+    if ($sh_selected_evaluator) {
+        $arc = $mysqli->prepare("SELECT target_user_id, COUNT(*) AS total
+                                 FROM school_head_evaluation_assignments
+                                 WHERE evaluator_id=?
+                                 GROUP BY target_user_id");
+        if ($arc) {
+            $arc->bind_param('i', $sh_selected_evaluator);
+            $arc->execute();
+            $arr = $arc->get_result();
+            while ($rr = $arr->fetch_assoc()) $sh_assigned_counts[(int)$rr['target_user_id']] = (int)$rr['total'];
+            $arc->close();
+        }
+    }
 
     $sh_target_row = null;
     foreach ($sh_targets as $t) if ((int)$t['id'] === $sh_selected_target) { $sh_target_row = $t; break; }
-    $sh_target_type = $sh_target_row['assignment_group'] ?? 'Faculty';
+
     $sh_questions = [];
-    $qst = $mysqli->prepare("SELECT id, category, question_text FROM evaluation_questions WHERE eval_type='school_head' AND target_type=? ORDER BY category, id");
-    $qst->bind_param('s', $sh_target_type); $qst->execute(); $sh_questions = $qst->get_result()->fetch_all(MYSQLI_ASSOC); $qst->close();
     $sh_existing_ids = [];
-    if ($sh_selected_evaluator && $sh_selected_target) {
-        $sh_existing_ids = [];
-        $sh_existing_stmt = $mysqli->prepare("SELECT question_id FROM school_head_evaluation_assignments WHERE evaluator_id=? AND target_user_id=? ORDER BY question_id");
-        if ($sh_existing_stmt) {
-            $sh_existing_stmt->bind_param('ii', $sh_selected_evaluator, $sh_selected_target);
-            $sh_existing_stmt->execute();
-            $sh_existing_res = $sh_existing_stmt->get_result();
-            if ($sh_existing_res) { while ($rr = $sh_existing_res->fetch_assoc()) $sh_existing_ids[] = (int)$rr['question_id']; }
-            $sh_existing_stmt->close();
+    if ($sh_target_row) {
+        $sh_target_type = $sh_target_row['assignment_group'] ?? 'Faculty';
+        $qst = $mysqli->prepare("SELECT id, category, question_text FROM evaluation_questions
+                                 WHERE eval_type='school_head' AND target_type=?
+                                 ORDER BY category, id");
+        $qst->bind_param('s', $sh_target_type);
+        $qst->execute();
+        $sh_questions = $qst->get_result()->fetch_all(MYSQLI_ASSOC);
+        $qst->close();
+
+        $existing_stmt = $mysqli->prepare("SELECT question_id
+                                           FROM school_head_evaluation_assignments
+                                           WHERE evaluator_id=? AND target_user_id=?
+                                           ORDER BY question_id");
+        if ($existing_stmt) {
+            $existing_stmt->bind_param('ii', $sh_selected_evaluator, $sh_selected_target);
+            $existing_stmt->execute();
+            $res = $existing_stmt->get_result();
+            while ($rr = $res->fetch_assoc()) $sh_existing_ids[] = (int)$rr['question_id'];
+            $existing_stmt->close();
         }
     }
     ?>
-    <div class="page-header">
+    <div class="page-header qx-page-header">
         <div>
-            <h1><i class="fa-solid fa-user-shield" style="color:var(--school-head);margin-right:8px"></i>School Head Evaluation Assignments</h1>
-            <p>Assign the exact School Head Evaluation questions that each Principal or Dean may use for each target. These assignments are the source of truth for the evaluation pages.</p>
+            <h1><i class="fa-solid fa-user-tie" style="color:var(--school-head);margin-right:8px"></i>Dean / Principal Evaluation Assignments</h1>
+            <p>Choose a Dean or Principal, then assign questions to the eligible Faculty, Teaching Staff, Staff, and Executive Assistant targets under their supervision.</p>
         </div>
-        <a href="?view=dashboard&eval_type=school_head" class="btn btn-back"><i class="fa-solid fa-circle-chevron-left"></i> Back</a>
+        <a href="?view=dashboard&eval_type=school_head" class="btn btn-back"><i class="fa-solid fa-arrow-left"></i> Back to Evaluation Types</a>
     </div>
 
-    <?php if (empty($sh_evaluators) || empty($sh_targets)): ?>
-    <div class="empty-state"><i class="fa-solid fa-user-slash" style="color:var(--school-head)"></i><p>No active School Head evaluators or eligible Faculty/EA targets are available.</p></div>
-    <?php else: ?>
-    <div class="manage-layout">
-        <div class="sidebar">
-            <div class="sidebar-title"><i class="fa-solid fa-user-tie" style="color:var(--school-head)"></i> Evaluators <span class="sidebar-count"><?= count($sh_evaluators) ?></span></div>
-            <ul class="user-list">
-            <?php foreach ($sh_evaluators as $ev): ?>
-                <li class="user-list-item <?= (int)$ev['id']===$sh_selected_evaluator?'active school-head-active':'' ?>" onclick="window.location='?view=school_head_assignments&eval_type=school_head&evaluator_id=<?= (int)$ev['id'] ?>&assignment_target_id=<?= (int)$sh_selected_target ?>'">
-                    <div class="user-list-avatar-ph"><i class="fa-solid <?= $ev['role']==='dean'?'fa-graduation-cap':'fa-user-tie' ?>"></i></div>
-                    <div style="flex:1;min-width:0"><div class="user-list-name"><?= htmlspecialchars($ev['full_name']) ?></div><div class="user-list-desig"><?= htmlspecialchars(ucfirst($ev['role'])) ?></div></div>
-                </li>
-            <?php endforeach; ?>
-            </ul>
+    <?php if (empty($sh_evaluators)): ?>
+        <div class="qx-empty-state">
+            <i class="fa-solid fa-user-tie"></i>
+            <h3>No active Dean or Principal evaluators</h3>
+            <p>Approved, active Dean and Principal accounts appear here automatically. Faculty targets are filtered by the teaching year levels assigned in Manage Privileged.</p>
         </div>
-        <div class="content-panel">
-            <div class="pick-prompt" style="text-align:left">
-                <p><strong>Evaluator:</strong> <?= htmlspecialchars(($sh_evaluators[array_search($sh_selected_evaluator, array_column($sh_evaluators,'id'))]['full_name'] ?? '')) ?></p>
-                <p style="margin-top:4px"><strong>Target:</strong> <?= htmlspecialchars($sh_target_row['full_name'] ?? '') ?> — <?= htmlspecialchars($sh_target_row['assignment_label'] ?? '') ?></p>
-            </div>
-            <div style="display:flex;gap:12px;margin-bottom:18px;align-items:end;flex-wrap:wrap">
-                <div style="min-width:280px">
-                    <label style="display:block;font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:6px;text-transform:uppercase">Target Person</label>
-                    <select onchange="window.location='?view=school_head_assignments&eval_type=school_head&evaluator_id=<?= $sh_selected_evaluator ?>&assignment_target_id='+this.value" style="width:100%;background:#fff;border:1px solid var(--card-border);color:var(--text-dark);padding:10px 12px;border-radius:var(--radius);font-size:13px">
-                        <?php $lastGroup=''; foreach ($sh_targets as $t): if ($lastGroup!==$t['assignment_group']) { if ($lastGroup!=='') echo '</optgroup>'; echo '<optgroup label="'.htmlspecialchars($t['assignment_group']).'">'; $lastGroup=$t['assignment_group']; } ?>
-                        <option value="<?= (int)$t['id'] ?>" <?= (int)$t['id']===$sh_selected_target?'selected':'' ?>><?= htmlspecialchars($t['full_name'].' — '.$t['assignment_label']) ?></option>
-                        <?php endforeach; if ($lastGroup!=='') echo '</optgroup>'; ?>
-                    </select>
+    <?php else: ?>
+        <section class="qx-assignment-card">
+            <div class="qx-assignment-head">
+                <div>
+                    <div class="qx-eyebrow"><i class="fa-solid fa-user-check"></i> Evaluator</div>
+                    <h2>Select the Dean or Principal who will conduct the evaluation</h2>
+                </div>
+                <div class="qx-evaluator-tabs">
+                    <?php foreach ($sh_evaluators as $ev): ?>
+                        <a class="<?= (int)$ev['id']===$sh_selected_evaluator ? 'active ' : '' ?>qx-eval-<?= $ev['role']==='dean' ? 'dean' : 'principal' ?>"
+                           href="?view=school_head_assignments&eval_type=school_head&evaluator_id=<?= (int)$ev['id'] ?>">
+                            <span class="qx-person-avatar small"><i class="fa-solid <?= $ev['role']==='dean' ? 'fa-graduation-cap' : 'fa-user-tie' ?>"></i></span>
+                            <span>
+                                <strong><?= htmlspecialchars($ev['full_name']) ?></strong>
+                                <small><?= htmlspecialchars(ucfirst($ev['role'])) ?></small>
+                                <span class="qx-eval-role <?= $ev['role']==='dean' ? 'dean' : 'principal' ?>">
+                                    <i class="fa-solid <?= $ev['role']==='dean' ? 'fa-graduation-cap' : 'fa-user-tie' ?>"></i><?= htmlspecialchars(ucfirst($ev['role'])) ?>
+                                </span>
+                            </span>
+                        </a>
+                    <?php endforeach; ?>
                 </div>
             </div>
-            <form method="POST">
-                <input type="hidden" name="form_action" value="schoolhead_assignment_save">
-                <input type="hidden" name="eval_type" value="school_head">
-                <input type="hidden" name="evaluator_id" value="<?= $sh_selected_evaluator ?>">
-                <input type="hidden" name="assignment_target_id" value="<?= $sh_selected_target ?>">
-                <div class="section-heading school-head-sh"><i class="fa-solid fa-list-check"></i> Assigned Questions <span style="font-size:10px;color:var(--text-dim);font-weight:400">(<?= count($sh_questions) ?> available)</span></div>
-                <?php if (empty($sh_questions)): ?>
-                    <div class="empty-state"><i class="fa-solid fa-circle-info"></i><p>No School Head Evaluation questions exist for <?= htmlspecialchars($sh_target_type) ?> yet. Create them from the School Head Evaluation question pool first.</p></div>
-                <?php else: ?>
-                    <div style="display:flex;flex-direction:column;gap:8px;margin:14px 0 18px">
-                    <?php foreach ($sh_questions as $q): ?>
-                        <label style="display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border:1px solid var(--card-border);border-radius:9px;background:#fff;cursor:pointer">
-                            <input type="checkbox" name="question_ids[]" value="<?= (int)$q['id'] ?>" <?= in_array((int)$q['id'],$sh_existing_ids,true)?'checked':'' ?> style="margin-top:3px">
-                            <span><strong style="font-size:11px;color:var(--school-head)"><?= htmlspecialchars($q['category'] ?: 'General') ?></strong><br><span style="font-size:13px;color:var(--text-dark)"><?= htmlspecialchars($q['question_text']) ?></span></span>
-                        </label>
+
+            <div class="qx-assignment-table-wrap">
+                <table class="qx-assignment-table">
+                    <thead><tr><th>Target person</th><th>Evaluation role</th><th>Teaching scope</th><th>Assigned questions</th><th style="width:185px">Action</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($sh_targets as $t): ?>
+                        <?php $cnt=(int)($sh_assigned_counts[(int)$t['id']] ?? 0); ?>
+                        <tr class="<?= $sh_selected_target === (int)$t['id'] ? 'selected' : '' ?>">
+                            <td>
+                                <div class="qx-person-main static">
+                                    <span class="qx-person-avatar">
+                                        <?php if (!empty($t['photo'])): ?><img src="../image/<?= htmlspecialchars($t['photo']) ?>" alt=""/>
+                                        <?php else: ?><i class="fa-solid fa-user"></i><?php endif; ?>
+                                    </span>
+                                    <span><strong><?= htmlspecialchars($t['full_name']) ?></strong><small><?= htmlspecialchars($t['assignment_group']) ?></small></span>
+                                </div>
+                            </td>
+                            <td>
+                                <?php
+                                    $role_cls = 'faculty';
+                                    $role_icon = 'fa-users';
+                                    if ($t['assignment_group'] === 'Faculty' && $t['role'] === 'staff') { $role_cls = 'teaching-staff'; $role_icon = 'fa-person-chalkboard'; }
+                                    elseif ($t['assignment_group'] === 'EA') { $role_cls = 'ea'; $role_icon = 'fa-user-shield'; }
+                                ?>
+                                <span class="qx-role-badge <?= $role_cls ?>"><i class="fa-solid <?= $role_icon ?>"></i><?= htmlspecialchars($t['assignment_label']) ?></span>
+                            </td>
+                            <td>
+                                <?php
+                                    if ($t['assignment_group'] === 'Staff' || $t['assignment_group'] === 'EA') {
+                                        $scope_label = 'All levels';
+                                        $scope_cls = 'all';
+                                    } elseif (!empty($t['school_scope']['high_school']) && !empty($t['school_scope']['college'])) {
+                                        $scope_label = 'High School + College';
+                                        $scope_cls = 'both';
+                                    } elseif (!empty($t['school_scope']['high_school'])) {
+                                        $scope_label = 'High School';
+                                        $scope_cls = 'high';
+                                    } else {
+                                        $scope_label = 'College';
+                                        $scope_cls = 'college';
+                                    }
+                                ?>
+                                <span class="qx-scope-badge <?= $scope_cls ?>"><?= htmlspecialchars($scope_label) ?></span>
+                            </td>
+                            <td><span class="qx-q-count <?= $cnt > 0 ? 'has' : '' ?>"><?= $cnt ?> assigned</span></td>
+                            <td>
+                                <a class="qx-manage-person <?= $sh_selected_target === (int)$t['id'] ? 'active' : '' ?>"
+                                   href="?view=school_head_assignments&eval_type=school_head&evaluator_id=<?= $sh_selected_evaluator ?>&assignment_target_id=<?= (int)$t['id'] ?>">
+                                    <i class="fa-solid fa-sliders"></i> Assign Questions
+                                </a>
+                            </td>
+                        </tr>
                     <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <?php if ($sh_target_row): ?>
+            <section class="qx-assignment-card qx-assignment-editor">
+                <div class="qx-assignment-head">
+                    <div>
+                        <div class="qx-eyebrow"><i class="fa-solid fa-list-check"></i> Assignment editor</div>
+                        <h2><?= htmlspecialchars($sh_target_row['full_name']) ?></h2>
+                        <p><?= htmlspecialchars($sh_target_row['assignment_label']) ?> · <?= htmlspecialchars($sh_evaluators[array_search($sh_selected_evaluator, array_column($sh_evaluators,'id'))]['full_name'] ?? '') ?> as evaluator<?= $selected_eval_role === 'principal' ? ' (High School scope)' : ' (College scope)' ?>.</p>
                     </div>
-                    <button type="submit" class="btn btn-primary" style="background:var(--school-head)"><i class="fa-solid fa-floppy-disk"></i> Save Assignment</button>
-                    <span style="font-size:12px;color:var(--text-dim);margin-left:10px">Saving replaces the current questions for this evaluator + target.</span>
+                    <span class="qx-kpi-row"><span><b><?= count($sh_existing_ids) ?></b> selected</span><span><b><?= count($sh_questions) ?></b> available</span></span>
+                </div>
+
+                <?php if (empty($sh_questions)): ?>
+                    <div class="qx-empty-state compact">
+                        <i class="fa-solid fa-clipboard-list"></i>
+                        <h3>No questions available</h3>
+                        <p>Create questions in the Dean / Principal Evaluation question bank first.</p>
+                    </div>
+                <?php else: ?>
+                    <form method="POST">
+                        <input type="hidden" name="form_action" value="schoolhead_assignment_save">
+                        <input type="hidden" name="eval_type" value="school_head">
+                        <input type="hidden" name="evaluator_id" value="<?= $sh_selected_evaluator ?>">
+                        <input type="hidden" name="assignment_target_id" value="<?= $sh_selected_target ?>">
+
+                        <div class="qx-assignment-question-grid">
+                            <?php foreach ($sh_questions as $q): ?>
+                                <label class="qx-assignment-question <?= in_array((int)$q['id'],$sh_existing_ids,true) ? 'checked' : '' ?>">
+                                    <input type="checkbox" name="question_ids[]" value="<?= (int)$q['id'] ?>" <?= in_array((int)$q['id'],$sh_existing_ids,true)?'checked':'' ?>>
+                                    <span class="qx-check-box"><i class="fa-solid fa-check"></i></span>
+                                    <span class="qx-assignment-question-copy">
+                                        <strong><?= htmlspecialchars($q['category'] ?: 'General') ?></strong>
+                                        <span><?= htmlspecialchars($q['question_text']) ?></span>
+                                    </span>
+                                </label>
+                            <?php endforeach; ?>
+                        </div>
+
+                        <div class="qx-assignment-footer">
+                            <button type="submit" class="btn btn-primary qx-schoolhead-save"><i class="fa-solid fa-floppy-disk"></i> Save Assignment</button>
+                            <span>Only the checked questions will be available to this Dean/Principal for this target.</span>
+                        </div>
+                    </form>
                 <?php endif; ?>
-            </form>
-        </div>
-    </div>
+            </section>
+        <?php else: ?>
+            <div class="qx-selection-hint"><i class="fa-solid fa-hand-pointer"></i><strong>Select a target above</strong><span>Use the “Assign Questions” action for a person to open their assignment editor.</span></div>
+        <?php endif; ?>
     <?php endif; ?>
 
     <?php elseif ($current_view === 'manage'): ?>
-    <!-- ══ MANAGE ══ -->
+    <!-- ══ MANAGE QUESTIONNAIRE ══ -->
     <?php
-    $is_mr_manage    = ($selected_target === 'Multi-Role');
+    $is_mr_manage    = false;
     $is_staff_manage = ($selected_target === 'Staff');
     $is_school_head_manage = ($selected_target === 'School Head' && $active_eval === 'student');
-    // Shared-pool targets: Teacher (all eval types) plus Faculty/EA under
-    // School Head Evaluation — these use the shared evaluation_questions/
-    // question_categories pool, the same mechanism as Teacher, rather than
-    // per-person user_questions/user_question_categories rows.
-    $is_fac_manage   = ($selected_target === 'Teacher')
-        || ($active_eval === 'school_head' && in_array($selected_target, ['Faculty', 'EA'], true));
-    $is_shared_manage = $is_fac_manage;
-    $accent_class    = $is_mr_manage ? 'mr' : ($is_staff_manage ? 'staff' : 'fac');
-    $hdr_color       = $is_mr_manage ? 'var(--mr)' : ($is_school_head_manage ? 'var(--school-head)' : ($is_staff_manage ? 'var(--staff)' : 'var(--eval-color)'));
+    $is_staff_eval_manage = ($active_eval === 'staff' && in_array($selected_target, ['Dean','Principal','EA'], true));
+    $is_ea_manage = ($active_eval === 'ea' && in_array($selected_target, ['Staff','Dean','Principal'], true));
 
-    // Cosmetic per-user theming classes — only Staff gets the dedicated
-    // "staff" visual treatment (purple + briefcase icon language baked into
-    // the CSS above); Principal/Dean reuse the neutral eval-color theme so
-    // they don't visually masquerade as Staff members.
-    $pu_is_true_staff = ($selected_target === 'Staff');
-    $pu_is_school_head = $is_school_head_manage;
-    $pu_av_cls   = $pu_is_true_staff ? 'staff-av'   : ($pu_is_school_head ? 'school-head-av' : '');
-    $pu_tag_cls  = $pu_is_true_staff ? 'staff-tag'  : ($pu_is_school_head ? 'school-head-tag' : '');
-    $pu_chip_cls = $pu_is_true_staff ? 'staff-chip' : ($pu_is_school_head ? 'school-head-chip' : '');
-    $pu_sh_cls   = $pu_is_true_staff ? 'staff-sh'   : ($pu_is_school_head ? 'school-head-sh' : '');
-    $pu_ct_cls   = $pu_is_true_staff ? 'staff-ct'   : ($pu_is_school_head ? 'school-head-ct' : '');
-    $pu_btn_cls  = $pu_is_true_staff ? 'btn-staff'  : ($pu_is_school_head ? 'btn-school-head' : 'btn-eval');
-    $pu_prompt_cls = $pu_is_true_staff ? 'staff-prompt' : ($pu_is_school_head ? 'school-head-prompt' : 'generic-prompt');
+    // Shared-pool targets use evaluation_questions/question_categories.
+    // Per-person targets use user_questions/user_question_categories.
+    // Dean / Principal Evaluation: Faculty and the EA are shared question
+    // banks (one reusable set each), but Staff (non-teaching) gets its own
+    // individual question set per person. Executive Assistant Evaluation
+    // likewise uses dedicated per-person question sets for Staff, Dean, and
+    // Principal, so its evaluation form reads exactly what is managed here.
+    $is_fac_manage   = ($selected_target === 'Teacher')
+        || ($active_eval === 'school_head' && in_array($selected_target, ['Faculty', 'EA'], true))
+        || $is_staff_eval_manage;
+    $is_shared_manage = $is_fac_manage;
+    $is_per_user_target = in_array($selected_target, $per_user_targets, true) || $is_ea_manage;
+
+    $accent_class    = $is_staff_manage ? 'staff' : ($is_staff_eval_manage ? 'staff-eval' : 'fac');
+    $hdr_color       = $is_school_head_manage ? 'var(--school-head)' : ($is_staff_manage ? 'var(--staff)' : ($is_staff_eval_manage ? '#0891B2' : 'var(--eval-color)'));
+
+    $scope_cards = [];
+    foreach ($active_categories as $scope) {
+        $scope_users = $card_data[$scope]['users'] ?? [];
+        $scope_cards[] = [
+            'key' => $scope,
+            'label' => displayTargetLabel($scope, $active_eval),
+            'count' => count($scope_users),
+            'shared' => ($scope === 'Teacher' || ($active_eval === 'school_head' && in_array($scope, ['Faculty','EA'], true)) || false || $is_staff_eval_manage)
+        ];
+    }
+
+    // Category question counts for the shared bank.
+    $shared_cat_counts = [];
+    if ($is_shared_manage) {
+        foreach ($categories_list as $cat) $shared_cat_counts[(int)$cat['id']] = 0;
+        foreach ($questions_list as $qq) {
+            $assigned_names = array_filter(explode('||', $qq['category_labels'] ?? ''));
+            foreach ($categories_list as $cat) {
+                if (in_array($cat['category_name'], $assigned_names, true)) {
+                    $shared_cat_counts[(int)$cat['id']]++;
+                }
+            }
+        }
+    }
+
+    // For per-person pages, build a compact person table instead of a permanent sidebar.
+    $selected_person_role_label = '';
+    if ($selected_user_data) {
+        if ($selected_target === 'School Head') {
+            $selected_person_role_label = ($selected_user_data['role'] === 'principal') ? 'Principal' : 'Dean';
+        } else {
+            $selected_person_role_label = displayTargetLabel($selected_target, $active_eval);
+        }
+    }
     ?>
-    <div class="page-header">
+    <div class="page-header qx-page-header">
         <div>
             <h1>
-                <i class="fa-solid <?= $icons[$selected_target] ?? 'fa-user' ?>"
-                   style="color:<?= $hdr_color ?>;margin-right:8px"></i>
-                <?= htmlspecialchars(displayTargetLabel($selected_target, $active_eval)) ?>
-                <span style="color:<?= $hdr_color ?>;font-size:20px;font-weight:400"> — <?= $eval_label ?></span>
+                <i class="fa-solid <?= $active_eval === 'student' ? 'fa-graduation-cap' : ($active_eval === 'peer' ? 'fa-people-arrows' : ($active_eval === 'ea' ? 'fa-user-shield' : ($active_eval === 'staff' ? 'fa-users' : 'fa-user-tie'))) ?>"
+                   style="color:<?= $eval_color ?>;margin-right:8px"></i>
+                <?= htmlspecialchars($eval_label) ?>
             </h1>
-            <p>
-                <?php if ($is_shared_manage): ?>
-                    Manage the shared <?= htmlspecialchars($selected_target) ?> question pool. Every <?= htmlspecialchars($selected_target) ?> member uses the same questions.
-                <?php else: ?>
-                    Select a person from the list to assign their individual questions.
-                <?php endif; ?>
-            </p>
+            <p>Manage the question bank and assignment rules for this evaluation.</p>
         </div>
-        <div style="display:flex;gap:10px;align-items:center;">
-            <select onchange="window.location='?view=manage&target='+this.value+'&eval_type=<?= $active_eval ?>'"
-                style="background:var(--card-bg);border:1px solid var(--card-border);color:var(--text-dark);padding:9px 14px;border-radius:var(--radius);font-size:13px;font-family:'Inter',sans-serif;cursor:pointer;outline:none;">
-                <?php foreach ($active_categories as $sc): ?>
-                <option value="<?= $sc ?>" <?= $selected_target === $sc ? 'selected' : '' ?>><?= htmlspecialchars(displayTargetLabel($sc, $active_eval)) ?></option>
-                <?php endforeach; ?>
-            </select>
-            <a href="?view=dashboard&eval_type=<?= $active_eval ?>" class="btn btn-back"><i class="fa-solid fa-circle-chevron-left"></i> Back</a>
-        </div>
+        <a href="?view=dashboard&eval_type=<?= $active_eval ?>" class="btn btn-back">
+            <i class="fa-solid fa-arrow-left"></i> Back to Evaluation Types
+        </a>
     </div>
 
-    <div class="manage-layout">
-        <!-- SIDEBAR -->
-        <div class="sidebar">
-            <div class="sidebar-title">
-                <i class="fa-solid <?= $icons[$selected_target] ?? 'fa-users' ?>"
-                   style="<?= $is_staff_manage?'color:var(--staff)':($is_mr_manage?'color:var(--mr)':'') ?>"></i>
-                <?= htmlspecialchars(displayTargetLabel($selected_target, $active_eval)) ?>
-                <span class="sidebar-count"><?= count($target_users) ?></span>
+    <?php if ($active_eval === 'school_head'):
+        $sh_dean_user = null; $sh_principal_user = null;
+        foreach ($school_head_users as $shu) {
+            if ($shu['role'] === 'dean' && !$sh_dean_user) $sh_dean_user = $shu;
+            if ($shu['role'] === 'principal' && !$sh_principal_user) $sh_principal_user = $shu;
+        }
+        $sh_target_qs = urlencode($selected_target);
+    ?>
+    <!-- EVALUATOR ROLE — Dean and Principal each keep their own Faculty/Staff/EA banks -->
+    <section class="qx-scope-card" style="margin-bottom:16px;">
+        <div class="qx-scope-head">
+            <div>
+                <div class="qx-eyebrow"><i class="fa-solid fa-user-check"></i> Evaluator</div>
+                <h2>Editing the questionnaire for</h2>
+                <p>The Dean and Principal each get their own Faculty, Staff, and Executive Assistant question banks — switch tabs to edit the other one.</p>
+            </div>
+            <div class="qx-evaluator-tabs">
+                <a class="qx-eval-dean <?= $sh_role === 'dean' ? 'active' : '' ?>"
+                   href="?view=manage&target=<?= $sh_target_qs ?>&eval_type=school_head&sh_role=dean">
+                    <span class="qx-person-avatar small"><i class="fa-solid fa-graduation-cap"></i></span>
+                    <span>
+                        <strong><?= htmlspecialchars($sh_dean_user['full_name'] ?? 'Dean') ?></strong>
+                        <small>Dean</small>
+                        <span class="qx-eval-role dean"><i class="fa-solid fa-graduation-cap"></i>Dean</span>
+                    </span>
+                </a>
+                <a class="qx-eval-principal <?= $sh_role === 'principal' ? 'active' : '' ?>"
+                   href="?view=manage&target=<?= $sh_target_qs ?>&eval_type=school_head&sh_role=principal">
+                    <span class="qx-person-avatar small"><i class="fa-solid fa-user-tie"></i></span>
+                    <span>
+                        <strong><?= htmlspecialchars($sh_principal_user['full_name'] ?? 'Principal') ?></strong>
+                        <small>Principal</small>
+                        <span class="qx-eval-role principal"><i class="fa-solid fa-user-tie"></i>Principal</span>
+                    </span>
+                </a>
+            </div>
+        </div>
+    </section>
+    <?php endif; ?>
+
+    <!-- QUESTIONNAIRE SCOPE -->
+    <section class="qx-scope-card">
+        <div class="qx-scope-head">
+            <div>
+                <div class="qx-eyebrow"><i class="fa-solid fa-layer-group"></i> Questionnaire scope</div>
+                <h2><?= htmlspecialchars($eval_label) ?> targets</h2>
+                <p>Select what kind of person or group the questions apply to. Shared pools use one reusable question bank; individual targets have their own question set.</p>
+            </div>
+            <span class="qx-scope-total"><?= count($active_categories) ?> scopes</span>
+        </div>
+        <div class="qx-scope-grid">
+            <?php foreach ($scope_cards as $scope): ?>
+                <a class="qx-scope-item <?= $selected_target === $scope['key'] ? 'active' : '' ?>"
+                   href="?view=manage&target=<?= urlencode($scope['key']) ?>&eval_type=<?= $active_eval ?><?= $active_eval === 'school_head' ? '&sh_role='.$sh_role : '' ?>">
+                    <div class="qx-scope-icon"><i class="fa-solid <?= $icons[$scope['key']] ?? 'fa-users' ?>"></i></div>
+                    <div class="qx-scope-copy">
+                        <strong><?= htmlspecialchars($scope['label']) ?></strong>
+                        <span><?= $scope['shared'] ? 'Shared question bank' : 'Individual question sets' ?></span>
+                    </div>
+                    <span class="qx-scope-count"><?= (int)$scope['count'] ?> people</span>
+                    <i class="fa-solid fa-chevron-right qx-scope-arrow"></i>
+                </a>
+            <?php endforeach; ?>
+        </div>
+    </section>
+
+    <?php if ($is_shared_manage): ?>
+        <!-- ══ SHARED QUESTION BANK ══ -->
+        <section class="qx-panel">
+            <div class="qx-panel-head">
+                <div>
+                    <div class="qx-eyebrow"><i class="fa-solid fa-database"></i> Shared question bank</div>
+                    <h2><?= htmlspecialchars(displayTargetLabel($selected_target, $active_eval)) ?></h2>
+                    <p>One reusable set of questions is used for the selected <?= htmlspecialchars(displayTargetLabel($selected_target, $active_eval)) ?> target.<?php if ($active_eval === 'school_head' && $selected_target === 'Faculty'): ?> <?= $sh_role === 'dean' ? 'Only <strong>College</strong>-assigned Faculty are eligible for the Dean.' : 'Only <strong>High School / Senior High</strong>-assigned Faculty are eligible for the Principal.' ?><?php elseif ($active_eval === 'staff'): ?> Staff members will use this question bank when evaluating the selected leader.<?php endif; ?></p>
+                </div>
+                <?php if ($active_eval === 'school_head' && $selected_target === 'Faculty'): ?>
+                <span class="qx-eval-role <?= $sh_role ?>"><i class="fa-solid <?= $sh_role === 'dean' ? 'fa-graduation-cap' : 'fa-user-tie' ?>"></i><?= $sh_role === 'dean' ? 'College only' : 'High School / SHS only' ?></span>
+                <?php endif; ?>
+                <div class="qx-kpi-row">
+                    <span><b><?= count($questions_list) ?></b> questions</span>
+                    <span><b><?= count($categories_list) ?></b> categories</span>
+                </div>
             </div>
 
-            <?php if ($is_per_user_target): ?>
-            <div class="per-user-mode-notice <?= $is_staff_manage ? 'staff-notice' : '' ?>">
-                <i class="fa-solid fa-user-pen" style="font-size:10px"></i>
-                Click a person to manage their questions
-            </div>
-            <?php elseif ($is_fac_manage): ?>
-            <div class="per-user-mode-notice">
-                <i class="fa-solid fa-layer-group" style="font-size:10px"></i>
-                Click a person to preview the shared questions
-            </div>
-            <?php endif; ?>
+            <div class="qx-section-block">
+                <div class="qx-section-title">
+                    <div>
+                        <span class="qx-eyebrow"><i class="fa-solid fa-tags"></i> Categories</span>
+                        <small>Organize and reuse questions without duplicating them.</small>
+                    </div>
+                    <form method="POST" class="qx-inline-add">
+                        <input type="hidden" name="form_action" value="add_category"/>
+                        <input type="hidden" name="target_type" value="<?= htmlspecialchars($selected_target) ?>"/>
+                        <input type="hidden" name="eval_type" value="<?= $active_eval ?>"/>
+                        <?php if ($active_eval === 'school_head'): ?><input type="hidden" name="sh_role" value="<?= $sh_role ?>"/><?php endif; ?>
+                        <input type="hidden" name="view" value="manage"/>
+                        <input class="field" type="text" name="category_name" placeholder="New category name..." required/>
+                        <button type="submit" class="btn-sm <?= $is_mr_manage ? 'btn-mr' : 'btn-eval' ?>"><i class="fa-solid fa-plus"></i> Add</button>
+                    </form>
+                </div>
 
-            <?php if ($is_mr_manage): ?>
-            <div class="mr-filter-tabs">
-                <a href="?view=manage&target=Multi-Role&eval_type=<?= $active_eval ?>&mr_filter=all<?= $uid_param ?>"
-                   class="mr-filter-tab <?= $mr_filter==='all'?'active-all':'' ?>">
-                    All <span class="mr-filter-count"><?= count($mr_all_users) ?></span>
-                </a>
-                <a href="?view=manage&target=Multi-Role&eval_type=<?= $active_eval ?>&mr_filter=teacher<?= $uid_param ?>"
-                   class="mr-filter-tab <?= $mr_filter==='teacher'?'active-teacher':'' ?>">
-                    Teacher <span class="mr-filter-count"><?= $mr_teacher_count ?></span>
-                </a>
-                <a href="?view=manage&target=Multi-Role&eval_type=<?= $active_eval ?>&mr_filter=staff<?= $uid_param ?>"
-                   class="mr-filter-tab <?= $mr_filter==='staff'?'active-staff':'' ?>">
-                    Staff <span class="mr-filter-count"><?= $mr_staff_count ?></span>
-                </a>
-            </div>
-            <?php endif; ?>
-
-            <?php if (empty($target_users)): ?>
-            <div class="user-list-empty">
-                <i class="fa-solid <?= $icons[$selected_target] ?? 'fa-user-slash' ?>" style="font-size:22px;opacity:.3;display:block;margin-bottom:8px;<?= $is_staff_manage?'color:var(--staff)':($is_mr_manage?'color:var(--mr)':'') ?>"></i>
-                <?php if ($is_staff_manage): ?>
-                    No approved <?= htmlspecialchars(displayTargetLabel($selected_target, $active_eval)) ?> accounts yet.<br><small>Approve <?= htmlspecialchars($selected_target) ?> registrations in Manage Privileged and they'll appear here automatically.</small>
-                <?php elseif ($is_mr_manage): ?>
-                    No multi-role <?= $mr_filter !== 'all' ? $mr_filter : 'users' ?> found.<br><small>A user appears here when they have an additional role/responsibility. Teaching assignments do not replace their Staff or Teacher context.</small>
-                <?php elseif ($is_fac_manage): ?>
-                    No approved <?= htmlspecialchars(displayTargetLabel($selected_target, $active_eval)) ?> accounts yet.<br><small>Approve <?= htmlspecialchars($selected_target) ?> registrations in Manage Privileged and they'll appear here automatically.</small>
+                <?php if ($active_eval !== 'student' && $active_eval !== 'peer' && $active_eval !== 'staff' && $active_eval !== 'school_head'): ?>
+                <?php if (empty($categories_list)): ?>
+                    <div class="qx-empty-mini"><i class="fa-solid fa-tags"></i> No categories yet. Add the first category above.</div>
                 <?php else: ?>
-                    No eligible <?= htmlspecialchars(displayTargetLabel($selected_target, $active_eval)) ?> found.<br><small>This list updates automatically based on active roles and assignments — nothing to add here manually.</small>
+                    <div class="qx-category-table-wrap">
+                        <table class="qx-category-table">
+                            <thead><tr><th>Category</th><th>Questions</th><th>Actions</th></tr></thead>
+                            <tbody>
+                            <?php foreach ($categories_list as $cat): ?>
+                                <tr>
+                                    <td><span class="qx-category-name"><?= htmlspecialchars($cat['category_name']) ?></span></td>
+                                    <td><span class="qx-count-pill"><?= (int)($shared_cat_counts[(int)$cat['id']] ?? 0) ?></span></td>
+                                    <td class="qx-actions-cell">
+                                        <button class="qx-action-link" type="button" onclick="openRename(<?= (int)$cat['id'] ?>,'<?= htmlspecialchars(addslashes($cat['category_name'])) ?>')"><i class="fa-solid fa-pen"></i> Rename</button>
+                                        <button class="qx-action-link danger" type="button" onclick="deleteCategory(<?= (int)$cat['id'] ?>,'<?= htmlspecialchars(addslashes($cat['category_name'])) ?>')"><i class="fa-solid fa-trash-can"></i> Delete</button>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
                 <?php endif; ?>
             </div>
-            <?php else: ?>
-            <ul class="user-list">
-                <?php
-                foreach ($target_users as $tu):
-                    $is_active_item = ($selected_user === $tu['id']);
-                    $is_nologin     = ($tu['source'] === 'admin_nologin');
-                    $active_cls     = $is_active_item ? ('active'.($is_staff_manage?' staff-active':($is_school_head_manage?' school-head-active':($is_mr_manage||$is_fac_manage?' mr-active':'')))) : '';
-                    $q_badge_cls    = $is_staff_manage ? 'staff-q' : ($is_school_head_manage ? 'school-head-q' : 'mr-q');
-                    $sub            = ($selected_target === 'Staff') ? getSubRole($tu) : (($selected_target === 'School' || $selected_target === 'School Head') ? ($tu['role'] === 'principal' ? 'Principal' : 'Dean') : null);
-                    $sec_label      = secondaryRoleLabel($tu);
 
-                    // Badge: per-user count for per-user targets, shared pool count for Teacher/Multi-Role
-                    if ($is_per_user_target) {
-                        $uq_target = $selected_target === 'School Head' ? ($tu['role'] === 'principal' ? 'Principal' : 'Dean') : $selected_target;
-                        $uq_cnt = $user_q_counts[$tu['id']][$uq_target][$active_eval] ?? 0;
-                        $badge_text = $uq_cnt > 0 ? $uq_cnt.'Q' : '0Q';
-                        $badge_extra = $uq_cnt === 0 ? ' no-q' : '';
-                    } else {
-                        $badge_text = count($questions_list).'Q';
-                        $badge_extra = '';
-                    }
-                ?>
-                <li class="user-list-item <?= $active_cls ?>"
-                    onclick="window.location='?view=manage&target=<?= urlencode($selected_target) ?>&eval_type=<?= $active_eval ?>&user_id=<?= $tu['id'] ?><?= $is_mr_manage ? '&mr_filter='.$mr_filter : '' ?>'">
-                    <?php if ($tu['photo']): ?>
-                    <img class="user-list-avatar" src="../image/<?= htmlspecialchars($tu['photo']) ?>" alt=""/>
-                    <?php else: ?>
-                    <div class="user-list-avatar-ph"><i class="fa-solid fa-user"></i></div>
-                    <?php endif; ?>
-                    <div style="flex:1;min-width:0;">
-                        <div class="user-list-name"><?= htmlspecialchars($tu['full_name']) ?></div>
-                        <div class="user-list-desig" title="<?= htmlspecialchars($tu['designation']) ?>">
-                            <?= htmlspecialchars($tu['designation'] ?: ($tu['role'] === 'teacher' ? 'Teacher' : 'Personnel')) ?>
-                        </div>
+
+
+            <div class="qx-section-block qx-question-block">
+                <div class="qx-section-title">
+                    <div>
+                        <span class="qx-eyebrow"><i class="fa-solid fa-list-check"></i> Question bank</span>
+                        <small>Create reusable questions, then assign them to the relevant categories.</small>
                     </div>
-                    <?php if (!$is_mr_manage && $sec_label): ?>
-                    <span class="secondary-role-tag" title="Also assigned as <?= htmlspecialchars($sec_label) ?>"><i class="fa-solid fa-layer-group" style="font-size:8px"></i> +<?= htmlspecialchars($sec_label) ?></span>
-                    <?php endif; ?>
-                    <?php if ($sub): ?>
-                    <span class="subrole-mini"><?= htmlspecialchars($sub) ?></span>
-                    <?php endif; ?>
-                    <?php if ($is_mr_manage && $mr_filter === 'all'): ?>
-                    <span class="role-mini-badge <?= $tu['role']==='teacher'?'fac':'sta' ?>">
-                        <?= $tu['role']==='teacher'?'Fac':'Staff' ?>
-                    </span>
-                    <?php endif; ?>
-                    <span class="q-count-badge <?= $q_badge_cls.$badge_extra ?>"><?= $badge_text ?></span>
-                    <span class="source-dot <?= $is_nologin ? 'nologin' : 'login' ?>"
-                          title="<?= $is_nologin ? 'Personnel Registry (admin-added)' : 'Login account (User Management)' ?>"></span>
-                </li>
-                <?php endforeach; ?>
-            </ul>
-            <div class="sidebar-legend">
-                <div class="legend-item"><div class="legend-dot" style="background:#059669"></div> Login account</div>
-                <div class="legend-item"><div class="legend-dot" style="background:#D97706"></div> Personnel Registry</div>
+                </div>
+
+                <form method="POST" class="qx-new-question">
+                    <input type="hidden" name="form_action" value="insert"/>
+                    <input type="hidden" name="target_type" value="<?= htmlspecialchars($selected_target) ?>"/>
+                    <input type="hidden" name="eval_type" value="<?= $active_eval ?>"/>
+                        <?php if ($active_eval === 'school_head'): ?><input type="hidden" name="sh_role" value="<?= $sh_role ?>"/><?php endif; ?>
+                    <input type="hidden" name="view" value="manage"/>
+                    <select name="category_ids[]" required>
+                        <option value="" disabled selected hidden>Primary category</option>
+                        <?php foreach ($categories_list as $c): ?>
+                            <option value="<?= (int)$c['id'] ?>"><?= htmlspecialchars($c['category_name']) ?></option>
+                        <?php endforeach; ?>
+                        <?php if (empty($categories_list)): ?><option value="0" selected>General</option><?php endif; ?>
+                    </select>
+                    <input type="text" name="question_text" placeholder="Write a new question..." required/>
+                    <button type="submit" class="btn-sm <?= $is_mr_manage ? 'btn-mr' : 'btn-eval' ?>"><i class="fa-solid fa-plus"></i> Add Question</button>
+                </form>
+
+                <?php if (empty($questions_list)): ?>
+                    <div class="qx-empty-state">
+                        <i class="fa-solid fa-clipboard-list"></i>
+                        <h3>No questions in this bank yet</h3>
+                        <p>Add the first question using the form above.</p>
+                    </div>
+                <?php else: ?>
+                    <div class="qx-table-wrap">
+                        <table class="qx-question-table">
+                            <thead>
+                                <tr><th style="width:54px">No.</th><th>Question</th><th style="width:260px">Categories</th><th style="width:135px">Actions</th></tr>
+                            </thead>
+                            <tbody>
+                            <?php $num=1; foreach ($questions_list as $row): ?>
+                                <?php $assigned_names = array_filter(explode('||', $row['category_labels'] ?? '')); ?>
+                                <?php
+                                    $assigned_ids=[];
+                                    $aq=$mysqli->prepare("SELECT category_id FROM evaluation_question_categories WHERE question_id=?");
+                                    $aq->bind_param('i',$row['id']); $aq->execute(); $ar=$aq->get_result();
+                                    while($ax=$ar->fetch_assoc()) $assigned_ids[(int)$ax['category_id']]=true;
+                                    $aq->close();
+                                ?>
+                                <tr>
+                                    <td><span class="q-num"><?= $num++ ?></span></td>
+                                    <td>
+                                        <form id="upd-<?= (int)$row['id'] ?>" method="POST" style="margin:0">
+                                            <input type="hidden" name="form_action" value="update"/>
+                                            <input type="hidden" name="question_id" value="<?= (int)$row['id'] ?>"/>
+                                            <input type="hidden" name="target_type" value="<?= htmlspecialchars($selected_target) ?>"/>
+                                            <input type="hidden" name="eval_type" value="<?= $active_eval ?>"/>
+                        <?php if ($active_eval === 'school_head'): ?><input type="hidden" name="sh_role" value="<?= $sh_role ?>"/><?php endif; ?>
+                                            <input type="hidden" name="view" value="manage"/>
+                                            <input class="qx-question-input" type="text" name="question_text" value="<?= htmlspecialchars($row['question_text']) ?>"/>
+                                        </form>
+                                    </td>
+                                    <td>
+                                        <div class="qx-tag-list">
+                                            <?php if (empty($assigned_names)): ?><span class="qx-muted">General</span><?php endif; ?>
+                                            <?php foreach ($assigned_names as $an): ?><span class="qx-tag"><?= htmlspecialchars($an) ?></span><?php endforeach; ?>
+                                        </div>
+                                        <details class="qx-category-details">
+                                            <summary><i class="fa-solid fa-sliders"></i> Assign categories</summary>
+                                            <div class="qx-checkbox-grid">
+                                                <?php foreach ($categories_list as $c): ?>
+                                                    <label><input type="checkbox" name="category_ids[]" value="<?= (int)$c['id'] ?>" form="upd-<?= (int)$row['id'] ?>" <?= isset($assigned_ids[(int)$c['id']])?'checked':'' ?>/> <?= htmlspecialchars($c['category_name']) ?></label>
+                                                <?php endforeach; ?>
+                                            </div>
+                                        </details>
+                                    </td>
+                                    <td>
+                                        <div class="qx-row-actions">
+                                            <button type="submit" form="upd-<?= (int)$row['id'] ?>" class="qx-primary-icon" title="Save question and category assignments"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+                                            <form method="POST" style="margin:0" onsubmit="return confirm('Delete this question?')">
+                                                <input type="hidden" name="form_action" value="delete"/>
+                                                <input type="hidden" name="question_id" value="<?= (int)$row['id'] ?>"/>
+                                                <input type="hidden" name="target_type" value="<?= htmlspecialchars($selected_target) ?>"/>
+                                                <input type="hidden" name="eval_type" value="<?= $active_eval ?>"/>
+                        <?php if ($active_eval === 'school_head'): ?><input type="hidden" name="sh_role" value="<?= $sh_role ?>"/><?php endif; ?>
+                                                <input type="hidden" name="view" value="manage"/>
+                                                <button type="submit" class="qx-danger-icon" title="Delete question"><i class="fa-solid fa-trash-can"></i></button>
+                                            </form>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </section>
+
+    <?php else: ?>
+        <!-- ══ INDIVIDUAL QUESTION SETS ══ -->
+        <section class="qx-panel">
+            <div class="qx-panel-head">
+                <div>
+                    <div class="qx-eyebrow"><i class="fa-solid fa-user-pen"></i> Individual question sets</div>
+                    <h2><?= htmlspecialchars(displayTargetLabel($selected_target, $active_eval)) ?></h2>
+                    <p>Each person has their own questionnaire. Select a person below to manage their questions.</p>
+                </div>
+                <?php if ($selected_user && $selected_user_data): ?>
+                    <span class="qx-kpi-row"><span><b><?= count($user_questions_list) ?></b> questions for <?= htmlspecialchars($selected_user_data['full_name']) ?></span></span>
+                <?php endif; ?>
+            </div>
+
+            <?php
+            // Flag anyone in this list with zero configured questions --
+            // that's a silent dead end on the student/evaluator side (the
+            // Evaluate button leads to a "no questions set up" error and no
+            // submission is ever recorded), so surface it here before it
+            // turns into a missing row in Evaluation Report.
+            $missing_q_people = [];
+            if ($is_per_user_target) {
+                foreach ($target_users as $tu) {
+                    $uq_target = $selected_target === 'School Head'
+                        ? ($tu['role'] === 'principal' ? 'Principal' : 'Dean')
+                        : $selected_target;
+                    $uq_eval = ($active_eval === 'ea')
+                        ? (($uq_target === 'Staff') ? 'student' : 'school_head')
+                        : $active_eval;
+                    $cnt = $user_q_counts[$tu['id']][$uq_target][$uq_eval] ?? 0;
+                    if ($cnt === 0) {
+                        $missing_q_people[] = $tu['full_name'] . ($selected_target === 'School Head' ? ' (' . $uq_target . ')' : '');
+                    }
+                }
+            }
+            ?>
+            <?php if (!empty($missing_q_people)): ?>
+            <div class="qx-info-banner" style="border-color:#FCA5A5;background:#FEF2F2;margin-bottom:16px;">
+                <i class="fa-solid fa-triangle-exclamation" style="color:#DC2626"></i>
+                <div><strong style="color:#B91C1C">No questions configured yet</strong><br>
+                    <?= htmlspecialchars(implode(', ', $missing_q_people)) ?> — <?= count($missing_q_people) === 1 ? 'has' : 'have' ?> zero questions set up. Anyone who tries to evaluate <?= count($missing_q_people) === 1 ? 'this person' : 'these people' ?> will hit a dead end and their evaluation won't be recorded. Click Manage below to add questions.
+                </div>
             </div>
             <?php endif; ?>
-        </div>
 
-        <!-- CONTENT PANEL -->
-        <div class="content-panel">
-
-            <?php if ($is_shared_manage): ?>
-            <!-- ══ TEACHER: SHARED POOL ══ -->
-            <?php if ($is_mr_manage): ?>
-            <div class="mr-notice">
-                <i class="fa-solid fa-layer-group"></i>
-                <p><strong style="color:var(--mr)">Multi-Role Questions</strong> — Individual question sets. Each Multi-Role person has their own questions, separate from their Staff/Teacher evaluation context.</p>
-            </div>
+            <!-- Personnel table -->
+            <?php if (empty($target_users)): ?>
+                <div class="qx-empty-state">
+                    <i class="fa-solid <?= $icons[$selected_target] ?? 'fa-users' ?>"></i>
+                    <h3>No eligible <?= htmlspecialchars(displayTargetLabel($selected_target, $active_eval)) ?> yet</h3>
+                    <p>This list updates automatically from approved, active personnel records and current role/assignment rules.</p>
+                </div>
             <?php else: ?>
-            <div class="mr-notice" style="background:var(--eval-bg);border-color:var(--eval-border)">
-                <i class="fa-solid fa-layer-group" style="color:var(--eval-color)"></i>
-                <p><strong style="color:var(--eval-color)"><?= htmlspecialchars($selected_target) ?> Questions</strong> — Shared pool. Every approved <?= htmlspecialchars($selected_target) ?> member is evaluated with this same question set.</p>
-            </div>
+                <div class="qx-person-table-wrap">
+                    <table class="qx-person-table">
+                        <thead><tr><th>Person</th><th>Role / Designation</th><th>Question Set</th><th style="width:150px">Action</th></tr></thead>
+                        <tbody>
+                        <?php foreach ($target_users as $tu): ?>
+                            <?php
+                                $is_nologin = ($tu['source'] === 'admin_nologin');
+                                if ($is_per_user_target) {
+                                    $uq_target = $selected_target === 'School Head'
+                                        ? ($tu['role'] === 'principal' ? 'Principal' : 'Dean')
+                                        : $selected_target;
+                                    $uq_eval = ($active_eval === 'ea')
+                                        ? (($uq_target === 'Staff') ? 'student' : 'school_head')
+                                        : $active_eval;
+                                    $uq_cnt = $user_q_counts[$tu['id']][$uq_target][$uq_eval] ?? 0;
+                                } else {
+                                    $uq_cnt = count($questions_list);
+                                }
+                                $person_role = $selected_target === 'School Head'
+                                    ? ($tu['role'] === 'principal' ? 'Principal' : 'Dean')
+                                    : (($active_eval === 'peer' && $selected_target === 'School')
+                                        ? ($tu['role'] === 'principal' ? 'Principal' : 'Dean')
+                                        : (($active_eval === 'peer' && $selected_target === 'Staff')
+                                            ? 'Staff'
+                                            : (($active_eval === 'ea' && $selected_target === 'Staff') ? 'Staff' : ($tu['designation'] ?: ($tu['role'] === 'teacher' ? 'Teacher' : 'Personnel')))));
+                            ?>
+                            <tr class="<?= $selected_user === (int)$tu['id'] ? 'selected' : '' ?>">
+                                <td>
+                                    <a class="qx-person-main" href="?view=manage&target=<?= urlencode($selected_target) ?>&eval_type=<?= $active_eval ?>&user_id=<?= (int)$tu['id'] ?><?= $active_eval === 'school_head' ? '&sh_role='.$sh_role : '' ?>">
+                                        <span class="qx-person-avatar">
+                                            <?php if (!empty($tu['photo'])): ?><img src="../image/<?= htmlspecialchars($tu['photo']) ?>" alt=""/>
+                                            <?php else: ?><i class="fa-solid <?= $icons[$selected_target] ?? 'fa-user' ?>"></i><?php endif; ?>
+                                        </span>
+                                        <span><strong><?= htmlspecialchars($tu['full_name']) ?></strong><small><?= $is_nologin ? 'Personnel Registry' : 'Login Account' ?></small></span>
+                                    </a>
+                                </td>
+                                <td>
+                                    <div class="qx-role-cell">
+                                        <span><?= htmlspecialchars($person_role) ?></span>
+                                    </div>
+                                </td>
+                                <td><span class="qx-q-count <?= $uq_cnt > 0 ? 'has' : '' ?>"><?= (int)$uq_cnt ?> question<?= $uq_cnt === 1 ? '' : 's' ?></span></td>
+                                <td>
+                                    <a class="qx-manage-person <?= $selected_user === (int)$tu['id'] ? 'active' : '' ?>"
+                                       href="?view=manage&target=<?= urlencode($selected_target) ?>&eval_type=<?= $active_eval ?>&user_id=<?= (int)$tu['id'] ?><?= $active_eval === 'school_head' ? '&sh_role='.$sh_role : '' ?>">
+                                        <i class="fa-solid fa-sliders"></i> Manage
+                                    </a>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
             <?php endif; ?>
-            <div class="shared-banner" style="<?= $is_mr_manage ? 'background:var(--mr-bg);border-color:var(--mr-border)' : '' ?>">
-                <i class="fa-solid fa-circle-info" style="color:<?= $is_mr_manage ? 'var(--mr)' : 'var(--eval-color)' ?>"></i>
-                <p>
-                    <strong style="color:<?= $is_mr_manage ? 'var(--mr)' : 'var(--eval-color)' ?>">Questions are shared</strong>
-                    — all <?= count($target_users) ?> <?= htmlspecialchars($selected_target) ?> personnel use this same question set.
-                    Click a person on the left to preview.
-                </p>
-            </div>
 
             <?php if ($selected_user && $selected_user_data): ?>
-            <?php
-            $desig_tokens = array_filter(array_map('trim', explode(',', $selected_user_data['designation'] ?? '')), fn($t) => $t !== '');
-            $sel_sec_label = secondaryRoleLabel($selected_user_data);
-            ?>
-            <div class="user-header">
-                <?php if ($selected_user_data['photo']): ?>
-                <img class="user-header-avatar <?= $is_mr_manage ? 'mr-av' : '' ?>" src="../image/<?= htmlspecialchars($selected_user_data['photo']) ?>" alt=""/>
-                <?php else: ?>
-                <div class="user-header-avatar-ph"><i class="fa-solid fa-user"></i></div>
-                <?php endif; ?>
-                <div>
-                    <div class="user-header-name"><?= htmlspecialchars($selected_user_data['full_name']) ?></div>
-                    <?php if (count($desig_tokens) > 1): ?>
-                    <div class="desig-tag-row">
-                        <?php foreach ($desig_tokens as $dt): ?><span class="desig-tag"><?= htmlspecialchars($dt) ?></span><?php endforeach; ?>
+                <div class="qx-selected-person">
+                    <div class="qx-selected-person-head">
+                        <div>
+                            <div class="qx-eyebrow"><i class="fa-solid fa-user-check"></i> Editing question set</div>
+                            <h3><?= htmlspecialchars($selected_user_data['full_name']) ?></h3>
+                            <p><?= htmlspecialchars($selected_person_role_label) ?> · <?= htmlspecialchars($active_eval === 'student' ? 'Student Evaluation' : ($active_eval === 'peer' ? 'Peer-to-Peer Evaluation' : ($active_eval === 'ea' ? 'Executive Assistant Evaluation' : ($active_eval === 'staff' ? 'Staff Evaluation' : 'Dean / Principal Evaluation')))) ?></p>
+                        </div>
+                        <span class="qx-kpi-row"><span><b><?= count($user_questions_list) ?></b> questions</span></span>
                     </div>
+
+                    <div class="qx-info-banner">
+                        <i class="fa-solid fa-circle-info"></i>
+                        <div><strong>Individual question set</strong><br>Changes here affect only <b><?= htmlspecialchars($selected_user_data['full_name']) ?></b>.</div>
+                    </div>
+
+                    <div class="qx-section-block">
+                        <div class="qx-section-title">
+                            <div>
+                                <span class="qx-eyebrow"><i class="fa-solid fa-tags"></i> Categories for this person</span>
+                                <small>Categories are local to this question set.</small>
+                            </div>
+                            <form method="POST" class="qx-inline-add">
+                                <input type="hidden" name="form_action" value="user_add_category"/>
+                                <input type="hidden" name="target_type" value="<?= htmlspecialchars($selected_target) ?>"/>
+                                <input type="hidden" name="eval_type" value="<?= $active_eval ?>"/>
+                        <?php if ($active_eval === 'school_head'): ?><input type="hidden" name="sh_role" value="<?= $sh_role ?>"/><?php endif; ?>
+                                <input type="hidden" name="view" value="manage"/>
+                                <input type="hidden" name="user_id" value="<?= (int)$selected_user ?>"/>
+                                <input class="field" type="text" name="category_name" placeholder="New category name..." required/>
+                                <button type="submit" class="btn-sm <?= $is_staff_manage ? 'btn-staff' : ($is_mr_manage ? 'btn-mr' : 'btn-eval') ?>"><i class="fa-solid fa-plus"></i> Add</button>
+                            </form>
+                        </div>
+                        <div class="qx-chip-row">
+                            <?php if (empty($user_categories_list)): ?>
+                                <span class="qx-muted">No categories yet.</span>
+                            <?php else: foreach ($user_categories_list as $cat): ?>
+                                <span class="qx-chip">
+                                    <?= htmlspecialchars($cat['category_name']) ?>
+                                    <button type="button" onclick="openUserRename(<?= (int)$cat['id'] ?>,'<?= htmlspecialchars(addslashes($cat['category_name'])) ?>')" aria-label="Rename"><i class="fa-solid fa-pen"></i></button>
+                                    <button type="button" onclick="deleteUserCategory(<?= (int)$cat['id'] ?>,'<?= htmlspecialchars(addslashes($cat['category_name'])) ?>')" aria-label="Delete"><i class="fa-solid fa-xmark"></i></button>
+                                </span>
+                            <?php endforeach; endif; ?>
+                        </div>
+                    </div>
+
+                    <form method="POST" class="qx-new-question qx-person-question-form">
+                        <input type="hidden" name="form_action" value="user_insert"/>
+                        <input type="hidden" name="target_type" value="<?= htmlspecialchars($selected_target) ?>"/>
+                        <input type="hidden" name="eval_type" value="<?= $active_eval ?>"/>
+                        <?php if ($active_eval === 'school_head'): ?><input type="hidden" name="sh_role" value="<?= $sh_role ?>"/><?php endif; ?>
+                        <input type="hidden" name="view" value="manage"/>
+                        <input type="hidden" name="user_id" value="<?= (int)$selected_user ?>"/>
+                        <select name="category" required>
+                            <option value="" disabled selected hidden>Category</option>
+                            <?php foreach ($user_categories_list as $c): ?>
+                                <option value="<?= htmlspecialchars($c['category_name']) ?>"><?= htmlspecialchars($c['category_name']) ?></option>
+                            <?php endforeach; ?>
+                            <?php if (empty($user_categories_list)): ?><option value="General">General</option><?php endif; ?>
+                        </select>
+                        <input type="text" name="question_text" placeholder="Write a question for <?= htmlspecialchars($selected_user_data['full_name']) ?>..." required/>
+                        <button type="submit" class="btn-sm <?= $is_staff_manage ? 'btn-staff' : ($is_mr_manage ? 'btn-mr' : 'btn-eval') ?>"><i class="fa-solid fa-plus"></i> Add Question</button>
+                    </form>
+
+                    <?php if (empty($user_questions_list)): ?>
+                        <div class="qx-empty-state compact">
+                            <i class="fa-solid fa-clipboard-list"></i>
+                            <h3>No questions assigned yet</h3>
+                            <p>Add the first question for this person.</p>
+                        </div>
                     <?php else: ?>
-                    <div class="user-header-desig"><?= htmlspecialchars($selected_user_data['designation'] ?: $selected_target) ?></div>
+                        <div class="qx-table-wrap">
+                            <table class="qx-question-table">
+                                <thead><tr><th style="width:54px">No.</th><th>Question</th><th style="width:135px">Actions</th></tr></thead>
+                                <tbody>
+                                <?php $num=1; foreach ($user_questions_list as $row): ?>
+                                    <tr>
+                                        <td><span class="q-num"><?= $num++ ?></span></td>
+                                        <td>
+                                            <form id="uupd-<?= (int)$row['id'] ?>" method="POST" style="margin:0">
+                                                <input type="hidden" name="form_action" value="user_update"/>
+                                                <input type="hidden" name="question_id" value="<?= (int)$row['id'] ?>"/>
+                                                <input type="hidden" name="target_type" value="<?= htmlspecialchars($selected_target) ?>"/>
+                                                <input type="hidden" name="eval_type" value="<?= $active_eval ?>"/>
+                        <?php if ($active_eval === 'school_head'): ?><input type="hidden" name="sh_role" value="<?= $sh_role ?>"/><?php endif; ?>
+                                                <input type="hidden" name="view" value="manage"/>
+                                                <input type="hidden" name="user_id" value="<?= (int)$selected_user ?>"/>
+                                                <input class="qx-question-input" type="text" name="question_text" value="<?= htmlspecialchars($row['question_text']) ?>"/>
+                                            </form>
+                                        </td>
+                                        <td>
+                                            <div class="qx-row-actions">
+                                                <button type="submit" form="uupd-<?= (int)$row['id'] ?>" class="qx-primary-icon" title="Save question"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+                                                <form method="POST" style="margin:0" onsubmit="return confirm('Delete this question?')">
+                                                    <input type="hidden" name="form_action" value="user_delete"/>
+                                                    <input type="hidden" name="question_id" value="<?= (int)$row['id'] ?>"/>
+                                                    <input type="hidden" name="target_type" value="<?= htmlspecialchars($selected_target) ?>"/>
+                                                    <input type="hidden" name="eval_type" value="<?= $active_eval ?>"/>
+                        <?php if ($active_eval === 'school_head'): ?><input type="hidden" name="sh_role" value="<?= $sh_role ?>"/><?php endif; ?>
+                                                    <input type="hidden" name="view" value="manage"/>
+                                                    <input type="hidden" name="user_id" value="<?= (int)$selected_user ?>"/>
+                                                    <button type="submit" class="qx-danger-icon" title="Delete question"><i class="fa-solid fa-trash-can"></i></button>
+                                                </form>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
                     <?php endif; ?>
                 </div>
-                <div class="user-header-right">
-                    <div class="user-header-tag <?= $is_mr_manage ? 'mr-tag' : '' ?>"><i class="fa-solid fa-clipboard-list" style="margin-right:5px"></i><?= count($questions_list) ?> questions</div>
-                    <?php if (!$is_mr_manage && $sel_sec_label): ?>
-                    <span class="secondary-role-tag"><i class="fa-solid fa-layer-group" style="font-size:8px"></i> Also <?= htmlspecialchars($sel_sec_label) ?></span>
-                    <?php endif; ?>
-                    <?php $is_nl = ($selected_user_data['source'] === 'admin_nologin'); ?>
-                    <span class="source-tag <?= $is_nl?'nologin':'login' ?>"><?= $is_nl?'Personnel Registry':'Login Account' ?></span>
-                </div>
-            </div>
-            <?php elseif (!empty($target_users)): ?>
-            <div class="pick-prompt">
-                <i class="fa-solid fa-hand-pointer"></i>
-                <p>Select a person from the list to preview their <?= htmlspecialchars($selected_target) ?> evaluation form.</p>
-            </div>
             <?php endif; ?>
-
-            <!-- CATEGORY MANAGER (shared pool) -->
-            <div class="cat-manager">
-                <div class="cat-manager-title <?= $is_mr_manage ? 'mr-ct' : '' ?>"><i class="fa-solid fa-tags"></i> Categories <span style="font-size:10px;color:var(--text-dim);font-weight:400;text-transform:none;letter-spacing:0">(<?= count($categories_list) ?> total)</span></div>
-                <div class="cat-chips">
-                    <?php if (empty($categories_list)): ?>
-                    <span style="font-size:12px;color:var(--text-dim);font-style:italic;">No categories yet.</span>
-                    <?php else: foreach ($categories_list as $cat): ?>
-                    <div class="cat-chip <?= $is_mr_manage ? 'mr-chip' : '' ?>">
-                        <?= htmlspecialchars($cat['category_name']) ?>
-                        <button class="cat-chip-btn edit" onclick="openRename(<?= $cat['id'] ?>,'<?= htmlspecialchars(addslashes($cat['category_name'])) ?>')"><i class="fa-solid fa-pen"></i></button>
-                        <button class="cat-chip-btn del" onclick="deleteCategory(<?= $cat['id'] ?>,'<?= htmlspecialchars(addslashes($cat['category_name'])) ?>')"><i class="fa-solid fa-xmark"></i></button>
-                    </div>
-                    <?php endforeach; endif; ?>
-                </div>
-                <form method="POST">
-                    <input type="hidden" name="form_action" value="add_category"/>
-                    <input type="hidden" name="target_type" value="<?= htmlspecialchars($selected_target) ?>"/>
-                    <input type="hidden" name="eval_type" value="<?= $active_eval ?>"/>
-                    <input type="hidden" name="view" value="manage"/>
-                    <?php if ($selected_user): ?><input type="hidden" name="user_id" value="<?= $selected_user ?>"/><?php endif; ?>
-                    <?php if ($is_mr_manage): ?><input type="hidden" name="mr_filter" value="<?= $mr_filter ?>"/><?php endif; ?>
-                    <div class="cat-add-row">
-                        <input class="field field-grow" type="text" name="category_name" placeholder="New category name..." required/>
-                        <button type="submit" class="btn-sm <?= $is_mr_manage ? 'btn-mr' : 'btn-eval' ?>"><i class="fa-solid fa-plus"></i> Add Category</button>
-                    </div>
-                </form>
-            </div>
-
-            <!-- ADD QUESTION (shared pool) -->
-            <div style="font-size:11px;color:var(--text-dim);margin:-10px 0 12px 2px"><i class="fa-solid fa-circle-info"></i> A question can be assigned to multiple categories. The first category is kept as the legacy primary category for older evaluation pages.</div>
-            <form method="POST">
-                <input type="hidden" name="form_action" value="insert"/>
-                <input type="hidden" name="target_type" value="<?= htmlspecialchars($selected_target) ?>"/>
-                <input type="hidden" name="eval_type" value="<?= $active_eval ?>"/>
-                <input type="hidden" name="view" value="manage"/>
-                <?php if ($selected_user): ?><input type="hidden" name="user_id" value="<?= $selected_user ?>"/><?php endif; ?>
-                <?php if ($is_mr_manage): ?><input type="hidden" name="mr_filter" value="<?= $mr_filter ?>"/><?php endif; ?>
-                <div class="add-form-row">
-                    <select name="category_ids[]" required>
-                        <option value="" disabled selected hidden style="color:#A6B2C4">Category</option>
-                        <?php foreach ($categories_list as $c): ?>
-                        <option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['category_name']) ?></option>
-                        <?php endforeach; ?>
-                        <?php if (empty($categories_list)): ?><option value="">General</option><?php endif; ?>
-                    </select>
-                    <input type="text" name="question_text" placeholder="Type a new <?= htmlspecialchars($selected_target) ?> question..." required/>
-                    <button type="submit" class="btn-sm <?= $is_mr_manage ? 'btn-mr' : 'btn-eval' ?>"><i class="fa-solid fa-plus"></i> Add</button>
-                </div>
-            </form>
-
-            <!-- QUESTIONS TABLE (shared) -->
-            <?php if (empty($questions_list)): ?>
-            <div class="empty-state">
-                <i class="fa-solid <?= $icons[$selected_target] ?? 'fa-layer-group' ?>" style="color:<?= $hdr_color ?>"></i>
-                <p>No questions yet for <?= htmlspecialchars($selected_target) ?> <?= $eval_label ?>.</p>
-            </div>
-            <?php else:
-                $grouped_qs = [];
-                foreach ($questions_list as $q) $grouped_qs[$q['primary_category'] ?? $q['category'] ?? 'General'][] = $q;
-                $num = 1;
-                foreach ($grouped_qs as $section => $section_qs):
-            ?>
-            <div class="questions-section">
-                <div class="section-heading <?= $is_mr_manage ? 'mr-sh' : '' ?>">
-                    <i class="fa-solid fa-layer-group" style="font-size:10px"></i>
-                    <?= htmlspecialchars($section) ?>
-                    <span style="font-size:10px;color:var(--text-dim);font-weight:400">(<?= count($section_qs) ?>)</span>
-                </div>
-                <table class="q-table">
-                    <thead><tr><th style="width:48px">No.</th><th>Question</th><th style="width:90px;text-align:center">Actions</th></tr></thead>
-                    <tbody>
-                    <?php foreach ($section_qs as $row): ?>
-                    <tr>
-                        <td><span class="q-num"><?= $num++ ?></span></td>
-                        <td>
-                            <form id="upd-<?= $row['id'] ?>" method="POST" style="margin:0">
-                                <input type="hidden" name="form_action" value="update"/>
-                                <input type="hidden" name="question_id" value="<?= $row['id'] ?>"/>
-                                <input type="hidden" name="target_type" value="<?= htmlspecialchars($selected_target) ?>"/>
-                                <input type="hidden" name="eval_type" value="<?= $active_eval ?>"/>
-                                <input type="hidden" name="view" value="manage"/>
-                                <?php if ($selected_user): ?><input type="hidden" name="user_id" value="<?= $selected_user ?>"/><?php endif; ?>
-                                <?php if ($is_mr_manage): ?><input type="hidden" name="mr_filter" value="<?= $mr_filter ?>"/><?php endif; ?>
-                                <input class="inline-input" type="text" name="question_text" value="<?= htmlspecialchars($row['question_text']) ?>"/>
-                                <div class="category-labels">
-                                    <?php $assigned_names = array_filter(explode('||', $row['category_labels'] ?? '')); ?>
-                                    <?php foreach ($assigned_names as $an): ?><span class="category-label"><?= htmlspecialchars($an) ?></span><?php endforeach; ?>
-                                </div>
-                                <div class="category-assignment-row">
-                                    <span class="category-assignment-label">Categories:</span>
-                                    <?php $assigned_ids=[]; $aq=$mysqli->prepare("SELECT category_id FROM evaluation_question_categories WHERE question_id=?"); $aq->bind_param('i',$row['id']); $aq->execute(); $ar=$aq->get_result(); while($ax=$ar->fetch_assoc()) $assigned_ids[(int)$ax['category_id']]=true; $aq->close(); ?>
-                                    <?php foreach ($categories_list as $c): ?><label class="category-check"><input type="checkbox" name="category_ids[]" value="<?= $c['id'] ?>" form="upd-<?= $row['id'] ?>" <?= isset($assigned_ids[(int)$c['id']])?'checked':'' ?>/> <?= htmlspecialchars($c['category_name']) ?></label><?php endforeach; ?>
-                                </div>
-                            </form>
-                        </td>
-                        <td>
-                            <div class="action-btns">
-                                <button type="submit" form="upd-<?= $row['id'] ?>" class="icon-btn save-btn" title="Save"><i class="fa-solid fa-floppy-disk"></i></button>
-                                <form method="POST" style="margin:0" onsubmit="return confirm('Delete this question?')">
-                                    <input type="hidden" name="form_action" value="delete"/>
-                                    <input type="hidden" name="question_id" value="<?= $row['id'] ?>"/>
-                                    <input type="hidden" name="target_type" value="<?= htmlspecialchars($selected_target) ?>"/>
-                                    <input type="hidden" name="eval_type" value="<?= $active_eval ?>"/>
-                                    <input type="hidden" name="view" value="manage"/>
-                                    <?php if ($selected_user): ?><input type="hidden" name="user_id" value="<?= $selected_user ?>"/><?php endif; ?>
-                                    <?php if ($is_mr_manage): ?><input type="hidden" name="mr_filter" value="<?= $mr_filter ?>"/><?php endif; ?>
-                                    <button type="submit" class="icon-btn del-btn" title="Delete"><i class="fa-solid fa-trash-can"></i></button>
-                                </form>
-                            </div>
-                        </td>
-                    </tr>
-                    <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-            <?php endforeach; endif; ?>
-
-            <?php else: /* Staff / Principal / Dean — PER-USER MODE */ ?>
-
-            <?php if (!$selected_user || !$selected_user_data): ?>
-            <!-- No person selected yet -->
-            <div class="select-person-prompt <?= $pu_prompt_cls ?>">
-                <div class="prompt-icon">
-                    <i class="fa-solid <?= $icons[$selected_target] ?? 'fa-briefcase' ?>"></i>
-                </div>
-                <h3>Select a <?= htmlspecialchars(displayTargetLabel($selected_target, $active_eval)) ?></h3>
-                <p>Choose a person from the list on the left to manage their individual <?= $eval_label ?> questions.</p>
-                <p style="font-size:12px;color:#9AA6B8;margin-top:4px">Each person has their own unique set of questions.</p>
-            </div>
-
-            <?php else: /* Person is selected — show per-user question manager */ ?>
-
-            <?php
-            $uq_total = count($user_questions_list);
-            $sel_sec_label = secondaryRoleLabel($selected_user_data);
-            ?>
-
-            <!-- Per-user banner -->
-            <div class="per-user-banner <?= $selected_target === 'Multi-Role' ? 'mr-pu' : ($selected_target === 'School Head' ? 'school-head-pu' : 'staff-pu') ?>">
-                <i class="fa-solid fa-user-pen" style="color:<?= $hdr_color ?>"></i>
-                <p>
-                    <strong style="color:<?= $hdr_color ?>">Individual question set</strong>
-                    — Questions added here are exclusive to this person. Other <?= htmlspecialchars(displayTargetLabel($selected_target, $active_eval)) ?> members are not affected.
-                </p>
-            </div>
-
-            <!-- User header -->
-            <div class="user-header">
-                <?php if ($selected_user_data['photo']): ?>
-                <img class="user-header-avatar <?= $pu_av_cls ?>" src="../image/<?= htmlspecialchars($selected_user_data['photo']) ?>" alt=""/>
-                <?php else: ?>
-                <div class="user-header-avatar-ph"><i class="fa-solid fa-user"></i></div>
-                <?php endif; ?>
-                <div>
-                    <div class="user-header-name"><?= htmlspecialchars($selected_user_data['full_name']) ?></div>
-                    <?php
-                    $pu_desig_tokens = array_values(array_filter(
-                        array_map('trim', preg_split('/\s*[,\/|;]+\s*/', $selected_user_data['designation'] ?? '')),
-                        fn($t) => $t !== ''
-                    ));
-                    if (empty($pu_desig_tokens)) $pu_desig_tokens = [($selected_target === 'School Head' ? ($selected_user_data['role'] === 'principal' ? 'Principal' : 'Dean') : $selected_target)];
-                    ?>
-                    <div class="desig-tag-row per-user-desig-tags">
-                        <?php foreach ($pu_desig_tokens as $dt): ?>
-                            <span class="desig-tag <?= $selected_target === 'Staff' ? 'staff-desig-tag' : '' ?>"><?= htmlspecialchars($dt) ?></span>
-                        <?php endforeach; ?>
-                    </div>
-                </div>
-                <div class="user-header-right">
-                    <div class="user-header-tag <?= $pu_tag_cls ?>">
-                        <i class="fa-solid fa-clipboard-list" style="margin-right:5px"></i><?= $uq_total ?> question<?= $uq_total !== 1 ? 's' : '' ?>
-                    </div>
-                    <?php if ($sel_sec_label): ?>
-                    <span class="secondary-role-tag"><i class="fa-solid fa-layer-group" style="font-size:8px"></i> Also <?= htmlspecialchars($sel_sec_label) ?></span>
-                    <?php endif; ?>
-                    <?php $is_nl = ($selected_user_data['source'] === 'admin_nologin'); ?>
-                    <span class="source-tag <?= $is_nl?'nologin':'login' ?>"><?= $is_nl?'Personnel Registry':'Login Account' ?></span>
-                    <?php if ($pu_is_true_staff): ?>
-                    <span class="subrole-mini" style="font-size:10px;padding:3px 10px"><?= getSubRole($selected_user_data) ?></span>
-                    <?php endif; ?>
-                </div>
-            </div>
-
-            <!-- PER-USER CATEGORY MANAGER -->
-            <div class="cat-manager">
-                <div class="cat-manager-title <?= $pu_ct_cls ?>">
-                    <i class="fa-solid fa-tags"></i> Categories for this person
-                    <span style="font-size:10px;color:var(--text-dim);font-weight:400;text-transform:none;letter-spacing:0">(<?= count($user_categories_list) ?> total)</span>
-                </div>
-                <div class="cat-chips">
-                    <?php if (empty($user_categories_list)): ?>
-                    <span style="font-size:12px;color:var(--text-dim);font-style:italic;">No categories yet. Add one below.</span>
-                    <?php else: foreach ($user_categories_list as $cat): ?>
-                    <div class="cat-chip <?= $pu_chip_cls ?>">
-                        <?= htmlspecialchars($cat['category_name']) ?>
-                        <button class="cat-chip-btn edit" onclick="openUserRename(<?= $cat['id'] ?>,'<?= htmlspecialchars(addslashes($cat['category_name'])) ?>')"><i class="fa-solid fa-pen"></i></button>
-                        <button class="cat-chip-btn del" onclick="deleteUserCategory(<?= $cat['id'] ?>,'<?= htmlspecialchars(addslashes($cat['category_name'])) ?>')"><i class="fa-solid fa-xmark"></i></button>
-                    </div>
-                    <?php endforeach; endif; ?>
-                </div>
-                <form method="POST">
-                    <input type="hidden" name="form_action" value="user_add_category"/>
-                    <input type="hidden" name="target_type" value="<?= htmlspecialchars($selected_target) ?>"/>
-                    <input type="hidden" name="eval_type" value="<?= $active_eval ?>"/>
-                    <input type="hidden" name="view" value="manage"/>
-                    <input type="hidden" name="user_id" value="<?= $selected_user ?>"/>
-                    <div class="cat-add-row">
-                        <input class="field field-grow" type="text" name="category_name" placeholder="New category name..." required/>
-                        <button type="submit" class="btn-sm <?= $pu_btn_cls ?>"><i class="fa-solid fa-plus"></i> Add Category</button>
-                    </div>
-                </form>
-            </div>
-
-            <!-- ADD PER-USER QUESTION FORM -->
-            <form method="POST">
-                <input type="hidden" name="form_action" value="user_insert"/>
-                <input type="hidden" name="target_type" value="<?= htmlspecialchars($selected_target) ?>"/>
-                <input type="hidden" name="eval_type" value="<?= $active_eval ?>"/>
-                <input type="hidden" name="view" value="manage"/>
-                <input type="hidden" name="user_id" value="<?= $selected_user ?>"/>
-                <div class="add-form-row">
-                    <select name="category" required style="color:var(--staff)">
-                        <option value="" disabled selected hidden style="color:#A6B2C4">Category</option>
-                        <?php foreach ($user_categories_list as $c): ?>
-                        <option value="<?= htmlspecialchars($c['category_name']) ?>"><?= htmlspecialchars($c['category_name']) ?></option>
-                        <?php endforeach; ?>
-                        <?php if (empty($user_categories_list)): ?><option value="General">General</option><?php endif; ?>
-                    </select>
-                    <input type="text" name="question_text"
-                           placeholder="Write a question for <?= htmlspecialchars($selected_user_data['full_name']) ?>..." required/>
-                    <button type="submit" class="btn-sm <?= $pu_btn_cls ?>"><i class="fa-solid fa-plus"></i> Add</button>
-                </div>
-            </form>
-
-            <!-- PER-USER QUESTIONS TABLE -->
-            <?php if (empty($user_questions_list)): ?>
-            <div class="empty-state">
-                <i class="fa-solid <?= $icons[$selected_target] ?? 'fa-briefcase' ?>" style="color:<?= $hdr_color ?>"></i>
-                <p>No questions yet for <strong><?= htmlspecialchars($selected_user_data['full_name']) ?></strong>.<br>
-                Add categories above, then write their questions.</p>
-            </div>
-            <?php else:
-                $grouped_uqs = [];
-                foreach ($user_questions_list as $q) $grouped_uqs[$q['category'] ?? 'General'][] = $q;
-                $num = 1;
-                foreach ($grouped_uqs as $section => $section_qs):
-            ?>
-            <div class="questions-section">
-                <div class="section-heading <?= $pu_sh_cls ?>">
-                    <i class="fa-solid fa-layer-group" style="font-size:10px"></i>
-                    <?= htmlspecialchars($section) ?>
-                    <span style="font-size:10px;color:var(--text-dim);font-weight:400">(<?= count($section_qs) ?>)</span>
-                </div>
-                <table class="q-table">
-                    <thead><tr><th style="width:48px">No.</th><th>Question</th><th style="width:90px;text-align:center">Actions</th></tr></thead>
-                    <tbody>
-                    <?php foreach ($section_qs as $row): ?>
-                    <tr>
-                        <td><span class="q-num"><?= $num++ ?></span></td>
-                        <td>
-                            <form id="uupd-<?= $row['id'] ?>" method="POST" style="margin:0">
-                                <input type="hidden" name="form_action" value="user_update"/>
-                                <input type="hidden" name="question_id" value="<?= $row['id'] ?>"/>
-                                <input type="hidden" name="target_type" value="<?= htmlspecialchars($selected_target) ?>"/>
-                                <input type="hidden" name="eval_type" value="<?= $active_eval ?>"/>
-                                <input type="hidden" name="view" value="manage"/>
-                                <input type="hidden" name="user_id" value="<?= $selected_user ?>"/>
-                                <input class="inline-input" type="text" name="question_text"
-                                       value="<?= htmlspecialchars($row['question_text']) ?>"/>
-                            </form>
-                        </td>
-                        <td>
-                            <div class="action-btns">
-                                <button type="submit" form="uupd-<?= $row['id'] ?>" class="icon-btn save-btn" title="Save"><i class="fa-solid fa-floppy-disk"></i></button>
-                                <form method="POST" style="margin:0" onsubmit="return confirm('Delete this question?')">
-                                    <input type="hidden" name="form_action" value="user_delete"/>
-                                    <input type="hidden" name="question_id" value="<?= $row['id'] ?>"/>
-                                    <input type="hidden" name="target_type" value="<?= htmlspecialchars($selected_target) ?>"/>
-                                    <input type="hidden" name="eval_type" value="<?= $active_eval ?>"/>
-                                    <input type="hidden" name="view" value="manage"/>
-                                    <input type="hidden" name="user_id" value="<?= $selected_user ?>"/>
-                                    <button type="submit" class="icon-btn del-btn" title="Delete"><i class="fa-solid fa-trash-can"></i></button>
-                                </form>
-                            </div>
-                        </td>
-                    </tr>
-                    <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-            <?php endforeach; endif; ?>
-
-            <?php endif; /* end person selected check */ ?>
-            <?php endif; /* end is_shared_manage check */ ?>
-
-        </div><!-- /content-panel -->
-    </div><!-- /manage-layout -->
+        </section>
+    <?php endif; ?>
     <?php endif; /* end manage view */ ?>
 
-    <!-- SHARED POOL RENAME MODAL (Teacher + Multi-Role) -->
+    <!-- SHARED POOL RENAME MODAL (Teacher) -->
     <div class="modal-overlay" id="renameModal">
         <div class="modal">
             <div class="modal-title">Rename Category</div>
@@ -2255,6 +2844,7 @@ a { color:inherit; }
                 <input type="hidden" name="form_action" value="rename_category"/>
                 <input type="hidden" name="target_type" value="<?= htmlspecialchars($selected_target) ?>"/>
                 <input type="hidden" name="eval_type" value="<?= $active_eval ?>"/>
+                        <?php if ($active_eval === 'school_head'): ?><input type="hidden" name="sh_role" value="<?= $sh_role ?>"/><?php endif; ?>
                 <input type="hidden" name="view" value="manage"/>
                 <?php if ($selected_user): ?><input type="hidden" name="user_id" value="<?= $selected_user ?>"/><?php endif; ?>
                 <?php if (isset($is_mr_manage) && $is_mr_manage): ?><input type="hidden" name="mr_filter" value="<?= $mr_filter ?>"/><?php endif; ?>
@@ -2273,6 +2863,7 @@ a { color:inherit; }
         <input type="hidden" name="form_action" value="delete_category"/>
         <input type="hidden" name="target_type" value="<?= htmlspecialchars($selected_target) ?>"/>
         <input type="hidden" name="eval_type" value="<?= $active_eval ?>"/>
+                        <?php if ($active_eval === 'school_head'): ?><input type="hidden" name="sh_role" value="<?= $sh_role ?>"/><?php endif; ?>
         <input type="hidden" name="view" value="manage"/>
         <?php if ($selected_user): ?><input type="hidden" name="user_id" value="<?= $selected_user ?>"/><?php endif; ?>
         <?php if (isset($is_mr_manage) && $is_mr_manage): ?><input type="hidden" name="mr_filter" value="<?= $mr_filter ?>"/><?php endif; ?>
@@ -2280,7 +2871,7 @@ a { color:inherit; }
         <input type="hidden" name="cat_name" id="deleteCatName"/>
     </form>
 
-    <!-- PER-USER RENAME MODAL (Staff / Principal / Dean / Multi-Role) -->
+    <!-- PER-USER RENAME MODAL (Staff / Principal / Dean) -->
     <div class="modal-overlay" id="userRenameModal">
         <div class="modal">
             <div class="modal-title">Rename Category</div>
@@ -2289,6 +2880,7 @@ a { color:inherit; }
                 <input type="hidden" name="form_action" value="user_rename_category"/>
                 <input type="hidden" name="target_type" value="<?= htmlspecialchars($selected_target) ?>"/>
                 <input type="hidden" name="eval_type" value="<?= $active_eval ?>"/>
+                        <?php if ($active_eval === 'school_head'): ?><input type="hidden" name="sh_role" value="<?= $sh_role ?>"/><?php endif; ?>
                 <input type="hidden" name="view" value="manage"/>
                 <input type="hidden" name="user_id" value="<?= $selected_user ?? 0 ?>"/>
                 <input type="hidden" name="cat_id" id="userRenameCatId"/>
@@ -2306,6 +2898,7 @@ a { color:inherit; }
         <input type="hidden" name="form_action" value="user_delete_category"/>
         <input type="hidden" name="target_type" value="<?= htmlspecialchars($selected_target) ?>"/>
         <input type="hidden" name="eval_type" value="<?= $active_eval ?>"/>
+                        <?php if ($active_eval === 'school_head'): ?><input type="hidden" name="sh_role" value="<?= $sh_role ?>"/><?php endif; ?>
         <input type="hidden" name="view" value="manage"/>
         <input type="hidden" name="user_id" value="<?= $selected_user ?? 0 ?>"/>
         <input type="hidden" name="cat_id" id="deleteUserCatId"/>

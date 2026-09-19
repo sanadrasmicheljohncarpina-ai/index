@@ -10,6 +10,10 @@ session_set_cookie_params([
 ]);
 session_start();
 require_once 'db.php';
+require_once dirname(__DIR__) . '/shared/system_settings_service.php';
+
+// Apply the schedule before reading evaluation_periods.is_active.
+ss_sync_from_database($mysqli);
 require_once '../shared/EvaluationContextService.php';
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
@@ -27,8 +31,8 @@ $student_name = $_SESSION['full_name'];
 // Mirrors admin/questionnaire.php's 3-bucket model exactly:
 //   - Faculty     -> shared pool in `evaluation_questions`
 //   - Staff       -> PER-PERSON questions in `user_questions`
-//   - Multi-Role  -> shared pool in `evaluation_questions`
-$system_categories = ['Faculty', 'Staff', 'Multi-Role'];
+//
+$system_categories = ['Faculty', 'Staff'];
 
 $token_to_target = [
     'Teacher'         => 'Faculty',
@@ -92,11 +96,7 @@ function resolveUserTarget($designation, $role, $token_to_target, $keyword_to_ta
 // resolve to 2+ distinct buckets (Faculty AND Staff). Identical to
 // admin/questionnaire.php's isMultiRole().
 function isMultiRoleUser($designation, $token_to_target, $keyword_to_target, $role = 'teacher') {
-    return ec_has_additional_role([
-        'designation' => $designation,
-        'role' => $role,
-        'secondary_role' => ''
-    ]);
+    return false;
 }
 
 // ── ACTIVE EVALUATION PERIOD ──────────────────────────────────
@@ -188,7 +188,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_evaluation']))
 // person's resolved bucket:
 //   - Staff bucket      -> user_questions (per-person, keyed by user_id)
 //   - Faculty bucket     -> evaluation_questions (shared pool, target_type='Faculty')
-//   - Multi-Role (extra) -> evaluation_questions (shared pool, target_type='Multi-Role'),
+//
 //                           merged in addition to the primary bucket's questions
 if (isset($_GET['get_questions'])) {
     header('Content-Type: application/json');
@@ -204,7 +204,7 @@ if (isset($_GET['get_questions'])) {
         $designation = $userRow['designation'] ?? '';
         $role        = $userRow['role'] ?? 'teacher';
         $primary     = resolveUserTarget($designation, $role, $token_to_target, $keyword_to_target);
-        $is_mr       = isMultiRoleUser($designation, $token_to_target, $keyword_to_target, $role);
+        $is_mr       = false;
 
         $questions = [];
 
@@ -241,7 +241,7 @@ if (isset($_GET['get_questions'])) {
             $mrq = $mysqli->prepare(
                 "SELECT id, question_text, category
                  FROM evaluation_questions
-                 WHERE target_type = 'Multi-Role' AND eval_type = 'student'
+                 WHERE 1=0
                  ORDER BY category, id"
             );
             $mrq->execute();
@@ -357,9 +357,6 @@ foreach ($all_users as $u) {
     $target = resolveUserTarget($designation, $role, $token_to_target, $keyword_to_target);
     if (isset($grouped[$target])) $grouped[$target][] = $u;
 
-    if (isMultiRoleUser($designation, $token_to_target, $keyword_to_target, $role)) {
-        $grouped['Multi-Role'][] = $u;
-    }
 }
 
 // Remove empty groups so students only see categories with people in them
@@ -401,12 +398,10 @@ $hres->close();
 $group_icons = [
     'Faculty'    => 'fa-chalkboard-user',
     'Staff'      => 'fa-briefcase',
-    'Multi-Role' => 'fa-layer-group',
 ];
 $group_colors = [
     'Faculty'    => '#00E5FF',
     'Staff'      => '#10b981',
-    'Multi-Role' => '#D69612',
 ];
 
 // total_evaluatees / progress counts are based on the flat, de-duplicated
@@ -663,8 +658,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
   --danger:#D6455D; --success:#0F9F6E; --radius:12px;
   --card-shadow:0 2px 4px rgba(30,82,144,.06),0 6px 16px rgba(30,82,144,.08);
 }
-html{background:#fff;color-scheme:light;}
-body{background:#fff !important;color:#0B1F3A !important;}
+html{background:#FFFFFF;color-scheme:light;}
+body{background:#FFFFFF !important;color:#0B1F3A !important;}
 a{color:inherit;}
 .page-header h1,.page-title,.et-title,.section-title{color:#0B1F3A !important;}
 .page-header p,.page-sub,.et-sub,.et-updated,.muted,.hint{color:#67819E !important;}
@@ -687,7 +682,7 @@ tbody tr:hover{background:#F8FAFC !important;}
 ::-webkit-scrollbar-track{background:#fff;}
 ::-webkit-scrollbar-thumb{background:#B9CDE5;border:2px solid #fff;}
 
-body{background:#fff !important;color:#0B1F3A !important;}
+body{background:#FFFFFF !important;color:#0B1F3A !important;}
 .topnav{background:#fff !important;border-bottom:1px solid #D8E5F4 !important;box-shadow:0 2px 8px rgba(30,82,144,.06);}
 .nav-logo,.profile-avatar,.profile-dd-avatar{border-color:#4968C8 !important;}
 .profile-name,.profile-dd-name,.profile-dd-btn{color:#0B1F3A !important;}
@@ -725,6 +720,68 @@ a { color:inherit; }
 </style>
     <link rel="stylesheet" href="admin_ui_theme.css">
     <link rel="stylesheet" href="admin_compact_ui.css">
+<style id="pbi-feature-scrollbar">
+
+/* PBI FEATURE SCROLLBAR — consistent with the compact page scrollbar */
+html, body {
+  scrollbar-width: thin !important;
+  scrollbar-color: #888 transparent !important;
+}
+html::-webkit-scrollbar, body::-webkit-scrollbar,
+.feature-compact ::-webkit-scrollbar {
+  width: 10px !important;
+  height: 10px !important;
+}
+html::-webkit-scrollbar-track, body::-webkit-scrollbar-track,
+.feature-compact ::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb,
+.feature-compact ::-webkit-scrollbar-thumb {
+  background: #888 !important;
+  border-radius: 999px !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
+}
+html::-webkit-scrollbar-thumb:hover, body::-webkit-scrollbar-thumb:hover,
+.feature-compact ::-webkit-scrollbar-thumb:hover {
+  background: #777 !important;
+  background-clip: padding-box !important;
+}
+html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
+.feature-compact ::-webkit-scrollbar-button {
+  display: block !important;
+  width: 10px !important;
+  height: 10px !important;
+  background-color: transparent !important;
+}
+/* Small native-looking arrow hints on classic scrollbars */
+html::-webkit-scrollbar-button:single-button:vertical:decrement,
+body::-webkit-scrollbar-button:single-button:vertical:decrement,
+.feature-compact ::-webkit-scrollbar-button:single-button:vertical:decrement {
+  background:
+    linear-gradient(135deg, transparent 50%, #777 50%) 3px 5px/5px 5px no-repeat !important;
+}
+html::-webkit-scrollbar-button:single-button:vertical:increment,
+body::-webkit-scrollbar-button:single-button:vertical:increment,
+.feature-compact ::-webkit-scrollbar-button:single-button:vertical:increment {
+  background:
+    linear-gradient(315deg, transparent 50%, #777 50%) 3px 0/5px 5px no-repeat !important;
+}
+html::-webkit-scrollbar-button:single-button:horizontal:decrement,
+body::-webkit-scrollbar-button:single-button:horizontal:decrement,
+.feature-compact ::-webkit-scrollbar-button:single-button:horizontal:decrement {
+  background:
+    linear-gradient(45deg, transparent 50%, #777 50%) 5px 3px/5px 5px no-repeat !important;
+}
+html::-webkit-scrollbar-button:single-button:horizontal:increment,
+body::-webkit-scrollbar-button:single-button:horizontal:increment,
+.feature-compact ::-webkit-scrollbar-button:single-button:horizontal:increment {
+  background:
+    linear-gradient(225deg, transparent 50%, #777 50%) 0 3px/5px 5px no-repeat !important;
+}
+
+</style>
 </head>
 <body class="feature-compact">
 
@@ -894,12 +951,13 @@ a { color:inherit; }
                     $all_done = ($done_ct === $total);
                     $icon     = $group_icons[$group_name] ?? 'fa-user';
                     $color    = $group_colors[$group_name] ?? '#C77A08';
+                    $display_group_name = $group_name;
                 ?>
                 <div class="cat-btn <?= $all_done ? 'all-done' : '' ?>"
                      id="catbtn_<?= $slug ?>" onclick="togglePanel('<?= $slug ?>')"
                      style="border-color:<?= $color ?>33;">
                     <div class="cat-icon" style="color:<?= $color ?>;"><i class="fa-solid <?= $icon ?>"></i></div>
-                    <div class="cat-name"><?= htmlspecialchars($group_name) ?></div>
+                    <div class="cat-name"><?= htmlspecialchars($display_group_name) ?></div>
                     <div class="cat-meta"><?= $total ?> member<?= $total !== 1 ? 's' : '' ?></div>
                     <?php if ($done_ct > 0): ?>
                     <div class="cat-done-pill"><i class="fa-solid fa-check"></i> <?= $done_ct ?>/<?= $total ?> done</div>
@@ -913,11 +971,12 @@ a { color:inherit; }
                 $slug  = strtolower(str_replace([' ','-'], '_', $group_name));
                 $icon  = $group_icons[$group_name] ?? 'fa-user';
                 $color = $group_colors[$group_name] ?? '#C77A08';
+                $display_group_name = $group_name;
             ?>
             <div class="members-panel" id="panel_<?= $slug ?>" style="border-color:<?= $color ?>44;">
                 <div class="panel-header">
                     <i class="fa-solid <?= $icon ?> panel-header-icon" style="color:<?= $color ?>;"></i>
-                    <span class="panel-header-title"><?= htmlspecialchars($group_name) ?></span>
+                    <span class="panel-header-title"><?= htmlspecialchars($display_group_name) ?></span>
                     <span class="panel-header-count">&mdash; <?= count($persons) ?> member<?= count($persons) !== 1 ? 's' : '' ?></span>
                     <button class="panel-close-btn" onclick="closePanel('<?= $slug ?>')">
                         <i class="fa-solid fa-xmark"></i>

@@ -273,27 +273,15 @@ table.data tr:last-child td{border-bottom:none;}
 
 @media(max-width:768px){body{flex-direction:column;}.sidebar{width:100%;min-height:auto;}.filter-bar{flex-direction:column;align-items:stretch;}}
 </style>
+<link rel="stylesheet" href="includes/dean_light_theme.css"/>
 </head>
 <body>
 
-<aside class="sidebar">
-    <div class="sb-profile">
-        <img class="sb-photo" src="<?= htmlspecialchars($photo_src) ?>" alt="Profile"/>
-        <div class="sb-name"><?= htmlspecialchars($me['full_name'] ?? 'Dean') ?></div>
-        <div class="sb-role"><?= htmlspecialchars($me['designation'] ?? 'Dean') ?></div>
-        <div class="sb-scope">College Division</div>
-    </div>
-    <nav class="sb-nav">
-        <a href="dean_dashboard.php"><i class="fa-solid fa-gauge"></i> Dashboard</a>
-        <a href="dean_evaluations.php" class="active"><i class="fa-solid fa-clipboard-list"></i> Evaluation Tracker</a>
-        <a href="dean_faculty.php"><i class="fa-solid fa-chalkboard-user"></i> Faculty</a>
-        <a href="dean_reports.php"><i class="fa-solid fa-chart-line"></i> Reports</a>
-        <a href="#"><i class="fa-solid fa-gear"></i> Account Settings</a>
-    </nav>
-    <div class="sb-logout">
-        <a href="dean_logout.php"><i class="fa-solid fa-right-from-bracket"></i> Log Out</a>
-    </div>
-</aside>
+<?php
+$active = 'tracker';
+$sidebarScope = 'Higher Education Division';
+include __DIR__ . '/includes/dean_sidebar.php';
+?>
 
 <main class="main">
     <div class="page-header">
@@ -443,4 +431,5 @@ if (table) {
 }
 </script>
 </body>
+<link rel="stylesheet" href="includes/dean_light_theme.css" id="dean-light-theme-final"/>
 </html>

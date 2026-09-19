@@ -60,15 +60,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <style>
 :root{--dark-blue:#0A192F;--blue-mid:#172A45;--teal:#0D9488;--teal-hover:#14B8A6;--light:#E0E6F0;--muted:#A0B3C6;--radius:10px;--shadow:0 8px 32px rgba(0,0,0,0.45);}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-body{min-height:100vh;background:#0A192F url('../admin/background.png') center center / cover no-repeat fixed;font-family:'DM Sans',sans-serif;color:var(--light);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;}
-.bg-image-overlay{position:fixed;inset:0;z-index:0;background:rgba(10,25,47,.42);pointer-events:none;}
-.bg-grid{display:none;position:fixed;inset:0;z-index:0;background-image:linear-gradient(rgba(13,148,136,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(13,148,136,.06) 1px,transparent 1px);background-size:48px 48px;animation:g 22s linear infinite;}
-@keyframes g{0%{background-position:0 0}100%{background-position:48px 48px}}
-.orb{display:none;position:fixed;border-radius:50%;filter:blur(90px);z-index:0;pointer-events:none;}
-.orb-1{width:380px;height:380px;background:radial-gradient(circle,rgba(13,148,136,.2) 0%,transparent 70%);top:-80px;right:-80px;animation:o1 14s ease-in-out infinite;}
-.orb-2{width:300px;height:300px;background:radial-gradient(circle,rgba(43,108,176,.18) 0%,transparent 70%);bottom:-60px;left:-60px;animation:o2 18s ease-in-out infinite;}
-@keyframes o1{0%,100%{transform:translate(0,0)}50%{transform:translate(-30px,25px)}}
-@keyframes o2{0%,100%{transform:translate(0,0)}50%{transform:translate(25px,-20px)}}
+body{min-height:100vh;background:#0A192F;font-family:'DM Sans',sans-serif;color:var(--light);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;}
+.bg-grid{display:block;position:fixed;inset:0;z-index:0;background-image:repeating-linear-gradient(45deg,rgba(13,148,136,.08) 0px,rgba(13,148,136,.08) 1px,transparent 1px,transparent 26px),repeating-linear-gradient(-45deg,rgba(13,148,136,.05) 0px,rgba(13,148,136,.05) 1px,transparent 1px,transparent 26px);}
+.hex-deco{position:fixed;z-index:0;pointer-events:none;opacity:.5;}
+.hex-1{top:-60px;right:-60px;}
+.hex-2{bottom:-70px;left:-70px;}
 .login-card{position:relative;z-index:10;background:rgba(23,42,69,.82);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.09);border-radius:18px;padding:48px 44px 40px;width:100%;max-width:440px;box-shadow:var(--shadow);animation:cardIn .7s cubic-bezier(.22,1,.36,1) both;}
 @keyframes cardIn{from{opacity:0;transform:translateY(32px) scale(.97)}to{opacity:1;transform:none}}
 .card-header{text-align:center;margin-bottom:28px;}
@@ -95,10 +91,9 @@ body{min-height:100vh;background:#0A192F url('../admin/background.png') center c
 </style>
 </head>
 <body>
-<div class="bg-image-overlay"></div>
 <div class="bg-grid"></div>
-<div class="orb orb-1"></div>
-<div class="orb orb-2"></div>
+<svg class="hex-deco hex-1" width="260" height="260" viewBox="0 0 260 260"><polygon points="130,10 240,70 240,190 130,250 20,190 20,70" fill="none" stroke="#0D9488" stroke-width="1"/><polygon points="130,50 200,90 200,170 130,210 60,170 60,90" fill="none" stroke="#0D9488" stroke-width="1"/></svg>
+<svg class="hex-deco hex-2" width="300" height="300" viewBox="0 0 300 300"><polygon points="150,10 280,80 280,220 150,290 20,220 20,80" fill="none" stroke="#2B6CB0" stroke-width="1"/><polygon points="150,60 220,100 220,200 150,240 80,200 80,100" fill="none" stroke="#2B6CB0" stroke-width="1"/></svg>
 
 <div class="login-card">
     <div class="card-header">

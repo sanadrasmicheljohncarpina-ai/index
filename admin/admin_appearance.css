@@ -1,0 +1,660 @@
+/* ============================================================
+   PBI Admin — shared Appearance engine (Density / Motion / Accent / Theme)
+   Include this AFTER admin_aura_theme.css (or any other page theme CSS)
+   so its dark-mode overrides win cascade ties against existing !important
+   rules. Pair with admin_appearance.js.
+   ============================================================ */
+
+:root{
+  --accent:#2f6ee2;
+  --accent-soft:#eaf2ff;
+  --bg:#f4f8ff;
+  --text:#10243f;
+  --muted:#66809c;
+  --panel-bg:#fff;
+  --panel-border:#dce8f5;
+  --input-bg:#f9fbff;
+  --input-border:#d4e2f2;
+  /* admin_aura_theme.css's .brand-avatar already reads var(--blue-accent, #0F9F6E) —
+     hook it to the shared accent so it repaints automatically. */
+  --blue-accent:var(--accent);
+}
+html[data-theme="dark"]{
+  --bg:#0b1626;
+  --text:#e7eef8;
+  --muted:#8ba0bd;
+  --panel-bg:#121f33;
+  --panel-border:#22344d;
+  --input-bg:#16243a;
+  --input-border:#25374f;
+  --accent-soft:color-mix(in srgb, var(--accent) 22%, #121f33);
+}
+
+/* ---- Generic fallbacks: gives every page a baseline dark mode even
+       before it gets page-specific overrides added below. Several feature
+       pages hard-code body{background:#fff !important;...} to lock their
+       own light palette, so this needs !important + extra specificity
+       (the html[data-theme="dark"] prefix) to win against them. ---- */
+html[data-theme="dark"]{color-scheme:dark}
+html[data-theme="dark"] body{background:var(--bg)!important;color:var(--text)!important}
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea{background:var(--input-bg)!important;color:var(--text)!important;border-color:var(--input-border)!important}
+html[data-theme="dark"] table{color:var(--text)}
+html[data-theme="dark"] a{color:var(--accent)}
+
+/* ---- Page-local color tokens: Questionnaire, Account Management,
+   Evaluation Tracker, My/EA Evaluations, Evaluation Report, System Logs and
+   System Archive each define their own :root custom properties (different
+   names for the same page-bg/card-bg/border/text concepts) and consume them
+   via var(...) throughout their markup. Re-pointing the token here repaints
+   the whole page through its own existing CSS — no per-class rules needed.
+   html[data-theme="dark"] always outguns a bare :root rule on specificity,
+   so this wins regardless of where the page's own :root sits in the file. */
+html[data-theme="dark"]{
+  --page-bg:var(--bg); --card-bg:var(--panel-bg); --card-border:var(--panel-border);
+  --inner:var(--input-bg); --text-dark:var(--text); --text-dim:var(--muted);
+  --track-bg:var(--panel-border);
+  --page-text-dark:var(--text); --page-text-dim:var(--muted);
+  --dark:var(--bg); --mid:var(--panel-bg); --light:var(--text); --border:var(--panel-border);
+  --card:var(--panel-bg); --line:var(--panel-border);
+}
+
+/* ---- Shared "light-lock" pattern: Questionnaire, Account Management,
+   Evaluation Tracker and Evaluation Report additionally hard-code this same
+   selector list with !important to force their light palette regardless of
+   the tokens above. Matching selectors + !important + the extra html[...]
+   specificity lets dark mode through on those exact elements. ---- */
+html[data-theme="dark"] .page-header h1,
+html[data-theme="dark"] .page-title,
+html[data-theme="dark"] .et-title,
+html[data-theme="dark"] .section-title{color:var(--text)!important}
+html[data-theme="dark"] .page-header p,
+html[data-theme="dark"] .page-sub,
+html[data-theme="dark"] .et-sub,
+html[data-theme="dark"] .et-updated,
+html[data-theme="dark"] .muted,
+html[data-theme="dark"] .hint{color:var(--muted)!important}
+html[data-theme="dark"] .sector-tab,
+html[data-theme="dark"] .eval-tab,
+html[data-theme="dark"] .tab,
+html[data-theme="dark"] .level-tab,
+html[data-theme="dark"] .status-tab{color:var(--muted)!important}
+html[data-theme="dark"] .sector-tab:hover,
+html[data-theme="dark"] .eval-tab:hover,
+html[data-theme="dark"] .tab:hover,
+html[data-theme="dark"] .level-tab:hover,
+html[data-theme="dark"] .status-tab:hover{color:var(--text)!important;background:var(--input-bg)!important}
+html[data-theme="dark"] thead tr{background:var(--input-bg)!important}
+html[data-theme="dark"] tbody tr:hover{background:var(--input-bg)!important}
+html[data-theme="dark"] .btn-cancel,
+html[data-theme="dark"] .btn-icon,
+html[data-theme="dark"] .btn-back{background:var(--panel-bg)!important;color:var(--text)!important;border-color:var(--panel-border)!important}
+html[data-theme="dark"] .empty-state,
+html[data-theme="dark"] .empty-cta{color:var(--muted)!important}
+html[data-theme="dark"] .sector-card,
+html[data-theme="dark"] .et-wrap,
+html[data-theme="dark"] .et-card,
+html[data-theme="dark"] .et-table,
+html[data-theme="dark"] .et-search,
+html[data-theme="dark"] .et-select,
+html[data-theme="dark"] .et-empty{background:var(--panel-bg)!important;border-color:var(--panel-border)!important;color:var(--text)!important}
+html[data-theme="dark"] .et-table th{background:var(--input-bg)!important;color:var(--muted)!important}
+html[data-theme="dark"] .et-table td{color:var(--text)!important;border-color:var(--panel-border)!important}
+html[data-theme="dark"] .et-card-label,
+html[data-theme="dark"] .et-mini,
+html[data-theme="dark"] .et-progress-text{color:var(--muted)!important}
+html[data-theme="dark"] .et-card-number,
+html[data-theme="dark"] .et-name{color:var(--text)!important}
+html[data-theme="dark"] .info-banner{background:var(--input-bg)!important;color:var(--muted)!important}
+html[data-theme="dark"] .comment-text,
+html[data-theme="dark"] .comment-section{background:var(--input-bg)!important;color:var(--text)!important}
+html[data-theme="dark"] .avg-bar-bg,
+html[data-theme="dark"] .eval-bar-bg,
+html[data-theme="dark"] .score-bar-bg{background:var(--panel-border)!important}
+
+/* ---- Second, larger "light-lock" block on the same 4 pages (Questionnaire,
+   Account Management, Evaluation Tracker, Evaluation Report): cards, tab
+   bars, and panels are force-painted white here too, separately from the
+   selectors above. This is what keeps the sector/status tab bar, the
+   PENDING/APPROVED/BLOCKED stat cards, and the results table panel white. */
+html[data-theme="dark"] .table-wrap,
+html[data-theme="dark"] .content-panel,
+html[data-theme="dark"] .create-panel,
+html[data-theme="dark"] .period-card,
+html[data-theme="dark"] .stat-card,
+html[data-theme="dark"] .sector-card,
+html[data-theme="dark"] .person-row,
+html[data-theme="dark"] .sum-card,
+html[data-theme="dark"] .standing-panel,
+html[data-theme="dark"] .eval-card,
+html[data-theme="dark"] .eval-banner,
+html[data-theme="dark"] .info-banner,
+html[data-theme="dark"] .section,
+html[data-theme="dark"] .shell .section,
+html[data-theme="dark"] .history-card,
+html[data-theme="dark"] .gl-card,
+html[data-theme="dark"] .amber-card,
+html[data-theme="dark"] .green-card,
+html[data-theme="dark"] .red-card{
+  background:var(--panel-bg)!important;border-color:var(--panel-border)!important;
+}
+html[data-theme="dark"] .sector-tabs,
+html[data-theme="dark"] .eval-switcher,
+html[data-theme="dark"] .tabs,
+html[data-theme="dark"] .level-tabs,
+html[data-theme="dark"] .status-tabs{
+  background:var(--panel-bg)!important;border-color:var(--panel-border)!important;
+}
+
+/* ---- Generic base-tag fallbacks from the same block's third pass
+   ("SHARP LIGHT ADMIN UI"). Not !important on the source side, so no
+   !important needed here either — the html[data-theme="dark"] prefix's
+   extra specificity is enough. ---- */
+html[data-theme="dark"] h1,html[data-theme="dark"] h2,html[data-theme="dark"] h3,
+html[data-theme="dark"] h4,html[data-theme="dark"] h5,html[data-theme="dark"] h6{color:var(--text)}
+html[data-theme="dark"] p,html[data-theme="dark"] .subtitle,html[data-theme="dark"] .description,
+html[data-theme="dark"] .helper,html[data-theme="dark"] small{color:var(--muted)}
+html[data-theme="dark"] label,html[data-theme="dark"] th{color:var(--muted)}
+html[data-theme="dark"] td{color:var(--text)}
+html[data-theme="dark"] .card,html[data-theme="dark"] .panel,
+html[data-theme="dark"] .table-card,html[data-theme="dark"] .content-card{border-color:var(--panel-border)}
+
+/* ---- admin_dashboard.php / admin_aura_theme.css shell ---- */
+html[data-theme="dark"] html:has(.pbi-dashboard-container),
+html[data-theme="dark"] body:has(.pbi-dashboard-container){background:var(--bg)!important}
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-stat-card,
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-period-box,
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-section-box,
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-panel,
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-card,
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-period-tile,
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-action-btn{
+  background:var(--panel-bg)!important;
+  border-color:var(--panel-border)!important;
+  box-shadow:none!important;
+}
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-dashboard-heading,
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-dashboard-heading *,
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-stat-value,
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-card-value,
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-period-value,
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-period-tile-value,
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-action-title,
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-action-btn{color:var(--text)!important}
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-system-subtitle,
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-stat-label,
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-card-title,
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-period-label,
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-period-tile-label,
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-section-heading,
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-stat-sub,
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-period-meta,
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-period-tile-sub,
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-action-sub{color:var(--muted)!important}
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-view-all-link{color:var(--accent)!important}
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .nude-nav{background:var(--panel-bg)!important}
+html[data-theme="dark"] body:has(.pbi-dashboard-container) .pbi-sidebar{background:var(--panel-bg)!important;border-color:var(--panel-border)!important}
+html[data-theme="dark"] .iframe-box{background:var(--panel-bg)!important}
+
+/* ---- Reduce motion (global kill-switch) ---- */
+html.reduce-motion *,
+html.reduce-motion *::before,
+html.reduce-motion *::after{
+  transition-duration:0s!important;
+  animation-duration:0s!important;
+  scroll-behavior:auto!important;
+}
+
+/* ---- Density ---- */
+html.density-comfortable .pbi-stat-card,
+html.density-comfortable .pbi-section-box,
+html.density-comfortable .pbi-panel,
+html.density-comfortable .pbi-card{padding:24px!important}
+html.density-comfortable .pbi-dashboard-container{padding-top:26px!important}
+
+/* ---- Questionnaire page: a few spots use a literal white/#fff value
+   instead of a token (header gradient strip, the "N Total Questions" pill,
+   and the selected/hovered table-row highlight), so the var() remap above
+   can't reach them — override the exact selectors directly. ---- */
+html[data-theme="dark"] .eval-overview-head{background:var(--panel-bg)!important}
+html[data-theme="dark"] .eval-overview-total{background:var(--panel-bg)!important}
+html[data-theme="dark"] .eval-table-row:hover td,
+html[data-theme="dark"] .eval-table-row.is-active td{background:var(--input-bg)!important}
+
+/* ---- Evaluation Report (admin_analytics.php): these read var(--mid)/
+   var(--muted) with no !important, which should already go dark through
+   the token remap above — restated directly here, with !important, so
+   there's no ambiguity if a browser has an older cached copy of this file
+   loaded for just one of the report's several sub-views. ---- */
+html[data-theme="dark"] .group-tab{background:var(--panel-bg)!important;color:var(--muted)!important;border-color:var(--panel-border)!important}
+html[data-theme="dark"] .ra-table-card{background:var(--panel-bg)!important;border-color:var(--panel-border)!important}
+html[data-theme="dark"] .ra-tool-btn{background:var(--input-bg)!important;color:var(--text)!important;border-color:var(--panel-border)!important}
+html[data-theme="dark"] .ra-search{background:var(--input-bg)!important;color:var(--text)!important;border-color:var(--panel-border)!important}
+html[data-theme="dark"] .btn-archived-link{background:var(--panel-bg)!important;color:var(--muted)!important;border-color:var(--panel-border)!important}
+html[data-theme="dark"] .faculty-subtabs{background:var(--panel-bg)!important;border-color:var(--panel-border)!important}
+
+/* ---- Settings sub-pages (system_settings.php, system_archive.php): these
+   load in their own nested iframes inside settings.php and use yet another
+   naming scheme for the same page-bg/card-bg/border/text/muted concepts. ---- */
+html[data-theme="dark"]{
+  --surface:var(--panel-bg); --surface-2:var(--panel-bg); --surface-3:var(--input-bg);
+  --text-muted:var(--muted); --text-faint:var(--muted);
+  --border-strong:var(--panel-border);
+}
+
+/* ---- Final dark-mode hard overrides for modules with late light CSS ----
+   Some admin modules deliberately restate their light palette near the end
+   of the document with !important. These shared rules use the saved theme
+   attribute with higher specificity so the dark preference wins without
+   changing the light theme. ---- */
+html[data-theme="dark"]{
+  background:var(--bg)!important;
+  color-scheme:dark;
+}
+html[data-theme="dark"] body{
+  background:var(--bg)!important;
+  color:var(--text)!important;
+}
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea{
+  background:var(--input-bg)!important;
+  color:var(--text)!important;
+  border-color:var(--input-border)!important;
+}
+html[data-theme="dark"] ::placeholder{color:var(--muted)!important}
+
+/* Evaluation Tracker / Evaluation Report shared controls */
+html[data-theme="dark"] .et-wrap,
+html[data-theme="dark"] .et-card,
+html[data-theme="dark"] .et-table,
+html[data-theme="dark"] .et-search,
+html[data-theme="dark"] .et-select,
+html[data-theme="dark"] .et-btn,
+html[data-theme="dark"] .et-empty{
+  background:var(--panel-bg)!important;
+  border-color:var(--panel-border)!important;
+  color:var(--text)!important;
+}
+html[data-theme="dark"] .et-table th{background:var(--input-bg)!important;color:var(--muted)!important}
+html[data-theme="dark"] .et-table td{background:var(--panel-bg)!important;color:var(--text)!important;border-color:var(--panel-border)!important}
+html[data-theme="dark"] .et-table tr:hover td{background:var(--input-bg)!important}
+html[data-theme="dark"] .comment-text,
+html[data-theme="dark"] .comment-section{background:var(--input-bg)!important;color:var(--text)!important}
+html[data-theme="dark"] .eval-tab.student.active,
+html[data-theme="dark"] .eval-tab.peer.active,
+html[data-theme="dark"] .eval-tab.multi-role.active{
+  background:var(--input-bg)!important;
+  color:var(--text)!important;
+}
+
+/* System & Period Settings uses --surface/--surface-2/--surface-3. */
+html[data-theme="dark"] .shell,
+html[data-theme="dark"] .section{
+  color:var(--text)!important;
+}
+html[data-theme="dark"] .control-option,
+html[data-theme="dark"] .toggle-row{
+  background:var(--input-bg)!important;
+  border-color:var(--panel-border)!important;
+  color:var(--text)!important;
+}
+html[data-theme="dark"] .maint-banner{
+  background:color-mix(in srgb, #F59E0B 12%, var(--panel-bg))!important;
+  color:#f7c76b!important;
+  border-color:#79551f!important;
+}
+html[data-theme="dark"] .switch .thumb{background:#e7eef8!important}
+
+/* System Archive uses --bg/--card/--line rather than the shared tokens. */
+html[data-theme="dark"]{
+  --card:var(--panel-bg);
+  --line:var(--panel-border);
+}
+html[data-theme="dark"] .card,
+html[data-theme="dark"] .archive-table,
+html[data-theme="dark"] .mini{
+  background:var(--panel-bg)!important;
+  border-color:var(--panel-border)!important;
+  color:var(--text)!important;
+}
+html[data-theme="dark"] .archive-table th{background:var(--input-bg)!important;color:var(--muted)!important}
+html[data-theme="dark"] .archive-table td{color:var(--text)!important;border-color:var(--panel-border)!important}
+html[data-theme="dark"] .select,
+html[data-theme="dark"] .btn{
+  background:var(--input-bg)!important;
+  color:var(--text)!important;
+  border-color:var(--input-border)!important;
+}
+html[data-theme="dark"] .btn.primary{background:var(--accent)!important;color:#fff!important;border-color:var(--accent)!important}
+html[data-theme="dark"] .btn.danger{background:rgba(214,69,93,.12)!important;color:#f08da0!important;border-color:rgba(214,69,93,.4)!important}
+html[data-theme="dark"] .badge{background:var(--input-bg)!important;color:var(--accent)!important;border-color:var(--panel-border)!important}
+
+/* ========================================================================
+   GLOBAL DENSITY SYSTEM — applies Compact / Comfortable consistently to
+   every admin feature that loads admin_appearance.css.
+   Density changes spacing and control dimensions without changing the page's
+   existing colors, typography, or component identity.
+   ======================================================================== */
+html[data-density="compact"]{
+  --density-page-gap: 14px;
+  --density-section-gap: 14px;
+  --density-card-pad: 14px;
+  --density-card-gap: 12px;
+  --density-control-h: 36px;
+  --density-control-pad: 9px 12px;
+  --density-tab-pad: 9px 14px;
+  --density-table-y: 9px;
+  --density-table-x: 12px;
+  --density-row-gap: 8px;
+  --density-field-gap: 8px;
+  --density-head-gap: 10px;
+}
+
+html.density-comfortable,
+html[data-density="comfortable"]{
+  --density-page-gap: 22px;
+  --density-section-gap: 22px;
+  --density-card-pad: 22px;
+  --density-card-gap: 18px;
+  --density-control-h: 44px;
+  --density-control-pad: 11px 15px;
+  --density-tab-pad: 12px 18px;
+  --density-table-y: 13px;
+  --density-table-x: 16px;
+  --density-row-gap: 12px;
+  --density-field-gap: 12px;
+  --density-head-gap: 14px;
+}
+
+/* Make the default compact preference explicit instead of relying on the
+   absence of a class. This lets every page use one predictable selector. */
+html.density-compact{ }
+
+/* ---- Universal content rhythm ---- */
+html.density-compact .page-header,
+html.density-compact .section,
+html.density-compact .content-panel,
+html.density-compact .content-card,
+html.density-compact .table-card,
+html.density-compact .table-wrap,
+html.density-compact .panel,
+html.density-compact .card,
+html.density-compact .period-card,
+html.density-compact .stat-card,
+html.density-compact .sector-card,
+html.density-compact .eval-card,
+html.density-compact .gl-card,
+html.density-compact .history-card,
+html.density-compact .standing-panel,
+html.density-compact .sum-card,
+html.density-compact .amber-card,
+html.density-compact .green-card,
+html.density-compact .red-card,
+html.density-compact .et-card,
+html.density-compact .et-wrap,
+html.density-compact .ra-table-card,
+html.density-compact .results-table-wrap,
+html.density-compact .ra-filters-panel,
+html.density-compact .eval-banner,
+html.density-compact .info-banner{
+  gap:var(--density-card-gap)!important;
+}
+
+/* Comfortable: enlarge the same surfaces. Padding is intentionally limited
+   to common content containers so existing feature layouts remain intact. */
+html.density-comfortable .section,
+html.density-comfortable .content-panel,
+html.density-comfortable .content-card,
+html.density-comfortable .table-card,
+html.density-comfortable .table-wrap,
+html.density-comfortable .panel,
+html.density-comfortable .card,
+html.density-comfortable .period-card,
+html.density-comfortable .stat-card,
+html.density-comfortable .sector-card,
+html.density-comfortable .eval-card,
+html.density-comfortable .gl-card,
+html.density-comfortable .history-card,
+html.density-comfortable .standing-panel,
+html.density-comfortable .sum-card,
+html.density-comfortable .amber-card,
+html.density-comfortable .green-card,
+html.density-comfortable .red-card,
+html.density-comfortable .et-card,
+html.density-comfortable .et-wrap,
+html.density-comfortable .ra-table-card,
+html.density-comfortable .results-table-wrap,
+html.density-comfortable .ra-filters-panel{
+  gap:var(--density-card-gap)!important;
+}
+
+/* ---- Common tabs / segmented controls ---- */
+html.density-compact .tabs,
+html.density-compact .sector-tabs,
+html.density-compact .level-tabs,
+html.density-compact .status-tabs,
+html.density-compact .eval-switcher,
+html.density-compact .faculty-subtabs,
+html.density-compact .desig-subtabs,
+html.density-compact .mr-filter-tabs{
+  gap:4px!important;
+}
+html.density-comfortable .tabs,
+html.density-comfortable .sector-tabs,
+html.density-comfortable .level-tabs,
+html.density-comfortable .status-tabs,
+html.density-comfortable .eval-switcher,
+html.density-comfortable .faculty-subtabs,
+html.density-comfortable .desig-subtabs,
+html.density-comfortable .mr-filter-tabs{
+  gap:8px!important;
+}
+
+html.density-compact .tab,
+html.density-compact .sector-tab,
+html.density-compact .level-tab,
+html.density-compact .status-tab,
+html.density-compact .eval-tab,
+html.density-compact .faculty-subtab,
+html.density-compact .desig-subtab,
+html.density-compact .mr-filter-tab,
+html.density-compact .group-tab{
+  padding:var(--density-tab-pad)!important;
+}
+html.density-comfortable .tab,
+html.density-comfortable .sector-tab,
+html.density-comfortable .level-tab,
+html.density-comfortable .status-tab,
+html.density-comfortable .eval-tab,
+html.density-comfortable .faculty-subtab,
+html.density-comfortable .desig-subtab,
+html.density-comfortable .mr-filter-tab,
+html.density-comfortable .group-tab{
+  padding:var(--density-tab-pad)!important;
+}
+
+/* ---- Buttons / controls / filters ---- */
+html.density-compact .btn,
+html.density-compact button,
+html.density-compact .btn-sm,
+html.density-compact .btn-primary,
+html.density-compact .btn-cancel,
+html.density-compact .btn-back,
+html.density-compact .btn-icon,
+html.density-compact .action-btns > *,
+html.density-compact .ra-tool-btn,
+html.density-compact .ra-filter-clear,
+html.density-compact .ra-pager-btns > *,
+html.density-compact .et-btn,
+html.density-compact .et-level-pill,
+html.density-compact .sf-btn,
+html.density-compact .sf-choose-btn{
+  min-height:var(--density-control-h)!important;
+  padding:var(--density-control-pad)!important;
+}
+html.density-comfortable .btn,
+html.density-comfortable button,
+html.density-comfortable .btn-sm,
+html.density-comfortable .btn-primary,
+html.density-comfortable .btn-cancel,
+html.density-comfortable .btn-back,
+html.density-comfortable .btn-icon,
+html.density-comfortable .action-btns > *,
+html.density-comfortable .ra-tool-btn,
+html.density-comfortable .ra-filter-clear,
+html.density-comfortable .ra-pager-btns > *,
+html.density-comfortable .et-btn,
+html.density-comfortable .et-level-pill,
+html.density-comfortable .sf-btn,
+html.density-comfortable .sf-choose-btn{
+  min-height:var(--density-control-h)!important;
+  padding:var(--density-control-pad)!important;
+}
+
+html.density-compact input,
+html.density-compact select,
+html.density-compact textarea,
+html.density-compact .sf-input,
+html.density-compact .ra-search,
+html.density-compact .et-search{
+  min-height:var(--density-control-h)!important;
+  padding:var(--density-control-pad)!important;
+}
+html.density-comfortable input,
+html.density-comfortable select,
+html.density-comfortable textarea,
+html.density-comfortable .sf-input,
+html.density-comfortable .ra-search,
+html.density-comfortable .et-search{
+  min-height:var(--density-control-h)!important;
+  padding:var(--density-control-pad)!important;
+}
+
+/* Preserve icon-only buttons as square controls. */
+html.density-compact .btn-icon,
+html.density-compact .icon-btn,
+html.density-compact .ra-icon-btn,
+html.density-comfortable .btn-icon,
+html.density-comfortable .icon-btn,
+html.density-comfortable .ra-icon-btn{
+  width:var(--density-control-h)!important;
+  min-width:var(--density-control-h)!important;
+  padding:0!important;
+}
+
+/* ---- Tables and list rows ---- */
+html.density-compact table th,
+html.density-compact table td{
+  padding:var(--density-table-y) var(--density-table-x)!important;
+}
+html.density-comfortable table th,
+html.density-comfortable table td{
+  padding:var(--density-table-y) var(--density-table-x)!important;
+}
+html.density-compact .user-list-item,
+html.density-compact .person-row,
+html.density-compact .sector-row,
+html.density-compact .et-card-foot,
+html.density-compact .history-card .row,
+html.density-compact .standing-item,
+html.density-compact .pbi-personnel-item,
+html.density-compact .pbi-attention-item,
+html.density-compact .notif-item{
+  min-height:0!important;
+  padding-top:var(--density-table-y)!important;
+  padding-bottom:var(--density-table-y)!important;
+}
+html.density-comfortable .user-list-item,
+html.density-comfortable .person-row,
+html.density-comfortable .sector-row,
+html.density-comfortable .et-card-foot,
+html.density-comfortable .history-card .row,
+html.density-comfortable .standing-item,
+html.density-comfortable .pbi-personnel-item,
+html.density-comfortable .pbi-attention-item,
+html.density-comfortable .notif-item{
+  padding-top:var(--density-table-y)!important;
+  padding-bottom:var(--density-table-y)!important;
+}
+
+/* ---- Grids / section spacing ---- */
+html.density-compact .cfg-grid,
+html.density-compact .grid,
+html.density-compact .control-modes,
+html.density-compact .evaluator-grid,
+html.density-compact .yl-grid,
+html.density-compact .et-cards,
+html.density-compact .pbi-cards-row,
+html.density-compact .pbi-bottom-row,
+html.density-compact .pbi-dashboard-grid{
+  gap:var(--density-row-gap)!important;
+}
+html.density-comfortable .cfg-grid,
+html.density-comfortable .grid,
+html.density-comfortable .control-modes,
+html.density-comfortable .evaluator-grid,
+html.density-comfortable .yl-grid,
+html.density-comfortable .et-cards,
+html.density-comfortable .pbi-cards-row,
+html.density-comfortable .pbi-bottom-row,
+html.density-comfortable .pbi-dashboard-grid{
+  gap:var(--density-row-gap)!important;
+}
+
+html.density-compact .field-row,
+html.density-compact .sf-row,
+html.density-compact .action-wrap,
+html.density-compact .ra-filter-row,
+html.density-compact .ra-tool-row{
+  gap:var(--density-field-gap)!important;
+}
+html.density-comfortable .field-row,
+html.density-comfortable .sf-row,
+html.density-comfortable .action-wrap,
+html.density-comfortable .ra-filter-row,
+html.density-comfortable .ra-tool-row{
+  gap:var(--density-field-gap)!important;
+}
+
+/* ---- Explicit feature-level cards that often use their own padding ---- */
+html.density-compact .pbi-stat-card,
+html.density-compact .pbi-section-box,
+html.density-compact .pbi-panel,
+html.density-compact .pbi-card,
+html.density-compact .et-card,
+html.density-compact .stat-card,
+html.density-compact .period-card{
+  padding:var(--density-card-pad)!important;
+}
+html.density-comfortable .pbi-stat-card,
+html.density-comfortable .pbi-section-box,
+html.density-comfortable .pbi-panel,
+html.density-comfortable .pbi-card,
+html.density-comfortable .et-card,
+html.density-comfortable .stat-card,
+html.density-comfortable .period-card{
+  padding:var(--density-card-pad)!important;
+}
+
+/* Comfortable mode gives secondary content a little more breathing room;
+   Compact mode tightens the same areas without changing font sizes. */
+html.density-comfortable .page-header,
+html.density-comfortable .section-head,
+html.density-comfortable .section-body,
+html.density-comfortable .pbi-panel-head,
+html.density-comfortable .pbi-section-head-row,
+html.density-comfortable .ra-table-head,
+html.density-comfortable .ra-table-tools{
+  gap:var(--density-head-gap)!important;
+}
+html.density-compact .page-header,
+html.density-compact .section-head,
+html.density-compact .section-body,
+html.density-compact .pbi-panel-head,
+html.density-compact .pbi-section-head-row,
+html.density-compact .ra-table-head,
+html.density-compact .ra-table-tools{
+  gap:var(--density-head-gap)!important;
+}

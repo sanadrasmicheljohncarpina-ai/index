@@ -136,13 +136,13 @@ if ($hasPeriod) {
     // (confirmed via shared/system_settings_service.php) — not
     // academic_term/academic_year, which don't exist on that table.
     $trend = safe_rows($mysqli, "
-        SELECT ep.period_label, AVG(qa.answer_score) avg_score
+        SELECT ep.period_label, ep.semester AS academic_term, ep.school_year AS academic_year, AVG(qa.answer_score) avg_score
         FROM evaluation_tracker et
         INNER JOIN evaluation_periods ep ON ep.id = et.period_id
         INNER JOIN questionnaire_answers qa ON qa.tracker_id = et.id
         WHERE et.eval_type=? AND et.evaluation_context=? AND et.status IN ('submitted','approved')
           AND et.target_user_id=?
-        GROUP BY et.period_id, ep.period_label
+        GROUP BY et.period_id, ep.period_label, ep.semester, ep.school_year
         ORDER BY ep.id ASC
         LIMIT 12
     ", "ssi", [SCHOOL_HEAD_EVAL_TYPE, SCHOOL_HEAD_CONTEXT, $deanId]);
@@ -250,6 +250,7 @@ body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,
 .view-evals-btn i:last-child{margin-left:auto;transition:transform .2s}.received-item{display:flex;justify-content:space-between;gap:14px;align-items:center;background:var(--inner);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:14px 16px;margin-bottom:10px;cursor:pointer}.received-item:hover{border-color:rgba(124,95,217,.35)}.received-anon{font-size:13px;font-weight:700;color:#fff}.received-anon i{color:var(--muted);margin-right:5px}.received-meta{font-size:11px;color:var(--muted);margin-top:4px}.received-right{display:flex;flex-direction:column;align-items:flex-end;gap:8px}.received-score{font-size:12px;font-weight:800;color:#bdebd9;background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.25);padding:4px 10px;border-radius:18px}.details-btn{background:rgba(13,148,136,.12);border:1px solid rgba(13,148,136,.28);color:#5eead4;font-size:11px;font-weight:700;padding:6px 12px;border-radius:18px;cursor:pointer}.eval-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:500;display:none;align-items:center;justify-content:center;padding:20px}.eval-modal-overlay.open{display:flex}.eval-modal{background:var(--mid);border:1px solid rgba(255,255,255,.08);border-radius:16px;width:100%;max-width:720px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,.6)}.eval-modal-header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid rgba(255,255,255,.08)}.eval-modal-title{font-family:'Rajdhani',sans-serif;font-size:21px;font-weight:700;color:#fff}.eval-modal-title i{color:#9C85F0;margin-right:8px}.eval-modal-close{background:none;border:none;color:var(--muted);font-size:19px;cursor:pointer}.eval-modal-body{padding:22px;overflow:auto}.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px}.info-grid>div{background:var(--inner);border:1px solid rgba(255,255,255,.05);border-radius:10px;padding:12px 14px}.info-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:5px}.info-value{font-size:13px;color:#fff;font-weight:600}.info-value i{color:var(--muted);margin-right:4px}.score-big{color:#5eead4}.modal-section-title{font-size:14px;color:#fff;margin:18px 0 10px}.cat-row-modal{display:flex;align-items:center;gap:10px;margin:9px 0}.cat-name-modal{width:170px;font-size:12px;color:var(--light);flex-shrink:0}.cat-bar{flex:1;height:7px;background:rgba(255,255,255,.08);border-radius:6px;overflow:hidden}.cat-bar>div{height:100%;background:linear-gradient(90deg,#5f45b8,#9c85f0);border-radius:6px}.cat-score-modal{width:42px;text-align:right;font-size:12px;font-weight:700;color:#fff}.q-result{background:var(--inner);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:13px 15px;margin-bottom:8px}.q-no{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:4px}.q-text{font-size:13px;color:#fff;font-weight:600;line-height:1.5}.q-score{margin-top:7px;font-size:12px;color:var(--muted)}.q-score span{margin-left:7px;font-weight:700}.dean-star{color:rgba(255,255,255,.16);margin-right:2px}.dean-star.filled{color:#facc15}.comment-modal{background:var(--inner);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:14px;color:var(--light);font-size:13px;line-height:1.6;font-style:italic}.comment-modal.empty{color:var(--muted);font-style:normal}.loading-eval{padding:50px 10px;text-align:center;color:var(--muted);font-size:13px}.loading-eval i{margin-right:8px}
 @media(max-width:768px){body{flex-direction:column;}.sidebar{width:100%;min-height:auto;}.cat-name{width:120px;}}
 </style>
+<link rel="stylesheet" href="includes/dean_light_theme.css"/>
 </head>
 <body>
 
@@ -385,4 +386,5 @@ document.getElementById('deanEvalModal').addEventListener('click',function(e){if
 </body>
 </html>
 </body>
+<link rel="stylesheet" href="includes/dean_light_theme.css" id="dean-light-theme-final"/>
 </html>

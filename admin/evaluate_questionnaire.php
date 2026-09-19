@@ -15,7 +15,11 @@ if (!isset($_SESSION['user_id'])) {
     $_SESSION['category'] = "shs";
 }
 
+require_once dirname(__DIR__) . '/shared/system_settings_service.php';
+
 $studentId = $_SESSION['user_id'];
+// Apply the schedule before the evaluation form is displayed.
+ss_sync_from_database($mysqli);
 
 // Determine current tracking context parameters
 $evalType = $_GET['type'] ?? 'Teacher'; // 'Teacher' or 'Personnel'
@@ -247,6 +251,28 @@ a { color:inherit; }
 </style>
     <link rel="stylesheet" href="admin_ui_theme.css">
     <link rel="stylesheet" href="admin_compact_ui.css">
+<style id="pbi-feature-scrollbar">
+
+/* PBI FEATURE SCROLLBAR — consistent with the compact page scrollbar */
+html, body {
+  scrollbar-width: thin !important;
+  scrollbar-color: #888 transparent !important;
+}
+html::-webkit-scrollbar, body::-webkit-scrollbar,
+.feature-compact ::-webkit-scrollbar { width: 10px !important; height: 10px !important; }
+html::-webkit-scrollbar-track, body::-webkit-scrollbar-track,
+.feature-compact ::-webkit-scrollbar-track { background: transparent !important; }
+html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb,
+.feature-compact ::-webkit-scrollbar-thumb {
+  background: #888 !important; border-radius: 999px !important;
+  border: 2px solid transparent !important; background-clip: padding-box !important;
+}
+html::-webkit-scrollbar-thumb:hover, body::-webkit-scrollbar-thumb:hover,
+.feature-compact ::-webkit-scrollbar-thumb:hover { background: #777 !important; background-clip: padding-box !important; }
+html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
+.feature-compact ::-webkit-scrollbar-button { display: block !important; width: 10px !important; height: 10px !important; background-color: transparent !important; }
+
+</style>
 </head>
 <body class="feature-compact">
 

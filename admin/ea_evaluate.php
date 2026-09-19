@@ -1,27 +1,19 @@
 <?php
 // admin/ea_evaluate.php
 // The per-person EA evaluation form. Reached from ea_evaluation.php via
-// ?type=<Principal|Dean|Non-Teaching Staff>&user_id=<id>. Matches the same
+// ?type=<Principal|Dean|Staff>&user_id=<id>. Matches the same
 // evaluate-page pattern used by principal_evaluate.php and
 // dean/dean_evaluate.php: a server-rendered form with a person card,
 // one card per question with a 1-5 rating, a comment box, and a
 // read-only view once already submitted this period.
 //
-// Questions are NOT hardcoded here, and there is no separate "EA
-// Evaluation" question set. EA Evaluation reuses whatever is already
-// assigned to that same person elsewhere in Manage Questions
-// (admin/questionnaire.php):
-//   - Principal / Dean  -> user_questions where eval_type='school_head'
-//     (the same per-person pool the School Head Evaluation tab manages)
-//   - Non-Teaching Staff -> user_questions where eval_type='student'
-//     AND target_type='Staff' (the same per-person pool the Student
-//     Evaluation tab manages for that Staff member)
-// If nobody has assigned questions to this specific person yet in the
-// relevant tab, this page says so and links straight to that tab instead
-// of silently seeding default text.
+// Questions are NOT hardcoded here. They are fetched directly from the
+// dedicated Executive Assistant Evaluation question bank managed by
+// admin/questionnaire.php (eval_type='ea'). Each target person has an
+// independent EA question set for Staff, Dean, or Principal.
 //
 // Eligibility and storage are otherwise unchanged: the target must
-// currently be the active Principal/Dean or qualifying Non-Teaching Staff
+// currently be the active Principal/Dean or qualifying Staff
 // (re-checked here, independent of ea_evaluation.php), and a submission
 // writes one evaluation_tracker row (eval_type='ea') plus one
 // questionnaire_answers row per question.
@@ -31,6 +23,8 @@ session_set_cookie_params([
 ]);
 session_start();
 require_once 'db.php';
+require_once dirname(__DIR__) . '/shared/system_settings_service.php';
+
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
@@ -39,6 +33,9 @@ if (!isset($_SESSION['user_id']) ||
     header('Location: admin_login.php');
     exit;
 }
+
+// Apply the schedule before reading evaluation_periods.is_active.
+ss_sync_from_database($mysqli);
 
 $ea_id = (int)$_SESSION['user_id'];
 
@@ -58,7 +55,7 @@ function e($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
 $type = $_GET['type'] ?? '';
 $targetId = isset($_GET['user_id']) ? (int)$_GET['user_id'] : 0;
-$validTypes = ['Principal', 'Dean', 'Non-Teaching Staff'];
+$validTypes = ['Principal', 'Dean', 'Staff'];
 if (!in_array($type, $validTypes, true) || $targetId <= 0) {
     header('Location: ea_evaluation.php');
     exit;
@@ -78,8 +75,9 @@ if ($type === 'Principal' || $type === 'Dean') {
     $target = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 } else {
+    // Staff target = Staff members without teaching/year-level assignments.
     $stmt = $mysqli->prepare("
-        SELECT u.id, u.full_name, u.designation, u.photo, u.role, u.secondary_role
+        SELECT u.id, u.full_name, u.designation, u.photo, u.role
         FROM users u
         WHERE u.id=? AND u.role='staff'
           AND u.is_active=1
@@ -103,19 +101,11 @@ $period = $mysqli->query("SELECT id, period_label FROM evaluation_periods WHERE 
 $period_id = (int)($period['id'] ?? 0);
 $is_open = $period_id > 0;
 
-// ── QUESTIONS: reuse whatever's assigned to this person elsewhere ──────
-// No default/fallback set and no auto-seeding. Principal/Dean read from
-// the School Head Evaluation per-person pool; Non-Teaching Staff reads
-// from the Student Evaluation per-person Staff pool. If nothing has been
-// assigned there yet, $questions comes back empty and the form below
-// shows a message linking straight to the right Manage Questions tab.
-if ($type === 'Principal' || $type === 'Dean') {
-    $qEvalType   = 'school_head';
-    $qTargetType = $type;
-} else {
-    $qEvalType   = 'student';
-    $qTargetType = 'Staff';
-}
+// ── QUESTIONS: direct from Executive Assistant Evaluation bank ────────
+// The Questionnaire -> Executive Assistant Evaluation section stores
+// per-person questions under eval_type='ea'.
+$qEvalType   = 'ea';
+$qTargetType = $type;
 $qStmt = $mysqli->prepare("
     SELECT id, category, question_text, sort_order
     FROM user_questions
@@ -174,8 +164,14 @@ if ($existingAnswers) {
 // ── HANDLE SUBMIT ──────────────────────────────────────────────────────
 $errors = [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$existingTracker) {
+    // Re-read the persisted settings immediately before the write so a stale
+    // browser page cannot submit after the scheduled closing instant.
+    $liveSettings = ss_raw($mysqli);
+    $liveState = ss_schedule_state($liveSettings);
+    $is_open = (bool)$liveState['open'];
+
     if (!$is_open) {
-        $errors[] = 'EA Evaluation is unavailable because no evaluation period is currently open.';
+        $errors[] = 'EA Evaluation is currently closed.';
     } elseif (!$questions) {
         $errors[] = 'No EA questions have been assigned to this person yet.';
     } else {
@@ -189,25 +185,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$existingTracker) {
             $errors[] = 'Please answer every question before submitting.';
         } else {
             $comment = trim($_POST['comment'] ?? '');
+            $submittedAt = ss_now()->format('Y-m-d H:i:s');
             $mysqli->begin_transaction();
             try {
                 $ins = $mysqli->prepare("
                     INSERT INTO evaluation_tracker
                     (evaluator_id, target_user_id, remarks, eval_type, period_id, status, submitted_at)
-                    VALUES (?, ?, ?, 'ea', ?, 'submitted', NOW())
+                    VALUES (?, ?, ?, 'ea', ?, 'submitted', ?)
                 ");
-                $ins->bind_param('iisi', $ea_id, $targetId, $comment, $period_id);
+                $ins->bind_param('iisis', $ea_id, $targetId, $comment, $period_id, $submittedAt);
                 $ins->execute();
                 $trackerId = $mysqli->insert_id;
                 $ins->close();
 
                 $ans = $mysqli->prepare("
                     INSERT INTO questionnaire_answers (tracker_id, question_id, answer_score, submitted_at)
-                    VALUES (?, ?, ?, NOW())
+                    VALUES (?, ?, ?, ?)
                 ");
                 foreach ($questions as $q) {
                     $score = (int)$ratings[$q['id']];
-                    $ans->bind_param('iii', $trackerId, $q['id'], $score);
+                    $ans->bind_param('iiis', $trackerId, $q['id'], $score, $submittedAt);
                     $ans->execute();
                 }
                 $ans->close();
@@ -253,21 +250,28 @@ foreach ($questions as $q) { $questionGroups[$q['category'] ?: 'General'][] = $q
 .alert{border-radius:10px;padding:13px 16px;font-size:13.5px;margin-bottom:18px;display:flex;align-items:center;gap:8px}
 .alert-error{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.25);color:#ffb4b4}
 .alert-info{background:#E6F0FF;border:1px solid #B8D4F8;color:#2563EB}
-.q-block{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;box-shadow:var(--shadow);margin-bottom:16px}
+.q-block{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:var(--shadow);margin-bottom:12px}
 .q-cat{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--purple);margin-bottom:6px}
-.cat-heading{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--purple);margin:26px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.cat-heading{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--purple);margin:26px 0 10px;padding-bottom:8px;border-bottom:1px solid var(--line)}
 .cat-heading:first-child{margin-top:0}
 .cat-heading i{font-size:11px}
-.q-num{color:var(--purple);font-weight:800;margin-right:6px}
-.q-text{font-size:14.5px;color:var(--text);margin-bottom:14px}
-.rating-row{display:flex;gap:10px}
-.rating-opt{flex:1;text-align:center}
-.rating-opt input{display:none}
-.rating-opt label{display:block;padding:10px 0;border-radius:8px;border:1px solid var(--line);background:var(--inner);color:var(--muted);font-size:13px;font-weight:700;cursor:pointer}
+.q-num{color:var(--purple);font-weight:800;margin-right:8px}
+.q-text{font-size:14px;color:var(--text);line-height:1.45;margin:0}
+.eval-table{width:100%;border-collapse:collapse;table-layout:fixed}
+.eval-table th{background:var(--panel2);color:var(--muted);font-size:11px;font-weight:800;letter-spacing:.5px;text-align:center;padding:11px 8px;border-bottom:1px solid var(--line)}
+.eval-table th:first-child{text-align:left;width:auto}
+.eval-table th:not(:first-child){width:58px}
+.eval-table td{padding:12px 8px;border-bottom:1px solid #E6EEF7;vertical-align:middle;text-align:center}
+.eval-table tr:last-child td{border-bottom:none}
+.eval-table td:first-child{text-align:left;padding-left:16px;padding-right:14px}
+.rating-opt{display:flex;justify-content:center;align-items:center}
+.rating-opt input{position:absolute;opacity:0;pointer-events:none}
+.rating-opt label{width:38px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:7px;border:1px solid var(--line);background:var(--inner);color:var(--muted);font-size:13px;font-weight:800;cursor:pointer;transition:.15s ease}
+.rating-opt label:hover{border-color:#93C5FD;background:#F1F7FF}
 .rating-opt input:checked + label{background:var(--purple);border-color:var(--purple);color:#fff}
-.rating-opt label:hover{border-color:#93C5FD}
-.rating-readonly{display:flex;align-items:center;gap:6px}
-.rating-readonly .stars{color:#c4b5fd}
+.rating-readonly{display:flex;align-items:center;justify-content:center;gap:6px;font-weight:800;color:var(--text)}
+.rating-readonly .stars{color:#c4b5fd;letter-spacing:1px}
+.readonly-table .score-cell{font-size:12px;color:var(--muted);font-weight:800}
 .comment-block{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;box-shadow:var(--shadow);margin-bottom:22px}
 .comment-block label{display:block;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
 .comment-block textarea{width:100%;min-height:100px;background:var(--inner);border:1px solid var(--line);border-radius:8px;color:var(--text);font-size:13.5px;font-family:inherit;padding:12px;outline:none;resize:vertical}
@@ -278,10 +282,32 @@ foreach ($questions as $q) { $questionGroups[$q['category'] ?: 'General'][] = $q
 .summary-score{display:flex;align-items:baseline;gap:8px;margin-bottom:4px}
 .summary-score .num{font-size:32px;font-weight:800;color:var(--text)}
 .summary-score .of{font-size:13px;color:var(--muted)}
-@media(max-width:900px){.top{padding:0 18px}.wrap{padding:20px}.rating-row{flex-wrap:wrap}.rating-opt{min-width:50px}}
+@media(max-width:900px){.top{padding:0 18px}.wrap{padding:20px}.eval-table th:not(:first-child){width:50px}.rating-opt label{width:34px;height:32px}}
 </style>
     <link rel="stylesheet" href="admin_ui_theme.css">
     <link rel="stylesheet" href="admin_compact_ui.css">
+<style id="pbi-feature-scrollbar">
+
+/* PBI FEATURE SCROLLBAR — consistent with the compact page scrollbar */
+html, body {
+  scrollbar-width: thin !important;
+  scrollbar-color: #888 transparent !important;
+}
+html::-webkit-scrollbar, body::-webkit-scrollbar,
+.feature-compact ::-webkit-scrollbar { width: 10px !important; height: 10px !important; }
+html::-webkit-scrollbar-track, body::-webkit-scrollbar-track,
+.feature-compact ::-webkit-scrollbar-track { background: transparent !important; }
+html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb,
+.feature-compact ::-webkit-scrollbar-thumb {
+  background: #888 !important; border-radius: 999px !important;
+  border: 2px solid transparent !important; background-clip: padding-box !important;
+}
+html::-webkit-scrollbar-thumb:hover, body::-webkit-scrollbar-thumb:hover,
+.feature-compact ::-webkit-scrollbar-thumb:hover { background: #777 !important; background-clip: padding-box !important; }
+html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
+.feature-compact ::-webkit-scrollbar-button { display: block !important; width: 10px !important; height: 10px !important; background-color: transparent !important; }
+
+</style>
 </head>
 <body class="feature-compact">
 <header class="top">
@@ -321,40 +347,60 @@ foreach ($questions as $q) { $questionGroups[$q['category'] ?: 'General'][] = $q
     <?php $existingGroups = []; foreach ($existingAnswers as $a) { $existingGroups[$a['category'] ?: 'General'][] = $a; } ?>
     <?php $qn = 0; foreach ($existingGroups as $cat => $answers): ?>
     <div class="cat-heading"><i class="fa-solid fa-layer-group"></i> <?= e($cat) ?></div>
-    <?php foreach ($answers as $a): $qn++; ?>
-    <div class="q-block">
-        <div class="q-text"><span class="q-num"><?= $qn ?>.</span><?= e($a['question_text']) ?></div>
-        <div class="rating-readonly"><span class="stars"><?= str_repeat('★', (int)$a['answer_score']) . str_repeat('☆', 5 - (int)$a['answer_score']) ?></span> <?= (int)$a['answer_score'] ?>/5</div>
+    <div class="q-block readonly-table">
+        <table class="eval-table">
+            <thead>
+                <tr><th>Question</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th></tr>
+            </thead>
+            <tbody>
+            <?php foreach ($answers as $a): $qn++; $score=(int)$a['answer_score']; ?>
+                <tr>
+                    <td><div class="q-text"><span class="q-num"><?= $qn ?>.</span><?= e($a['question_text']) ?></div></td>
+                    <?php for ($n=5; $n>=1; $n--): ?>
+                    <td class="score-cell"><?= $n === $score ? '✓' : '—' ?></td>
+                    <?php endfor; ?>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
     </div>
-    <?php endforeach; endforeach; ?>
+    <?php endforeach; ?>
     <div class="comment-block">
         <label>Comment</label>
         <p class="comment-readonly"><?= $existingTracker['remarks'] !== '' ? e($existingTracker['remarks']) : 'No written comment.' ?></p>
     </div>
 <?php elseif (!$questions): ?>
     <?php
-        $manageLabel = ($type === 'Principal' || $type === 'Dean')
-            ? 'Questionnaire → School Head Evaluation → ' . $type
-            : 'Questionnaire → Student Evaluation → Staff';
+        $manageLabel = 'Questionnaire → Executive Assistant Evaluation → ' . $type;
     ?>
     <div class="alert alert-info"><i class="fa-solid fa-circle-info"></i> No questions have been assigned to <?= e($target['full_name']) ?> yet. Go to <a href="questionnaire.php?view=manage&eval_type=<?= urlencode($qEvalType) ?>&target=<?= urlencode($qTargetType) ?>&user_id=<?= $targetId ?>" style="color:#2563EB;font-weight:700;"><?= e($manageLabel) ?></a> and select this person to assign their questions.</div>
 <?php else: ?>
     <form method="post">
         <?php $qn = 0; foreach ($questionGroups as $cat => $qs): ?>
         <div class="cat-heading"><i class="fa-solid fa-layer-group"></i> <?= e($cat) ?></div>
-        <?php foreach ($qs as $q): $qn++; ?>
         <div class="q-block">
-            <div class="q-text"><span class="q-num"><?= $qn ?>.</span><?= e($q['question_text']) ?></div>
-            <div class="rating-row">
-                <?php for ($n = 5; $n >= 1; $n--): ?>
-                <div class="rating-opt">
-                    <input type="radio" name="rating[<?= (int)$q['id'] ?>]" id="q<?= (int)$q['id'] ?>_<?= $n ?>" value="<?= $n ?>" required>
-                    <label for="q<?= (int)$q['id'] ?>_<?= $n ?>"><?= $n ?></label>
-                </div>
-                <?php endfor; ?>
-            </div>
+            <table class="eval-table">
+                <thead>
+                    <tr><th>Question</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th></tr>
+                </thead>
+                <tbody>
+                <?php foreach ($qs as $q): $qn++; ?>
+                    <tr>
+                        <td><div class="q-text"><span class="q-num"><?= $qn ?>.</span><?= e($q['question_text']) ?></div></td>
+                        <?php for ($n = 5; $n >= 1; $n--): ?>
+                        <td>
+                            <div class="rating-opt">
+                                <input type="radio" name="rating[<?= (int)$q['id'] ?>]" id="q<?= (int)$q['id'] ?>_<?= $n ?>" value="<?= $n ?>" required>
+                                <label for="q<?= (int)$q['id'] ?>_<?= $n ?>"><?= $n ?></label>
+                            </div>
+                        </td>
+                        <?php endfor; ?>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
         </div>
-        <?php endforeach; endforeach; ?>
+        <?php endforeach; ?>
 
         <div class="comment-block">
             <label for="comment">Comment (optional)</label>

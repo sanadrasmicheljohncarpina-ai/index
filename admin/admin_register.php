@@ -32,15 +32,14 @@ $success = "";
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-    $first_name = trim($_POST['first_name']       ?? '');
-    $last_name  = trim($_POST['last_name']        ?? '');
+    $full_name  = trim($_POST['full_name']        ?? '');
     $email      = trim($_POST['email']            ?? '');
     $username   = trim($_POST['username']         ?? '');
     $password   = $_POST['password']              ?? '';
     $confirm    = $_POST['confirm_password']      ?? '';
 
     // ── VALIDATION ────────────────────────────────────────────
-    if (empty($first_name) || empty($last_name) || empty($email) || empty($username) || empty($password)) {
+    if (empty($full_name) || empty($email) || empty($username) || empty($password)) {
         $error = "Please fill in all required fields.";
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $error = "Please enter a valid email address.";
@@ -81,7 +80,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // ── INSERT ────────────────────────────────────────────────
     if (empty($error)) {
-        $full_name = $first_name . ' ' . $last_name;
         $hash      = password_hash($password, PASSWORD_DEFAULT);
 
         $ins = $mysqli->prepare(
@@ -278,22 +276,12 @@ input[type="file"]{display:none;}
         </div>
 
         <!-- Name -->
-        <div class="form-row">
-            <div class="form-group">
-                <label class="form-label">First Name<span class="required">*</span></label>
-                <div class="input-wrap">
-                    <i class="fa-solid fa-user f-icon"></i>
-                    <input class="form-input" type="text" name="first_name" placeholder="Juan"
-                           value="<?= htmlspecialchars($_POST['first_name'] ?? '') ?>" required/>
-                </div>
-            </div>
-            <div class="form-group">
-                <label class="form-label">Last Name<span class="required">*</span></label>
-                <div class="input-wrap">
-                    <i class="fa-solid fa-user f-icon"></i>
-                    <input class="form-input" type="text" name="last_name" placeholder="dela Cruz"
-                           value="<?= htmlspecialchars($_POST['last_name'] ?? '') ?>" required/>
-                </div>
+        <div class="form-group">
+            <label class="form-label">Full Name<span class="required">*</span></label>
+            <div class="input-wrap">
+                <i class="fa-solid fa-user f-icon"></i>
+                <input class="form-input" type="text" name="full_name" placeholder="Juan dela Cruz"
+                       value="<?= htmlspecialchars($_POST['full_name'] ?? '') ?>" required/>
             </div>
         </div>
 

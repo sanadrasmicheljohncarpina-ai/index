@@ -1,49 +1,13 @@
 <?php
 // dean/dean_evaluate.php
-// NEW FILE — this page did not exist before. The old "Evaluate"/"View"
-// links on dean_evaluation.php pointed at ea_questionnaire_route($tab,
-// $id), a function in shared/ea_personnel_service.php that built a
-// broken URL (localhost//index/dean/dean_evaluate.php?form=...&user_id=)
-// pointing at a page that had never been built. dean_evaluation.php now
-// links straight here instead: dean_evaluate.php?tab=&user_id=[&view=1].
-//
-// ── QUESTIONNAIRE CONTENT ────────────────────────────────────────────
-// The Faculty tab (Teacher, Teaching/Non-Teaching Staff, and the
-// Executive Assistant — all merged under one "Faculty" tab per
-// dean_evaluation.php) now fetches its questions directly from the
-// questionnaire feature's Student Evaluation tab: evaluation_questions
-// WHERE eval_type='student' AND target_type='Teacher'. That is the exact
-// pool admin/questionnaire.php's Student Evaluation -> "Faculty" card
-// manages, so the Dean rates people on the same rubric students use —
-// one shared source of truth instead of a separate per-evaluator
-// School Head Evaluation assignment. The evaluation stays labeled and
-// bucketed "Faculty" regardless of which of the three groups the target
-// belongs to (see $bucket below).
-//
-// This intentionally replaces the previous mechanism, where questions
-// came from evaluator-specific School Head Evaluation assignments
-// (school_head_evaluation_assignments, configured per Dean+target by the
-// EA via questionnaire.php's "School Head Evaluation Assignments"
-// screen). That assignment table/screen still exists and still serves
-// the Principal's evaluation flow if it uses the same service — it is
-// simply no longer read here.
-//
-// ── STORAGE ──────────────────────────────────────────────────────────
-// Submitting writes ONE row to evaluation_tracker (eval_type='school_head',
-// eval_bucket = 'Faculty'|'Staff'|'Executive Assistant', level='college',
-// status='submitted', score = average of the question ratings,
-// evaluator_id = the Dean, target_user_id = the person being evaluated,
-// period_id = current period, comment, submitted_at) plus one row per
-// question in questionnaire_answers (tracker_id, question_id, answer_score).
-//
-// eval_type is 'school_head' (not 'dean') and answers land in
-// questionnaire_answers (not evaluation_answers) so that admin/
-// admin_analytics.php's School Head Evaluation tab — which reads
-// eval_type='school_head' rows joined to questionnaire_answers — actually
-// picks these submissions up. A prior version of this file used
-// eval_type='dean' and a separate evaluation_answers table that nothing
-// downstream ever read, so every Dean submission silently vanished from
-// Reports & Analytics.
+// Evaluates Faculty, non-teaching Staff, and the Executive Assistant.
+// QUESTION SOURCE OF TRUTH:
+//   Faculty / EA -> admin/questionnaire.php Dean bank:
+//       evaluation_questions WHERE eval_type='school_head' AND evaluator_role='dean'
+//   Staff -> admin/questionnaire.php Dean/Principal Evaluation > Staff tab:
+//       user_questions WHERE eval_type='school_head' AND target_type='Staff'
+// This page deliberately does NOT read the legacy questionnaire_forms system
+// and does NOT read Student Evaluation questions.
 
 session_set_cookie_params([
     'lifetime' => 0,
@@ -54,36 +18,21 @@ session_set_cookie_params([
     'samesite' => 'Lax',
 ]);
 session_start();
+
 require_once 'db.php';
 require_once dirname(__DIR__) . '/shared/system_settings_service.php';
-require_once dirname(__DIR__) . '/shared/ea_personnel_service.php'; // for COLLEGE_LEVELS
 
-// ── AUTH GUARD ────────────────────────────────────────────
 if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'dean') {
     header("Location: dean_login.php");
     exit;
 }
 $deanId = (int)$_SESSION['user_id'];
 
-function safe_scalar(mysqli $mysqli, string $sql, string $types = '', array $params = []) {
-    try {
-        $stmt = @$mysqli->prepare($sql);
-        if (!$stmt) return null;
-        if ($types !== '') { $stmt->bind_param($types, ...$params); }
-        if (!@$stmt->execute()) { $stmt->close(); return null; }
-        $res = $stmt->get_result();
-        $row = $res ? $res->fetch_assoc() : null;
-        $stmt->close();
-        return $row ? reset($row) : null;
-    } catch (mysqli_sql_exception $e) {
-        return null;
-    }
-}
 function safe_rows(mysqli $mysqli, string $sql, string $types = '', array $params = []): array {
     try {
         $stmt = @$mysqli->prepare($sql);
         if (!$stmt) return [];
-        if ($types !== '') { $stmt->bind_param($types, ...$params); }
+        if ($types !== '') $stmt->bind_param($types, ...$params);
         if (!@$stmt->execute()) { $stmt->close(); return []; }
         $res = $stmt->get_result();
         $rows = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
@@ -94,210 +43,294 @@ function safe_rows(mysqli $mysqli, string $sql, string $types = '', array $param
     }
 }
 
-// ── VALIDATE TAB + TARGET ──────────────────────────────────────────
-// 'executive_assistant' is still accepted here (and still linked from
-// dean_evaluation.php's route_tab for any stale/bookmarked links) purely
-// for backward compatibility — it now resolves to the exact same
-// evaluation as 'faculty'. There is only one evaluation tab going
-// forward: Faculty, which covers Teacher, Teaching/Non-Teaching Staff,
-// and the Executive Assistant.
+function sh_user_levels(mysqli $mysqli, int $userId): array {
+    // Level VALUES come from user_year_levels ONLY — see the matching
+    // note on dean_roster_levels() in dean_evaluation.php.
+    // teaching_assignments accumulates a new row per reassignment without
+    // clearing the old one, so it is not safe to read year_level from it;
+    // it's still fine for the coarse "has some teaching assignment"
+    // existence check (sh_has_teaching_assignment()) below.
+    $rows = safe_rows($mysqli, "SELECT year_level FROM user_year_levels WHERE user_id=? ORDER BY year_level", "i", [$userId]);
+    return array_values(array_map(fn($r) => trim((string)$r['year_level']), $rows));
+}
+
+function sh_is_college_level(string $level): bool {
+    return stripos($level, 'college') !== false
+        || preg_match('/^(1st|2nd|3rd|4th)\s*Year\b/i', trim($level));
+}
+
+function sh_is_high_school_level(string $level): bool {
+    return (bool)preg_match('/^Grade\s*(7|8|9|10|11|12)\b/i', trim($level));
+}
+
+function sh_has_teaching_assignment(mysqli $mysqli, int $userId): bool {
+    $rows = safe_rows($mysqli, "
+        SELECT 1 FROM teaching_assignments WHERE user_id=?
+        UNION ALL
+        SELECT 1 FROM user_year_levels WHERE user_id=?
+        LIMIT 1
+    ", "ii", [$userId, $userId]);
+    return !empty($rows);
+}
+
+/**
+ * Resolve the Questionnaire > Dean / Principal Evaluation target bucket.
+ * The same person cannot be Staff and Faculty on this page:
+ *   - Teacher / Teaching Staff -> Faculty, but only when inside the Dean's College scope.
+ *   - Non-teaching Staff -> Staff, always eligible.
+ *   - Superadmin/EA -> EA, always eligible.
+ */
+function dean_target_bucket(mysqli $mysqli, int $targetId): ?string {
+    $rows = safe_rows($mysqli, "
+        SELECT id, role, secondary_role, is_active, account_status
+        FROM users
+        WHERE id=? AND is_active=1 AND account_status='approved'
+        LIMIT 1
+    ", "i", [$targetId]);
+    $u = $rows[0] ?? null;
+    if (!$u) return null;
+
+    $role = strtolower((string)$u['role']);
+    if ($role === 'superadmin') return 'EA';
+
+    $levels = sh_user_levels($mysqli, $targetId);
+    $hasTeaching = $role === 'teacher'
+        || (($u['secondary_role'] ?? '') === 'teacher')
+        || sh_has_teaching_assignment($mysqli, $targetId);
+
+    if ($role === 'staff' && !$hasTeaching) return 'Staff';
+    if ($hasTeaching && count(array_filter($levels, 'sh_is_college_level')) > 0) return 'Faculty';
+
+    return null;
+}
+
+function load_dean_questions(mysqli $mysqli, int $targetId, string $bucket): array {
+    if ($bucket === 'Staff') {
+        $rows = safe_rows($mysqli, "
+            SELECT id, category, question_text, sort_order
+            FROM user_questions
+            WHERE user_id=? AND target_type='Staff' AND eval_type='school_head'
+            ORDER BY category, sort_order, id
+        ", "i", [$targetId]);
+
+        return array_map(fn($q) => [
+            'id' => (int)$q['id'],
+            'source' => 'user',
+            'category' => $q['category'] ?: 'General',
+            'question' => $q['question_text'],
+            'type' => 'rating',
+            'max_score' => 5,
+            'is_required' => 1,
+        ], $rows);
+    }
+
+    $targetType = $bucket === 'EA' ? 'EA' : 'Faculty';
+    $rows = safe_rows($mysqli, "
+        SELECT id, category, question_text
+        FROM evaluation_questions
+        WHERE target_type=? AND eval_type='school_head' AND evaluator_role='dean'
+        ORDER BY category, id
+    ", "s", [$targetType]);
+
+    return array_map(fn($q) => [
+        'id' => (int)$q['id'],
+        'source' => 'evaluation',
+        'category' => $q['category'] ?: 'General',
+        'question' => $q['question_text'],
+        'type' => 'rating',
+        'max_score' => 5,
+        'is_required' => 1,
+    ], $rows);
+}
+
+function load_existing_answers(mysqli $mysqli, int $trackerId): array {
+    return safe_rows($mysqli, "
+        SELECT qa.question_source, qa.question_id, qa.user_question_id,
+               qa.answer_score AS score,
+               COALESCE(uq.question_text, eq.question_text) AS question,
+               COALESCE(uq.category, eq.category, 'General') AS category,
+               COALESCE(uq.sort_order, eq.id, 0) AS sort_key
+        FROM questionnaire_answers qa
+        LEFT JOIN user_questions uq
+          ON qa.question_source='user' AND uq.id=qa.user_question_id
+        LEFT JOIN evaluation_questions eq
+          ON qa.question_source='evaluation' AND eq.id=qa.question_id
+        WHERE qa.tracker_id=?
+        ORDER BY category, sort_key, qa.id
+    ", "i", [$trackerId]);
+}
+
 $validTabs = ['faculty', 'executive_assistant'];
-$tab = $_GET['tab'] ?? '';
-if (!in_array($tab, $validTabs, true)) {
-    http_response_code(404);
-    exit('Unknown evaluation type.');
-}
+$tab = $_GET['tab'] ?? 'faculty';
+if (!in_array($tab, $validTabs, true)) $tab = 'faculty';
 $targetId = (int)($_GET['user_id'] ?? 0);
-if ($targetId <= 0) {
-    http_response_code(404);
-    exit('Missing user_id.');
-}
 $viewOnly = isset($_GET['view']);
 
-// Always "Faculty" — this tab is not per-target-group anymore.
-$targetRoleLabel = 'Faculty';
-$formType = 'faculty_dean';
-$bucket = 'Faculty';
-$noQuestionsConfigured = false;
-$questions = [];
+if ($targetId <= 0) {
+    header("Location: dean_evaluation.php");
+    exit;
+}
 
-// ── GLOBAL SYSTEM SETTINGS ──────────────────────────────────────────
 $settings = get_system_settings($mysqli);
 $structureActive = ($settings['academic_structure'] === 'college');
-$period_id_int   = $settings['period_id'] ?? 0;
-$hasPeriod       = $period_id_int > 0;
-$evalOpen        = $settings['is_open_for_submission'];
+$period_id_int = (int)($settings['period_id'] ?? 0);
+$hasPeriod = $period_id_int > 0;
+$evalOpen = !empty($settings['is_open_for_submission']);
 const HIGHER_ED_LABEL = 'Higher Education';
 
-// ── DEAN PROFILE (for sidebar) ─────────────────────────────
-$stmt = $mysqli->prepare("SELECT full_name, designation, photo FROM users WHERE id = ? LIMIT 1");
-$stmt->bind_param("i", $deanId);
-$stmt->execute();
-$me = $stmt->get_result()->fetch_assoc();
-$stmt->close();
-$photo_src = !empty($me['photo']) ? UPLOAD_URL . $me['photo'] : UPLOAD_URL . 'pbi_logo';
-
-// ── TARGET (ROSTER MEMBERSHIP) ──────────────────────────────────────
-// Mirrors dean_evaluation.php's merged Faculty roster exactly: every
-// active, approved Teacher/Staff account, plus the single approved
-// Executive Assistant (superadmin) account.
 if (!$structureActive) {
     http_response_code(403);
     exit('Higher Education is not the active academic structure right now.');
 }
-$tstmt = $mysqli->prepare("
-    SELECT id, full_name, designation, photo, department, role,
-           EXISTS(SELECT 1 FROM teaching_assignments ta WHERE ta.user_id = users.id)
-           OR EXISTS(SELECT 1 FROM user_year_levels yl WHERE yl.user_id = users.id) AS is_teaching_staff
-    FROM users
-    WHERE id = ?
-      AND is_active = 1
-      AND account_status = 'approved'
-      AND (role IN ('teacher','staff') OR role = 'superadmin')
-    LIMIT 1
-");
-$tstmt->bind_param('i', $targetId);
-$tstmt->execute();
-$target = $tstmt->get_result()->fetch_assoc();
-$tstmt->close();
-if (!$target) {
+
+$bucket = dean_target_bucket($mysqli, $targetId);
+if ($bucket === null) {
     http_response_code(403);
-    exit('This person is not a valid Faculty evaluation target.');
+    exit('This person is not eligible for Dean evaluation. Dean Faculty evaluations are limited to College-assigned teaching personnel; non-teaching Staff and the EA remain eligible.');
 }
-$targetRoleLabel = ($target['role'] === 'superadmin')
-    ? 'Executive Assistant'
-    : (($target['role'] === 'staff')
-        ? ((int)$target['is_teaching_staff'] === 1 ? 'Teaching Staff' : 'Staff')
-        : 'Faculty');
 
-// ── QUESTIONS — fetched directly from the questionnaire's Student
-// Evaluation -> Faculty (Teacher) pool. This is the exact evaluation_
-// questions set students are asked, so the Dean rates people on the
-// same rubric. Applies uniformly to Faculty, Teaching/Non-Teaching
-// Staff, and the Executive Assistant — there is no separate per-group
-// question pool for this tab anymore.
-$questions = [];
-$qstmt = $mysqli->prepare("SELECT id, category, question_text FROM evaluation_questions WHERE target_type='Teacher' AND eval_type='student' ORDER BY category, id");
-$qstmt->execute();
-$qrows = $qstmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$qstmt->close();
-foreach ($qrows as $q) {
-    $questions[] = [
-        'id' => (int)$q['id'],
-        'key' => 'q_' . (int)$q['id'],
-        'category' => $q['category'] ?: 'General',
-        'question' => $q['question_text'],
-    ];
+$targetRows = safe_rows($mysqli, "
+    SELECT id, full_name, designation, photo, department, role, secondary_role
+    FROM users
+    WHERE id=? AND is_active=1 AND account_status='approved'
+    LIMIT 1
+", "i", [$targetId]);
+$target = $targetRows[0] ?? null;
+if (!$target) {
+    http_response_code(404);
+    exit('Evaluation target not found.');
 }
+
+$targetRoleLabel = $bucket === 'Faculty'
+    ? (($target['role'] === 'staff') ? 'Teaching Staff' : 'Faculty')
+    : ($bucket === 'Staff' ? 'Staff' : 'Executive Assistant');
+
+$questions = load_dean_questions($mysqli, $targetId, $bucket);
 $noQuestionsConfigured = empty($questions);
+$questionnaireTitle = $bucket === 'Faculty'
+    ? 'Dean Evaluation — Faculty'
+    : ($bucket === 'Staff' ? 'Dean Evaluation — Non-Teaching Staff' : 'Dean Evaluation — Executive Assistant');
+$formType = 'school_head_dean_' . strtolower($bucket);
 
-// ── EXISTING SUBMISSION THIS PERIOD? ────────────────────────────────
 $existing = null;
 if ($hasPeriod) {
-    $rows = safe_rows($mysqli, "
-        SELECT id, score, remarks AS comment, submitted_at FROM evaluation_tracker
-        WHERE eval_type='school_head' AND eval_bucket=? AND level='college'
-          AND status IN ('submitted','approved')
+    $existingRows = safe_rows($mysqli, "
+        SELECT id, score, remarks AS comment, submitted_at
+        FROM evaluation_tracker
+        WHERE eval_type='school_head'
           AND evaluator_id=? AND target_user_id=? AND period_id=?
+          AND status IN ('submitted','approved')
+        ORDER BY submitted_at DESC, id DESC
         LIMIT 1
-    ", "siii", [$bucket, $deanId, $targetId, $period_id_int]);
-    $existing = $rows[0] ?? null;
-}
-$existingAnswers = [];
-if ($existing) {
-    $existingAnswers = safe_rows($mysqli, "
-        SELECT eq.category AS category, eq.question_text AS question, qa.answer_score AS score
-        FROM questionnaire_answers qa
-        JOIN evaluation_questions eq ON eq.id = qa.question_id
-        WHERE qa.tracker_id=?
-        ORDER BY qa.id
-    ", "i", [$existing['id']]);
+    ", "iii", [$deanId, $targetId, $period_id_int]);
+    $existing = $existingRows[0] ?? null;
 }
 
+$existingAnswers = $existing ? load_existing_answers($mysqli, (int)$existing['id']) : [];
 $readOnly = $viewOnly || $existing !== null || !$evalOpen || !$hasPeriod || $noQuestionsConfigured;
 
-// ── HANDLE SUBMISSION ────────────────────────────────────────────────
 $error = '';
 $saved = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$readOnly) {
-    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== ($_SESSION['csrf_token'] ?? '')) {
+    if (!hash_equals((string)($_SESSION['csrf_token'] ?? ''), (string)($_POST['csrf_token'] ?? ''))) {
         $error = 'Session expired. Please refresh and try again.';
     } else {
-        // Re-fetch the live question set on submission — straight from the
-        // questionnaire's Student Evaluation -> Faculty pool — so a forged
-        // question id/count submitted by the client can't bypass what's
-        // actually configured there.
-        $liveQstmt = $mysqli->prepare("SELECT id, category, question_text FROM evaluation_questions WHERE target_type='Teacher' AND eval_type='student' ORDER BY category, id");
-        $liveQstmt->execute();
-        $liveRows = $liveQstmt->get_result()->fetch_all(MYSQLI_ASSOC);
-        $liveQstmt->close();
-        if (empty($liveRows)) {
-            $error = 'No Student Evaluation questions are currently configured for Faculty.';
+        $questions = load_dean_questions($mysqli, $targetId, $bucket);
+        if (empty($questions)) {
+            $error = 'No questions are currently configured for this evaluation target.';
         } else {
-            $questions = [];
-            foreach ($liveRows as $q) {
-                $questions[] = [
-                    'id' => (int)$q['id'],
-                    'key' => 'q_' . (int)$q['id'],
-                    'category' => $q['category'] ?: 'General',
-                    'question' => $q['question_text'],
-                ];
-            }
-        }
-        $ratings = [];
-        $valid = true;
-        if ($error === '') foreach ($questions as $q) {
-            $val = (int)($_POST[$q['key']] ?? 0);
-            if ($val < 1 || $val > 5) { $valid = false; break; }
-            $ratings[$q['key']] = $val;
-        }
-        $comment = trim($_POST['comment'] ?? '');
+            $answers = [];
+            $scoreSum = 0.0;
+            $scoreCount = 0;
 
-        if (!$valid) {
-            $error = 'Please rate every question from 1 to 5 before submitting.';
-        } else {
-            $avgScore = round(array_sum($ratings) / count($ratings), 2);
-
-            try {
-                $mysqli->begin_transaction();
-
-                $stmt = $mysqli->prepare("
-                    INSERT INTO evaluation_tracker
-                        (eval_type, eval_bucket, level, status, score, remarks, evaluator_id, target_user_id, period_id, form_type, submitted_at)
-                    VALUES ('school_head', ?, 'college', 'submitted', ?, ?, ?, ?, ?, ?, NOW())
-                ");
-                $bucket = $bucket;
-                $formType = $formType;
-                $stmt->bind_param("sdsiiis", $bucket, $avgScore, $comment, $deanId, $targetId, $period_id_int, $formType);
-                $stmt->execute();
-                $trackerId = $mysqli->insert_id;
-                $stmt->close();
-
-                $stmt = $mysqli->prepare("
-                    INSERT INTO questionnaire_answers (tracker_id, question_id, answer_score, submitted_at) VALUES (?, ?, ?, NOW())
-                ");
-                foreach ($questions as $q) {
-                    $qid = $q['id']; $score = $ratings[$q['key']];
-                    $stmt->bind_param("iii", $trackerId, $qid, $score);
-                    $stmt->execute();
+            foreach ($questions as $q) {
+                $field = 'q_' . (int)$q['id'];
+                $val = trim((string)($_POST[$field] ?? ''));
+                if ($val === '') {
+                    $error = 'Please rate every question from 1 to 5 before submitting.';
+                    break;
                 }
-                $stmt->close();
+                $score = (float)$val;
+                if ($score < 1 || $score > 5) {
+                    $error = 'Every rating must be between 1 and 5.';
+                    break;
+                }
 
-                $mysqli->commit();
-                $saved = true;
-                $readOnly = true;
-                $existing = ['id' => $trackerId, 'score' => $avgScore, 'comment' => $comment, 'submitted_at' => date('Y-m-d H:i:s')];
-                $existingAnswers = array_map(fn($q) => ['category' => $q['category'], 'question' => $q['question'], 'score' => $ratings[$q['key']]], $questions);
-            } catch (mysqli_sql_exception $e) {
-                $mysqli->rollback();
-                $error = 'Could not save this evaluation. Please try again.';
+                $answers[] = [
+                    'id' => (int)$q['id'],
+                    'source' => $q['source'],
+                    'score' => $score,
+                ];
+                $scoreSum += $score;
+                $scoreCount++;
+            }
+
+            $comment = trim((string)($_POST['comment'] ?? ''));
+            if ($error === '' && $scoreCount === 0) $error = 'There are no answerable questions in this questionnaire.';
+
+            if ($error === '') {
+                $avgScore = round($scoreSum / $scoreCount, 2);
+                $level = 'college';
+
+                $mysqli->begin_transaction();
+                try {
+                    $ins = $mysqli->prepare("
+                        INSERT INTO evaluation_tracker
+                            (eval_type, eval_bucket, level, status, score, remarks,
+                             evaluator_id, target_user_id, period_id, form_type, submitted_at)
+                        VALUES ('school_head', ?, ?, 'submitted', ?, ?, ?, ?, ?, ?, NOW())
+                    ");
+                    $ins->bind_param(
+                        'ssdsiiis',
+                        $bucket, $level, $avgScore, $comment,
+                        $deanId, $targetId, $period_id_int, $formType
+                    );
+                    $ins->execute();
+                    $trackerId = $mysqli->insert_id;
+                    $ins->close();
+
+                    $ains = $mysqli->prepare("
+                        INSERT INTO questionnaire_answers
+                            (tracker_id, question_id, user_question_id, question_source,
+                             answer_text, answer_score, submitted_at)
+                        VALUES (?, ?, ?, ?, ?, ?, NOW())
+                    ");
+                    foreach ($answers as $a) {
+                        $questionId = $a['source'] === 'evaluation' ? $a['id'] : null;
+                        $userQuestionId = $a['source'] === 'user' ? $a['id'] : null;
+                        $source = $a['source'];
+                        $answerText = null;
+                        $score = $a['score'];
+                        $ains->bind_param(
+                            'iiissd',
+                            $trackerId, $questionId, $userQuestionId, $source, $answerText, $score
+                        );
+                        $ains->execute();
+                    }
+                    $ains->close();
+
+                    $mysqli->commit();
+                    $saved = true;
+                    $existing = [
+                        'id' => $trackerId,
+                        'score' => $avgScore,
+                        'comment' => $comment,
+                        'submitted_at' => date('Y-m-d H:i:s'),
+                    ];
+                    $existingAnswers = load_existing_answers($mysqli, $trackerId);
+                    $readOnly = true;
+                } catch (mysqli_sql_exception $e) {
+                    $mysqli->rollback();
+                    $error = 'Could not save this evaluation. Nothing was recorded — please try again.';
+                }
             }
         }
     }
 }
 
 $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+$tPhoto = !empty($target['photo']) ? '../image/' . $target['photo'] : '../image/pbi_logo';
 $mysqli->close();
 ?>
 <!DOCTYPE html>
@@ -305,7 +338,7 @@ $mysqli->close();
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>PBI — Evaluate <?= htmlspecialchars($targetRoleLabel) ?></title>
+<title>PBI — <?= htmlspecialchars($questionnaireTitle) ?></title>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <style>
@@ -367,7 +400,18 @@ body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,
 .summary-score .of{font-size:13px;color:var(--muted);}
 
 @media(max-width:768px){body{flex-direction:column;}.sidebar{width:100%;min-height:auto;}.rating-row{flex-wrap:wrap;}.rating-opt{min-width:50px;}}
+
+/* Compact questionnaire table layout */
+.eval-table{width:100%;border-collapse:collapse;table-layout:fixed;}
+.eval-table-wrap{background:rgba(23,42,69,.85);border:1px solid rgba(255,255,255,.08);border-radius:14px;overflow:hidden;box-shadow:var(--shadow);margin-bottom:18px;}
+.eval-table th{background:rgba(255,255,255,.045);color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;text-align:center;padding:11px 8px;border-bottom:1px solid rgba(255,255,255,.08)}
+.eval-table th:first-child{text-align:left;width:auto;padding-left:16px}.eval-table th:not(:first-child){width:58px}
+.eval-table td{padding:12px 8px;border-bottom:1px solid rgba(255,255,255,.07);vertical-align:middle;text-align:center}.eval-table tr:last-child td{border-bottom:none}.eval-table td:first-child{text-align:left;padding-left:16px;padding-right:14px}
+.eval-qno{color:var(--violet-h);font-weight:800;margin-right:7px}.eval-qtext{font-size:14px;color:var(--light);line-height:1.45}.eval-rating-cell{display:flex;justify-content:center;align-items:center}.eval-rating-cell input{position:absolute;opacity:0;pointer-events:none}.eval-rating-cell label{width:38px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:7px;border:1px solid rgba(255,255,255,.12);background:rgba(10,25,47,.5);color:var(--muted);font-size:13px;font-weight:800;cursor:pointer;transition:.15s ease}.eval-rating-cell label:hover{border-color:var(--violet-h)}.eval-rating-cell input:checked + label{background:var(--violet);border-color:var(--violet);color:#fff}.eval-category-heading{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--violet-h);margin:24px 0 9px}.eval-category-heading:first-child{margin-top:0}
+@media(max-width:768px){.eval-table th:not(:first-child){width:48px}.eval-rating-cell label{width:32px;height:30px}.eval-qtext{font-size:13px}}
+
 </style>
+<link rel="stylesheet" href="includes/dean_light_theme.css"/>
 </head>
 <body>
 
@@ -379,6 +423,12 @@ include __DIR__ . '/includes/dean_sidebar.php';
 
 <main class="main">
     <a href="dean_evaluation.php?tab=<?= urlencode($tab) ?>" class="back-link"><i class="fa-solid fa-arrow-left"></i> Back to Evaluation</a>
+
+    <div class="schedule-strip" style="display:grid;grid-template-columns:1fr 1fr 140px;gap:12px;margin:14px 0 18px;padding:14px 16px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(255,255,255,.035);">
+        <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;opacity:.65;font-weight:700;">Evaluation Opens</div><div style="margin-top:4px;font-size:15px;font-weight:700;"><?= $settings['eval_start_display'] !== '' ? htmlspecialchars($settings['eval_start_display']) : '—' ?></div></div>
+        <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;opacity:.65;font-weight:700;">Evaluation Closes</div><div style="margin-top:4px;font-size:15px;font-weight:700;"><?= $settings['eval_end_display'] !== '' ? htmlspecialchars($settings['eval_end_display']) : '—' ?></div></div>
+        <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;opacity:.65;font-weight:700;">Current State</div><div style="margin-top:4px;font-size:15px;font-weight:800;"><?= htmlspecialchars($settings['status']['label']) ?></div></div>
+    </div>
 
     <div class="person-card">
         <img class="person-photo" src="<?= !empty($target['photo']) ? htmlspecialchars(UPLOAD_URL . $target['photo']) : htmlspecialchars(UPLOAD_URL . 'pbi_logo') ?>" alt=""/>
@@ -393,7 +443,7 @@ include __DIR__ . '/includes/dean_sidebar.php';
     <?php if (!$hasPeriod): ?>
         <div class="alert alert-info"><i class="fa-solid fa-circle-info"></i> No active evaluation period right now.</div>
     <?php elseif ($noQuestionsConfigured && !$existing): ?>
-        <div class="alert alert-info"><i class="fa-solid fa-circle-info"></i> No Student Evaluation questions have been configured for Faculty yet. Contact your administrator.</div>
+        <div class="alert alert-info"><i class="fa-solid fa-circle-info"></i> No questions have been configured for this evaluation target yet. Contact your administrator.</div>
     <?php elseif (!$evalOpen && !$existing): ?>
         <div class="alert alert-info"><i class="fa-solid fa-lock"></i> Evaluation is currently closed for this period.</div>
     <?php else: ?>
@@ -430,32 +480,33 @@ include __DIR__ . '/includes/dean_sidebar.php';
         <?php else: ?>
             <form method="POST" action="dean_evaluate.php?tab=<?= urlencode($tab) ?>&user_id=<?= (int)$target['id'] ?>">
                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-
-                <?php foreach ($questions as $q): ?>
-                <div class="q-block">
-                    <div class="q-cat"><?= htmlspecialchars($q['category']) ?></div>
-                    <div class="q-text"><?= htmlspecialchars($q['question']) ?></div>
-                    <div class="rating-row">
-                        <?php for ($i = 1; $i <= 5; $i++): ?>
-                        <div class="rating-opt">
-                            <input type="radio" name="<?= htmlspecialchars($q['key']) ?>" id="<?= htmlspecialchars($q['key']) ?>_<?= $i ?>" value="<?= $i ?>" required>
-                            <label for="<?= htmlspecialchars($q['key']) ?>_<?= $i ?>"><?= $i ?></label>
-                        </div>
-                        <?php endfor; ?>
-                    </div>
+                <?php $groupedQuestions=[]; foreach($questions as $q){ $groupedQuestions[$q['category'] ?: 'General'][]=$q; } $qNo=1; ?>
+                <?php foreach($groupedQuestions as $cat=>$catQuestions): ?>
+                <div class="eval-category-heading"><?= htmlspecialchars($cat) ?></div>
+                <div class="eval-table-wrap">
+                    <table class="eval-table">
+                        <thead><tr><th>Question</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th></tr></thead>
+                        <tbody>
+                        <?php foreach($catQuestions as $q): ?>
+                        <tr>
+                            <td><div class="eval-qtext"><span class="eval-qno"><?= $qNo++ ?>.</span><?= htmlspecialchars($q['question']) ?></div></td>
+                            <?php for($i=5;$i>=1;$i--): ?>
+                            <td><div class="eval-rating-cell"><input type="radio" name="q_<?= (int)$q['id'] ?>" id="q_<?= (int)$q['id'] ?>_<?= $i ?>" value="<?= $i ?>" required><label for="q_<?= (int)$q['id'] ?>_<?= $i ?>"><?= $i ?></label></div></td>
+                            <?php endfor; ?>
+                        </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
                 </div>
                 <?php endforeach; ?>
 
-                <div class="comment-block">
-                    <label for="comment">Comment (optional)</label>
-                    <textarea id="comment" name="comment" placeholder="Any additional feedback..."></textarea>
-                </div>
-
-                <button type="submit" class="btn-submit"><i class="fa-solid fa-paper-plane"></i> Submit Evaluation</button>
+                <div class="comment-block"><label for="comment">Comment (optional)</label><textarea id="comment" name="comment" placeholder="Any additional feedback..."></textarea></div>
+                <button type="submit" class="btn-submit" <?= (!$hasPeriod || !$evalOpen) ? 'disabled style="opacity:.5;cursor:not-allowed;"' : '' ?>><i class="fa-solid fa-paper-plane"></i> Submit Evaluation</button>
             </form>
         <?php endif; ?>
 
     <?php endif; ?>
 </main>
 </body>
+<link rel="stylesheet" href="includes/dean_light_theme.css" id="dean-light-theme-final"/>
 </html>
