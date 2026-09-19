@@ -12,6 +12,7 @@
         require_once 'db.php';
         require_once '../shared/eligibility.php';
         require_once '../shared/ea_personnel_service.php';
+require_once '../shared/QuestionnaireService.php';
         // ── AUTH GUARD ────────────────────────────────────────────────
         if (empty($_SESSION['user_id']) || $_SESSION['role'] !== 'staff') {
             header("Location: faculty_login.php"); exit;
@@ -20,6 +21,8 @@
         $user_id     = $_SESSION['user_id'];
         $full_name   = $_SESSION['full_name']   ?? 'Staff';
         $designation = $_SESSION['designation'] ?? 'Staff';
+
+qn_migrate_legacy_once($mysqli);
         $page        = $_GET['page'] ?? 'dashboard';
         // NOTE: 'peer' / 'peer_eval' are live pages in their own right (the
         // Peer Evaluation feature below) and must NOT be aliased away — only
@@ -335,12 +338,13 @@
         if (in_array($page, ['staff_eval','staff_eval_form'], true) && $staff_eval_target) {
             $q = $mysqli->prepare("
                 SELECT id, category, question_text
-                FROM evaluation_questions
-                WHERE eval_type='staff'
+                FROM user_questions
+                WHERE user_id=?
                   AND target_type=?
-                ORDER BY category ASC, id ASC
+                  AND eval_type='general'
+                ORDER BY category ASC, sort_order ASC, id ASC
             ");
-            $q->bind_param('s', $staff_eval_target['target_type']);
+            $q->bind_param('is', $staff_eval_target['id'], $staff_eval_target['target_type']);
             $q->execute();
             $staff_eval_questions = $q->get_result()->fetch_all(MYSQLI_ASSOC);
             $q->close();
@@ -532,11 +536,12 @@
             } else {
                 $validStmt = $mysqli->prepare("
                     SELECT id
-                    FROM evaluation_questions
-                    WHERE eval_type='staff'
+                    FROM user_questions
+                    WHERE user_id=?
+                      AND eval_type='general'
                       AND target_type=?
                 ");
-                $validStmt->bind_param('s', $target['target_type']);
+                $validStmt->bind_param('is', $target['id'], $target['target_type']);
                 $validStmt->execute();
                 $validRes = $validStmt->get_result();
                 $valid_question_ids = [];
@@ -604,7 +609,7 @@
                     $ans = $mysqli->prepare("
                         INSERT INTO questionnaire_answers
                         (tracker_id,question_id,question_source,user_question_id,answer_score,submitted_at)
-                        VALUES (?,?,'evaluation',NULL,?,NOW())
+                        VALUES (?,NULL,'user',?,?,NOW())
                     ");
                     foreach ($ratings as $qid => $rating) {
                         $qid = (int)$qid;
