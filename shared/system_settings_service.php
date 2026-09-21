@@ -383,6 +383,35 @@ function get_system_settings(mysqli $mysqli): array {
  * the dashboards. The role argument is retained for compatibility; it does
  * not create a separate settings source or alter Force Open / Force Closed.
  */
+function ss_school_head_role_applicable(array $sys, string $role): bool {
+    $role = strtolower(trim($role));
+    $structure = strtolower(trim((string)($sys['acad_structure'] ?? $sys['academic_structure'] ?? 'college')));
+    $term = trim((string)($sys['acad_term'] ?? $sys['academic_term'] ?? ''));
+
+    if ($role === 'dean') {
+        return $structure === 'college'
+            && in_array($term, ['1st Semester', '2nd Semester', 'Summer'], true);
+    }
+
+    if ($role === 'principal') {
+        return in_array($structure, ['jhs', 'shs'], true)
+            && $term === 'School Year';
+    }
+
+    return false;
+}
+
+function ss_school_head_evaluation_open(array $sys, string $role): bool {
+    // Force Open / Force Closed remain authoritative for the schedule, but
+    // they cannot make an inapplicable school-head evaluation available.
+    return ss_school_head_role_applicable($sys, $role)
+        && !empty($sys['is_open_for_submission']);
+}
+
 function get_school_head_settings(mysqli $mysqli, string $role = 'principal'): array {
-    return get_system_settings($mysqli);
+    $sys = get_system_settings($mysqli);
+    $sys['school_head_role'] = strtolower(trim($role));
+    $sys['school_head_applicable'] = ss_school_head_role_applicable($sys, $role);
+    $sys['school_head_is_open'] = ss_school_head_evaluation_open($sys, $role);
+    return $sys;
 }

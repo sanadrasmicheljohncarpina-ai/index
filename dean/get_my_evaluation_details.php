@@ -41,7 +41,7 @@ $qStmt=$mysqli->prepare("
  LEFT JOIN user_questions uq ON qa.question_source='user' AND uq.id=qa.user_question_id
  LEFT JOIN evaluation_questions eq ON qa.question_source='evaluation' AND eq.id=qa.question_id
  WHERE qa.tracker_id=?
- ORDER BY category ASC, COALESCE(uq.sort_order, eq.id, 0) ASC, qa.id ASC
+ ORDER BY category ASC, COALESCE(eq.id, 0) ASC, qa.id ASC
 ");
 if(!$qStmt) fail_json('Unable to load evaluation answers.',500);
 $qStmt->bind_param('i',$trackerId);

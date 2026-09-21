@@ -41,8 +41,8 @@ body{
 .brand-sub{font-size:13px;color:var(--muted);letter-spacing:1px;margin-top:6px;text-transform:uppercase;}
 
 .role-grid{
-    display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
-    gap:18px;margin-bottom:8px;
+    display:grid;grid-template-columns:repeat(3,minmax(240px,1fr));
+    gap:18px;margin-bottom:8px;justify-content:center;
 }
 .role-card{
     background:var(--mid);border:1px solid var(--border);border-radius:var(--radius);
@@ -83,10 +83,16 @@ body{
     <div class="brand">
         <img class="brand-logo" src="image/pbi_logo" alt="PBI Logo" onerror="this.style.display='none'"/>
         <div class="brand-title">Pandan Bay Institute</div>
-        <div class="brand-sub">Performance Evaluation System</div>
+        <div class="brand-sub">Employee Performance Evaluation and Management System</div>
     </div>
 
     <div class="role-grid">
+        <a class="role-card role-executive" href="admin/admin_login.php">
+            <div class="role-icon"><i class="fa-solid fa-briefcase"></i></div>
+            <div class="role-name">Executive Assistant</div>
+            <div class="role-desc">Access assigned administrative features</div>
+        </a>
+
         <a class="role-card role-student" href="student/student_login.php">
             <div class="role-icon"><i class="fa-solid fa-user-graduate"></i></div>
             <div class="role-name">Student</div>
@@ -99,40 +105,27 @@ body{
             <div class="role-desc">View results &amp; submit peer evaluations</div>
         </a>
 
-        <a class="role-card role-staff" href="faculty/faculty_login.php">
+
+        <a class="role-card role-dean" href="dean/dean_login.php">
+            <div class="role-icon"><i class="fa-solid fa-building-columns"></i></div>
+            <div class="role-name">Dean</div>
+            <div class="role-desc">Evaluate College faculty &amp; staff</div>
+        </a>
+
+       <a class="role-card role-staff" href="faculty/faculty_login.php">
             <div class="role-icon"><i class="fa-solid fa-id-card-clip"></i></div>
             <div class="role-name">Staff</div>
             <div class="role-desc">Use the shared Teacher &amp; Staff portal</div>
         </a>
 
-        <a class="role-card role-executive" href="admin/admin_login.php">
-            <div class="role-icon"><i class="fa-solid fa-briefcase"></i></div>
-            <div class="role-name">Executive Assistant</div>
-            <div class="role-desc">Access assigned administrative features</div>
-        </a>
-
-        <a class="role-card role-dean" href="dean/dean_login.php">
-            <div class="role-icon"><i class="fa-solid fa-user-graduate"></i></div>
-            <div class="role-name">Dean</div>
-            <div class="role-desc">Manage and evaluate college personnel</div>
-        </a>
-
         <a class="role-card role-principal" href="principal/principal_login.php">
-            <div class="role-icon"><i class="fa-solid fa-user-tie"></i></div>
+            <div class="role-icon"><i class="fa-solid fa-school"></i></div>
             <div class="role-name">Principal</div>
-            <div class="role-desc">Manage and evaluate basic education personnel</div>
+            <div class="role-desc">Evaluate JHS/SHS faculty &amp; staff</div>
         </a>
 
-        <a class="role-card role-admin" href="admin/admin_login.php">
-            <div class="role-icon"><i class="fa-solid fa-user-shield"></i></div>
-            <div class="role-name">Admin</div>
-            <div class="role-desc">System administration</div>
-        </a>
     </div>
 
-    <div class="footer-note">
-        Not sure which one is yours? Ask your department head or the System Admin.
-    </div>
 </div>
 
 </body>

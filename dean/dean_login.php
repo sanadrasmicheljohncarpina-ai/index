@@ -6,7 +6,7 @@ require_once 'db.php';
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== ($_SESSION['csrf_token'] ?? '')) {
+    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', (string)$_POST['csrf_token'])) {
         $error = 'Session expired. Please try again.';
     } else {
         $username = trim($_POST['username'] ?? '');
@@ -28,104 +28,375 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>PBI — Dean Portal</title>
+<title>PBI — Dean Login</title>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <style>
-:root{--dark:#0A192F;--mid:#172A45;--violet:#7C5FD9;--violet-h:#9C85F0;--light:#E0E6F0;--muted:#A0B3C6;--radius:10px;--shadow:0 8px 32px rgba(0,0,0,0.45);}
+:root{
+    --dark-blue:#0A192F;
+    --blue-mid:#172A45;
+    --violet:#7C5FD9;
+    --violet-hover:#9C85F0;
+    --light:#E0E6F0;
+    --muted:#A0B3C6;
+    --radius:10px;
+    --shadow:0 8px 32px rgba(0,0,0,.45);
+}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-body{min-height:100vh;background:#0A192F url('../bacjground.png') center center / cover no-repeat fixed;font-family:'DM Sans',sans-serif;color:var(--light);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;}
-.bg-image-overlay{position:fixed;inset:0;z-index:0;background:rgba(10,25,47,.42);pointer-events:none;}
-.bg-grid{display:none;position:fixed;inset:0;z-index:0;background-image:linear-gradient(rgba(124,95,217,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(124,95,217,.06) 1px,transparent 1px);background-size:48px 48px;animation:g 22s linear infinite;}
-@keyframes g{0%{background-position:0 0}100%{background-position:48px 48px}}
-.orb{display:none;position:fixed;border-radius:50%;filter:blur(90px);z-index:0;pointer-events:none;}
-.orb-1{width:380px;height:380px;background:radial-gradient(circle,rgba(124,95,217,.2) 0%,transparent 70%);top:-80px;right:-80px;animation:o1 14s ease-in-out infinite;}
-.orb-2{width:300px;height:300px;background:radial-gradient(circle,rgba(43,108,176,.15) 0%,transparent 70%);bottom:-60px;left:-60px;animation:o2 18s ease-in-out infinite;}
-@keyframes o1{0%,100%{transform:translate(0,0)}50%{transform:translate(-30px,25px)}}
-@keyframes o2{0%,100%{transform:translate(0,0)}50%{transform:translate(25px,-20px)}}
-.login-card{position:relative;z-index:10;background:rgba(23,42,69,.85);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.09);border-radius:18px;padding:48px 44px 40px;width:100%;max-width:430px;box-shadow:var(--shadow),0 0 0 1px rgba(124,95,217,.15);animation:cardIn .7s cubic-bezier(.22,1,.36,1) both;}
+html{min-height:100%;background:var(--dark-blue);}
+body{
+    min-height:100vh;
+    background:var(--dark-blue);
+    font-family:'DM Sans',sans-serif;
+    color:var(--light);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    overflow:hidden;
+    position:relative;
+    padding:24px;
+}
+
+/* Decorative background — intentionally matches the Student Portal composition,
+   while the Dean Portal keeps its violet identity. */
+.bg-grid{
+    position:fixed;
+    inset:0;
+    z-index:0;
+    pointer-events:none;
+    background-image:
+        repeating-linear-gradient(45deg,rgba(124,95,217,.075) 0,rgba(124,95,217,.075) 1px,transparent 1px,transparent 26px),
+        repeating-linear-gradient(-45deg,rgba(124,95,217,.055) 0,rgba(124,95,217,.055) 1px,transparent 1px,transparent 26px);
+}
+.bg-glow{
+    position:fixed;
+    width:480px;
+    height:480px;
+    border-radius:50%;
+    z-index:0;
+    pointer-events:none;
+    filter:blur(50px);
+    opacity:.28;
+}
+.bg-glow-1{top:-260px;right:-120px;background:radial-gradient(circle,rgba(124,95,217,.65),transparent 68%);}
+.bg-glow-2{bottom:-300px;left:-170px;background:radial-gradient(circle,rgba(43,108,176,.45),transparent 68%);}
+.hex-deco{position:fixed;z-index:0;pointer-events:none;opacity:.42;}
+.hex-1{top:-60px;left:-60px;}
+.hex-2{bottom:-70px;right:-70px;}
+
+.login-card{
+    position:relative;
+    z-index:10;
+    width:100%;
+    max-width:420px;
+    padding:48px 44px 40px;
+    background:rgba(23,42,69,.84);
+    backdrop-filter:blur(18px);
+    -webkit-backdrop-filter:blur(18px);
+    border:1px solid rgba(255,255,255,.09);
+    border-radius:18px;
+    box-shadow:var(--shadow),0 0 0 1px rgba(124,95,217,.10),0 18px 60px rgba(0,0,0,.20);
+    animation:cardIn .7s cubic-bezier(.22,1,.36,1) both;
+}
 @keyframes cardIn{from{opacity:0;transform:translateY(32px) scale(.97)}to{opacity:1;transform:none}}
+
 .card-header{text-align:center;margin-bottom:28px;}
-.logo-ring{width:76px;height:76px;border-radius:50%;display:block;object-fit:cover;border:2.5px solid var(--violet);box-shadow:0 0 22px rgba(124,95,217,.45);margin:0 auto 16px;}
-.card-title{font-family:'Rajdhani',sans-serif;font-size:26px;font-weight:700;letter-spacing:2px;color:#fff;text-transform:uppercase;}
-.card-subtitle{font-size:12px;color:var(--muted);letter-spacing:1.2px;text-transform:uppercase;margin-top:4px;}
-.role-pill{display:inline-flex;align-items:center;gap:6px;background:rgba(124,95,217,.15);border:1px solid rgba(124,95,217,.35);color:var(--violet-h);font-size:11px;font-weight:700;padding:4px 14px;border-radius:20px;text-transform:uppercase;letter-spacing:.8px;margin-top:10px;}
-.divider{height:1px;background:linear-gradient(90deg,transparent,rgba(124,95,217,.45),transparent);margin-bottom:24px;}
+.logo-ring{
+    width:72px;
+    height:72px;
+    border-radius:50%;
+    display:block;
+    object-fit:cover;
+    border:2.5px solid var(--violet);
+    box-shadow:0 0 22px rgba(124,95,217,.42);
+    margin:0 auto 16px;
+}
+.card-title{
+    font-family:'Rajdhani',sans-serif;
+    font-size:26px;
+    font-weight:700;
+    letter-spacing:2px;
+    color:#fff;
+    text-transform:uppercase;
+}
+.card-subtitle{
+    font-size:12px;
+    color:var(--muted);
+    letter-spacing:1.2px;
+    text-transform:uppercase;
+    margin-top:4px;
+}
+.role-pill{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+    margin-top:10px;
+    padding:4px 14px;
+    border-radius:20px;
+    background:rgba(124,95,217,.14);
+    border:1px solid rgba(124,95,217,.38);
+    color:var(--violet-hover);
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.8px;
+    text-transform:uppercase;
+}
+.divider{
+    height:1px;
+    margin-bottom:24px;
+    background:linear-gradient(90deg,transparent,rgba(124,95,217,.40),transparent);
+}
+
+.alert{
+    display:flex;
+    align-items:flex-start;
+    gap:8px;
+    border-radius:8px;
+    padding:11px 14px;
+    margin-bottom:18px;
+    font-size:13px;
+    line-height:1.45;
+}
+.alert-error{
+    background:rgba(240,84,84,.12);
+    border:1px solid rgba(240,84,84,.35);
+    color:#ff8a8a;
+}
+
 .form-group{margin-bottom:18px;}
-.form-label{display:block;font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:7px;}
+.form-label{
+    display:block;
+    margin-bottom:7px;
+    color:var(--muted);
+    font-size:11px;
+    font-weight:600;
+    letter-spacing:1.2px;
+    text-transform:uppercase;
+}
 .input-wrap{position:relative;}
-.f-icon{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:14px;pointer-events:none;}
-.form-input{width:100%;padding:12px 14px 12px 40px;background:rgba(10,25,47,.7);border:1px solid rgba(255,255,255,.1);border-radius:var(--radius);color:var(--light);font-size:14px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .25s,box-shadow .25s;}
+.f-icon{
+    position:absolute;
+    left:14px;
+    top:50%;
+    transform:translateY(-50%);
+    color:var(--muted);
+    font-size:14px;
+    pointer-events:none;
+    transition:color .2s ease;
+}
+.form-input{
+    width:100%;
+    padding:12px 42px 12px 40px;
+    min-height:50px;
+    background:rgba(10,25,47,.70);
+    border:1px solid rgba(255,255,255,.10);
+    border-radius:var(--radius);
+    color:var(--light);
+    font:500 14px 'DM Sans',sans-serif;
+    outline:none;
+    transition:border-color .25s,box-shadow .25s,background .25s;
+}
 .form-input::placeholder{color:rgba(160,179,198,.45);}
-.form-input:focus{border-color:var(--violet);box-shadow:0 0 0 3px rgba(124,95,217,.2);}
-.toggle-pw{position:absolute;right:13px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0;}
-.alert{border-radius:8px;padding:11px 14px;font-size:13px;margin-bottom:18px;display:flex;align-items:center;gap:8px;}
-.alert-error{background:rgba(240,84,84,.12);border:1px solid rgba(240,84,84,.35);color:#ff8a8a;}
-.btn-login{width:100%;padding:13px;background:var(--violet);border:none;border-radius:var(--radius);color:#fff;font-size:15px;font-weight:600;font-family:'DM Sans',sans-serif;cursor:pointer;transition:background .2s,transform .15s;box-shadow:0 4px 16px rgba(124,95,217,.4);display:flex;align-items:center;justify-content:center;gap:8px;}
-.btn-login:hover{background:var(--violet-h);transform:translateY(-1px);}
-.register-row{text-align:center;margin-top:14px;font-size:13px;color:var(--muted);}
-.register-row a{color:var(--violet-h);font-weight:600;text-decoration:none;}
+.form-input:hover{background:rgba(10,25,47,.78);}
+.form-input:focus{
+    border-color:var(--violet);
+    background:rgba(10,25,47,.84);
+    box-shadow:0 0 0 3px rgba(124,95,217,.20);
+}
+.form-input:focus + .f-icon,
+.input-wrap:focus-within .f-icon{color:var(--violet-hover);}
+.toggle-pw{
+    position:absolute;
+    right:13px;
+    top:50%;
+    transform:translateY(-50%);
+    border:0;
+    background:none;
+    padding:5px;
+    color:var(--muted);
+    cursor:pointer;
+    font-size:14px;
+    line-height:1;
+}
+.toggle-pw:hover{color:#fff;}
+.toggle-pw:focus-visible{outline:2px solid var(--violet-hover);outline-offset:2px;border-radius:5px;}
+
+.btn-login{
+    width:100%;
+    min-height:52px;
+    padding:13px 16px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    border:0;
+    border-radius:var(--radius);
+    background:var(--violet);
+    color:#fff;
+    font:600 15px 'DM Sans',sans-serif;
+    cursor:pointer;
+    box-shadow:0 4px 16px rgba(124,95,217,.40);
+    transition:background .2s,transform .15s,box-shadow .2s,opacity .2s;
+}
+.btn-login:hover{background:var(--violet-hover);transform:translateY(-1px);box-shadow:0 7px 20px rgba(124,95,217,.48);}
+.btn-login:active{transform:translateY(0);}
+.btn-login:disabled{cursor:not-allowed;opacity:.78;transform:none;box-shadow:0 4px 12px rgba(124,95,217,.22);}
+
+.register-row{
+    margin-top:16px;
+    text-align:center;
+    color:var(--muted);
+    font-size:13px;
+}
+.register-row a{
+    color:var(--violet-hover);
+    font-weight:600;
+    text-decoration:none;
+}
 .register-row a:hover{text-decoration:underline;}
-.card-footer{text-align:center;margin-top:14px;font-size:12px;color:var(--muted);border-top:1px solid rgba(255,255,255,.06);padding-top:14px;}
-.secure-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);}
+
+.card-footer{
+    margin-top:18px;
+    padding-top:14px;
+    border-top:1px solid rgba(255,255,255,.06);
+    text-align:center;
+    color:var(--muted);
+    font-size:12px;
+}
+.secure-badge{
+    display:inline-flex;
+    align-items:center;
+    gap:5px;
+    font-size:11px;
+}
 .secure-badge i{color:#4ade80;font-size:10px;}
-@media(max-width:480px){.login-card{padding:36px 20px 32px;margin:16px;}}
+
+@media(max-width:480px){
+    body{padding:16px;}
+    .login-card{padding:36px 20px 32px;margin:0;}
+    .hex-deco{opacity:.28;transform:scale(.78);}
+    .card-title{font-size:24px;}
+}
+@media(max-height:700px){
+    body{overflow:auto;}
+    .login-card{margin:18px 0;}
+}
+@media(prefers-reduced-motion:reduce){
+    .login-card{animation:none;}
+}
+
+/* =====================================================================
+   Ambient lighting — same treatment as the Student Portal auth pages
+   (student_ui.css), recoloured from amber to the Dean violet.
+   ===================================================================== */
+html{background:var(--dark-blue);}
+body{
+    background:
+        radial-gradient(circle at 10% 10%, rgba(124,95,217,.16), transparent 32%),
+        radial-gradient(circle at 90% 90%, rgba(43,108,176,.12), transparent 30%),
+        var(--dark-blue);
+    background-attachment:fixed;
+}
+body::before{
+    content:"";
+    position:fixed;
+    inset:0;
+    z-index:0;
+    pointer-events:none;
+    background:linear-gradient(180deg,rgba(255,255,255,.025),transparent 26%,rgba(0,0,0,.12));
+}
+.bg-glow{display:none;}
+
+.login-card,.reg-card{
+    border-color:rgba(255,255,255,.12);
+    box-shadow:0 24px 70px rgba(0,0,0,.36),0 0 0 1px rgba(255,255,255,.02),0 0 90px rgba(124,95,217,.09);
+    transition:border-color .3s ease,box-shadow .3s ease;
+}
+.login-card:hover,.reg-card:hover{
+    border-color:rgba(156,133,240,.30);
+    box-shadow:0 24px 70px rgba(0,0,0,.36),0 0 0 1px rgba(255,255,255,.02),0 0 100px rgba(124,95,217,.15);
+}
+.form-input:hover:not(:focus){border-color:rgba(156,133,240,.42);}
+
+button:focus-visible,a:focus-visible,.photo-preview:focus-visible{
+    outline:3px solid rgba(156,133,240,.38);
+    outline-offset:2px;
+}
+.btn-login:active,.btn-register:active{transform:translateY(1px);}
+
+@media(prefers-reduced-motion:reduce){
+    .login-card,.reg-card{transition:none;}
+}
 </style>
 </head>
 <body>
-<div class="bg-image-overlay"></div>
-<div class="bg-grid"></div>
-<div class="orb orb-1"></div>
-<div class="orb orb-2"></div>
+<div class="bg-grid" aria-hidden="true"></div>
+<div class="bg-glow bg-glow-1" aria-hidden="true"></div>
+<div class="bg-glow bg-glow-2" aria-hidden="true"></div>
+
+<svg class="hex-deco hex-1" width="260" height="260" viewBox="0 0 260 260" aria-hidden="true">
+    <polygon points="130,10 240,70 240,190 130,250 20,190 20,70" fill="none" stroke="#7C5FD9" stroke-width="1"/>
+    <polygon points="130,50 200,90 200,170 130,210 60,170 60,90" fill="none" stroke="#7C5FD9" stroke-width="1"/>
+</svg>
+<svg class="hex-deco hex-2" width="300" height="300" viewBox="0 0 300 300" aria-hidden="true">
+    <polygon points="150,10 280,80 280,220 150,290 20,220 20,80" fill="none" stroke="#2B6CB0" stroke-width="1"/>
+    <polygon points="150,60 220,100 220,200 150,240 80,200 80,100" fill="none" stroke="#2B6CB0" stroke-width="1"/>
+</svg>
 
 <div class="login-card">
     <div class="card-header">
         <img class="logo-ring" src="../image/pbi_logo" alt="PBI Logo"/>
         <div class="card-title">Dean Portal</div>
         <div class="card-subtitle">Pandan Bay Institute — Evaluation System</div>
-        <div class="role-pill"><i class="fa-solid fa-user-graduate"></i> Dean Access</div>
+        <div class="role-pill"><i class="fa-solid fa-user-tie"></i> Dean Access</div>
     </div>
     <div class="divider"></div>
 
     <?php if ($error): ?>
-    <div class="alert alert-error">
+    <div class="alert alert-error" role="alert">
         <i class="fa-solid fa-circle-exclamation"></i>
-        <?= htmlspecialchars($error) ?>
+        <span><?= htmlspecialchars($error) ?></span>
     </div>
     <?php endif; ?>
 
-    <form method="POST" action="dean_login.php" autocomplete="off">
+    <form method="POST" action="dean_login.php" autocomplete="on" id="loginForm">
         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
 
         <div class="form-group">
-            <label class="form-label">Username</label>
+            <label class="form-label" for="username">Username</label>
             <div class="input-wrap">
-                <input class="form-input" type="text" name="username"
-                       placeholder="Enter your username" required autocomplete="off"
+                <input class="form-input" type="text" id="username" name="username"
+                       placeholder="Enter your username" required autocomplete="username"
                        value="<?= htmlspecialchars($_POST['username'] ?? '') ?>"/>
                 <i class="fa-solid fa-user f-icon"></i>
             </div>
         </div>
+
         <div class="form-group">
-            <label class="form-label">Password</label>
+            <label class="form-label" for="password">Password</label>
             <div class="input-wrap">
                 <input class="form-input" type="password" id="password" name="password"
-                       placeholder="Enter your password" required autocomplete="new-password"/>
+                       placeholder="Enter your password" required autocomplete="current-password"/>
                 <i class="fa-solid fa-lock f-icon"></i>
-                <button type="button" class="toggle-pw" onclick="togglePw()">
+                <button type="button" class="toggle-pw" onclick="togglePw()" aria-label="Show password">
                     <i class="fa-solid fa-eye" id="eyeIcon"></i>
                 </button>
             </div>
         </div>
-        <button type="submit" class="btn-login">
-            <i class="fa-solid fa-right-to-bracket"></i> Sign In as Dean
+
+        <button type="submit" class="btn-login" id="loginBtn">
+            <i class="fa-solid fa-right-to-bracket"></i>
+            <span>Sign In as Dean</span>
         </button>
     </form>
 
@@ -142,9 +413,31 @@ body{min-height:100vh;background:#0A192F url('../bacjground.png') center center 
 
 <script>
 function togglePw() {
-    const pw = document.getElementById('password'), ic = document.getElementById('eyeIcon');
-    pw.type = pw.type === 'password' ? 'text' : 'password';
-    ic.className = pw.type === 'password' ? 'fa-solid fa-eye' : 'fa-solid fa-eye-slash';
+    const pw = document.getElementById('password');
+    const ic = document.getElementById('eyeIcon');
+    const toggle = document.querySelector('.toggle-pw');
+    const visible = pw.type === 'password';
+
+    pw.type = visible ? 'text' : 'password';
+    ic.className = visible ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye';
+    if (toggle) toggle.setAttribute('aria-label', visible ? 'Hide password' : 'Show password');
+}
+
+const loginForm = document.getElementById('loginForm');
+const loginBtn = document.getElementById('loginBtn');
+if (loginForm && loginBtn) {
+    loginForm.addEventListener('submit', () => {
+        if (!loginForm.checkValidity()) return;
+        loginBtn.disabled = true;
+        loginBtn.querySelector('i').className = 'fa-solid fa-spinner fa-spin';
+        loginBtn.querySelector('span').textContent = 'Signing In…';
+    });
+    window.addEventListener('pageshow', (e) => {
+        if (!e.persisted) return;
+        loginBtn.disabled = false;
+        loginBtn.querySelector('i').className = 'fa-solid fa-right-to-bracket';
+        loginBtn.querySelector('span').textContent = 'Sign In as Dean';
+    });
 }
 </script>
 </body>

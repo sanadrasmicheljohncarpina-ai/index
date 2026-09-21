@@ -20,13 +20,29 @@
 
 $navItems = [
     'dashboard'  => ['dean_dashboard.php',          'fa-gauge',           'Dashboard'],
-    'evaluation' => ['dean_evaluation.php',         'fa-clipboard-check', 'Evaluation'],
+    'evaluation' => ['dean_evaluation.php',         'fa-clipboard-check', 'My Evaluation'],
     'tracker'    => ['dean_evaluation_tracker.php', 'fa-satellite-dish',  'Evaluation Tracker'],
     'results'    => ['dean_results.php',            'fa-star-half-stroke','View Results'],
-    'reports'    => ['dean_reports.php',            'fa-chart-line',      'Reports'],
+    'reports'    => ['dean_reports.php',            'fa-chart-line',      'Evaluation Reports'],
     'settings'   => ['dean_account_settings.php',   'fa-gear',            'Account Settings'],
 ];
 ?>
+<style id="dean-sidebar-section-heading">
+.sb-nav .sb-section-title{
+    width:100%;
+    padding:0 6px;
+    margin:8px 0 3px;
+    color:#C4B5FD;
+    font-size:11px;
+    font-weight:900;
+    letter-spacing:1.5px;
+    line-height:1.25;
+    text-align:center;
+    text-transform:uppercase;
+    text-shadow:0 1px 8px rgba(167,139,250,.16);
+}
+.sb-nav .sb-section-title:first-child{margin-top:0;}
+</style>
 <aside class="sidebar">
     <div class="sb-profile">
         <img class="sb-photo" src="<?= htmlspecialchars($photo_src) ?>" alt="Profile"/>

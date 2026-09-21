@@ -12,6 +12,7 @@ session_start();
 require_once 'db.php';
 require_once dirname(__DIR__) . '/shared/system_settings_service.php';
 require_once 'principal_notifications_feed.php';   // safe_scalar(), esc_list(), principal_build_notifications()
+require_once 'school_head_structure_gate.php';
 
 // ── AUTH GUARD ────────────────────────────────────────────
 if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'principal') {
@@ -68,15 +69,20 @@ $scopeGradesIn   = esc_list($mysqli, $scopeGrades);
 // stores any of this itself, and never hardcodes an academic year/term —
 // same convention as dean_dashboard.php (Step 14: Synchronization with
 // System Settings).
-$settings = get_system_settings($mysqli);
+$settings = get_school_head_settings($mysqli, 'principal');
+
+// Academic Structure / Academic Term gate: Principal owns School Year,
+// Dean owns College. Narrow-only — existing scheduling, Force Open and
+// Force Closed still decide open/closed while Basic Education is active.
+$settings = sh_gate_apply($settings, 'principal');
 
 // A Principal oversees the Basic Education (Junior High / Senior High)
 // division. If the Executive Assistant/Admin has the active Academic
 // Structure set to College, the Principal must not show Basic Ed
 // analytics as current.
-$structureActive = ($settings['academic_structure'] !== 'college');
+$structureActive = !empty($settings['school_head_applicable']);
 $period_id_int   = $settings['period_id'] ?? 0;
-$evalOpen        = $settings['is_open_for_submission'];
+$evalOpen        = !empty($settings['school_head_is_open']);
 $hasPeriod       = $period_id_int > 0;
 
 // Step 8 (mirrored from Dean): internal value stays whatever admin uses;
@@ -173,7 +179,7 @@ body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,
 .sb-role{font-size:11px;color:var(--amber-h);text-transform:uppercase;letter-spacing:.6px;margin-top:2px;}
 .sb-scope{font-size:10px;color:var(--muted);margin-top:4px;}
 .sb-nav{display:flex;flex-direction:column;gap:5px;margin-top:10px;width:100%;}
-.sb-nav-section-label{width:auto;margin:5px 12px 1px;padding:0 2px;color:var(--muted);font-size:10px;font-weight:800;letter-spacing:1.35px;line-height:1.2;text-transform:uppercase;}
+.sb-nav-section-label{width:auto;margin:5px 12px 1px;padding:0 2px;color:var(--muted);font-size:11px;font-weight:900;letter-spacing:1.6px;line-height:1.25;text-transform:uppercase;text-align:center;color:#C7D2FE;text-shadow:0 1px 8px rgba(129,140,248,.16);}
 .sb-nav-section-label:first-child{margin-top:0;}
 .sb-nav a{box-sizing:border-box;width:100%;min-height:42px;margin:0;padding:5px 14px;display:flex;align-items:center;gap:10px;border-radius:8px;color:var(--muted);text-decoration:none;font-size:14px;font-weight:500;transition:background .2s,color .2s;}
 .sb-nav a:hover,.sb-nav a.active{background:rgba(217,154,43,.15);color:#fff;}

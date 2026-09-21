@@ -1652,14 +1652,16 @@ body{background:var(--dashboard-bg)!important;background-attachment:fixed!import
 .pbi-sidebar .nav-menu li{width:100%;margin:0;padding:0;list-style:none;}
 .pbi-sidebar .nav-menu .nav-section-label{
     width:auto;
-    margin:5px 12px 1px;
+    margin:8px 10px 2px;
     padding:0 2px;
-    color:var(--sidebar-text-dim);
-    font-size:10px;
-    font-weight:800;
-    letter-spacing:.12em;
-    line-height:1.2;
+    color:#B9D7F5;
+    font-size:11px;
+    font-weight:900;
+    letter-spacing:.16em;
+    line-height:1.25;
+    text-align:center;
     text-transform:uppercase;
+    text-shadow:0 1px 8px rgba(125,211,252,.12);
     list-style:none;
 }
 .pbi-sidebar .nav-menu .nav-section-label:first-child{margin-top:0;}
@@ -1738,10 +1740,15 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { display:none !important; widt
   .pbi-sidebar .sidebar-nav{gap:4px!important;}
   .pbi-sidebar .nav-menu{gap:4px!important;}
   .pbi-sidebar .nav-menu .nav-section-label{
-      margin:5px 10px 2px!important;
+      margin:8px 10px 3px!important;
       padding:0 2px!important;
-      font-size:9.5px!important;
-      line-height:1.15!important;
+      color:#B9D7F5!important;
+      font-size:11px!important;
+      font-weight:900!important;
+      letter-spacing:.16em!important;
+      line-height:1.25!important;
+      text-align:center!important;
+      text-shadow:0 1px 8px rgba(125,211,252,.12)!important;
   }
   .pbi-sidebar .nav-menu .nav-section-label:first-child{margin-top:0!important;}
   .pbi-sidebar .nav-item,
@@ -1793,6 +1800,9 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { display:none !important; widt
             <li><a href="#" id="link-reports"   onclick="showPage('reports',this);return false;"   class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-file-signature icon"></i></span> <span>Questionnaire</span></a></li>
             <li><a href="#" id="link-tracker" onclick="showPage('tracker',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-user-check icon"></i></span> <span>Evaluation Tracker</span></a></li>
             <li><a href="#" id="link-ea-eval" onclick="showPage('ea_eval',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-user-tie icon"></i></span> <span><?= $isExecutiveAssistant ? 'My Evaluations' : 'EA Evaluations' ?></span></a></li>
+            <?php if ($isExecutiveAssistant): ?>
+            <li><a href="#" id="link-ea-results" onclick="showPage('ea_results',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-eye icon"></i></span> <span>View Results</span></a></li>
+            <?php endif; ?>
             <li><a href="#" id="link-analytics" onclick="showPage('analytics',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-chart-line icon"></i></span> <span>Evaluation Reports</span></a></li>
 
             <li class="nav-section-label">ADMINISTRATION</li>
@@ -2387,6 +2397,9 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { display:none !important; widt
     <div id="registrations" class="page"><iframe src="manage_privileged_accounts.php" class="iframe-box" id="registrationsFrame"></iframe></div>
     <div id="tracker"       class="page"><iframe src="evaluation_tracker.php"        class="iframe-box"></iframe></div>
     <div id="ea_eval"       class="page"><iframe src="ea_evaluation.php"             class="iframe-box"></iframe></div>
+    <?php if ($isExecutiveAssistant): ?>
+    <div id="ea_results"   class="page"><iframe src="ea_results.php"               class="iframe-box"></iframe></div>
+    <?php endif; ?>
     <div id="system_logs"   class="page"><iframe src="system_logs.php"              class="iframe-box"></iframe></div>
     <div id="settings"      class="page"><iframe src="settings.php"                   class="iframe-box" id="settingsFrame"></iframe></div>
 </div>

@@ -1,7 +1,15 @@
 <?php
 // student/student_login.php
-session_start();
+require_once 'security.php';
+secure_session_start();
 require_once 'db.php';
+security_ensure_tables($mysqli);
+
+// Already signed in as a student -> straight to the dashboard
+if (!empty($_SESSION['user_id']) && ($_SESSION['role'] ?? '') === 'student') {
+    header("Location: student_dashboard.php");
+    exit;
+}
 
 $error   = '';
 $success = $_SESSION['reg_success'] ?? '';
@@ -10,38 +18,58 @@ unset($_SESSION['reg_success']);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
     $password = $_POST['password']     ?? '';
+    $ident    = mb_strtolower(mb_substr($username, 0, 100));
 
-    if (empty($username) || empty($password)) {
+    if (!csrf_valid($_POST['csrf_token'] ?? '')) {
+        $error = "Your session expired. Please try again.";
+    } elseif ($username === '' || $password === '') {
         $error = "Please enter your username and password.";
+    } elseif (mb_strlen($username) > 100 || strlen($password) > 1024) {
+        $error = "Incorrect username or password. Please try again.";
+    } elseif (auth_is_locked($mysqli, 'login', $ident)) {
+        $error = AUTH_LOCK_MESSAGE;
     } else {
-$stmt = $mysqli->prepare(
-    "SELECT id, full_name, password_hash, role, department, year_level, account_status
-     FROM users WHERE username = ? AND role = 'student' AND is_active = 1 LIMIT 1"
-);
+        $stmt = $mysqli->prepare(
+            "SELECT id, full_name, password_hash, role, department, year_level, account_status
+             FROM users WHERE username = ? AND role = 'student' AND is_active = 1 LIMIT 1"
+        );
         $stmt->bind_param("s", $username);
         $stmt->execute();
         $user = $stmt->get_result()->fetch_assoc();
         $stmt->close();
 
-if ($user && password_verify($password, $user['password_hash']) && $user['account_status'] !== 'approved') {
-            $error = $user['account_status'] === 'pending'
-                ? "Your account is awaiting admin approval. You'll be able to log in once it's approved."
-                : "Your account has been blocked. Please contact the administrator.";
-        } elseif ($user && password_verify($password, $user['password_hash'])) {
-            session_regenerate_id(true);
-            $_SESSION['user_id']    = $user['id'];
-            $_SESSION['full_name']  = $user['full_name'];
-            $_SESSION['role']       = $user['role'];
-            $_SESSION['department'] = $user['department'];
-            $_SESSION['year_level'] = $user['year_level'];
-            $mysqli->close();
-            header("Location: student_dashboard.php");
-            exit;
+        // Always run exactly one password_verify, so the response time does not reveal
+        // whether the username exists.
+        $passwordOk = password_verify($password, $user['password_hash'] ?? DUMMY_HASH);
+
+        if ($user && $passwordOk) {
+            if ($user['account_status'] !== 'approved') {
+                // Correct password but the account cannot sign in yet. Not counted as a failed attempt.
+                $error = $user['account_status'] === 'pending'
+                    ? "Your account is awaiting admin approval. You'll be able to log in once it's approved."
+                    : "Your account has been blocked. Please contact the administrator.";
+            } else {
+                auth_clear($mysqli, 'login', $ident);
+                auth_record($mysqli, 'login', $ident, true);
+
+                session_regenerate_id(true);
+                $_SESSION['user_id']    = $user['id'];
+                $_SESSION['full_name']  = $user['full_name'];
+                $_SESSION['role']       = $user['role'];
+                $_SESSION['department'] = $user['department'];
+                $_SESSION['year_level'] = $user['year_level'];
+
+                // Students with no security questions yet (registered before the feature existed),
+                // or who still use a question that is no longer offered, are asked to set them up.
+                $needsSetup = sq_needs_update(sq_load($mysqli, (int)$user['id']));
+                header("Location: " . ($needsSetup ? "security_questions.php?setup=1" : "student_dashboard.php"));
+                exit;
+            }
         } else {
+            auth_record($mysqli, 'login', $ident, false);
             $error = "Incorrect username or password. Please try again.";
         }
     }
-    if ($mysqli->ping()) $mysqli->close();
 }
 ?>
 <!DOCTYPE html>
@@ -52,6 +80,7 @@ if ($user && password_verify($password, $user['password_hash']) && $user['accoun
 <title>PBI — Student Login</title>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+<link rel="stylesheet" href="student_ui.css"/>
 <style>
 :root{--dark-blue:#0A192F;--blue-mid:#172A45;--gold:#D97706;--gold-hover:#F59E0B;--light:#E0E6F0;--muted:#A0B3C6;--radius:10px;--shadow:0 8px 32px rgba(0,0,0,0.45);}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -97,7 +126,7 @@ body{min-height:100vh;background:#0A192F;font-family:'DM Sans',sans-serif;color:
     <div class="card-header">
         <img class="logo-ring" src="../image/pbi_logo" alt="PBI Logo"/>
         <div class="card-title">Student Portal</div>
-        <div class="card-subtitle">Pandan Bay Institute — Evaluation System</div>
+        <div class="card-subtitle">Pandan Bay Institute Inc.</div>
     </div>
     <div class="divider"></div>
 
@@ -116,12 +145,13 @@ body{min-height:100vh;background:#0A192F;font-family:'DM Sans',sans-serif;color:
     <?php endif; ?>
 
     <form method="POST" action="student_login.php" autocomplete="off">
+        <?= csrf_field() ?>
         <div class="form-group">
             <label class="form-label" for="username">Username</label>
             <div class="input-wrap">
                 <input class="form-input" type="text" id="username" name="username"
                        placeholder="Enter your username" required
-                       autocomplete="off"/>
+                       autocomplete="username"/>
                 <i class="fa-solid fa-user f-icon"></i>
             </div>
         </div>
@@ -130,7 +160,7 @@ body{min-height:100vh;background:#0A192F;font-family:'DM Sans',sans-serif;color:
             <div class="input-wrap">
                 <input class="form-input" type="password" id="password" name="password"
                        placeholder="Enter your password" required
-                       autocomplete="new-password"/>
+                       autocomplete="current-password"/>
                 <i class="fa-solid fa-lock f-icon"></i>
                 <button type="button" class="toggle-pw" onclick="togglePw()">
                     <i class="fa-solid fa-eye" id="eyeIcon"></i>
@@ -142,8 +172,8 @@ body{min-height:100vh;background:#0A192F;font-family:'DM Sans',sans-serif;color:
         <i class="fa-solid fa-key"></i> Forgot Password?
     </a>
 </div>
-        <button type="submit" class="btn-login">
-            <i class="fa-solid fa-right-to-bracket"></i> Sign In
+        <button type="submit" class="btn-login" id="loginBtn">
+            <i class="fa-solid fa-right-to-bracket"></i> <span>Sign In</span>
         </button>
     </form>
 
@@ -163,6 +193,23 @@ function togglePw() {
     const pw = document.getElementById('password'), ic = document.getElementById('eyeIcon');
     pw.type = pw.type === 'password' ? 'text' : 'password';
     ic.className = pw.type === 'password' ? 'fa-solid fa-eye' : 'fa-solid fa-eye-slash';
+}
+
+const loginForm = document.querySelector('.login-card form');
+const loginBtn = document.getElementById('loginBtn');
+if (loginForm && loginBtn) {
+    loginForm.addEventListener('submit', () => {
+        loginBtn.disabled = true;
+        loginBtn.querySelector('i').className = 'fa-solid fa-spinner fa-spin';
+        loginBtn.querySelector('span').textContent = 'Signing In…';
+    });
+    // Back-button / bfcache: make the button usable again
+    window.addEventListener('pageshow', (e) => {
+        if (!e.persisted) return;
+        loginBtn.disabled = false;
+        loginBtn.querySelector('i').className = 'fa-solid fa-right-to-bracket';
+        loginBtn.querySelector('span').textContent = 'Sign In';
+    });
 }
 </script>
 </body>

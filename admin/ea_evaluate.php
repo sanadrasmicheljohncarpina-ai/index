@@ -7,10 +7,9 @@
 // one card per question with a 1-5 rating, a comment box, and a
 // read-only view once already submitted this period.
 //
-// Questions are NOT hardcoded here. They are fetched directly from the
-// dedicated Executive Assistant Evaluation question bank managed by
-// admin/questionnaire.php (eval_type='ea'). Each target person has an
-// independent EA question set for Staff, Dean, or Principal.
+// Questions are not hardcoded here. They come from the centralized
+// Executive Assistant (EA) target questionnaire. Each target person has
+// one target-centric question set shared by all applicable evaluators.
 //
 // Eligibility and storage are otherwise unchanged: the target must
 // currently be the active Principal/Dean or qualifying Staff
@@ -23,6 +22,8 @@ session_set_cookie_params([
 ]);
 session_start();
 require_once 'db.php';
+require_once dirname(__DIR__) . '/shared/QuestionnaireService.php';
+qn_migrate_legacy_once($mysqli);
 require_once dirname(__DIR__) . '/shared/system_settings_service.php';
 
 
@@ -61,10 +62,9 @@ if (!in_array($type, $validTypes, true) || $targetId <= 0) {
     exit;
 }
 
-// Do not expose an active evaluation form before the configured opening time.
-if (empty($_GET['view'])) {
-    ss_require_evaluation_open($mysqli, 'EA Evaluation is currently closed.');
-}
+// Executive Assistant evaluation is intentionally available at all times.
+// The global schedule continues to govern other evaluation flows, but it does
+// not restrict the EA evaluator's access here.
 
 // ── RE-DERIVE ELIGIBILITY FOR THIS TYPE (must match ea_evaluation.php) ──
 if ($type === 'Principal' || $type === 'Dean') {
@@ -104,21 +104,17 @@ if (!$target) {
 
 $period = $mysqli->query("SELECT id, period_label FROM evaluation_periods WHERE is_active=1 ORDER BY id DESC LIMIT 1")->fetch_assoc();
 $period_id = (int)($period['id'] ?? 0);
-$liveState = ss_live_state($mysqli)['state'];
-$is_open = (bool)($liveState['open'] ?? false);
+$is_open = true; // EA Evaluation is always available.
 
-// ── QUESTIONS: direct from Executive Assistant Evaluation bank ────────
-// The Questionnaire -> Executive Assistant Evaluation section stores
-// per-person questions under eval_type='ea'.
-$qEvalType   = 'ea';
+// ── QUESTIONS: centralized EA target bank ───────────────────────────
 $qTargetType = $type;
 $qStmt = $mysqli->prepare("
-    SELECT id, category, question_text, sort_order
+    SELECT id, category, question_text, 0 AS sort_order
     FROM user_questions
-    WHERE user_id=? AND target_type=? AND eval_type=?
-    ORDER BY category, sort_order, id
+    WHERE user_id=? AND target_type=? AND eval_type='general'
+    ORDER BY category, id
 ");
-$qStmt->bind_param('iss', $targetId, $qTargetType, $qEvalType);
+$qStmt->bind_param('is', $targetId, $qTargetType);
 $qStmt->execute();
 $questions = $qStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $qStmt->close();
@@ -143,9 +139,10 @@ if ($existingTracker) {
     $ansStmt = $mysqli->prepare("
         SELECT qa.answer_score, uq.category, uq.question_text
         FROM questionnaire_answers qa
-        JOIN user_questions uq ON uq.id = qa.question_id
-        WHERE qa.tracker_id=?
-        ORDER BY uq.category, uq.sort_order, uq.id
+        LEFT JOIN user_questions uq
+          ON uq.id = COALESCE(qa.user_question_id, qa.question_id)
+        WHERE qa.tracker_id=? AND qa.question_source='user'
+        ORDER BY uq.category, uq.id
     ");
     $ansStmt->bind_param('i', $existingTracker['id']);
     $ansStmt->execute();
@@ -170,15 +167,11 @@ if ($existingAnswers) {
 // ── HANDLE SUBMIT ──────────────────────────────────────────────────────
 $errors = [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$existingTracker) {
-    // Re-read the persisted settings immediately before the write so a stale
-    // browser page cannot submit after the scheduled closing instant.
-    $liveSettings = ss_raw($mysqli);
-    $liveState = ss_schedule_state($liveSettings);
-    $is_open = (bool)$liveState['open'];
+    // EA Evaluation is intentionally not gated by the global schedule.
+    // Re-check question availability and submission rules only.
+    $is_open = true;
 
-    if (!$is_open) {
-        $errors[] = 'EA Evaluation is currently closed.';
-    } elseif (!$questions) {
+    if (!$questions) {
         $errors[] = 'No EA questions have been assigned to this person yet.';
     } else {
         $ratings = $_POST['rating'] ?? [];
@@ -205,8 +198,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$existingTracker) {
                 $ins->close();
 
                 $ans = $mysqli->prepare("
-                    INSERT INTO questionnaire_answers (tracker_id, question_id, answer_score, submitted_at)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO questionnaire_answers
+                    (tracker_id, question_id, question_source, user_question_id, answer_score, submitted_at)
+                    VALUES (?, NULL, 'user', ?, ?, ?)
                 ");
                 foreach ($questions as $q) {
                     $score = (int)$ratings[$q['id']];
@@ -409,11 +403,11 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
         <?php endforeach; ?>
 
         <div class="comment-block">
-            <label for="comment">Comment (optional)</label>
+            <label for="comment">Comments/ Suggestions</label>
             <textarea id="comment" name="comment" placeholder="Comments, suggestions, or areas for improvement..."></textarea>
         </div>
 
-        <button type="submit" class="btn-submit" <?= !$is_open ? 'disabled style="opacity:.5;cursor:not-allowed;"' : '' ?>>
+        <button type="submit" class="btn-submit">
             <i class="fa-solid fa-paper-plane"></i> Submit EA Evaluation
         </button>
     </form>

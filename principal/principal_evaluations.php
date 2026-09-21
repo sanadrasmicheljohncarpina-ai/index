@@ -43,10 +43,12 @@
 //      .pagination. If it does, delete the block and use those classes.
 
 require_once 'principal_common.php';
+require_once dirname(__DIR__) . '/shared/QuestionnaireService.php';
+qn_migrate_legacy_once($mysqli);
 $settings = $schoolHeadSettings;
 $period_id_int = (int)($settings['period_id'] ?? 0);
 $hasPeriod = $period_id_int > 0;
-$evalOpen = !empty($settings['is_open_for_submission']);
+$evalOpen = !empty($settings['school_head_is_open']);
 
 $user_id = $_SESSION['user_id'];
 
@@ -206,14 +208,13 @@ if ($structureActive) {
     // ── QUESTION COUNTS — SAME SOURCE AS QUESTIONNAIRE PRINCIPAL TAB ──
     $questionCounts['faculty'] = (int)(safe_scalar($mysqli,
         "SELECT COUNT(*) FROM evaluation_questions
-         WHERE eval_type='school_head'
-           AND evaluator_role='principal'
+         WHERE eval_type='general'
+           AND evaluator_role='shared'
            AND target_type='Faculty'"
     ) ?? 0);
     $questionCounts['executive_assistant'] = (int)(safe_scalar($mysqli,
         "SELECT COUNT(*) FROM evaluation_questions
-         WHERE eval_type='school_head'
-           AND evaluator_role='principal'
+         WHERE eval_type='general'
            AND target_type='EA'"
     ) ?? 0);
 
@@ -226,7 +227,7 @@ if ($structureActive) {
         $stmt = $mysqli->prepare(
             "SELECT user_id, COUNT(*) AS total
              FROM user_questions
-             WHERE eval_type='school_head'
+             WHERE eval_type='general'
                AND target_type='Staff'
                AND user_id IN ($placeholders)
              GROUP BY user_id"
@@ -791,7 +792,7 @@ main.main::before {
 <main class="main">
     <div class="page-header">
         <div>
-            <div class="page-title">Evaluation</div>
+            <div class="page-title">My Evaluation</div>
             <div class="page-sub">Evaluate Faculty &amp; Executive Assistants — <?= htmlspecialchars($scopeLabel) ?></div>
         </div>
         <?php render_period_badge($settings); ?>

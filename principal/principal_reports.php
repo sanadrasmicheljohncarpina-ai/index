@@ -337,10 +337,10 @@ $evaluatorNounP = $activeEval === 'peer' ? 'colleagues' : 'students';
 function render_exec_sidebar(string $active, array $me, string $photo_src, string $scope): void {
     $links = [
         'dashboard' => ['principal_dashboard.php','fa-gauge','Dashboard'],
-        'evaluation' => ['principal_evaluations.php','fa-clipboard-list','Evaluation'],
+        'evaluation' => ['principal_evaluations.php','fa-clipboard-list','My Evaluation'],
         'tracker' => ['principal_evaluation_tracker.php','fa-satellite-dish','Evaluation Tracker'],
         'results' => ['principal_results.php','fa-star-half-stroke','View Results'],
-        'reports' => ['principal_reports.php','fa-chart-line','Reports'],
+        'reports' => ['principal_reports.php','fa-chart-line','Evaluation Reports'],
         'settings' => ['principal_account_settings.php','fa-gear','Settings'],
     ];
     ?>
@@ -2135,7 +2135,7 @@ a { color:inherit; }
 
 <div class="page-header">
     <div>
-        <h1>Reports &amp; Analytics <span style="font-size:18px;color:var(--ec);font-family:'Inter',sans-serif;font-weight:400;margin-left:6px;">— <?= $evalLabel ?></span></h1>
+        <h1>Evaluation Reports <span style="font-size:18px;color:var(--ec);font-family:'Inter',sans-serif;font-weight:400;margin-left:6px;">— <?= $evalLabel ?></span></h1>
         <p>Only showing personnel who have been evaluated<?= $activeEval==='peer'?' by colleagues':' by students' ?></p>
     </div>
     <div class="header-actions">
@@ -2605,7 +2605,7 @@ main, main.main, .main, .main-content, .content, .page-content {
 <style id="principal-sidebar-placement-and-spacing-final">
 /* Corrected principal navigation placement: main pages first, settings in administration, logout in account. */
 .sidebar .sb-nav{display:flex!important;flex-direction:column!important;gap:5px!important;margin-top:10px!important;width:100%!important;}
-.sidebar .sb-nav-section-label{width:auto!important;margin:5px 12px 1px!important;padding:0 2px!important;color:#A0B3C6!important;font-size:10px!important;font-weight:800!important;letter-spacing:1.35px!important;line-height:1.2!important;text-transform:uppercase!important;}
+.sidebar .sb-nav-section-label{width:auto!important;margin:5px 12px 1px!important;padding:0 2px!important;color:#C7D2FE!important;font-size:11px!important;font-weight:900!important;letter-spacing:1.6px!important;line-height:1.25!important;text-align:center!important;text-shadow:0 1px 8px rgba(129,140,248,.16)!important;text-transform:uppercase!important;}
 .sidebar .sb-nav-section-label:first-child{margin-top:0!important;}
 .sidebar .sb-nav a{box-sizing:border-box!important;width:100%!important;min-height:42px!important;margin:0!important;padding:5px 14px!important;display:flex!important;align-items:center!important;gap:10px!important;border-radius:8px!important;font-size:14px!important;font-weight:500!important;}
 .sidebar .sb-nav a i{width:18px!important;flex:0 0 18px!important;text-align:center!important;}

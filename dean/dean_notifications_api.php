@@ -21,6 +21,7 @@ session_start();
 require_once 'db.php';
 require_once dirname(__DIR__) . '/shared/system_settings_service.php';
 require_once dirname(__DIR__) . '/shared/ea_personnel_service.php';
+require_once 'school_head_structure_gate.php';
 
 header('Content-Type: application/json');
 
@@ -32,10 +33,14 @@ if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'dean') {
     exit;
 }
 
-$settings         = get_system_settings($mysqli);
-$structureActive  = ($settings['academic_structure'] === 'college');
+$settings         = get_school_head_settings($mysqli, 'dean');
+// Academic Structure / Academic Term gate: Dean owns College, Principal
+// owns School Year. Narrow-only — existing scheduling, Force Open and
+// Force Closed still decide open/closed while College is active.
+$settings = sh_gate_apply($settings, 'dean');
+$structureActive  = !empty($settings['school_head_applicable']);
 $period_id_int    = $settings['period_id'] ?? 0;
-$evalOpen         = $settings['is_open_for_submission'];
+$evalOpen         = !empty($settings['school_head_is_open']);
 
 $notifications = $settings['notifications'];
 

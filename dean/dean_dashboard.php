@@ -12,6 +12,7 @@ session_start();
 require_once 'db.php';
 require_once dirname(__DIR__) . '/shared/system_settings_service.php';
 require_once dirname(__DIR__) . '/shared/ea_personnel_service.php';
+require_once 'school_head_structure_gate.php';
 
 // ── AUTH GUARD ────────────────────────────────────────────
 if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'dean') {
@@ -37,14 +38,20 @@ $stmt->close();
 // schedule" comes from here. The Dean dashboard never derives or stores
 // any of this itself, and never hardcodes an academic year/term.
 // (Step 14: Synchronization with System Settings)
-$settings = get_system_settings($mysqli);
+$settings = get_school_head_settings($mysqli, 'dean');
+
+// Academic Structure / Academic Term decide which school head's evaluation
+// is applicable. Dean owns College; Principal owns School Year. This only
+// ever narrows — schedule / Force Open / Force Closed are untouched when
+// College is the active structure. See school_head_structure_gate.php.
+$settings = sh_gate_apply($settings, 'dean');
 
 // A Dean oversees the Higher Education (internally "college") division.
 // If the Executive Assistant has the active Academic Structure set to
 // something else, the Dean must not show Higher Ed analytics as current.
-$structureActive  = ($settings['academic_structure'] === 'college');
+$structureActive  = !empty($settings['school_head_applicable']);
 $period_id_int    = $settings['period_id'] ?? 0;
-$evalOpen         = $settings['is_open_for_submission'];
+$evalOpen         = !empty($settings['school_head_is_open']);
 
 // Step 8: internal value stays "college" everywhere; this is the only
 // display label used in markup below.
@@ -191,7 +198,7 @@ $photo_src = !empty($me['photo']) ? '../image/' . $me['photo'] : '../image/pbi_l
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 body{min-height:100vh;background:var(--page-l);font-family:'DM Sans',sans-serif;color:var(--text-l);display:flex;}
 
-.sidebar{width:250px;flex-shrink:0;background:rgba(23,42,69,.9);border-right:1px solid rgba(255,255,255,.08);min-height:100vh;padding:28px 20px;display:flex;flex-direction:column;}
+.sidebar{width:250px;flex-shrink:0;background:#0F1F33;border-right:1px solid #060E18;min-height:100vh;padding:28px 20px;display:flex;flex-direction:column;}
 .sb-profile{text-align:center;margin-bottom:26px;}
 .sb-photo{width:72px;height:72px;border-radius:50%;object-fit:cover;border:2.5px solid var(--violet);box-shadow:0 0 18px rgba(124,95,217,.4);margin:0 auto 10px;display:block;}
 .sb-name{font-weight:700;font-size:15px;color:#fff;}

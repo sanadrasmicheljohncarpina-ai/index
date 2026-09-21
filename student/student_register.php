@@ -1,10 +1,25 @@
 <?php
 	// student/student_register.php
-	session_start();
+	require_once 'security.php';
+	secure_session_start();
 	require_once 'db.php';
+	security_ensure_tables($mysqli);
 
-	$error   = '';
-	$success = '';
+	$error = '';
+
+	// School level -> allowed year/grade levels (validated on the server, not just in the dropdown)
+	$levels = [
+		'JHS'     => ['Grade 7','Grade 8','Grade 9','Grade 10'],
+		'SHS'     => ['Grade 11','Grade 12'],
+		'College' => ['1st Year','2nd Year','3rd Year','4th Year'],
+	];
+	// JHS/SHS/College -> education_level enum used across the system
+	$dept_to_level = [
+		'JHS'     => 'junior_high',
+		'SHS'     => 'senior_high',
+		'College' => 'college',
+	];
+	$sq_all = sq_questions();
 
 	if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
@@ -15,30 +30,30 @@
 		$confirm_pw = $_POST['confirm_password']?? '';
 		$department = trim($_POST['department'] ?? '');
 		$year_level = trim($_POST['year_level'] ?? '');
-
-		// Map the selected school level (JHS/SHS/College) to the education_level
-		// enum used everywhere else in the system (junior_high/senior_high/college).
-		// This is what student_tracker.php filters on -- without it, new
-		// accounts get education_level = NULL and never show up under any
-		// level tab.
-		$dept_to_level = [
-			'JHS'     => 'junior_high',
-			'SHS'     => 'senior_high',
-			'College' => 'college',
-		];
 		$education_level = $dept_to_level[$department] ?? null;
 
-		// Basic validation
-		if (empty($full_name))  { $error = "Full name is required."; }
+		$sq_rows = [];
+
+		if (!csrf_valid($_POST['csrf_token'] ?? '')) { $error = "Your session expired. Please try again."; }
+		elseif (empty($full_name))  { $error = "Full name is required."; }
 		elseif (empty($username))  { $error = "Username is required."; }
 		elseif (empty($email))  { $error = "Email address is required."; }
+		elseif (mb_strlen($full_name) > 100 || mb_strlen($username) > 50 || mb_strlen($email) > 254) { $error = "Full name, username or email is too long."; }
+		elseif (preg_match('/\s/', $username)) { $error = "Username cannot contain spaces."; }
 		elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) { $error = "Please enter a valid email address."; }
 		elseif (empty($department) || !isset($dept_to_level[$department])) { $error = "Please select your school level."; }
 		elseif (empty($password))  { $error = "Password is required."; }
 		elseif (strlen($password) < 8) { $error = "Password must be at least 8 characters."; }
+		elseif (strlen($password) > 72) { $error = "Password must be 72 characters or fewer."; }
 		elseif ($password !== $confirm_pw) { $error = "Passwords do not match."; }
-		elseif (empty($year_level)) { $error = "Please select your year/grade level."; }
+		elseif (!in_array($year_level, $levels[$department], true)) { $error = "Please select a valid year/grade level."; }
 		else {
+			// Security questions (used for password recovery)
+			[$sqErr, $sq_rows] = sq_validate($_POST['sq_question'] ?? [], $_POST['sq_answer'] ?? [], $username);
+			if ($sqErr) { $error = $sqErr; }
+		}
+
+		if (empty($error)) {
 			// Check duplicate username
 			$chk = $mysqli->prepare("SELECT id FROM users WHERE username = ? LIMIT 1");
 			$chk->bind_param("s", $username);
@@ -62,42 +77,48 @@
 			}
 		}
 
-		// Insert if no errors
+		// Insert the account and its security answers together (all or nothing)
 		if (empty($error)) {
 			$hash = password_hash($password, PASSWORD_DEFAULT);
-
-			$stmt = $mysqli->prepare(
-				"INSERT INTO users
-				 (full_name, username, email, password_hash, role, designation, department, education_level, year_level, is_active)
-				 VALUES (?, ?, ?, ?, 'student', 'Student', ?, ?, ?, 1)"
-			);
-			$stmt->bind_param(
-				"sssssss",
-				$full_name,
-				$username,
-				$email,
-				$hash,
-				$department,
-				$education_level,
-				$year_level
-			);
-
-			if ($stmt->execute()) {
+			try {
+				$mysqli->begin_transaction();
+				$stmt = $mysqli->prepare(
+					"INSERT INTO users
+					 (full_name, username, email, password_hash, role, designation, department, education_level, year_level, is_active)
+					 VALUES (?, ?, ?, ?, 'student', 'Student', ?, ?, ?, 1)"
+				);
+				$stmt->bind_param(
+					"sssssss",
+					$full_name,
+					$username,
+					$email,
+					$hash,
+					$department,
+					$education_level,
+					$year_level
+				);
+				$stmt->execute();
+				$newId = (int)$mysqli->insert_id;
 				$stmt->close();
-				$mysqli->close();
+
+				sq_save($mysqli, $newId, $sq_rows);
+				$mysqli->commit();
+
 				$_SESSION['reg_success'] = "Account created! Please log in with your username and password.";
 				header("Location: student_login.php");
 				exit;
-			} else {
-				$error = "Registration failed: " . $mysqli->error;
-				$stmt->close();
+			} catch (Throwable $e) {
+				try { $mysqli->rollback(); } catch (Throwable $ignored) {}
+				error_log('student_register failed: ' . $e->getMessage());
+				$duplicate = ($e instanceof mysqli_sql_exception && (int)$e->getCode() === 1062);
+				$error = $duplicate
+					? "That username or email is already registered."
+					: "Registration failed. Please try again in a moment.";
 			}
 		}
-
-		if ($mysqli->ping()) $mysqli->close();
 	}
 	?>
-	<!DOCTYPE html>
+<!DOCTYPE html>
 	<html lang="en">
 	<head>
 	<meta charset="UTF-8"/>
@@ -105,6 +126,7 @@
 	<title>PBI — Student Registration</title>
 	<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+<link rel="stylesheet" href="student_ui.css"/>
 	<style>
 	:root{--dark-blue:#0A192F;--blue-mid:#172A45;--blue-inner:#0F1F3D;--gold:#D97706;--gold-hover:#F59E0B;--light:#E0E6F0;--muted:#A0B3C6;--radius:8px;--shadow:0 8px 32px rgba(0,0,0,0.45);}
 	*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -140,6 +162,27 @@
 	.card-footer a{color:var(--gold-hover);text-decoration:none;font-weight:600;}
 	.college-only{display:none;}
 	@media(max-width:540px){.reg-card{padding:20px 14px 18px;}.form-grid{grid-template-columns:1fr;}.form-grid .full{grid-column:1;}}
+
+	.sq-section{margin-top:16px;padding:14px 14px 4px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(10,25,47,.34);}
+	.sq-head{display:flex;align-items:center;gap:8px;font-family:'Rajdhani',sans-serif;font-size:15px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#fff;}
+	.sq-head i{color:var(--gold-hover);font-size:13px;}
+	.sq-note{font-size:11px;line-height:1.5;color:var(--muted);margin:5px 0 12px;}
+	.sq-item{margin-bottom:12px;display:flex;flex-direction:column;gap:6px;}
+	.sq-item select.form-input{padding-left:12px;padding-right:32px;}
+	.sq-item .form-input{padding-left:12px;}
+	.client-error{display:none;margin-top:12px;}
+	.client-error.show{display:flex;}
+	/* Readability: slightly larger type across the form, larger still in the security section */
+	.form-label{font-size:11px;}
+	.form-input{font-size:14px;}
+	.alert{font-size:13px;}
+	.btn-register{font-size:15px;}
+	.card-footer{font-size:12.5px;}
+	.sq-head{font-size:17px;}
+	.sq-note{font-size:12.5px;line-height:1.6;}
+	.sq-item .form-input{font-size:14.5px;min-height:46px;}
+	.sq-chosen{font-size:13px;line-height:1.5;color:var(--light);padding:0 2px;}
+	.sq-chosen:empty{display:none;}
 	</style>
 	</head>
 	<body>
@@ -151,7 +194,7 @@
 		<div class="card-header">
 			<img class="logo-ring" src="../image/pbi_logo" alt="PBI Logo"/>
 			<div class="card-title">Student Registration</div>
-			<div class="card-subtitle">Pandan Bay Institute — Evaluation System</div>
+			<div class="card-subtitle">Pandan Bay Institute Inc.</div>
 		</div>
 
 		<?php if ($error): ?>
@@ -161,7 +204,8 @@
 		</div>
 		<?php endif; ?>
 
-		<form method="POST" action="student_register.php" id="regForm" autocomplete="off" onsubmit="return validateRegistration()">
+		<form method="POST" action="student_register.php" id="regForm" autocomplete="on" novalidate>
+			<?= csrf_field() ?>
 			<div class="form-group" style="margin-bottom:15px;">
 				<label class="form-label">School Level <span class="req">*</span></label>
 				<div class="input-wrap select-arr">
@@ -201,7 +245,7 @@
 					<label class="form-label">Username <span class="req">*</span></label>
 					<div class="input-wrap">
 						<input class="form-input" type="text" name="username"
-							   placeholder="Choose a username" required
+							   placeholder="Choose a username" autocomplete="username" required
 							   value="<?= htmlspecialchars($_POST['username'] ?? '') ?>"/>
 						<i class="fa-solid fa-user f-icon"></i>
 					</div>
@@ -211,7 +255,7 @@
 					<label class="form-label">Email Address <span class="req">*</span></label>
 					<div class="input-wrap">
 						<input class="form-input" type="email" name="email"
-							   placeholder="your@email.com" required
+							   placeholder="your@email.com" autocomplete="email" required
 							   value="<?= htmlspecialchars($_POST['email'] ?? '') ?>"/>
 						<i class="fa-solid fa-envelope f-icon"></i>
 					</div>
@@ -221,7 +265,7 @@
 					<label class="form-label">Password <span class="req">*</span></label>
 					<div class="input-wrap">
 						<input class="form-input" type="password" id="pw1" name="password"
-							   placeholder="Min. 8 characters" required/>
+							   placeholder="Min. 8 characters" autocomplete="new-password" required/>
 						<i class="fa-solid fa-lock f-icon"></i>
 						<button type="button" class="toggle-pw" onclick="togglePw('pw1','e1')">
 							<i class="fa-solid fa-eye" id="e1"></i>
@@ -233,7 +277,7 @@
 					<label class="form-label">Confirm Password <span class="req">*</span></label>
 					<div class="input-wrap">
 						<input class="form-input" type="password" id="pw2" name="confirm_password"
-							   placeholder="Re-enter password" required/>
+							   placeholder="Re-enter password" autocomplete="new-password" required/>
 						<i class="fa-solid fa-lock f-icon"></i>
 						<button type="button" class="toggle-pw" onclick="togglePw('pw2','e2')">
 							<i class="fa-solid fa-eye" id="e2"></i>
@@ -242,7 +286,50 @@
 				</div>
 			</div>
 
-			<button type="submit" class="btn-register">
+			<div class="sq-section">
+				<div class="sq-head"><i class="fa-solid fa-shield-halved"></i> Security Questions</div>
+				<p class="sq-note">Choose 3 different questions only you can answer. If you forget your password, you will need to answer all three, so use short answers you will type the same way every time (for example, just a name). Answers are stored encrypted and are not case-sensitive.</p>
+				<div class="sq-item">
+					<div class="input-wrap select-arr">
+						<select class="form-input sq-select" name="sq_question[1]" id="sq_q1" required>
+							<option value="" disabled selected>Question 1 — choose one</option>
+							<?php foreach ($sq_all as $k => $q): ?><option value="<?= htmlspecialchars($k) ?>" <?= (($_POST['sq_question'][1] ?? '') === $k) ? 'selected' : '' ?>><?= htmlspecialchars($q) ?></option><?php endforeach; ?>
+						</select>
+					</div>
+					<div class="sq-chosen" id="sq_chosen1" aria-live="polite"></div>
+					<input class="form-input" type="text" name="sq_answer[1]" id="sq_a1" maxlength="100"
+						   placeholder="Your answer" autocomplete="off" required/>
+				</div>
+				<div class="sq-item">
+					<div class="input-wrap select-arr">
+						<select class="form-input sq-select" name="sq_question[2]" id="sq_q2" required>
+							<option value="" disabled selected>Question 2 — choose one</option>
+							<?php foreach ($sq_all as $k => $q): ?><option value="<?= htmlspecialchars($k) ?>" <?= (($_POST['sq_question'][2] ?? '') === $k) ? 'selected' : '' ?>><?= htmlspecialchars($q) ?></option><?php endforeach; ?>
+						</select>
+					</div>
+					<div class="sq-chosen" id="sq_chosen2" aria-live="polite"></div>
+					<input class="form-input" type="text" name="sq_answer[2]" id="sq_a2" maxlength="100"
+						   placeholder="Your answer" autocomplete="off" required/>
+				</div>
+				<div class="sq-item">
+					<div class="input-wrap select-arr">
+						<select class="form-input sq-select" name="sq_question[3]" id="sq_q3" required>
+							<option value="" disabled selected>Question 3 — choose one</option>
+							<?php foreach ($sq_all as $k => $q): ?><option value="<?= htmlspecialchars($k) ?>" <?= (($_POST['sq_question'][3] ?? '') === $k) ? 'selected' : '' ?>><?= htmlspecialchars($q) ?></option><?php endforeach; ?>
+						</select>
+					</div>
+					<div class="sq-chosen" id="sq_chosen3" aria-live="polite"></div>
+					<input class="form-input" type="text" name="sq_answer[3]" id="sq_a3" maxlength="100"
+						   placeholder="Your answer" autocomplete="off" required/>
+				</div>
+			</div>
+
+			<div class="alert alert-error client-error" id="clientError" role="alert">
+				<i class="fa-solid fa-circle-exclamation" style="flex-shrink:0;margin-top:1px"></i>
+				<span id="clientErrorText"></span>
+			</div>
+
+			<button type="submit" class="btn-register" id="regSubmitBtn">
 				<i class="fa-solid fa-user-plus"></i>
 				<span id="regBtnLabel">Create JHS Account</span>
 			</button>
@@ -275,37 +362,40 @@
 			sel.appendChild(o);
 		});
 	}
+	// Returns an error message, or '' when the form looks fine (the server re-checks everything).
 	function validateRegistration() {
 		const form = document.getElementById('regForm');
-		const requiredFields = form.querySelectorAll('[required]');
-
-		for (const field of requiredFields) {
-			if (!field.value.trim()) {
-				field.focus();
-				return false;
-			}
+		for (const field of form.querySelectorAll('[required]')) {
+			if (!field.value.trim()) { field.focus(); return 'Please fill in every required field.'; }
 		}
-
 		const email = form.querySelector('[name="email"]');
-		if (email && !email.checkValidity()) {
-			email.focus();
-			return false;
+		if (email && !email.checkValidity()) { email.focus(); return 'Please enter a valid email address.'; }
+		const username = form.querySelector('[name="username"]');
+		if (username && /\s/.test(username.value.trim())) { username.focus(); return 'Username cannot contain spaces.'; }
+		const pw = document.getElementById('pw1'), pw2 = document.getElementById('pw2');
+		if (pw.value.length < 8)  { pw.focus();  return 'Password must be at least 8 characters.'; }
+		if (pw.value.length > 72) { pw.focus();  return 'Password must be 72 characters or fewer.'; }
+		if (pw.value !== pw2.value) { pw2.focus(); return 'Passwords do not match.'; }
+		const qs = [1,2,3].map(n => document.getElementById('sq_q' + n).value);
+		if (new Set(qs).size !== 3) return 'Please choose three different security questions.';
+		const ans = [1,2,3].map(n => document.getElementById('sq_a' + n).value.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ''));
+		for (let i = 0; i < 3; i++) {
+			if (ans[i].length < 3) { document.getElementById('sq_a' + (i + 1)).focus(); return 'Answer ' + (i + 1) + ' is too short. Use at least 3 letters or numbers.'; }
 		}
+		if (new Set(ans).size !== 3) return 'Each security answer must be different.';
+		return '';
+	}
 
-		const password = document.getElementById('pw1');
-		const confirmPassword = document.getElementById('pw2');
-
-		if (password.value.length < 8) {
-			password.focus();
-			return false;
-		}
-
-		if (password.value !== confirmPassword.value) {
-			confirmPassword.focus();
-			return false;
-		}
-
-		return true;
+	// Keep the three question dropdowns from repeating each other.
+	function syncQuestionChoices() {
+		const selects = [1,2,3].map(n => document.getElementById('sq_q' + n));
+		const chosen = selects.map(s => s.value).filter(Boolean);
+		selects.forEach((s, i) => {
+			for (const o of s.options) { o.disabled = o.value !== '' && chosen.includes(o.value) && o.value !== s.value; }
+			if (!s.value) s.options[0].disabled = true;
+			// Show the full chosen question (the dropdown itself cuts long text off)
+			document.getElementById('sq_chosen' + (i + 1)).textContent = s.value ? s.options[s.selectedIndex].text : '';
+		});
 	}
 
 	function togglePw(id, ic) {
@@ -314,6 +404,30 @@
 		i.className = e.type === 'password' ? 'fa-solid fa-eye' : 'fa-solid fa-eye-slash';
 	}
 	setDept(<?= json_encode($_POST['department'] ?? '') ?>);
+	const regForm = document.getElementById('regForm');
+	const regSubmitBtn = document.getElementById('regSubmitBtn');
+	const clientError = document.getElementById('clientError');
+	if (regForm && regSubmitBtn) {
+		regForm.addEventListener('submit', (e) => {
+			const msg = validateRegistration();
+			if (msg) {                       // stop here and tell the student what to fix; the button stays usable
+				e.preventDefault();
+				document.getElementById('clientErrorText').textContent = msg;
+				clientError.classList.add('show');
+				return;
+			}
+			clientError.classList.remove('show');
+			regSubmitBtn.disabled = true;
+			regSubmitBtn.querySelector('i').className = 'fa-solid fa-spinner fa-spin';
+		});
+		window.addEventListener('pageshow', (e) => {   // Back button: make the button usable again
+			if (!e.persisted) return;
+			regSubmitBtn.disabled = false;
+			regSubmitBtn.querySelector('i').className = 'fa-solid fa-user-plus';
+		});
+	}
+	document.querySelectorAll('.sq-select').forEach(s => s.addEventListener('change', syncQuestionChoices));
+	syncQuestionChoices();
 	</script>
 	</body>
 	</html>

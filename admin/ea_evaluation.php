@@ -55,8 +55,7 @@ $period = $mysqli->query("
     LIMIT 1
 ")->fetch_assoc();
 $period_id = (int)($period['id'] ?? 0);
-$liveState = ss_live_state($mysqli)['state'];
-$is_open = (bool)($liveState['open'] ?? false);
+$is_open = true; // EA Evaluation is always available.
 
 // ── ELIGIBLE TARGETS (unchanged) ──────────────────────────────────────
 // Principal + Dean are single-user role targets. Staff = primary Staff
@@ -310,9 +309,7 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
     </span>
   </td>
   <td>
-    <?php if (!$is_open && !$isDone): ?>
-      <span class="muted-cell">Evaluation closed</span>
-    <?php elseif ($isDone): ?>
+    <?php if ($isDone): ?>
       <a class="btn-view" href="ea_evaluate.php?type=<?= urlencode($selectedType) ?>&user_id=<?= $pid ?>"><i class="fa-solid fa-eye"></i> View</a>
     <?php else: ?>
       <a class="btn-eval" href="ea_evaluate.php?type=<?= urlencode($selectedType) ?>&user_id=<?= $pid ?>"><i class="fa-solid fa-pen"></i> Evaluate</a>

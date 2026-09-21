@@ -19,6 +19,9 @@ session_start();
 require_once 'db.php';
 require_once dirname(__DIR__) . '/shared/system_settings_service.php';
 require_once dirname(__DIR__) . '/shared/ea_personnel_service.php';
+require_once dirname(__DIR__) . '/shared/QuestionnaireService.php';
+require_once 'school_head_structure_gate.php';
+qn_migrate_legacy_once($mysqli);
 
 if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'dean') {
     header('Location: dean_login.php');
@@ -32,10 +35,14 @@ $stmt->execute();
 $me = $stmt->get_result()->fetch_assoc() ?: [];
 $stmt->close();
 
-$settings = get_system_settings($mysqli);
-$structureActive = (($settings['academic_structure'] ?? '') === 'college');
+$settings = get_school_head_settings($mysqli, 'dean');
+// Academic Structure / Academic Term gate: Dean owns College, Principal
+// owns School Year. Narrow-only — existing scheduling, Force Open and
+// Force Closed still decide open/closed while College is active.
+$settings = sh_gate_apply($settings, 'dean');
+$structureActive = !empty($settings['school_head_applicable']);
 $period_id_int   = (int)($settings['period_id'] ?? 0);
-$evalOpen        = !empty($settings['is_open_for_submission']);
+$evalOpen        = !empty($settings['school_head_is_open']);
 const HIGHER_ED_LABEL = 'Higher Education';
 
 $validTabs = ['faculty', 'staff', 'executive_assistant'];
@@ -144,14 +151,14 @@ if ($structureActive) {
         $eaUsers[] = $ea;
     }
 
-    $questionCounts['faculty'] = (int)($mysqli->query("SELECT COUNT(*) c FROM evaluation_questions WHERE eval_type='school_head' AND evaluator_role='dean' AND target_type='Faculty'")->fetch_assoc()['c'] ?? 0);
-    $questionCounts['executive_assistant'] = (int)($mysqli->query("SELECT COUNT(*) c FROM evaluation_questions WHERE eval_type='school_head' AND evaluator_role='dean' AND target_type='EA'")->fetch_assoc()['c'] ?? 0);
+    $questionCounts['faculty'] = (int)($mysqli->query("SELECT COUNT(*) c FROM evaluation_questions WHERE eval_type='general' AND evaluator_role='shared' AND target_type='Faculty'")->fetch_assoc()['c'] ?? 0);
+    $questionCounts['executive_assistant'] = (int)($mysqli->query("SELECT COUNT(*) c FROM user_questions WHERE eval_type='general' AND target_type='EA'")->fetch_assoc()['c'] ?? 0);
 
     if (!empty($staffUsers)) {
         $ids = array_map(fn($u) => (int)$u['id'], $staffUsers);
         $ph = implode(',', array_fill(0, count($ids), '?'));
         $types = str_repeat('i', count($ids));
-        $stmt = $mysqli->prepare("SELECT user_id, COUNT(*) AS total FROM user_questions WHERE eval_type='school_head' AND target_type='Staff' AND user_id IN ($ph) GROUP BY user_id");
+        $stmt = $mysqli->prepare("SELECT user_id, COUNT(*) AS total FROM user_questions WHERE eval_type='general' AND target_type='Staff' AND user_id IN ($ph) GROUP BY user_id");
         if ($stmt) {
             $stmt->bind_param($types, ...$ids);
             $stmt->execute();
@@ -289,7 +296,7 @@ $photo_src = !empty($me['photo']) ? '../image/' . $me['photo'] : '../image/pbi_l
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,.82)),url('../background.png') center center / cover no-repeat fixed;background-color:var(--dark);font-family:'DM Sans',sans-serif;color:var(--light);display:flex;}
 
-.sidebar{width:250px;flex-shrink:0;background:rgba(23,42,69,.9);border-right:1px solid rgba(255,255,255,.08);min-height:100vh;padding:28px 20px;display:flex;flex-direction:column;}
+.sidebar{width:250px;flex-shrink:0;background:#0F1F33;border-right:1px solid #060E18;min-height:100vh;padding:28px 20px;display:flex;flex-direction:column;}
 .sb-profile{text-align:center;margin-bottom:26px;}
 .sb-photo{width:72px;height:72px;border-radius:50%;object-fit:cover;border:2.5px solid var(--violet);box-shadow:0 0 18px rgba(124,95,217,.4);margin:0 auto 10px;display:block;}
 .sb-name{font-weight:700;font-size:15px;color:#fff;}
@@ -340,10 +347,8 @@ body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,
 .search-wrap{flex:1;min-width:220px;position:relative;}
 .search-wrap input{width:100%;background:var(--inner);border:1px solid rgba(255,255,255,.12);color:var(--light);padding:9px 36px 9px 12px;border-radius:8px;font-size:13px;}
 .search-wrap i{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;}
-.export-btn{background:rgba(124,95,217,.14);border:1px solid rgba(124,95,217,.35);color:var(--violet-h);padding:10px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:7px;white-space:nowrap;transition:background .2s;align-self:flex-end;}
-.export-btn:hover{background:rgba(124,95,217,.22);}
 
-.table-wrap{background:rgba(23,42,69,.85);border:1px solid rgba(255,255,255,.08);border-radius:14px;overflow:hidden;box-shadow:var(--shadow);}
+.table-wrap{background:rgba(23,42,69,.85);border:1px solid rgba(255,255,255,.08);border-radius:14px;overflow-x:auto;overflow-y:hidden;box-shadow:var(--shadow);}
 table{width:100%;border-collapse:collapse;}
 thead tr{background:var(--inner);}
 thead th{padding:12px 16px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);text-align:left;white-space:nowrap;}
@@ -362,10 +367,24 @@ tbody td{padding:13px 16px;font-size:13.5px;vertical-align:middle;}
 .status-pill.in_progress{background:rgba(124,95,217,.14);color:var(--violet-h);}
 .status-pill.not_started{background:rgba(160,179,198,.14);color:var(--muted);}
 
-.btn-eval{background:var(--violet);border:none;color:#fff;padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;transition:background .2s;}
-.btn-eval:hover{background:var(--violet-dark);}
-.btn-view{background:transparent;border:1px solid rgba(255,255,255,.14);color:var(--muted);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;transition:all .2s;margin-left:6px;}
-.btn-view:hover{color:var(--light);border-color:rgba(255,255,255,.3);}
+/* Deliberately NOT named .btn-eval/.btn-view: those class names are also
+   claimed by includes/dean_light_theme.css as part of the portal-wide
+   primary/secondary button system (solid violet vs. white-outline), and
+   that stylesheet's rules carry !important, so it would silently win over
+   anything defined here and put us back to the mismatched solid/outline
+   look. This page wants its own soft-tint treatment instead, so it gets
+   its own class names the shared theme never touches. */
+.eval-action-primary{background:rgba(124,95,217,.14);border:1px solid rgba(124,95,217,.35);color:var(--violet-h);padding:9px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:7px;transition:background .2s;}
+.eval-action-primary:hover{background:rgba(124,95,217,.24);}
+.eval-action-secondary{background:rgba(124,95,217,.14);border:1px solid rgba(124,95,217,.35);color:var(--violet-h);padding:9px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:7px;margin-left:6px;opacity:.75;transition:background .2s,opacity .2s;}
+.eval-action-secondary:hover{opacity:1;background:rgba(124,95,217,.24);}
+/* Keep Evaluate + View on one line, matching the Principal roster. Without
+   this, a long wrapped Department/Office value in an earlier column (e.g.
+   a multi-line office title) steals width in the table's auto layout and
+   pushes the last column narrow enough that the two buttons break onto
+   separate rows. */
+.actions-cell{white-space:nowrap;}
+thead th:last-child{min-width:210px;}
 
 .empty-state{text-align:center;padding:56px 20px;color:var(--muted);}
 .empty-state i{font-size:38px;margin-bottom:14px;display:block;opacity:.25;}
@@ -393,7 +412,7 @@ include __DIR__ . '/includes/dean_sidebar.php';
 <main class="main">
     <div class="page-header">
         <div>
-            <div class="page-title">Evaluation</div>
+            <div class="page-title">My Evaluation</div>
             <div class="page-sub">Pandan Bay Institute — <?= HIGHER_ED_LABEL ?> Division</div>
         </div>
         <div class="period-badge <?= htmlspecialchars($settings['status']['cls']) ?>">
@@ -454,7 +473,6 @@ include __DIR__ . '/includes/dean_sidebar.php';
             <input type="text" name="q" value="<?= htmlspecialchars($search) ?>" placeholder="Search by name, department, position..."/>
             <i class="fa-solid fa-magnifying-glass"></i>
         </div>
-        <a class="export-btn" href="<?= dean_eval_qs(['export' => 'csv']) ?>"><i class="fa-solid fa-download"></i> Export List</a>
     </form>
 
     <div class="table-wrap">
@@ -481,14 +499,14 @@ include __DIR__ . '/includes/dean_sidebar.php';
                 </span>
             </td>
             <td class="muted-cell"><?= $p['last_evaluation_date'] ? htmlspecialchars(date('M j, Y', strtotime($p['last_evaluation_date']))) : '—' ?></td>
-            <td>
+            <td class="actions-cell">
                 <?php if (!$evalOpen || $period_id_int <= 0): ?>
                     <span class="muted-cell">Evaluation closed</span>
                 <?php else: ?>
                     <?php $evalUrl = 'dean_evaluate.php?tab=' . urlencode($p['route_tab']) . '&user_id=' . (int)$p['id']; ?>
-                    <a class="btn-eval" href="<?= htmlspecialchars($evalUrl) ?>"><i class="fa-solid fa-pen"></i> Evaluate</a>
+                    <a class="eval-action-primary" href="<?= htmlspecialchars($evalUrl) ?>"><i class="fa-solid fa-pen-to-square"></i> Evaluate</a>
                     <?php if ($p['evaluation_status'] === 'completed'): ?>
-                    <a class="btn-view" href="<?= htmlspecialchars($evalUrl) ?>&view=1"><i class="fa-solid fa-eye"></i> View</a>
+                    <a class="eval-action-secondary" href="<?= htmlspecialchars($evalUrl) ?>&view=1"><i class="fa-solid fa-eye"></i> View</a>
                     <?php endif; ?>
                 <?php endif; ?>
             </td>

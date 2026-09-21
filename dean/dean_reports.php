@@ -273,10 +273,10 @@ $evaluatorNounP = $activeEval === 'peer' ? 'colleagues' : 'students';
 function render_exec_sidebar(string $active, array $me, string $photo_src): void {
     $links = [
         'dashboard' => ['dean_dashboard.php','fa-gauge','Dashboard'],
-        'evaluation' => ['dean_evaluation.php','fa-clipboard-check','Evaluation'],
+        'evaluation' => ['dean_evaluation.php','fa-clipboard-check','My Evaluation'],
         'tracker' => ['dean_evaluation_tracker.php','fa-satellite-dish','Evaluation Tracker'],
         'results' => ['dean_results.php','fa-star-half-stroke','View Results'],
-        'reports' => ['dean_reports.php','fa-chart-line','Reports'],
+        'reports' => ['dean_reports.php','fa-chart-line','Evaluation Reports'],
         'settings' => ['dean_account_settings.php','fa-gear','Account Settings'],
     ];
     ?>
@@ -309,7 +309,7 @@ function pageHead($title, $evalColor, $evalColorBg, $evalColorBorder) { ?>
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title><?= htmlspecialchars($title) ?> — PBI Reports &amp; Analytics</title>
+<title><?= htmlspecialchars($title) ?> — PBI Evaluation Reports</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
@@ -438,8 +438,8 @@ a { color:inherit; }
 :root{--portal-accent:#7C5FD9;--portal-accent-h:#9C85F0;--portal-accent-glow:rgba(124,95,217,.4);--portal-accent-bg:rgba(124,95,217,.15);}
 html{background:#0A192F !important;color-scheme:dark;}
 body{min-height:100vh;display:flex !important;padding:0 !important;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,.82)),url('../background.png') center center / cover no-repeat fixed !important;background-color:#0A192F !important;color:#E0E6F0 !important;font-family:'DM Sans',sans-serif !important;}
-.sidebar{width:250px;flex:0 0 250px;min-height:100vh;background:rgba(23,42,69,.9);border-right:1px solid rgba(255,255,255,.08);padding:28px 20px;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;z-index:20;}
-.sb-profile{text-align:center;margin-bottom:26px}.sb-photo{width:72px;height:72px;border-radius:50%;object-fit:cover;border:2.5px solid var(--portal-accent);box-shadow:0 0 18px var(--portal-accent-glow);margin:0 auto 10px;display:block}.sb-name{font-weight:700;font-size:15px;color:#fff}.sb-role{font-size:11px;color:var(--portal-accent-h);text-transform:uppercase;letter-spacing:.6px;margin-top:2px}.sb-scope{font-size:10px;color:#A0B3C6;margin-top:4px}.sb-nav{display:flex;flex-direction:column;gap:4px;margin-top:10px}.sb-nav a{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:8px;color:#A0B3C6;text-decoration:none;font-size:14px;font-weight:500}.sb-nav a:hover,.sb-nav a.active{background:var(--portal-accent-bg);color:#fff}.sb-nav a i{width:18px;text-align:center;color:var(--portal-accent-h)}.sb-logout{margin-top:auto}.sb-logout a{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:8px;color:#fca5a5;text-decoration:none;font-size:14px}
+.sidebar{width:250px;flex:0 0 250px;min-height:100vh;background:#0F1F33;border-right:1px solid #060E18;padding:28px 20px;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;z-index:20;}
+.sb-nav .sb-section-title{width:100%;padding:0 6px;margin:8px 0 3px;color:#C4B5FD;font-size:11px;font-weight:900;letter-spacing:1.5px;line-height:1.25;text-align:center;text-transform:uppercase;text-shadow:0 1px 8px rgba(167,139,250,.16)}.sb-nav .sb-section-title:first-child{margin-top:0}.sb-profile{text-align:center;margin-bottom:26px}.sb-photo{width:72px;height:72px;border-radius:50%;object-fit:cover;border:2.5px solid var(--portal-accent);box-shadow:0 0 18px var(--portal-accent-glow);margin:0 auto 10px;display:block}.sb-name{font-weight:700;font-size:15px;color:#fff}.sb-role{font-size:11px;color:var(--portal-accent-h);text-transform:uppercase;letter-spacing:.6px;margin-top:2px}.sb-scope{font-size:10px;color:#A0B3C6;margin-top:4px}.sb-nav{display:flex;flex-direction:column;gap:4px;margin-top:10px}.sb-nav a{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:8px;color:#A0B3C6;text-decoration:none;font-size:14px;font-weight:500}.sb-nav a:hover,.sb-nav a.active{background:var(--portal-accent-bg);color:#fff}.sb-nav a i{width:18px;text-align:center;color:var(--portal-accent-h)}.sb-logout{margin-top:auto}.sb-logout a{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:8px;color:#fca5a5;text-decoration:none;font-size:14px}
 .main{flex:1;min-width:0;padding:36px 44px !important;}
 .page-header{background:rgba(23,42,69,.85) !important;border:1px solid rgba(255,255,255,.08) !important;color:#E0E6F0 !important;box-shadow:0 8px 32px rgba(0,0,0,.45) !important}.page-header h1,.page-title,.section-title,.sheet-name,.target-name,.person-name,.standing-name{color:#fff !important}.page-header p,.page-sub,.standing-desig,.person-meta,.sum-label,.sum-sub,.pstat-lbl,.muted,.no-data{color:#A0B3C6 !important}
 .eval-switcher,.eval-banner,.group-tab,.desig-subtabs,.sum-card,.standing-panel,.person-row,.no-evaluated,.target-card,.eval-card,.comment-section,.avg-summary,.top-bar,.history-card,.section,.content-panel,.no-archived{background:rgba(23,42,69,.85) !important;border-color:rgba(255,255,255,.08) !important;box-shadow:0 8px 32px rgba(0,0,0,.24) !important;color:#E0E6F0 !important}

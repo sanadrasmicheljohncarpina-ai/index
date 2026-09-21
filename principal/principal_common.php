@@ -23,6 +23,7 @@ session_set_cookie_params([
 session_start();
 require_once 'db.php';
 require_once dirname(__DIR__) . '/shared/system_settings_service.php';
+require_once 'school_head_structure_gate.php';
 
 // ── AUTH GUARD ────────────────────────────────────────────
 if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'principal') {
@@ -110,10 +111,17 @@ const BASIC_ED_LABEL = 'Basic Education';
 $settings = get_system_settings($mysqli);
 $schoolHeadSettings = get_school_head_settings($mysqli, 'principal');
 
-$structureActive = ($settings['academic_structure'] !== 'college');
-$period_id_int   = $settings['period_id'] ?? 0;
+// Academic Structure / Academic Term gate: Principal owns School Year,
+// Dean owns College. Narrow-only — existing scheduling, Force Open and
+// Force Closed still decide open/closed while Basic Education is active.
+// See school_head_structure_gate.php.
+$settings           = sh_gate_apply($settings, 'principal');
+$schoolHeadSettings = sh_gate_apply($schoolHeadSettings, 'principal');
+
+$structureActive = !empty($schoolHeadSettings['school_head_applicable']);
+$period_id_int   = $schoolHeadSettings['period_id'] ?? 0;
 $hasPeriod       = $period_id_int > 0;
-$evalOpen        = $settings['is_open_for_submission'];
+$evalOpen        = !empty($schoolHeadSettings['school_head_is_open']);
 
 $daysRemaining = null;
 if ($settings['eval_end']) {
@@ -135,10 +143,10 @@ $period = $hasPeriod ? [
 function render_principal_sidebar(string $active, array $me, string $scopeLabel, string $photo_src): void {
     $links = [
         'dashboard'   => ['principal_dashboard.php',          'fa-gauge',              'Dashboard'],
-        'evaluations' => ['principal_evaluations.php',        'fa-clipboard-list',     'Evaluation'],
+        'evaluations' => ['principal_evaluations.php',        'fa-clipboard-list',     'My Evaluation'],
         'tracker'     => ['principal_evaluation_tracker.php', 'fa-satellite-dish',     'Evaluation Tracker'],
         'results'     => ['principal_results.php',            'fa-star-half-stroke',   'View Results'],
-        'reports'     => ['principal_reports.php',            'fa-chart-line',         'Reports'],
+        'reports'     => ['principal_reports.php',            'fa-chart-line',         'Evaluation Reports'],
         'settings'    => ['principal_account_settings.php',  'fa-gear',               'Settings'],
     ];
     ?>
@@ -189,7 +197,7 @@ function render_principal_styles(): void {
     .sb-role{font-size:11px;color:var(--amber-h);text-transform:uppercase;letter-spacing:.6px;margin-top:2px;}
     .sb-scope{font-size:10px;color:var(--muted);margin-top:4px;}
     .sb-nav{display:flex;flex-direction:column;gap:5px;margin-top:10px;width:100%;}
-    .sb-nav-section-label{width:auto;margin:5px 12px 1px;padding:0 2px;color:var(--muted);font-size:10px;font-weight:800;letter-spacing:1.35px;line-height:1.2;text-transform:uppercase;}
+    .sb-nav-section-label{width:auto;margin:5px 12px 1px;padding:0 2px;color:var(--muted);font-size:11px;font-weight:900;letter-spacing:1.6px;line-height:1.25;text-transform:uppercase;text-align:center;color:#C7D2FE;text-shadow:0 1px 8px rgba(129,140,248,.16);}
     .sb-nav-section-label:first-child{margin-top:0;}
     .sb-nav a{box-sizing:border-box;width:100%;min-height:42px;margin:0;padding:5px 14px;display:flex;align-items:center;gap:10px;border-radius:8px;color:var(--muted);text-decoration:none;font-size:14px;font-weight:500;transition:background .2s,color .2s;}
     .sb-nav a:hover,.sb-nav a.active{background:rgba(217,154,43,.15);color:#fff;}

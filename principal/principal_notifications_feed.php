@@ -14,6 +14,11 @@
    dashboard again.
    ========================================================================= */
 
+// Academic Structure / Academic Term gate — required here (not just at the
+// call sites) because principal_notifications.php builds the feed without
+// passing a settings array of its own.
+require_once __DIR__ . '/school_head_structure_gate.php';
+
 // ── SAFE QUERY HELPERS (never fatal-error on a schema mismatch) ─────────
 // Guarded with function_exists so this file can be included alongside a page
 // that already declares them.
@@ -75,12 +80,21 @@ function principal_build_notifications(mysqli $mysqli, int $userId, ?array $sett
         $settings = get_system_settings($mysqli);
     }
 
+    // Academic Structure / Academic Term gate (narrow-only). Applied here
+    // as well as at the call sites so the feed is correct no matter which
+    // settings array a caller hands it.
+    if (function_exists('sh_gate_apply')) {
+        $settings = sh_gate_apply($settings, 'principal');
+    }
+
     $edu = safe_scalar($mysqli, "SELECT education_level FROM users WHERE id=? LIMIT 1", "i", [$userId]);
     $scope           = principal_scope(is_string($edu) ? $edu : null);
     $scopeAcademicIn = esc_list($mysqli, $scope['levels']);
     $scopeGradesIn   = esc_list($mysqli, $scope['grades']);
 
-    $structureActive = ($settings['academic_structure'] !== 'college');
+    $structureActive = array_key_exists('school_head_applicable', $settings)
+        ? !empty($settings['school_head_applicable'])
+        : ss_school_head_role_applicable($settings, 'principal');
     $period_id_int   = $settings['period_id'] ?? 0;
     $hasPeriod       = $period_id_int > 0;
 

@@ -2,17 +2,19 @@
 // principal/principal_evaluate.php
 // Evaluates Faculty, non-teaching Staff, and the Executive Assistant.
 // QUESTION SOURCE OF TRUTH:
-//   Faculty / EA -> admin/questionnaire.php Principal bank:
-//       evaluation_questions WHERE eval_type='school_head' AND evaluator_role='principal'
-//   Staff -> admin/questionnaire.php Dean/Principal Evaluation > Staff tab:
-//       user_questions WHERE eval_type='school_head' AND target_type='Staff'
-// This page deliberately does NOT read questionnaire_forms/questionnaire_questions.
+//   Faculty -> centralized Questionnaire > Faculty bank
+//   Staff   -> centralized Questionnaire > Staff target set
+//   EA      -> centralized Questionnaire > Executive Assistant (EA) target set
+// The target eligibility rules remain Principal-specific; only the question
+// source has been generalized.
 
 require_once 'principal_common.php';
+require_once dirname(__DIR__) . '/shared/QuestionnaireService.php';
+qn_migrate_legacy_once($mysqli);
 $settings = $schoolHeadSettings;
 $period_id_int = (int)($settings['period_id'] ?? 0);
 $hasPeriod = $period_id_int > 0;
-$evalOpen = !empty($settings['is_open_for_submission']);
+$evalOpen = !empty($settings['school_head_is_open']);
 
 $evaluator_id = (int)$_SESSION['user_id'];
 $tid = (int)($_GET['tid'] ?? 0);
@@ -75,36 +77,20 @@ function principal_target_bucket(mysqli $mysqli, int $targetId): ?string {
     return $hasTeaching && $insideScope ? 'Faculty' : null;
 }
 function principal_load_questions(mysqli $mysqli, int $targetId, string $bucket): array {
-    if ($bucket === 'Staff') {
-        $rows = safe_rows($mysqli, "
-            SELECT id, category, question_text, sort_order
-            FROM user_questions
-            WHERE user_id=? AND target_type='Staff' AND eval_type='school_head'
-            ORDER BY category, sort_order, id
-        ", "i", [$targetId]);
-
-        return array_map(fn($q) => [
-            'id' => (int)$q['id'],
-            'source' => 'user',
-            'category' => $q['category'] ?: 'General',
-            'question' => $q['question_text'],
-            'type' => 'rating',
-            'max_score' => 5,
-            'is_required' => 1,
-        ], $rows);
+    if ($bucket === 'Faculty') {
+        $rows = qn_get_faculty_questions($mysqli);
+        $source = 'evaluation';
+    } elseif ($bucket === 'Staff') {
+        $rows = qn_get_person_questions($mysqli, $targetId, 'Staff');
+        $source = 'user';
+    } else {
+        $rows = qn_get_person_questions($mysqli, $targetId, 'EA');
+        $source = 'user';
     }
-
-    $targetType = $bucket === 'EA' ? 'EA' : 'Faculty';
-    $rows = safe_rows($mysqli, "
-        SELECT id, category, question_text
-        FROM evaluation_questions
-        WHERE target_type=? AND eval_type='school_head' AND evaluator_role='principal'
-        ORDER BY category, id
-    ", "s", [$targetType]);
 
     return array_map(fn($q) => [
         'id' => (int)$q['id'],
-        'source' => 'evaluation',
+        'source' => $source,
         'category' => $q['category'] ?: 'General',
         'question' => $q['question_text'],
         'type' => 'rating',
@@ -117,7 +103,7 @@ function principal_existing_answers(mysqli $mysqli, int $trackerId): array {
         SELECT qa.question_source, qa.question_id, qa.user_question_id, qa.answer_score,
                COALESCE(uq.question_text, eq.question_text) AS question_text,
                COALESCE(uq.category, eq.category, 'General') AS category,
-               COALESCE(uq.sort_order, eq.id, 0) AS sort_key
+               COALESCE(eq.id, 0) AS sort_key
         FROM questionnaire_answers qa
         LEFT JOIN user_questions uq
           ON qa.question_source='user' AND uq.id=qa.user_question_id

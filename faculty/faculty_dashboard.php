@@ -12,6 +12,8 @@ session_start();
 require_once 'db.php';
 require_once '../shared/eligibility.php';
 require_once '../shared/EvaluationContextService.php';
+require_once '../shared/QuestionnaireService.php';
+qn_migrate_legacy_once($mysqli);
 
 if (empty($_SESSION['user_id']) || $_SESSION['role'] !== 'teacher') {
     header("Location: faculty_login.php"); exit;
@@ -403,18 +405,19 @@ if ($page === 'peer_eval' && isset($_GET['tid'])) {
         if (in_array($peer_eval_group, $school_head_groups, true)) {
             $qs = $mysqli->prepare("
                 SELECT * FROM user_questions
-                WHERE user_id=? AND target_type='School' AND eval_type='peer'
-                ORDER BY category ASC, sort_order ASC, id ASC
+                WHERE user_id=? AND target_type=? AND eval_type='general'
+                ORDER BY category ASC, id ASC
             ");
-            $qs->bind_param("i", $tid);
+            $schoolHeadTargetType = $peer_eval_group === 'principal' ? 'Principal' : 'Dean';
+            $qs->bind_param("is", $tid, $schoolHeadTargetType);
             $qs->execute();
             $peer_questions = $qs->get_result()->fetch_all(MYSQLI_ASSOC);
             $qs->close();
         } elseif ($peer_eval_group === 'staff') {
             $qs = $mysqli->prepare("
                 SELECT * FROM user_questions
-                WHERE user_id=? AND target_type='Staff' AND eval_type='peer'
-                ORDER BY category ASC, sort_order ASC, id ASC
+                WHERE user_id=? AND target_type='Staff' AND eval_type='general'
+                ORDER BY category ASC, id ASC
             ");
             $qs->bind_param("i", $tid);
             $qs->execute();
@@ -426,7 +429,7 @@ if ($page === 'peer_eval' && isset($_GET['tid'])) {
             // questionnaire configured by the admin.
             $qs = $mysqli->prepare("
                 SELECT * FROM evaluation_questions
-                WHERE target_type='Teacher' AND eval_type='peer' AND is_active=1
+                WHERE target_type='Faculty' AND eval_type='general' AND evaluator_role='shared' AND is_active=1
                 ORDER BY category ASC, id ASC
             ");
             $qs->execute();
@@ -581,9 +584,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_peer'])) {
         $validQStmt = $mysqli->prepare("
             SELECT id
             FROM user_questions
-            WHERE user_id=? AND target_type='School' AND eval_type='peer'
+            WHERE user_id=? AND target_type=? AND eval_type='general'
         ");
-        $validQStmt->bind_param("i", $tid);
+        $validQStmt->bind_param("is", $tid, $submitted_group === 'principal' ? 'Principal' : 'Dean');
         $validQStmt->execute();
         $validQRes = $validQStmt->get_result();
         $valid_question_ids = [];
@@ -618,14 +621,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_peer'])) {
         // person's Staff pool.
         $valid_question_ids = [];
         if ($submitted_group === 'teacher') {
-            $validQStmt = $mysqli->prepare("SELECT id FROM evaluation_questions WHERE target_type='Teacher' AND eval_type='peer' AND is_active=1");
+            $validQStmt = $mysqli->prepare("SELECT id FROM evaluation_questions WHERE target_type='Faculty' AND eval_type='general' AND evaluator_role='shared' AND is_active=1");
             $validQStmt->execute();
             $validQRes = $validQStmt->get_result();
             if ($validQRes) while ($vq = $validQRes->fetch_assoc()) $valid_question_ids[] = (int)$vq['id'];
             $validQStmt->close();
             $question_source = 'evaluation';
         } else {
-            $validQStmt = $mysqli->prepare("SELECT id FROM user_questions WHERE user_id=? AND target_type='Staff' AND eval_type='peer'");
+            $validQStmt = $mysqli->prepare("SELECT id FROM user_questions WHERE user_id=? AND target_type='Staff' AND eval_type='general'");
             $validQStmt->bind_param("i", $tid);
             $validQStmt->execute();
             $validQRes = $validQStmt->get_result();
@@ -921,7 +924,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .sidebar-profile-dropdown{margin:0 12px;max-height:0;opacity:0;overflow:hidden;background:var(--inner);border-radius:10px;transition:max-height .2s ease,opacity .2s ease,margin .2s ease;}
 .sidebar-profile-dropdown.open{max-height:320px;opacity:1;margin:8px 12px 10px;border:1px solid var(--border);}
 .sidebar-nav{flex:1;padding:14px 12px;overflow-y:auto;}
-.nav-section-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);padding:0 10px;margin-bottom:5px;margin-top:18px;}
+.nav-section-label{font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:1.5px;color:#99F6E4;padding:0 8px;margin-bottom:7px;margin-top:18px;text-align:center;text-shadow:0 1px 8px rgba(45,212,191,.14);}
 .nav-section-label:first-child{margin-top:0;}
 .nav-link{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:9px;color:var(--muted);text-decoration:none;font-size:13.5px;font-weight:600;transition:all .2s;margin-bottom:2px;}
 .nav-link:hover{background:rgba(255,255,255,.05);color:var(--light);}
@@ -1224,9 +1227,96 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .account-fact label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:4px;}
 .account-fact b{color:var(--light);font-size:12.5px;}
 @media(max-width:760px){.settings-grid{grid-template-columns:1fr}.settings-card.full{grid-column:auto}.account-facts{grid-template-columns:1fr}}
-</style>
+
+
+/* ── Light theme refinement: white surface + coordinated text/tab/icon states ── */
+body.light-theme .nav-section-label{
+    color:#0F766E;
+    text-shadow:none;
+}
+body.light-theme .nav-link{
+    color:#52677A;
+}
+body.light-theme .nav-link:hover{
+    background:rgba(15,31,61,.055);
+    color:#16263B;
+}
+body.light-theme .nav-link.active{
+    background:rgba(13,148,136,.11);
+    color:#0F766E;
+    font-weight:700;
+}
+body.light-theme .nav-link.active i{
+    color:#0F766E;
+}
+body.light-theme .nav-badge{
+    background:#0D9488;
+    color:#FFFFFF;
+}
+body.light-theme .period-badge{
+    background:rgba(13,148,136,.09);
+    border-color:rgba(13,148,136,.22);
+    color:#0F766E;
+}
+body.light-theme .sidebar-sub{
+    color:#0F766E;
+}
+body.light-theme .brand-avatar{
+    border-color:#0D9488;
+    box-shadow:0 0 10px rgba(13,148,136,.16);
+    background:#EEF2F8;
+}
+body.light-theme .brand-avatar .brand-initials{
+    color:#0F766E;
+}
+body.light-theme .profile-dd-btn{
+    color:#16263B;
+}
+body.light-theme .profile-dd-btn:hover{
+    background:rgba(15,31,61,.055);
+}
+body.light-theme .profile-dd-icon{
+    box-shadow:none;
+}
+body.light-theme .dd-appearance-val{
+    color:#52677A;
+    background:#EEF2F8;
+}
+body.light-theme .peer-card,
+body.light-theme .role-card,
+body.light-theme .section-card,
+body.light-theme .stat-card,
+body.light-theme .eval-modal,
+body.light-theme .eval-item{
+    box-shadow:0 6px 22px rgba(15,31,61,.055);
+}
+body.light-theme .peer-card:hover{
+    border-color:rgba(13,148,136,.24);
+}
+body.light-theme .peer-card.done{
+    background:#F8FAFD;
+}
+body.light-theme .peer-select-input{
+    background-color:#FFFFFF;
+    color:#16263B;
+}
+body.light-theme .peer-select-input::placeholder{
+    color:#7A8B9B;
+}
+body.light-theme .eval-form-table th,
+body.light-theme .compact-eval-table th{
+    background:#EEF2F8;
+    color:#5B7186;
+}
+body.light-theme .btn-eval-peer,
+body.light-theme .btn-proceed-peer,
+body.light-theme .btn-save-photo{
+    color:#FFFFFF;
+}
+
+    </style>
 </head>
-<body>
+<body class="light-theme">
 
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-brand" id="sidebarProfile" onclick="toggleSidebarDD(event)">
@@ -1255,7 +1345,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
         <button type="button" class="profile-dd-btn" id="appearanceBtn" onclick="toggleAppearance(event)">
             <span class="profile-dd-icon dd-icon-purple"><i class="fa-solid fa-palette"></i></span>
             Appearance
-            <span class="dd-appearance-val" id="appearanceVal">Dark</span>
+            <span class="dd-appearance-val" id="appearanceVal">Light</span>
         </button>
         <div class="profile-dd-divider"></div>
         <a href="../logout.php" class="profile-dd-btn logout"
@@ -2053,7 +2143,9 @@ function toggleAppearance(e) {
     applyAppearance(next);
 }
 document.addEventListener('DOMContentLoaded', function() {
-    applyAppearance(localStorage.getItem('pbi_theme') || 'dark');
+    const savedTheme = localStorage.getItem('pbi_theme');
+    const theme = savedTheme === 'dark' || savedTheme === 'light' ? savedTheme : 'light';
+    applyAppearance(theme);
 });
 
 // ── Profile photo modal ──

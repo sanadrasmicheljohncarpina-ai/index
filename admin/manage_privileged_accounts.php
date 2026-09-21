@@ -684,6 +684,7 @@ tbody tr.row-selected{background:var(--accent-bg);}
 tbody td{padding:14px 16px;font-size:14px;vertical-align:middle;}
 .user-name{font-weight:600;color:var(--text-dark);}
 .user-username{font-size:12px;color:var(--text-dim);}
+.designation-cell{max-width:220px;font-size:13px;font-weight:600;color:var(--text-dark);white-space:normal;word-break:break-word;line-height:1.35;}
 .year-level-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:var(--accent-bg);color:#93C5FD;}
 .year-level-pill.pill-jhs{
     background:rgba(40,105,196,.13) !important;
@@ -1003,6 +1004,7 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
         <tr>
             <th style="width:36px;"><input type="checkbox" id="selectAllCb" onchange="toggleSelectAll(this)"/></th>
             <th>#</th><th>Name</th><th>Username</th>
+            <?php if ($viewRole === 'teacher' || $viewRole === 'staff'): ?><th>Designation</th><?php endif; ?>
             <?php if ($viewRole === 'student'): ?><th>Year Level</th><?php endif; ?>
             <?php if ($viewRole === 'teacher' || $viewRole === 'staff'): ?><th>Year Level(s)</th><th>Period</th><?php endif; ?>
             <th>Status</th><th>Registered</th><th>Actions</th>
@@ -1012,7 +1014,7 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
     <?php
     $colspan = 7;
     if ($viewRole === 'student') $colspan = 8;
-    if ($viewRole === 'teacher' || $viewRole === 'staff') $colspan = 9;
+    if ($viewRole === 'teacher' || $viewRole === 'staff') $colspan = 10; // +1 for Designation
     ?>
     <?php if (empty($entries)): ?>
     <tr><td colspan="<?= $colspan ?>">
@@ -1029,6 +1031,16 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
         <td style="color:var(--text-dim);font-size:13px;"><?= $i+1 ?></td>
         <td><div class="user-name"><?= htmlspecialchars($u['full_name']) ?></div></td>
         <td><span class="user-username">@<?= htmlspecialchars($u['username']) ?></span></td>
+        <?php if ($viewRole === 'teacher' || $viewRole === 'staff'): ?>
+        <?php $desig = trim((string)($u['designation'] ?? '')); ?>
+        <td class="designation-cell"<?= $desig !== '' ? ' title="' . htmlspecialchars($desig) . '"' : '' ?>>
+            <?php if ($desig !== ''): ?>
+                <?= htmlspecialchars($desig) ?>
+            <?php else: ?>
+                <span style="color:var(--text-dim);font-size:12px;">—</span>
+            <?php endif; ?>
+        </td>
+        <?php endif; ?>
         <?php if ($viewRole === 'student'): ?>
         <td>
             <?php if (!empty($u['year_level'])): ?>

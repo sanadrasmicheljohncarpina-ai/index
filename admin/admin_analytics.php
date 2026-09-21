@@ -3,6 +3,7 @@
 session_start();
 require_once 'db.php';
 require_once '../shared/EvaluationContextService.php';
+require_once '../shared/QuestionnaireService.php';
 
 // ── AUTH GUARD ───────────────────────────────────────────────
 // Evaluation scores and archive/restore actions are sensitive —
@@ -613,6 +614,11 @@ html,body{scrollbar-width:thin;scrollbar-color:var(--light) transparent;}
 .eval-tab.staff-eval.active::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:#0E7490;border-radius:2px 2px 0 0;}
 .eval-tab.staff-eval.active .tab-badge{background:rgba(8,145,178,.15);color:#0E7490;}
 
+/* Plain report tabs: role-specific icon colors remain visible even when the tab is inactive. */
+.eval-tab.schoolhead > i{color:#C77A08 !important;}
+.eval-tab.ea > i{color:#0F9F6E !important;}
+.eval-tab.staff-eval > i{color:#0E7490 !important;}
+
 /* ── EVAL TYPE BANNER ── */
 .eval-banner{display:flex;align-items:center;gap:14px;padding:13px 18px;border-radius:10px;margin-bottom:20px;border:1px solid var(--ec-bd);background:var(--ec-bg);}
 .eval-banner-icon{width:40px;height:40px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--ec);background:rgba(37,99,235,.05);border:1px solid var(--ec-bd);flex-shrink:0;}
@@ -740,18 +746,15 @@ if ($view === 'sheet' && $target_id && $tracker_id) {
 
     if (!empty($missingTextIndexes)) {
         $fallbackQuestions = [];
-        $fq = $mysqli->prepare("
-            SELECT question_text, category
-            FROM user_questions
-            WHERE user_id=? AND eval_type='student'
-            ORDER BY category ASC, sort_order ASC, id ASC
-        ");
-        if ($fq) {
-            $fq->bind_param('i', $target_id);
-            $fq->execute();
-            $fqRes = $fq->get_result();
-            if ($fqRes) $fallbackQuestions = $fqRes->fetch_all(MYSQLI_ASSOC);
-            $fq->close();
+        $targetRole = strtolower((string)($tgt['role'] ?? ''));
+        if (in_array($targetRole, ['teacher','faculty'], true)) {
+            $fallbackQuestions = qn_get_faculty_questions($mysqli);
+        } elseif ($targetRole === 'staff') {
+            $fallbackQuestions = qn_get_person_questions($mysqli, $target_id, 'Staff');
+        } elseif (in_array($targetRole, ['dean','principal'], true)) {
+            $fallbackQuestions = qn_get_person_questions($mysqli, $target_id, ucfirst($targetRole));
+        } elseif ($targetRole === 'superadmin') {
+            $fallbackQuestions = qn_get_person_questions($mysqli, $target_id, 'EA');
         }
 
         // Map the unresolved submitted answers to the corresponding Student
@@ -2320,27 +2323,22 @@ $groupForOtherTabs = $groupFilter;
 <div class="eval-switcher">
     <a href="?group=All&eval_type=student" class="eval-tab student <?= $activeEval==='student'?'active':'' ?>">
         <i class="fa-solid fa-graduation-cap"></i> Student Evaluation
-        <span class="tab-badge"><?= $studentEvalCount ?></span>
     </a>
     <div class="eval-divider"></div>
     <a href="?group=All&eval_type=peer" class="eval-tab peer <?= $activeEval==='peer'?'active':'' ?>">
         <i class="fa-solid fa-people-arrows"></i> Peer-to-Peer
-        <span class="tab-badge"><?= $peerEvalCount ?></span>
     </a>
     <div class="eval-divider"></div>
     <a href="?group=Faculty&eval_type=schoolhead&evaluator=All" class="eval-tab schoolhead <?= $activeEval==='schoolhead'?'active':'' ?>">
         <i class="fa-solid fa-user-tie"></i> Dean / Principal
-        <span class="tab-badge"><?= $schoolHeadEvalCount ?></span>
     </a>
     <div class="eval-divider"></div>
     <a href="?group=All&eval_type=ea" class="eval-tab ea <?= $activeEval==='ea'?'active':'' ?>">
         <i class="fa-solid fa-user-shield"></i> Executive Assistant
-        <span class="tab-badge"><?= $eaEvalCount ?></span>
     </a>
     <div class="eval-divider"></div>
     <a href="?group=All&eval_type=staff" class="eval-tab staff-eval <?= $activeEval==='staff'?'active':'' ?>">
         <i class="fa-solid fa-users"></i> Staff Evaluation
-        <span class="tab-badge"><?= $staffEvalCount ?></span>
     </a>
 </div>
 
@@ -2354,22 +2352,18 @@ $groupForOtherTabs = $groupFilter;
     <a href="?group=All&eval_type=schoolhead&evaluator=<?= urlencode($evaluatorFilter) ?>"
        class="group-tab <?= $groupFilter==='All'?'active-all':'' ?>">
         <i class="fa-solid fa-users all-icon"></i> All
-        <span class="tab-count"><?= (int)$totalFacStaff ?></span>
     </a>
     <a href="?group=Faculty&eval_type=schoolhead&evaluator=<?= urlencode($evaluatorFilter) ?>"
        class="group-tab <?= $groupFilter==='Faculty'?'active-faculty':'' ?>">
         <i class="fa-solid fa-chalkboard-user teacher-icon"></i> Faculty
-        <span class="tab-count"><?= (int)($schoolheadGroupCounts['Faculty'] ?? 0) ?></span>
     </a>
     <a href="?group=Staff&eval_type=schoolhead&evaluator=<?= urlencode($evaluatorFilter) ?>"
        class="group-tab <?= $groupFilter==='Staff'?'active-staff':'' ?>">
         <i class="fa-solid fa-briefcase staff-icon"></i> Staff
-        <span class="tab-count"><?= (int)($schoolheadGroupCounts['Staff'] ?? 0) ?></span>
     </a>
     <a href="?group=EA&eval_type=schoolhead&evaluator=<?= urlencode($evaluatorFilter) ?>"
        class="group-tab <?= $groupFilter==='EA'?'active-ea':'' ?>">
         <i class="fa-solid fa-user-shield ea-icon"></i> Executive Assistant
-        <span class="tab-count"><?= (int)($schoolheadGroupCounts['Executive Assistant'] ?? 0) ?></span>
     </a>
 </div>
 <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:-6px 0 18px 2px;">
@@ -2388,7 +2382,6 @@ $groupForOtherTabs = $groupFilter;
     <a href="?group=All&eval_type=<?= $activeEval ?>"
        class="group-tab <?= $groupFilter==='All'?'active-all':'' ?>">
         <i class="fa-solid fa-users all-icon"></i> All
-        <span class="tab-count"><?= $totalFacStaff ?></span>
     </a>
 
     <?php if ($activeEval !== 'ea' && $activeEval !== 'staff'): ?>
@@ -2398,13 +2391,11 @@ $groupForOtherTabs = $groupFilter;
     <a href="?group=Teacher&eval_type=<?= $activeEval ?>"
        class="group-tab <?= $groupFilter==='Teacher'?'active-faculty':'' ?>">
         <i class="fa-solid fa-chalkboard-user teacher-icon"></i> Faculty
-        <span class="tab-count"><?= $facCount ?></span>
     </a>
 
     <a href="?group=Staff&eval_type=<?= $activeEval ?>"
        class="group-tab <?= $groupFilter==='Staff'?'active-staff':'' ?>">
         <i class="fa-solid fa-briefcase staff-icon"></i> Staff
-        <span class="tab-count"><?= $staffCount ?></span>
     </a>
     <?php endif; ?>
 
@@ -2413,12 +2404,10 @@ $groupForOtherTabs = $groupFilter;
     <a href="?group=Dean&eval_type=peer"
        class="group-tab <?= $groupFilter==='Dean'?'active-dean':'' ?>">
         <i class="fa-solid fa-graduation-cap dean-icon"></i> Dean
-        <span class="tab-count"><?= $peerDeanCount ?></span>
     </a>
     <a href="?group=Principal&eval_type=peer"
        class="group-tab <?= $groupFilter==='Principal'?'active-principal':'' ?>">
         <i class="fa-solid fa-user-tie principal-icon"></i> Principal
-        <span class="tab-count"><?= $peerPrincipalCount ?></span>
     </a>
     <?php endif; ?>
 
@@ -2426,26 +2415,24 @@ $groupForOtherTabs = $groupFilter;
     <a href="?group=Dean&eval_type=student"
        class="group-tab <?= $groupFilter==='Dean'?'active-dean':'' ?>">
         <i class="fa-solid fa-graduation-cap dean-icon"></i> Dean
-        <span class="tab-count"><?= $studentDeanCount ?></span>
     </a>
     <a href="?group=Principal&eval_type=student"
        class="group-tab <?= $groupFilter==='Principal'?'active-principal':'' ?>">
         <i class="fa-solid fa-user-tie principal-icon"></i> Principal
-        <span class="tab-count"><?= $studentPrincipalCount ?></span>
     </a>
     <?php endif; ?>
 
     <?php if ($activeEval === 'ea'): ?>
     <!-- Executive Assistant Evaluation: exact Questionnaire scopes. -->
-    <a href="?group=Staff&eval_type=ea" class="group-tab <?= $groupFilter==='Staff'?'active-staff':'' ?>"><i class="fa-solid fa-briefcase staff-icon"></i> Staff <span class="tab-count"><?= (int)($eaTargetRoleCounts['Staff'] ?? 0) ?></span></a>
-    <a href="?group=Dean&eval_type=ea" class="group-tab <?= $groupFilter==='Dean'?'active-dean':'' ?>"><i class="fa-solid fa-graduation-cap dean-icon"></i> Dean <span class="tab-count"><?= (int)($eaTargetRoleCounts['Dean'] ?? 0) ?></span></a>
-    <a href="?group=Principal&eval_type=ea" class="group-tab <?= $groupFilter==='Principal'?'active-schoolhead':'' ?>"><i class="fa-solid fa-user-tie schoolhead-icon"></i> Principal <span class="tab-count"><?= (int)($eaTargetRoleCounts['Principal'] ?? 0) ?></span></a>
+    <a href="?group=Staff&eval_type=ea" class="group-tab <?= $groupFilter==='Staff'?'active-staff':'' ?>"><i class="fa-solid fa-briefcase staff-icon"></i> Staff</a>
+    <a href="?group=Dean&eval_type=ea" class="group-tab <?= $groupFilter==='Dean'?'active-dean':'' ?>"><i class="fa-solid fa-graduation-cap dean-icon"></i> Dean</a>
+    <a href="?group=Principal&eval_type=ea" class="group-tab <?= $groupFilter==='Principal'?'active-schoolhead':'' ?>"><i class="fa-solid fa-user-tie schoolhead-icon"></i> Principal</a>
     <?php endif; ?>
 
     <?php if ($activeEval === 'staff'): ?>
-    <a href="?group=Dean&eval_type=staff" class="group-tab <?= $groupFilter==='Dean'?'active-staff':'' ?>"><i class="fa-solid fa-graduation-cap staff-icon"></i> Dean <span class="tab-count"><?= (int)($staffEvalTargetCounts['Dean'] ?? 0) ?></span></a>
-    <a href="?group=Principal&eval_type=staff" class="group-tab <?= $groupFilter==='Principal'?'active-principal':'' ?>"><i class="fa-solid fa-user-tie principal-icon"></i> Principal <span class="tab-count"><?= (int)($staffEvalTargetCounts['Principal'] ?? 0) ?></span></a>
-    <a href="?group=EA&eval_type=staff" class="group-tab <?= $groupFilter==='EA'?'active-ea':'' ?>"><i class="fa-solid fa-user-shield ea-icon"></i> Executive Assistant <span class="tab-count"><?= (int)($staffEvalTargetCounts['EA'] ?? 0) ?></span></a>
+    <a href="?group=Dean&eval_type=staff" class="group-tab <?= $groupFilter==='Dean'?'active-staff':'' ?>"><i class="fa-solid fa-graduation-cap staff-icon"></i> Dean</a>
+    <a href="?group=Principal&eval_type=staff" class="group-tab <?= $groupFilter==='Principal'?'active-principal':'' ?>"><i class="fa-solid fa-user-tie principal-icon"></i> Principal</a>
+    <a href="?group=EA&eval_type=staff" class="group-tab <?= $groupFilter==='EA'?'active-ea':'' ?>"><i class="fa-solid fa-user-shield ea-icon"></i> Executive Assistant</a>
     <?php endif; ?>
 </div>
 <?php endif; ?>
@@ -2508,7 +2495,7 @@ table.ra-table tbody tr:hover{background:var(--inner);}
     <div class="ra-table-head">
         <div class="section-title">
             <i class="fa-solid fa-list-check" style="color:var(--accent)"></i>
-            <?= $activeEval==='student' ? 'Users Being Evaluated' : 'Evaluated Personnel' ?>
+            <?= $activeEval==='student' ? 'Evaluated Personnel' : 'Evaluated Personnel' ?>
             <span style="font-size:13px;font-weight:400;color:var(--muted)">(<?= count($people) ?> evaluated)</span>
         </div>
         <div class="ra-table-tools no-print">

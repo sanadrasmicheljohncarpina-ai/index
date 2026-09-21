@@ -2,12 +2,11 @@
 // dean/dean_evaluate.php
 // Evaluates Faculty, non-teaching Staff, and the Executive Assistant.
 // QUESTION SOURCE OF TRUTH:
-//   Faculty / EA -> admin/questionnaire.php Dean bank:
-//       evaluation_questions WHERE eval_type='school_head' AND evaluator_role='dean'
-//   Staff -> admin/questionnaire.php Dean/Principal Evaluation > Staff tab:
-//       user_questions WHERE eval_type='school_head' AND target_type='Staff'
-// This page deliberately does NOT read the legacy questionnaire_forms system
-// and does NOT read Student Evaluation questions.
+//   Faculty -> centralized Questionnaire > Faculty bank
+//   Staff   -> centralized Questionnaire > Staff target set
+//   EA      -> centralized Questionnaire > Executive Assistant (EA) target set
+// The target eligibility rules remain Dean-specific; only the question source
+// has been generalized.
 
 session_set_cookie_params([
     'lifetime' => 0,
@@ -21,6 +20,9 @@ session_start();
 
 require_once 'db.php';
 require_once dirname(__DIR__) . '/shared/system_settings_service.php';
+require_once dirname(__DIR__) . '/shared/QuestionnaireService.php';
+require_once 'school_head_structure_gate.php';
+qn_migrate_legacy_once($mysqli);
 
 if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'dean') {
     header("Location: dean_login.php");
@@ -105,36 +107,20 @@ function dean_target_bucket(mysqli $mysqli, int $targetId): ?string {
 }
 
 function load_dean_questions(mysqli $mysqli, int $targetId, string $bucket): array {
-    if ($bucket === 'Staff') {
-        $rows = safe_rows($mysqli, "
-            SELECT id, category, question_text, sort_order
-            FROM user_questions
-            WHERE user_id=? AND target_type='Staff' AND eval_type='school_head'
-            ORDER BY category, sort_order, id
-        ", "i", [$targetId]);
-
-        return array_map(fn($q) => [
-            'id' => (int)$q['id'],
-            'source' => 'user',
-            'category' => $q['category'] ?: 'General',
-            'question' => $q['question_text'],
-            'type' => 'rating',
-            'max_score' => 5,
-            'is_required' => 1,
-        ], $rows);
+    if ($bucket === 'Faculty') {
+        $rows = qn_get_faculty_questions($mysqli);
+        $source = 'evaluation';
+    } elseif ($bucket === 'Staff') {
+        $rows = qn_get_person_questions($mysqli, $targetId, 'Staff');
+        $source = 'user';
+    } else {
+        $rows = qn_get_person_questions($mysqli, $targetId, 'EA');
+        $source = 'user';
     }
-
-    $targetType = $bucket === 'EA' ? 'EA' : 'Faculty';
-    $rows = safe_rows($mysqli, "
-        SELECT id, category, question_text
-        FROM evaluation_questions
-        WHERE target_type=? AND eval_type='school_head' AND evaluator_role='dean'
-        ORDER BY category, id
-    ", "s", [$targetType]);
 
     return array_map(fn($q) => [
         'id' => (int)$q['id'],
-        'source' => 'evaluation',
+        'source' => $source,
         'category' => $q['category'] ?: 'General',
         'question' => $q['question_text'],
         'type' => 'rating',
@@ -149,7 +135,7 @@ function load_existing_answers(mysqli $mysqli, int $trackerId): array {
                qa.answer_score AS score,
                COALESCE(uq.question_text, eq.question_text) AS question,
                COALESCE(uq.category, eq.category, 'General') AS category,
-               COALESCE(uq.sort_order, eq.id, 0) AS sort_key
+               COALESCE(eq.id, 0) AS sort_key
         FROM questionnaire_answers qa
         LEFT JOIN user_questions uq
           ON qa.question_source='user' AND uq.id=qa.user_question_id
@@ -171,11 +157,15 @@ if ($targetId <= 0) {
     exit;
 }
 
-$settings = get_system_settings($mysqli);
-$structureActive = ($settings['academic_structure'] === 'college');
+$settings = get_school_head_settings($mysqli, 'dean');
+// Academic Structure / Academic Term gate: Dean owns College, Principal
+// owns School Year. Narrow-only — existing scheduling, Force Open and
+// Force Closed still decide open/closed while College is active.
+$settings = sh_gate_apply($settings, 'dean');
+$structureActive = !empty($settings['school_head_applicable']);
 $period_id_int = (int)($settings['period_id'] ?? 0);
 $hasPeriod = $period_id_int > 0;
-$evalOpen = !empty($settings['is_open_for_submission']);
+$evalOpen = !empty($settings['school_head_is_open']);
 const HIGHER_ED_LABEL = 'Higher Education';
 
 if (!$structureActive) {
@@ -346,7 +336,7 @@ $mysqli->close();
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,.82)),url('../background.png') center center / cover no-repeat fixed;background-color:var(--dark);font-family:'DM Sans',sans-serif;color:var(--light);display:flex;}
 
-.sidebar{width:250px;flex-shrink:0;background:rgba(23,42,69,.9);border-right:1px solid rgba(255,255,255,.08);min-height:100vh;padding:28px 20px;display:flex;flex-direction:column;}
+.sidebar{width:250px;flex-shrink:0;background:#0F1F33;border-right:1px solid #060E18;min-height:100vh;padding:28px 20px;display:flex;flex-direction:column;}
 .sb-profile{text-align:center;margin-bottom:26px;}
 .sb-photo{width:72px;height:72px;border-radius:50%;object-fit:cover;border:2.5px solid var(--violet);box-shadow:0 0 18px rgba(124,95,217,.4);margin:0 auto 10px;display:block;}
 .sb-name{font-weight:700;font-size:15px;color:#fff;}

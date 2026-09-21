@@ -12,8 +12,11 @@ if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'principal') {
 require_once 'db.php';
 require_once dirname(__DIR__) . '/shared/system_settings_service.php';
 require_once 'principal_notifications_feed.php';
+require_once 'school_head_structure_gate.php';
 try {
-    $settings=get_system_settings($mysqli);
+    $settings=get_school_head_settings($mysqli, 'principal');
+    // Academic Structure / Academic Term gate (narrow-only).
+    $settings=sh_gate_apply($settings, 'principal');
     $items=principal_build_notifications($mysqli,(int)$_SESSION['user_id'],$settings);
     echo json_encode(['ok'=>true,'notifications'=>$items,'count'=>count($items),'generated_at'=>date('c')]);
 } catch (Throwable $e) {

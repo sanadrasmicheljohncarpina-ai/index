@@ -10,8 +10,11 @@ session_set_cookie_params([
 ]);
 session_start();
 require_once 'db.php';
+require_once 'security.php';
 require_once '../shared/eligibility.php';
 require_once '../shared/EvaluationContextService.php';
+require_once '../shared/QuestionnaireService.php';
+qn_migrate_legacy_once($mysqli);
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
@@ -27,7 +30,7 @@ $student_name = $_SESSION['full_name'];
 // submission handler) because the server-side eligibility re-check in
 // the submission handler now needs $student_level/$student_year_level
 // too -- it can no longer rely purely on shared/eligibility.php.
-$phRes = $mysqli->prepare("SELECT photo, education_level, year_level FROM users WHERE id=? LIMIT 1");
+$phRes = $mysqli->prepare("SELECT photo, education_level, year_level, username, email FROM users WHERE id=? LIMIT 1");
 $phRes->bind_param("i", $student_id);
 $phRes->execute();
 $phRow = $phRes->get_result()->fetch_assoc();
@@ -35,6 +38,27 @@ $phRes->close();
 $student_photo      = $phRow['photo'] ?? '';
 $student_level      = $phRow['education_level'] ?? null;
 $student_year_level = $phRow['year_level'] ?? null;
+$student_username   = $phRow['username'] ?? '';
+$student_email       = $phRow['email'] ?? '';
+
+// Same JHS/SHS/College -> year/grade level lists used at registration
+// (student_register.php), reused here so Settings offers a self-edit
+// dropdown that stays consistent with the values eligibility checks
+// (teaching_assignments / user_year_levels) actually match against.
+//
+// NOTE: College values carry a " College" suffix (e.g. "3rd Year College")
+// because that's the exact string the EA's Account Management assigns in
+// teaching_assignments/user_year_levels for College-level targets -- a bare
+// "3rd Year" (which is what student_register.php's own dropdown currently
+// stores) does NOT match it and silently breaks the student's eligibility
+// to evaluate Faculty/Staff assigned to that year level. JHS/SHS use plain
+// "Grade N" on both sides, so no suffix is needed there.
+$reg_year_levels = [
+    'junior_high' => ['Grade 7','Grade 8','Grade 9','Grade 10'],
+    'senior_high' => ['Grade 11','Grade 12'],
+    'college'     => ['1st Year College','2nd Year College','3rd Year College','4th Year College'],
+];
+$year_level_options = $reg_year_levels[$student_level] ?? [];
 
 // ── ROLE / ASSIGNMENT-BASED ELIGIBILITY ────────────────────────
 // Only two personnel contexts are exposed to students:
@@ -500,6 +524,114 @@ $ins->close();
     }
 }
 
+// ── HANDLE SETTINGS: PROFILE DETAILS ─────────────────────────
+$profile_error   = '';
+$profile_success = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
+    if (!csrf_valid($_POST['csrf_token'] ?? '')) {
+        $profile_error = "Your session expired. Please refresh the page and try again.";
+    } else {
+        $new_full_name  = trim($_POST['full_name'] ?? '');
+        $new_username   = trim($_POST['username'] ?? '');
+        $new_year_level = trim($_POST['year_level'] ?? '');
+        $new_email      = trim($_POST['email'] ?? '');
+
+        if ($new_full_name === '') {
+            $profile_error = "Full name is required.";
+        } elseif (mb_strlen($new_full_name) > 100) {
+            $profile_error = "Full name is too long.";
+        } elseif ($new_username === '') {
+            $profile_error = "Username is required.";
+        } elseif (mb_strlen($new_username) > 50) {
+            $profile_error = "Username is too long.";
+        } elseif (preg_match('/\s/', $new_username)) {
+            $profile_error = "Username cannot contain spaces.";
+        } elseif (!empty($year_level_options) && !in_array($new_year_level, $year_level_options, true)) {
+            $profile_error = "Please select a valid year/grade level.";
+        } elseif ($new_email !== '' && !filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
+            $profile_error = "Please enter a valid email address.";
+        } elseif (mb_strlen($new_email) > 150) {
+            $profile_error = "Email is too long.";
+        } else {
+            // Username must stay unique across all accounts, not just students.
+            $dupChk = $mysqli->prepare("SELECT id FROM users WHERE username = ? AND id <> ? LIMIT 1");
+            $dupChk->bind_param("si", $new_username, $student_id);
+            $dupChk->execute();
+            $dupChk->store_result();
+            if ($dupChk->num_rows > 0) {
+                $profile_error = "That username is already taken. Please choose another.";
+                $dupChk->close();
+            } else {
+                $dupChk->close();
+                $emailToSave = $new_email !== '' ? $new_email : null;
+                $upd = $mysqli->prepare("UPDATE users SET full_name = ?, username = ?, year_level = ?, email = ? WHERE id = ? AND role = 'student' LIMIT 1");
+                $upd->bind_param("ssssi", $new_full_name, $new_username, $new_year_level, $emailToSave, $student_id);
+                $upd->execute();
+                $upd->close();
+
+                // Keep everything the rest of this page reads from in sync
+                // for the current render, and refresh the session so the
+                // sidebar/header (which read $_SESSION['full_name']) and the
+                // next login (which reads username) reflect the change too.
+                $student_name              = $new_full_name;
+                $student_username          = $new_username;
+                $student_year_level        = $new_year_level;
+                $student_email             = $emailToSave ?? '';
+                $_SESSION['full_name']     = $new_full_name;
+                $profile_success           = "Profile updated.";
+            }
+        }
+    }
+}
+
+// ── HANDLE SETTINGS: CHANGE PASSWORD ──────────────────────────
+$password_error   = '';
+$password_success = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
+    $current_password = $_POST['current_password'] ?? '';
+    $new_password      = $_POST['new_password']      ?? '';
+    $confirm_password  = $_POST['confirm_password']  ?? '';
+
+    if (!csrf_valid($_POST['csrf_token'] ?? '')) {
+        $password_error = "Your session expired. Please refresh the page and try again.";
+    } elseif (auth_is_locked($mysqli, 'pwchange', (string)$student_id)) {
+        $password_error = AUTH_LOCK_MESSAGE;
+    } else {
+        $pwStmt = $mysqli->prepare("SELECT username, password_hash FROM users WHERE id = ? AND role = 'student' LIMIT 1");
+        $pwStmt->bind_param("i", $student_id);
+        $pwStmt->execute();
+        $pwRow = $pwStmt->get_result()->fetch_assoc();
+        $pwStmt->close();
+
+        if (!$pwRow || !password_verify($current_password, $pwRow['password_hash'] ?? '')) {
+            auth_record($mysqli, 'pwchange', (string)$student_id, false);
+            $password_error = "Current password is incorrect.";
+        } elseif (strlen($new_password) < 8) {
+            $password_error = "New password must be at least 8 characters.";
+        } elseif (strlen($new_password) > 72) {
+            $password_error = "New password must be 72 characters or fewer.";
+        } elseif (mb_strtolower($new_password) === mb_strtolower($pwRow['username'])) {
+            $password_error = "Your password cannot be the same as your username.";
+        } elseif ($new_password !== $confirm_password) {
+            $password_error = "New passwords do not match.";
+        } elseif (password_verify($new_password, $pwRow['password_hash'] ?? '')) {
+            $password_error = "New password must be different from your current password.";
+        } else {
+            auth_clear($mysqli, 'pwchange', (string)$student_id);
+            $newHash = password_hash($new_password, PASSWORD_DEFAULT);
+            $upd = $mysqli->prepare("UPDATE users SET password_hash = ? WHERE id = ? AND role = 'student' LIMIT 1");
+            $upd->bind_param("si", $newHash, $student_id);
+            $upd->execute();
+            $upd->close();
+            $password_success = "Password updated successfully.";
+        }
+    }
+}
+
+$land_on_settings = ($profile_error || $profile_success || $password_error || $password_success);
+
 // ── FETCH QUESTIONS FOR A TARGET (AJAX) ──────────────────────
 // Reads from the same question source the admin assigns for this
 // person's student-evaluation context:
@@ -552,7 +684,7 @@ if (isset($_GET['get_questions'])) {
                 "SELECT id, question_text, category,
                         'user' AS question_source
                  FROM user_questions
-                 WHERE user_id = ? AND target_type = ? AND eval_type = 'student'
+                 WHERE user_id = ? AND target_type = ? AND eval_type = 'general'
                  ORDER BY category, id"
             );
             $pdq->bind_param("is", $target_id, $pd_target_type);
@@ -563,7 +695,7 @@ if (isset($_GET['get_questions'])) {
             if (empty($pd_questions)) {
                 throw new Exception(
                     "No questions have been set up for this person yet. " .
-                    "Please ask the admin to add questions under Questionnaire → Student Evaluation → School Head → $pd_target_type."
+                    "Please ask the admin to add questions under Questionnaire → Dean / Principal → $pd_target_type."
                 );
             }
 
@@ -584,7 +716,7 @@ if (isset($_GET['get_questions'])) {
             $q = $mysqli->prepare(
                 "SELECT id,question_text,category,'user' AS question_source
                  FROM user_questions
-                 WHERE user_id=? AND target_type='Staff' AND eval_type='student'
+                 WHERE user_id=? AND target_type='Staff' AND eval_type='general'
                  ORDER BY category,id"
             );
             $q->bind_param('i',$target_id);
@@ -605,7 +737,7 @@ if (isset($_GET['get_questions'])) {
         $q = $mysqli->prepare(
             "SELECT id,question_text,category,'evaluation' AS question_source
              FROM evaluation_questions
-             WHERE target_type='Teacher' AND eval_type='student'
+             WHERE target_type='Faculty' AND eval_type='general'
              ORDER BY category,id"
         );
         $q->execute();
@@ -718,7 +850,7 @@ foreach ($eligible_school_head_roles as $role_value => $role_label) {
 // everyone in that group. Staff, Principal, and Dean are per-person sets
 // in user_questions, so they're looked up individually.
 $teacherQCount = $mysqli->query(
-    "SELECT COUNT(*) AS c FROM evaluation_questions WHERE target_type='Teacher' AND eval_type='student'"
+    "SELECT COUNT(*) AS c FROM evaluation_questions WHERE target_type='Faculty' AND eval_type='general'"
 )->fetch_assoc()['c'] ?? 0;
 $facultyHasQuestions = $teacherQCount > 0;
 
@@ -726,7 +858,7 @@ $perUserQCounts = [];
 $puq = $mysqli->query(
     "SELECT user_id, target_type, COUNT(*) AS c
      FROM user_questions
-     WHERE eval_type='student' AND target_type IN ('Staff','Principal','Dean')
+     WHERE eval_type='general' AND target_type IN ('Staff','Principal','Dean')
      GROUP BY user_id, target_type"
 );
 if ($puq) {
@@ -833,6 +965,7 @@ $pct              = $total_evaluatees > 0 ? round(($total_done / $total_evaluate
 <title>PBI — Student Evaluation</title>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+<link rel="stylesheet" href="student_ui.css"/>
 <style>
 :root{
     --dark:#0A192F;--mid:#172A45;--inner:#0F1F3D;
@@ -1034,6 +1167,17 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .settings-row .profile-dd-avatar,.settings-row .profile-dd-avatar-ph{width:64px;height:64px;font-size:24px;}
 .settings-row .profile-dd-name{font-size:16px;}
 .settings-info{flex:1;min-width:160px;}
+.settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;}
+.settings-field label{display:block;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
+.settings-field .pw-wrap{position:relative;}
+.settings-field input,.settings-field select{width:100%;padding:11px 14px;background:var(--inner);border:1px solid var(--border);border-radius:9px;color:#fff;font-size:13.5px;}
+.settings-field input:focus,.settings-field select:focus{outline:none;border-color:var(--gold-h);}
+.settings-field input[readonly]{color:var(--muted);cursor:not-allowed;}
+.settings-field .pw-wrap input{padding-right:40px;}
+.settings-field .pw-toggle{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;}
+.settings-field .pw-toggle:hover{color:#fff;}
+.settings-hint{font-size:11.5px;color:var(--muted);margin:-8px 0 16px;}
+@media(max-width:600px){.settings-grid{grid-template-columns:1fr;}}
 .btn-logout{padding:11px 22px;background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.25);border-radius:var(--radius);color:#dc2626;font-weight:700;font-size:13.5px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;text-decoration:none;transition:background .2s;}
 .btn-logout:hover{background:rgba(220,38,38,.15);}
 
@@ -1136,6 +1280,19 @@ body{background:#FFFFFF!important;color:#172033!important;}
 .photo-modal-title,.profile-dd-name,.reminder-banner .rb-title{color:#0f172a!important;}
 .panel-close-btn:hover,.modal-close:hover,.reminder-banner .rb-dismiss:hover{color:#0f172a!important;}
 
+/* Settings form fields (Profile Details / Change Password) were styled
+   for the old dark card too -- white text on the new near-white input
+   background is unreadable, so force dark text + a light-but-visible
+   input background here as well. */
+.settings-field label{color:#64748b!important;}
+.settings-field input,.settings-field select{background:#ffffff!important;border:1px solid #cbd5e1!important;color:#0f172a!important;}
+.settings-field input::placeholder{color:#94a3b8!important;}
+.settings-field input:focus,.settings-field select:focus{border-color:#D97706!important;box-shadow:0 0 0 3px rgba(217,119,6,.12)!important;}
+.settings-field input[readonly]{background:#eef2f7!important;border-color:#e2e8f0!important;color:#64748b!important;box-shadow:none!important;}
+.settings-field .pw-toggle{color:#94a3b8!important;}
+.settings-field .pw-toggle:hover{color:#0f172a!important;}
+.settings-hint{color:#64748b!important;}
+
 /* Status pills/badges used pale, low-opacity text meant for a dark
    backdrop -- darken them so they stay legible on white/near-white. */
 .period-pill.open,.cat-done-pill,.done-badge,.alert-success{color:#16a34a!important;}
@@ -1150,6 +1307,149 @@ body{background:#FFFFFF!important;color:#172033!important;}
 .profile-dd-btn:hover{background:rgba(15,23,42,.05)!important;}
 .eval-form-table th{background:#f8fafc!important;}
 .eval-form-table td{border-bottom:1px solid #eef2f7!important;}
+
+/* ══════════════════════════════════════════════════════════════
+   ALIGNED STUDENT WORKSPACE
+   Keeps the Student Dashboard's original dark navy + gold theme,
+   while adopting the shared EA dashboard layout, spacing, hierarchy,
+   and card structure.
+   ══════════════════════════════════════════════════════════════ */
+.app-shell{align-items:stretch;min-height:100vh;background:var(--dark);}
+.sidebar{width:248px;min-height:100vh;padding:20px 0 18px;position:sticky;top:0;background:#0A192F!important;border-right:1px solid #172A45!important;box-shadow:6px 0 20px rgba(0,0,0,.16);z-index:20;}
+.sb-profile-wrap{padding:0 18px 18px;margin-bottom:18px;border-bottom:1px solid rgba(255,255,255,.08);text-align:center;}
+.sb-avatar-wrap{width:76px;height:76px;margin:0 auto 11px;border-radius:50%;padding:3px;background:linear-gradient(135deg,var(--gold-h),var(--gold));box-shadow:0 6px 18px rgba(217,119,6,.16);}
+.sb-avatar{width:70px;height:70px;border-radius:50%;object-fit:cover;border:2px solid #0A192F;display:block;background:var(--inner);}
+.sb-avatar-fallback{object-fit:contain;padding:5px;}
+.sb-logo-wrap{display:none;}
+.sb-profile-name{font-size:15px;font-weight:700;color:#fff;line-height:1.3;word-break:break-word;}
+.sb-profile-role{font-size:10px;color:var(--gold-h);margin-top:4px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;}
+.side-section-label{font-size:9.5px;font-weight:800;letter-spacing:1.2px;color:#9FB2C7!important;padding:0 18px;margin:0 0 7px;text-transform:uppercase;}
+.side-section-secondary{margin-top:19px;}
+.side-nav-item{margin:2px 12px;padding:9px 12px;border-left:0;border-radius:8px;gap:10px;color:#DCE7F3!important;font-size:13px;font-weight:600;line-height:1.2;transition:all .18s ease;min-height:40px;}
+.side-nav-item span:not(.side-nav-badge){color:inherit!important;}
+.side-nav-item i{width:18px;color:#9FB2C7!important;font-size:14px;}
+.side-nav-item:hover{background:rgba(255,255,255,.06)!important;color:#F7FAFC!important;}
+.side-nav-item:hover i{color:#C7D6E6!important;}
+.side-nav-item.active{background:rgba(217,119,6,.14)!important;color:#FFFFFF!important;border-left:0;box-shadow:inset 3px 0 0 var(--gold);}
+.side-nav-item.active i{color:var(--gold-h)!important;}
+.side-nav-badge{background:rgba(217,119,6,.20)!important;color:#FFD08A!important;padding:2px 7px;font-size:9px;}
+.sb-profile-role{color:#C5D4E4!important;}
+.main{flex:1;max-width:none;margin:18px 22px 18px 20px;padding:26px 26px 34px;background:var(--inner);border:1px solid var(--border);border-radius:22px;min-height:calc(100vh - 36px);box-shadow:0 0 0 1px rgba(255,255,255,.02);overflow:hidden;}
+.content-topbar{display:block;margin-bottom:25px;}
+.hamburger-btn{position:absolute;left:16px;top:18px;display:none;}
+.workspace-heading{width:100%;}
+.workspace-kicker{font-size:11px;font-weight:800;color:var(--muted);letter-spacing:.85px;text-transform:uppercase;margin-bottom:3px;display:flex;align-items:center;gap:6px;}
+.workspace-kicker i{font-size:12px;color:var(--gold-h);}
+.workspace-title-row{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;}
+.workspace-title{font-family:'Rajdhani',sans-serif;font-size:29px;font-weight:700;color:#fff;line-height:1.1;}
+.workspace-subtitle{font-size:13px;color:var(--muted);margin-top:6px;}
+.workspace-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;}
+.workspace-pill{display:inline-flex;align-items:center;gap:7px;padding:9px 13px;border:1px solid var(--border);border-radius:18px;background:var(--mid);color:var(--light);font-size:12px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.12);white-space:nowrap;}
+.workspace-pill i{color:var(--gold-h);}
+.workspace-pill.muted{background:rgba(255,255,255,.04);color:var(--muted);font-weight:600;}
+.view-content.active{animation:fadeIn .16s ease;}
+.dashboard-welcome{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:15px;}
+.page-title{font-family:'Rajdhani',sans-serif;font-size:25px;line-height:1.2;font-weight:700;color:#fff!important;margin-bottom:4px;}
+.page-sub{font-size:13px;color:var(--muted);margin-bottom:0;}
+.year-level-badge{font-size:13px;font-weight:600;color:var(--muted);}
+.period-pill{margin-bottom:0;padding:7px 13px;font-size:11px;border-radius:18px;white-space:nowrap;}
+.period-pill.open{background:rgba(34,197,94,.13);border:1px solid rgba(34,197,94,.28);color:#4ade80!important;}
+.period-pill.closed{background:rgba(240,84,84,.10);border:1px solid rgba(240,84,84,.25);color:#fca5a5!important;}
+.stat-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:14px;}
+.stat-card{background:var(--mid);border:1px solid var(--border);border-radius:12px;padding:16px 18px;box-shadow:0 5px 14px rgba(0,0,0,.16);min-height:102px;position:relative;overflow:hidden;}
+.stat-card:after{content:"";position:absolute;inset:auto 0 0 0;height:2px;background:linear-gradient(90deg,rgba(217,119,6,.28),rgba(245,158,11,.04));}
+.stat-card i{display:flex;align-items:center;justify-content:center;width:31px;height:31px;border-radius:9px;background:rgba(217,119,6,.14);color:var(--gold-h);margin-bottom:11px;font-size:14px;}
+.stat-card:nth-child(1) i{background:rgba(217,119,6,.14);color:var(--gold-h);}
+.stat-card:nth-child(2) i{background:rgba(74,222,128,.10);color:#4ade80;}
+.stat-card:nth-child(3) i{background:rgba(250,204,21,.10);color:#facc15;}
+.stat-card:nth-child(4) i{background:rgba(96,165,250,.10);color:#60a5fa;}
+.stat-num{font-family:'Rajdhani',sans-serif;font-size:27px;font-weight:700;color:#fff!important;line-height:1;}
+.stat-lbl{font-size:11px;color:var(--muted);margin-top:6px;}
+.progress-wrap{background:var(--mid);border:1px solid var(--border);border-radius:12px;padding:14px 17px;margin-bottom:14px;gap:14px;box-shadow:0 5px 14px rgba(0,0,0,.14);}
+.progress-label{font-size:12px;color:var(--muted);}
+.progress-label span{color:var(--gold-h);}
+.progress-bar-bg{height:9px;background:rgba(255,255,255,.08)!important;}
+.progress-bar-fill{background:linear-gradient(90deg,var(--gold),var(--gold-h))!important;}
+.progress-pct{font-size:11px;color:var(--gold-h);}
+.dash-cta{background:var(--mid);border:1px solid var(--border);border-radius:14px;padding:19px 20px;gap:15px;box-shadow:0 5px 14px rgba(0,0,0,.15);}
+.dash-cta-icon{width:46px;height:46px;border-radius:11px;background:rgba(217,119,6,.14);color:var(--gold-h);font-size:20px;}
+.dash-cta-text h3{font-family:'Rajdhani',sans-serif;font-size:17px;font-weight:700;color:#fff!important;margin-bottom:4px;}
+.dash-cta-text p{font-size:12px;color:var(--muted);}
+.btn-primary-cta{padding:10px 18px;background:var(--gold);border-radius:9px;font-size:12.5px;box-shadow:0 4px 10px rgba(217,119,6,.18);}
+.btn-primary-cta:hover{background:var(--gold-h);}
+.alert{border:1px solid var(--border);background:var(--mid);box-shadow:0 5px 14px rgba(0,0,0,.12);}
+.section-label{font-size:11px;font-weight:800;letter-spacing:1.1px;color:var(--muted);text-transform:uppercase;}
+.category-grid{gap:12px;}
+.cat-btn,.person-card,.members-panel,.history-card,.gl-card{background:var(--mid)!important;border-color:var(--border)!important;box-shadow:0 5px 14px rgba(0,0,0,.12);}
+.cat-btn:hover,.person-card:hover{box-shadow:0 9px 20px rgba(0,0,0,.2);transform:translateY(-1px);}
+.panel-header{background:var(--mid)!important;border-color:var(--border)!important;}
+.modal,.photo-modal{background:var(--mid);border-color:var(--border);box-shadow:0 24px 60px rgba(0,0,0,.55);}
+.modal-header,.photo-modal-header{background:var(--mid);border-color:var(--border);}
+.modal-body,.photo-modal-body{background:var(--mid);}
+.q-item,.comment-box{background:var(--inner)!important;}
+.comment-textarea{background:var(--inner);color:var(--light);border-color:var(--border);}
+.eval-form-wrap{background:var(--mid);border-color:var(--border);}
+.eval-form-table th{background:var(--inner)!important;}
+.eval-form-table td{border-bottom-color:var(--border)!important;}
+@media(max-width:1100px){.workspace-title-row{flex-direction:column;}.workspace-meta{justify-content:flex-start;}.stat-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:900px){
+    .sidebar{position:fixed;left:0;top:0;height:100vh;transform:translateX(-100%);transition:transform .22s ease;padding-top:20px;}
+    .sidebar.open{transform:translateX(0);box-shadow:12px 0 34px rgba(0,0,0,.45);}
+    .hamburger-btn{display:flex;position:fixed;left:16px;top:16px;z-index:81;background:var(--mid)!important;border-color:var(--border)!important;color:var(--light)!important;}
+    .main{margin:12px;border-radius:18px;min-height:calc(100vh - 24px);padding:72px 16px 28px;}
+    .content-topbar{margin-bottom:18px;}
+}
+@media(max-width:600px){
+    .stat-grid{grid-template-columns:1fr 1fr;gap:10px;}
+    .workspace-title{font-size:24px;}
+    .workspace-subtitle{font-size:12.5px;}
+    .dashboard-welcome{align-items:flex-start;flex-direction:column;}
+    .workspace-pill{padding:8px 10px;font-size:11px;}
+    .dash-cta{align-items:flex-start;}
+    .btn-primary-cta{width:100%;}
+}
+@media(max-width:430px){.stat-grid{grid-template-columns:1fr;}.workspace-meta{width:100%;}.workspace-pill{flex:1;justify-content:center;}}
+
+/* ══════════════════════════════════════════════════════════════
+   TEXT CONTRAST & CONSISTENCY FIX
+   1) Sidebar: readable light-on-navy text with a clear hierarchy
+      (section label < tab < hovered tab < active tab) and a cleaner
+      active-tab highlight (the old amber wash turned muddy grey).
+   2) Workspace: the "aligned workspace" block above re-applied white
+      text to headings that now sit on the white/pale workspace, and
+      used pale green/red/amber that wash out on white. Those are set
+      back to dark, high-contrast tones here.
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Sidebar ── */
+.sb-profile-name{color:#FFFFFF!important;letter-spacing:.1px;}
+.sb-profile-role{color:#F5B54A!important;letter-spacing:.9px;}
+.side-section-label{color:#8FA6BF!important;font-size:10px;letter-spacing:1.4px;}
+.side-nav-item{color:#CBD8E8!important;font-weight:500;letter-spacing:.1px;}
+.side-nav-item span:not(.side-nav-badge){color:inherit!important;}
+.side-nav-item i{color:#8FA6BF!important;}
+.side-nav-item:hover{background:rgba(255,255,255,.07)!important;color:#FFFFFF!important;}
+.side-nav-item:hover i{color:#F5B54A!important;}
+.side-nav-item.active{background:linear-gradient(90deg,rgba(245,158,11,.20),rgba(245,158,11,.05))!important;color:#FFFFFF!important;font-weight:700;box-shadow:inset 3px 0 0 var(--gold-h);}
+.side-nav-item.active i{color:#FBBF24!important;}
+.side-nav-badge{background:rgba(245,158,11,.22)!important;color:#FFD9A0!important;font-weight:800;font-size:10px;}
+.side-nav-item:focus-visible{outline:2px solid #FBBF24;outline-offset:2px;}
+
+/* ── Workspace (white / pale) ── */
+.workspace-title,.page-title,.stat-num,.dash-cta-text h3{color:#0F172A!important;}
+.workspace-subtitle,.page-sub,.stat-lbl,.dash-cta-text p,.year-level-badge,.progress-label{color:#475569!important;}
+.workspace-kicker{color:#64748B!important;}
+.workspace-kicker i,.workspace-pill i{color:#D97706!important;}
+.workspace-pill{color:#1E293B!important;}
+.workspace-pill.muted{color:#475569!important;background:#FFFFFF!important;}
+.progress-label span,.progress-pct{color:#B45309!important;}
+.period-pill.open{background:#DCFCE7!important;border-color:#86EFAC!important;color:#15803D!important;}
+.period-pill.closed{background:#FEE2E2!important;border-color:#FCA5A5!important;color:#B91C1C!important;}
+.stat-card:nth-child(1) i{background:#FEF3C7!important;color:#B45309!important;}
+.stat-card:nth-child(2) i{background:#DCFCE7!important;color:#15803D!important;}
+.stat-card:nth-child(3) i{background:#FEF9C3!important;color:#A16207!important;}
+.stat-card:nth-child(4) i{background:#DBEAFE!important;color:#1D4ED8!important;}
+.dash-cta-icon{background:#FEF3C7!important;color:#B45309!important;}
 
 @media print{html,body{background:#fff!important;}}
 </style>
@@ -1192,36 +1492,69 @@ body{background:#FFFFFF!important;color:#172033!important;}
 
 <div class="app-shell">
     <aside class="sidebar" id="sidebar">
-        <div class="sb-logo-wrap">
-            <img class="sb-logo" src="../image/pbi_logo" alt="PBI" onerror="this.style.display='none'"/>
+        <div class="student-sidebar-brand">
+            <img src="../image/pbi_logo" alt="PBI"/>
+            <div>
+                <strong>Student Portal</strong>
+                <span>Evaluation Workspace</span>
+            </div>
         </div>
-        <div class="sb-profile">
+        <div class="sb-profile-wrap">
+            <div class="sb-avatar-wrap">
+                <?php if ($student_photo): ?>
+                <img class="sb-avatar" src="../image/<?= htmlspecialchars($student_photo) ?>" alt=""/>
+                <?php else: ?>
+                <img class="sb-avatar sb-avatar-fallback" src="../image/pbi_logo" alt="PBI" onerror="this.style.display='none'"/>
+                <?php endif; ?>
+            </div>
             <div class="sb-profile-name"><?= htmlspecialchars($student_name) ?></div>
-            <div class="sb-profile-role">Student<?= $student_year_level ? ' · ' . htmlspecialchars($student_year_level) : '' ?></div>
+            <div class="sb-profile-role">STUDENT<?= $student_year_level ? ' · ' . htmlspecialchars($student_year_level) : '' ?></div>
         </div>
-        <div class="side-section-label">Evaluations</div>
-        <div class="side-nav-item active" id="nav-dashboard" onclick="switchView('dashboard')">
-            <i class="fa-solid fa-house"></i> Dashboard
+
+        <div class="side-section-label">Main</div>
+        <div class="side-nav-item<?= $land_on_settings ? '' : ' active' ?>" id="nav-dashboard" onclick="switchView('dashboard')">
+            <i class="fa-solid fa-house"></i><span>Dashboard</span>
         </div>
         <div class="side-nav-item" id="nav-evaluate" onclick="switchView('evaluate')">
-            <i class="fa-solid fa-star-half-stroke"></i> Evaluation
+            <i class="fa-solid fa-star-half-stroke"></i><span>Evaluation</span>
             <?php if ($total_pending > 0): ?><span class="side-nav-badge"><?= $total_pending ?></span><?php endif; ?>
         </div>
         <div class="side-nav-item" id="nav-history" onclick="switchView('history')">
-            <i class="fa-solid fa-clock-rotate-left"></i> Evaluation History
+            <i class="fa-solid fa-clock-rotate-left"></i><span>Evaluation History</span>
         </div>
+
+        <div class="side-section-label side-section-secondary">Support</div>
         <div class="side-nav-item" id="nav-guidelines" onclick="switchView('guidelines')">
-            <i class="fa-solid fa-circle-info"></i> Guidelines
+            <i class="fa-solid fa-circle-info"></i><span>Guidelines</span>
         </div>
-        <div class="side-nav-item" id="nav-settings" onclick="switchView('settings')">
-            <i class="fa-solid fa-gear"></i> Settings
+        <div class="side-nav-item<?= $land_on_settings ? ' active' : '' ?>" id="nav-settings" onclick="switchView('settings')">
+            <i class="fa-solid fa-gear"></i><span>Settings</span>
         </div>
     </aside>
 
     <div class="main">
 
         <div class="content-topbar">
-            <button class="hamburger-btn" onclick="toggleSidebar()"><i class="fa-solid fa-bars"></i></button>
+            <button class="hamburger-btn" onclick="toggleSidebar()" aria-label="Open navigation"><i class="fa-solid fa-bars"></i></button>
+            <div class="workspace-heading">
+                <div class="workspace-kicker"><i class="fa-solid fa-chart-line"></i> Dashboard Overview</div>
+                <div class="workspace-title-row">
+                    <div>
+                        <div class="workspace-title">Student Evaluation Workspace</div>
+                        <div class="workspace-subtitle">Complete your assigned faculty and staff evaluations in one place.</div>
+                    </div>
+                    <div class="workspace-meta">
+                        <div class="workspace-pill">
+                            <i class="fa-regular fa-calendar"></i>
+                            <?= htmlspecialchars($active_period_semester ?: 'No active period') ?>
+                        </div>
+                        <div class="workspace-pill muted">
+                            <i class="fa-solid fa-rotate"></i>
+                            Updated <?= date('M j, Y') ?>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <?php if ($submit_success): ?>
@@ -1235,18 +1568,21 @@ body{background:#FFFFFF!important;color:#172033!important;}
         <?php endif; ?>
 
         <!-- ══════════════ DASHBOARD VIEW ══════════════ -->
-        <div class="view-content active" id="view-dashboard">
-            <div class="page-title">
-                Welcome, <?= htmlspecialchars(explode(' ', $student_name)[0]) ?>
-                <?php if ($student_year_level): ?>
-                <span class="year-level-badge" style="font-size:13px;font-weight:600;color:var(--muted);"> · <?= htmlspecialchars($student_year_level) ?></span>
-                <?php endif; ?>
-            </div>
-            <div class="page-sub">Here's an overview of your faculty &amp; staff evaluations.</div>
-
-            <div class="period-pill <?= $period_is_open ? 'open' : 'closed' ?>">
-                <i class="fa-solid <?= $period_is_open ? 'fa-lock-open' : 'fa-lock' ?>"></i>
-                Evaluation period is currently <?= $period_is_open ? 'OPEN' : 'CLOSED' ?>
+        <div class="view-content<?= $land_on_settings ? '' : ' active' ?>" id="view-dashboard">
+            <div class="dashboard-welcome">
+                <div>
+                    <div class="page-title">
+                        Welcome, <?= htmlspecialchars(explode(' ', $student_name)[0]) ?>
+                        <?php if ($student_year_level): ?>
+                        <span class="year-level-badge"> · <?= htmlspecialchars($student_year_level) ?></span>
+                        <?php endif; ?>
+                    </div>
+                    <div class="page-sub">Here's an overview of your faculty &amp; staff evaluations.</div>
+                </div>
+                <div class="period-pill <?= $period_is_open ? 'open' : 'closed' ?>">
+                    <i class="fa-solid <?= $period_is_open ? 'fa-lock-open' : 'fa-lock' ?>"></i>
+                    Evaluation period is currently <?= $period_is_open ? 'OPEN' : 'CLOSED' ?>
+                </div>
             </div>
 
             <div class="stat-grid">
@@ -1270,8 +1606,9 @@ body{background:#FFFFFF!important;color:#172033!important;}
                     <h3><?= $total_pending > 0 ? "You have $total_pending evaluation" . ($total_pending !== 1 ? 's' : '') . " left" : "All evaluations complete" ?></h3>
                     <p><?= $total_pending > 0 ? 'Head over to the Evaluate section to keep going.' : 'Thank you for completing all your evaluations!' ?></p>
                 </div>
-                <button class="btn-primary-cta" onclick="switchView('evaluate')">
-                    <i class="fa-solid fa-arrow-right"></i> Go to Evaluate
+                <button class="btn-primary-cta" onclick="switchView('<?= $total_pending > 0 ? 'evaluate' : 'history' ?>')">
+                    <i class="fa-solid <?= $total_pending > 0 ? 'fa-arrow-right' : 'fa-clock-rotate-left' ?>"></i>
+                    <?= $total_pending > 0 ? 'Continue Evaluations' : 'View History' ?>
                 </button>
             </div>
         </div>
@@ -1280,6 +1617,7 @@ body{background:#FFFFFF!important;color:#172033!important;}
         <div class="view-content" id="view-evaluate">
             <div class="page-title">Faculty &amp; Staff Evaluation</div>
             <div class="page-sub">Select a category to see who is available for evaluation. Faculty and Staff are evaluated separately based on their current assignment.</div>
+            <div class="student-eval-note"><i class="fa-solid fa-circle-info"></i><span>Your responses are recorded for the active evaluation period. Review each rating before you submit.</span></div>
 
             <?php
             // Build the top-level display list: Faculty, Staff, Principal, and Dean.
@@ -1302,7 +1640,7 @@ body{background:#FFFFFF!important;color:#172033!important;}
             ?>
 
             <?php if (empty($top_level)): ?>
-            <div class="empty"><i class="fa-solid fa-users-slash"></i><p>No faculty or staff available for evaluation yet.</p></div>
+            <div class="empty"><i class="fa-solid fa-users-slash"></i><p>No evaluations are available right now.</p></div>
             <?php else: ?>
 
             <div class="section-label">Choose a category</div>
@@ -1468,7 +1806,7 @@ body{background:#FFFFFF!important;color:#172033!important;}
         </div>
 
         <!-- ══════════════ SETTINGS VIEW ══════════════ -->
-        <div class="view-content" id="view-settings">
+        <div class="view-content<?= $land_on_settings ? ' active' : '' ?>" id="view-settings">
             <div class="page-title">Settings</div>
             <div class="page-sub">Manage your profile and account.</div>
 
@@ -1488,6 +1826,97 @@ body{background:#FFFFFF!important;color:#172033!important;}
                         <i class="fa-solid fa-camera"></i> Update Profile Photo
                     </button>
                 </div>
+            </div>
+
+            <div class="gl-card">
+                <h3><i class="fa-solid fa-id-card"></i> Profile Details</h3>
+                <?php if ($profile_success): ?>
+                <div class="alert alert-success"><i class="fa-solid fa-circle-check"></i> <?= htmlspecialchars($profile_success) ?></div>
+                <?php endif; ?>
+                <?php if ($profile_error): ?>
+                <div class="alert alert-error"><i class="fa-solid fa-circle-exclamation"></i> <?= htmlspecialchars($profile_error) ?></div>
+                <?php endif; ?>
+                <form method="POST" action="student_dashboard.php">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="update_profile" value="1"/>
+                    <div class="settings-grid">
+                        <div class="settings-field">
+                            <label for="set_fullname">Full Name</label>
+                            <input type="text" id="set_fullname" name="full_name" maxlength="100" required value="<?= htmlspecialchars($student_name) ?>"/>
+                        </div>
+                        <div class="settings-field">
+                            <label for="set_username">Username</label>
+                            <input type="text" id="set_username" name="username" maxlength="50" required autocomplete="username" value="<?= htmlspecialchars($student_username) ?>"/>
+                        </div>
+                        <div class="settings-field">
+                            <label for="set_email">Email</label>
+                            <input type="email" id="set_email" name="email" maxlength="150" placeholder="you@example.com" value="<?= htmlspecialchars($student_email) ?>"/>
+                        </div>
+                        <div class="settings-field">
+                            <label for="set_yearlevel">Year Level</label>
+                            <?php if (!empty($year_level_options)): ?>
+                            <select id="set_yearlevel" name="year_level" required>
+                                <?php
+                                $current_yl_matched = false;
+                                foreach ($year_level_options as $opt):
+                                    $isSel = (strcasecmp($opt, (string)$student_year_level) === 0);
+                                    if ($isSel) $current_yl_matched = true;
+                                ?>
+                                <option value="<?= htmlspecialchars($opt) ?>"<?= $isSel ? ' selected' : '' ?>><?= htmlspecialchars($opt) ?></option>
+                                <?php endforeach; ?>
+                                <?php if (!$current_yl_matched && $student_year_level): ?>
+                                <option value="<?= htmlspecialchars($student_year_level) ?>" selected><?= htmlspecialchars($student_year_level) ?></option>
+                                <?php endif; ?>
+                            </select>
+                            <?php else: ?>
+                            <input type="text" id="set_yearlevel" name="year_level" maxlength="30" value="<?= htmlspecialchars($student_year_level ?? '') ?>"/>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    <div class="settings-hint">Changing your Username changes what you sign in with. Changing your Year Level changes which faculty &amp; staff you're eligible to evaluate.</div>
+                    <button type="submit" class="btn-primary-cta"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button>
+                </form>
+            </div>
+
+            <div class="gl-card">
+                <h3><i class="fa-solid fa-lock"></i> Change Password</h3>
+                <?php if ($password_success): ?>
+                <div class="alert alert-success"><i class="fa-solid fa-circle-check"></i> <?= htmlspecialchars($password_success) ?></div>
+                <?php endif; ?>
+                <?php if ($password_error): ?>
+                <div class="alert alert-error"><i class="fa-solid fa-circle-exclamation"></i> <?= htmlspecialchars($password_error) ?></div>
+                <?php endif; ?>
+                <form method="POST" action="student_dashboard.php" id="changePwForm" autocomplete="off">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="change_password" value="1"/>
+                    <div class="settings-grid">
+                        <div class="settings-field">
+                            <label for="cur_pw">Current Password</label>
+                            <div class="pw-wrap">
+                                <input type="password" id="cur_pw" name="current_password" required autocomplete="current-password"/>
+                                <button type="button" class="pw-toggle" onclick="togglePw('cur_pw','ic1')"><i class="fa-solid fa-eye" id="ic1"></i></button>
+                            </div>
+                        </div>
+                        <div></div>
+                        <div class="settings-field">
+                            <label for="new_pw">New Password</label>
+                            <div class="pw-wrap">
+                                <input type="password" id="new_pw" name="new_password" required minlength="8" maxlength="72" autocomplete="new-password"/>
+                                <button type="button" class="pw-toggle" onclick="togglePw('new_pw','ic2')"><i class="fa-solid fa-eye" id="ic2"></i></button>
+                            </div>
+                        </div>
+                        <div class="settings-field">
+                            <label for="confirm_pw">Confirm New Password</label>
+                            <div class="pw-wrap">
+                                <input type="password" id="confirm_pw" name="confirm_password" required minlength="8" maxlength="72" autocomplete="new-password"/>
+                                <button type="button" class="pw-toggle" onclick="togglePw('confirm_pw','ic3')"><i class="fa-solid fa-eye" id="ic3"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="settings-hint">Minimum 8 characters. Use something you don't use anywhere else.</div>
+                    <div class="alert alert-error" id="pwMismatch" style="display:none;"><i class="fa-solid fa-circle-exclamation"></i> New passwords do not match.</div>
+                    <button type="submit" class="btn-primary-cta" id="updatePwBtn"><i class="fa-solid fa-key"></i> Update Password</button>
+                </form>
             </div>
 
             <div class="gl-card">
@@ -1542,6 +1971,28 @@ function switchView(view) {
     document.getElementById('nav-' + view)?.classList.add('active');
     closeSidebarMobile();
     window.scrollTo({top: 0, behavior: 'smooth'});
+}
+
+// ── Settings: show/hide password ──
+function togglePw(inputId, iconId) {
+    const input = document.getElementById(inputId), icon = document.getElementById(iconId);
+    input.type = input.type === 'password' ? 'text' : 'password';
+    icon.className = input.type === 'password' ? 'fa-solid fa-eye' : 'fa-solid fa-eye-slash';
+}
+
+// ── Settings: change password form guard ──
+const changePwForm = document.getElementById('changePwForm');
+if (changePwForm) {
+    changePwForm.addEventListener('submit', (ev) => {
+        const np = document.getElementById('new_pw').value, cp = document.getElementById('confirm_pw').value;
+        if (np !== cp) {
+            ev.preventDefault();
+            document.getElementById('pwMismatch').style.display = 'flex';
+            return;
+        }
+        document.getElementById('pwMismatch').style.display = 'none';
+        document.getElementById('updatePwBtn').disabled = true;
+    });
 }
 
 // ── Mobile sidebar drawer ──

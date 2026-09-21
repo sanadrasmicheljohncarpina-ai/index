@@ -11,6 +11,7 @@ session_set_cookie_params([
 session_start();
 require_once 'db.php';
 require_once dirname(__DIR__) . '/shared/system_settings_service.php';
+require_once 'school_head_structure_gate.php';
 
 // ── AUTH GUARD ────────────────────────────────────────────
 if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'dean') {
@@ -93,8 +94,12 @@ $stmt->close();
 $photo_src = !empty($me['photo']) ? UPLOAD_URL . $me['photo'] : UPLOAD_URL . 'pbi_logo';
 
 // ── GLOBAL SYSTEM SETTINGS (single source of truth) ───────────────────
-$settings = get_system_settings($mysqli);
-$structureActive = ($settings['academic_structure'] === 'college');
+$settings = get_school_head_settings($mysqli, 'dean');
+// Academic Structure / Academic Term gate: Dean owns College, Principal
+// owns School Year. Narrow-only — existing scheduling, Force Open and
+// Force Closed still decide open/closed while College is active.
+$settings = sh_gate_apply($settings, 'dean');
+$structureActive = !empty($settings['school_head_applicable']);
 $period_id_int   = $settings['period_id'] ?? 0;
 $hasPeriod       = $period_id_int > 0;
 $evalOpen        = $settings['is_open_for_submission'];
@@ -159,14 +164,14 @@ if ($structureActive) {
     // (legacy) and target_type='Faculty' (current questionnaire model). Treat
     // either as the Faculty questionnaire so Required never collapses to 0.
     $teacherQuestionCount = (int)(safe_scalar($mysqli,
-        "SELECT COUNT(*) FROM evaluation_questions WHERE eval_type='student' AND target_type IN ('Teacher','Faculty')"
+        "SELECT COUNT(*) FROM evaluation_questions WHERE target_type='Faculty' AND eval_type='general' AND evaluator_role='shared' AND is_active=1"
     ) ?? 0);
     $multiRoleQuestionCount = (int)(safe_scalar($mysqli,
-        "SELECT COUNT(*) FROM evaluation_questions WHERE eval_type='student' AND target_type='Multi-Role'"
+        "SELECT COUNT(*) FROM evaluation_questions WHERE target_type='Faculty' AND eval_type='general' AND evaluator_role='shared' AND is_active=1"
     ) ?? 0);
     if ($multiRoleQuestionCount === 0) {
         $multiRoleQuestionCount = (int)(safe_scalar($mysqli,
-            "SELECT COUNT(*) FROM user_questions WHERE eval_type='student' AND target_type='Multi-Role'"
+            "SELECT COUNT(*) FROM user_questions WHERE eval_type='general' AND target_type='Staff'"
         ) ?? 0);
     }
 
@@ -207,7 +212,7 @@ if ($structureActive) {
           AND EXISTS (
               SELECT 1 FROM user_questions uq
               WHERE uq.user_id=u.id
-                AND uq.eval_type='student'
+                AND uq.eval_type='general'
                 AND uq.target_type='Staff'
           )
     ") ?? 0);
@@ -250,7 +255,7 @@ if ($structureActive) {
           AND EXISTS (
               SELECT 1 FROM user_questions uq
               WHERE uq.user_id=u.id
-                AND uq.eval_type='student'
+                AND uq.eval_type='general'
                 AND uq.target_type='Dean'
           )
     ") ?? 0);
@@ -314,8 +319,8 @@ if ($structureActive) {
                           FROM questionnaire_answers qam
                           JOIN user_questions uqm ON uqm.id=qam.user_question_id
                           WHERE qam.tracker_id=et.id
-                            AND uqm.eval_type='student'
-                            AND uqm.target_type='Multi-Role'
+                            AND uqm.eval_type='general'
+                            AND uqm.target_type IN ('Staff','Dean','Principal')
                       )
                     THEN CONCAT('multi:', et.target_user_id) END) AS multi_completed,
                 COUNT(DISTINCT CASE
@@ -508,7 +513,7 @@ html{background:var(--page);}
 body{min-height:100vh;background:var(--page);font-family:'DM Sans',system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);display:flex;}
 
 /* Keep the existing Dean navigation; only the tracker content is restyled. */
-.sidebar{width:250px;flex-shrink:0;background:rgba(23,42,69,.96);border-right:1px solid rgba(255,255,255,.08);min-height:100vh;padding:28px 20px;display:flex;flex-direction:column;}
+.sidebar{width:250px;flex-shrink:0;background:#0F1F33;border-right:1px solid #060E18;min-height:100vh;padding:28px 20px;display:flex;flex-direction:column;}
 .sb-profile{text-align:center;margin-bottom:26px}.sb-photo{width:72px;height:72px;border-radius:50%;object-fit:cover;border:2.5px solid #7C5FD9;box-shadow:0 0 18px rgba(124,95,217,.4);margin:0 auto 10px;display:block}.sb-name{font-weight:700;font-size:15px;color:#fff}.sb-role{font-size:11px;color:#9C85F0;text-transform:uppercase;letter-spacing:.6px;margin-top:2px}.sb-scope{font-size:10px;color:#A0B3C6;margin-top:4px}.sb-nav{display:flex;flex-direction:column;gap:4px;margin-top:10px}.sb-nav a{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:8px;color:#A0B3C6;text-decoration:none;font-size:14px;font-weight:500;transition:background .2s,color .2s}.sb-nav a:hover,.sb-nav a.active{background:rgba(124,95,217,.15);color:#fff}.sb-nav a i{width:18px;text-align:center;color:#9C85F0}.sb-logout{margin-top:auto}.sb-logout a{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:8px;color:#fca5a5;text-decoration:none;font-size:14px;font-weight:500}.sb-logout a:hover{background:rgba(240,84,84,.12)}
 
 .main{flex:1;min-width:0;padding:34px 40px 42px;}

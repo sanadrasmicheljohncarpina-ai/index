@@ -12,6 +12,7 @@
         require_once 'db.php';
         require_once '../shared/eligibility.php';
         require_once '../shared/ea_personnel_service.php';
+require_once '../shared/QuestionnaireService.php';
         // ── AUTH GUARD ────────────────────────────────────────────────
         if (empty($_SESSION['user_id']) || $_SESSION['role'] !== 'staff') {
             header("Location: faculty_login.php"); exit;
@@ -20,6 +21,8 @@
         $user_id     = $_SESSION['user_id'];
         $full_name   = $_SESSION['full_name']   ?? 'Staff';
         $designation = $_SESSION['designation'] ?? 'Staff';
+
+qn_migrate_legacy_once($mysqli);
         $page        = $_GET['page'] ?? 'dashboard';
         // NOTE: 'peer' / 'peer_eval' are live pages in their own right (the
         // Peer Evaluation feature below) and must NOT be aliased away — only
@@ -335,12 +338,13 @@
         if (in_array($page, ['staff_eval','staff_eval_form'], true) && $staff_eval_target) {
             $q = $mysqli->prepare("
                 SELECT id, category, question_text
-                FROM evaluation_questions
-                WHERE eval_type='staff'
+                FROM user_questions
+                WHERE user_id=?
                   AND target_type=?
+                  AND eval_type='general'
                 ORDER BY category ASC, id ASC
             ");
-            $q->bind_param('s', $staff_eval_target['target_type']);
+            $q->bind_param('is', $staff_eval_target['id'], $staff_eval_target['target_type']);
             $q->execute();
             $staff_eval_questions = $q->get_result()->fetch_all(MYSQLI_ASSOC);
             $q->close();
@@ -391,12 +395,18 @@
         $res_stmt->close();
 
         $cat_stmt = $mysqli->prepare("
-            SELECT eq.category, AVG(qa.answer_score) as avg_cat
+            SELECT COALESCE(uq.category, eq.category, 'General') AS category,
+                   AVG(qa.answer_score) AS avg_cat
             FROM questionnaire_answers qa
             JOIN evaluation_tracker et ON et.id = qa.tracker_id
-            JOIN evaluation_questions eq ON eq.id = qa.question_id
+            LEFT JOIN user_questions uq
+              ON qa.question_source='user'
+             AND uq.id = COALESCE(qa.user_question_id, qa.question_id)
+            LEFT JOIN evaluation_questions eq
+              ON qa.question_source='evaluation'
+             AND eq.id = qa.question_id
             WHERE et.target_user_id = ?
-            GROUP BY eq.category
+            GROUP BY COALESCE(uq.category, eq.category, 'General')
         ");
         $cat_stmt->bind_param("i", $user_id);
         $cat_stmt->execute();
@@ -532,11 +542,12 @@
             } else {
                 $validStmt = $mysqli->prepare("
                     SELECT id
-                    FROM evaluation_questions
-                    WHERE eval_type='staff'
+                    FROM user_questions
+                    WHERE user_id=?
+                      AND eval_type='general'
                       AND target_type=?
                 ");
-                $validStmt->bind_param('s', $target['target_type']);
+                $validStmt->bind_param('is', $target['id'], $target['target_type']);
                 $validStmt->execute();
                 $validRes = $validStmt->get_result();
                 $valid_question_ids = [];
@@ -604,7 +615,7 @@
                     $ans = $mysqli->prepare("
                         INSERT INTO questionnaire_answers
                         (tracker_id,question_id,question_source,user_question_id,answer_score,submitted_at)
-                        VALUES (?,?,'evaluation',NULL,?,NOW())
+                        VALUES (?,NULL,'user',?,?,NOW())
                     ");
                     foreach ($ratings as $qid => $rating) {
                         $qid = (int)$qid;
@@ -729,10 +740,10 @@
                 // category resolve_target_type() returns - the admin tool never
                 // stores questions under those values).
                 if ($peer_eval_group === 'staff') {
-                    $qs = $mysqli->prepare("SELECT * FROM user_questions WHERE user_id=? AND eval_type='peer' ORDER BY category ASC, sort_order ASC, id ASC");
+                    $qs = $mysqli->prepare("SELECT * FROM user_questions WHERE user_id=? AND target_type='Staff' AND eval_type='general' ORDER BY category ASC, id ASC");
                     $qs->bind_param("i", $tid); $qs->execute();
                 } else {
-                    $qs = $mysqli->prepare("SELECT * FROM evaluation_questions WHERE target_type='Teacher' AND eval_type='peer' ORDER BY category ASC, id ASC");
+                    $qs = $mysqli->prepare("SELECT * FROM evaluation_questions WHERE target_type='Faculty' AND eval_type='general' AND evaluator_role='shared' AND is_active=1 ORDER BY category ASC, id ASC");
                     $qs->execute();
                 }
                 $peer_questions = $qs->get_result()->fetch_all(MYSQLI_ASSOC); $qs->close();
@@ -813,10 +824,10 @@
             // for Staff targets, shared 'Teacher'-bucket evaluation_questions
             // otherwise.
             if ($submitted_group === 'staff') {
-                $validQStmt = $mysqli->prepare("SELECT id FROM user_questions WHERE user_id=? AND eval_type='peer'");
+                $validQStmt = $mysqli->prepare("SELECT id FROM user_questions WHERE user_id=? AND target_type='Staff' AND eval_type='general'");
                 $validQStmt->bind_param("i", $tid);
             } else {
-                $validQStmt = $mysqli->prepare("SELECT id FROM evaluation_questions WHERE target_type='Teacher' AND eval_type='peer'");
+                $validQStmt = $mysqli->prepare("SELECT id FROM evaluation_questions WHERE target_type='Faculty' AND eval_type='general' AND evaluator_role='shared' AND is_active=1");
             }
             $validQStmt->execute();
             $validQRes = $validQStmt->get_result();
@@ -850,11 +861,14 @@ $trk->bind_param("iiiissds", $user_id, $tid, $peer_form_id, $period_id, $eval_ty
 $trk->execute();
 $tracker_id = $mysqli->insert_id; $trk->close();
 
-                    $ins = $mysqli->prepare("INSERT INTO questionnaire_answers (tracker_id, question_id, answer_score, submitted_at) VALUES (?,?,?,NOW())");
+                    $questionSource = $submitted_group === 'teacher' ? 'evaluation' : 'user';
+                    $ins = $mysqli->prepare("INSERT INTO questionnaire_answers (tracker_id, question_id, question_source, user_question_id, answer_score, submitted_at) VALUES (?, ?, ?, ?, ?, NOW())");
                     foreach ($ratings as $qid => $rating) {
                         $qid   = intval($qid);
                         $score = min(5, max(1, intval($rating)));
-                        $ins->bind_param("iid", $tracker_id, $qid, $score);
+                        $questionId = $questionSource === 'evaluation' ? $qid : null;
+                        $userQuestionId = $questionSource === 'user' ? $qid : null;
+                        $ins->bind_param("iisii", $tracker_id, $questionId, $questionSource, $userQuestionId, $score);
                         $ins->execute();
                     }
                     $ins->close();
@@ -1026,7 +1040,7 @@ $tracker_id = $mysqli->insert_id; $trk->close();
         .dd-appearance-val{margin-left:auto;font-size:11px;color:var(--muted);font-weight:700;background:rgba(255,255,255,.06);padding:3px 9px;border-radius:20px;flex-shrink:0;}
         .profile-dd-btn:hover .dd-appearance-val{color:var(--teal-hover);}
         .sidebar-nav{flex:1;padding:16px 10px;overflow-y:auto;}
-        .nav-section-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);padding:0 8px;margin-bottom:6px;margin-top:16px;}
+        .nav-section-label{font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:1.5px;color:#99F6E4;padding:0 8px;margin-bottom:7px;margin-top:16px;text-align:center;text-shadow:0 1px 8px rgba(45,212,191,.14);}
         .nav-section-label:first-child{margin-top:0;}
         .nav-link{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:var(--muted);text-decoration:none;font-size:14px;font-weight:600;transition:all .2s;margin-bottom:2px;}
         .nav-link:hover{background:rgba(255,255,255,.05);color:var(--light);}
@@ -1378,9 +1392,126 @@ $tracker_id = $mysqli->insert_id; $trk->close();
 .compact-eval-qtext{font-size:13px;color:var(--light);line-height:1.45}.compact-eval-qno{color:var(--teal-hover);font-weight:800;margin-right:7px}.compact-eval-rating{display:flex;justify-content:center}.compact-eval-rating button{width:38px;height:32px;padding:0;border-radius:7px;border:1px solid var(--border);background:var(--inner);color:var(--muted);font-size:13px;font-weight:800;cursor:pointer;transition:.15s ease}.compact-eval-rating button:hover{border-color:var(--teal);background:rgba(20,184,166,.08)}.compact-eval-rating button.selected{background:var(--teal);border-color:var(--teal);color:#fff}
 @media(max-width:760px){.compact-eval-table th:not(:first-child){width:48px}.compact-eval-rating button{width:32px;height:30px}.compact-eval-qtext{font-size:12px}}
 
-</style>
+
+
+/* ── Light theme refinement: white surface + coordinated text/tab/icon states ── */
+body.light-theme .nav-section-label{
+    color:#4F46E5;
+    text-shadow:none;
+}
+body.light-theme .nav-link{
+    color:#52677A;
+}
+body.light-theme .nav-link:hover{
+    background:rgba(15,31,61,.055);
+    color:#16263B;
+}
+body.light-theme .nav-link.active{
+    background:rgba(99,102,241,.11);
+    color:#4F46E5;
+    font-weight:700;
+}
+body.light-theme .nav-link.active i{
+    color:#4F46E5;
+}
+body.light-theme .nav-link .badge{
+    background:#6366F1;
+    color:#FFFFFF;
+}
+body.light-theme .period-badge{
+    background:rgba(99,102,241,.09);
+    border-color:rgba(99,102,241,.22);
+    color:#4F46E5;
+}
+body.light-theme .sidebar-sub{
+    color:#4F46E5;
+}
+body.light-theme .brand-avatar{
+    border-color:#6366F1;
+    box-shadow:0 0 10px rgba(99,102,241,.16);
+    background:#EEF2F8;
+}
+body.light-theme .brand-avatar .brand-initials{
+    color:#4F46E5;
+}
+body.light-theme .profile-dd-btn{
+    color:#16263B;
+}
+body.light-theme .profile-dd-btn:hover{
+    background:rgba(15,31,61,.055);
+}
+body.light-theme .dd-appearance-val{
+    color:#52677A;
+    background:#EEF2F8;
+}
+body.light-theme .ea-tab{
+    background:rgba(99,102,241,.06);
+    color:#4338CA;
+    border-color:rgba(99,102,241,.20);
+}
+body.light-theme .ea-tab i{
+    color:#4F46E5;
+}
+body.light-theme .ea-tab:hover{
+    background:rgba(99,102,241,.10);
+    border-color:rgba(99,102,241,.30);
+    color:#3730A3;
+}
+body.light-theme .ea-tab.active{
+    background:rgba(99,102,241,.12);
+    border-color:#6366F1;
+    color:#3730A3;
+    box-shadow:0 6px 20px rgba(15,31,61,.08);
+}
+body.light-theme .ea-tab.active i{
+    color:#4F46E5;
+}
+body.light-theme .ea-tab .count{
+    background:rgba(99,102,241,.10);
+    color:#4338CA;
+}
+body.light-theme .ea-tab.active .count{
+    background:rgba(99,102,241,.16);
+    color:#3730A3;
+}
+body.light-theme .peer-card,
+body.light-theme .role-card,
+body.light-theme .section-card,
+body.light-theme .stat-card,
+body.light-theme .eval-modal,
+body.light-theme .eval-item,
+body.light-theme .ea-table-card,
+body.light-theme .compact-eval-table-wrap{
+    box-shadow:0 6px 22px rgba(15,31,61,.055);
+}
+body.light-theme .peer-card:hover{
+    border-color:rgba(99,102,241,.24);
+}
+body.light-theme .peer-card.is-done{
+    background:#F8FAFD;
+}
+body.light-theme .peer-select-input{
+    background-color:#FFFFFF;
+    color:#16263B;
+}
+body.light-theme .peer-select-input::placeholder{
+    color:#7A8B9B;
+}
+body.light-theme .compact-eval-table th{
+    background:#EEF2F8;
+    color:#5B7186;
+}
+body.light-theme .compact-eval-table td{
+    border-bottom-color:rgba(15,31,61,.07);
+}
+body.light-theme .btn-save-photo,
+body.light-theme .btn-proceed-peer{
+    color:#FFFFFF;
+}
+
+    </style>
         </head>
-        <body>
+        <body class="light-theme">
 
         <!-- SIDEBAR -->
         <aside class="sidebar" id="sidebar">
@@ -1405,7 +1536,7 @@ $tracker_id = $mysqli->insert_id; $trk->close();
                 <button type="button" class="profile-dd-btn" id="appearanceBtn" onclick="toggleAppearance(event)">
                     <i class="fa-solid fa-palette dd-icon-purple"></i>
                     Appearance
-                    <span class="dd-appearance-val" id="appearanceVal">Dark</span>
+                    <span class="dd-appearance-val" id="appearanceVal">Light</span>
                 </button>
                 <div class="profile-dd-divider"></div>
                 <a href="../logout.php" class="profile-dd-btn logout"
@@ -1879,8 +2010,8 @@ $tracker_id = $mysqli->insert_id; $trk->close();
                                 if ($doneRow) { $done = true; $last_eval = $doneRow['submitted_at']; }
                                 $chk->close();
                             }
-                            $qc = $mysqli->prepare("SELECT COUNT(*) AS c FROM evaluation_questions WHERE eval_type='staff' AND target_type=?");
-                            $qc->bind_param('s', $target['target_type']);
+                            $qc = $mysqli->prepare("SELECT COUNT(*) AS c FROM user_questions WHERE user_id=? AND target_type=? AND eval_type='general'");
+                            $qc->bind_param('is', $target['id'], $target['target_type']);
                             $qc->execute();
                             $qCount = (int)($qc->get_result()->fetch_assoc()['c'] ?? 0);
                             $qc->close();
@@ -2363,7 +2494,9 @@ function toggleAllEvals() {
             applyAppearance(next);
         }
         document.addEventListener('DOMContentLoaded', function() {
-            applyAppearance(localStorage.getItem('pbi_theme') || 'dark');
+            const savedTheme = localStorage.getItem('pbi_theme');
+            const theme = savedTheme === 'dark' || savedTheme === 'light' ? savedTheme : 'light';
+            applyAppearance(theme);
         });
 
         // ── Notification bell ──
