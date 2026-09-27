@@ -31,7 +31,7 @@ $userId = (int)$_SESSION['user_id'];
 // Pull the current Dean profile before processing a request so all forms
 // and the sidebar always reflect the latest saved data.
 $stmt = $mysqli->prepare(
-    "SELECT full_name, username, email, designation, photo, department, employee_id
+    "SELECT full_name, username, email, designation, photo
      FROM users WHERE id = ? AND role = 'dean' LIMIT 1"
 );
 $stmt->bind_param('i', $userId);
@@ -58,8 +58,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // ── PROFILE DETAILS ───────────────────────────────────────────
         if ($action === 'update_profile') {
-            $newName  = trim((string)($_POST['full_name'] ?? ''));
-            $newEmail = trim((string)($_POST['email'] ?? ''));
+            $newName       = trim((string)($_POST['full_name'] ?? ''));
+            $newEmail      = trim((string)($_POST['email'] ?? ''));
+            $newUsername   = trim((string)($_POST['username'] ?? ''));
+            $newDesignation = trim((string)($_POST['designation'] ?? ''));
 
             if ($newName === '') {
                 $errors[] = "Full name can't be empty.";
@@ -73,26 +75,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = 'Email must be 150 characters or fewer.';
             }
 
+            if ($newUsername === '') {
+                $errors[] = "Username can't be empty.";
+            } elseif (mb_strlen($newUsername) > 50) {
+                $errors[] = 'Username must be 50 characters or fewer.';
+            } elseif (preg_match('/\s/', $newUsername)) {
+                $errors[] = 'Username cannot contain spaces.';
+            }
+
+            if (mb_strlen($newDesignation) > 100) {
+                $errors[] = 'Designation must be 100 characters or fewer.';
+            }
+
             if (!$errors) {
                 try {
-                    // Prevent changing the email to another account's email.
-                    $check = $mysqli->prepare('SELECT id FROM users WHERE email = ? AND id <> ? LIMIT 1');
-                    $check->bind_param('si', $newEmail, $userId);
+                    // Keep account identifiers unique while excluding this Dean.
+                    $check = $mysqli->prepare('SELECT id, username, email FROM users WHERE (username = ? OR email = ?) AND id <> ? LIMIT 1');
+                    $check->bind_param('ssi', $newUsername, $newEmail, $userId);
                     $check->execute();
                     $duplicate = $check->get_result()->fetch_assoc();
                     $check->close();
 
                     if ($duplicate) {
-                        $errors[] = 'That email address is already in use.';
+                        if (($duplicate['username'] ?? '') === $newUsername) {
+                            $errors[] = 'That username is already in use.';
+                        } else {
+                            $errors[] = 'That email address is already in use.';
+                        }
                     } else {
-                        $stmt = $mysqli->prepare('UPDATE users SET full_name = ?, email = ? WHERE id = ? AND role = \'dean\'');
-                        $stmt->bind_param('ssi', $newName, $newEmail, $userId);
+                        $stmt = $mysqli->prepare("UPDATE users
+                            SET full_name = ?, email = ?, username = ?, designation = ?
+                            WHERE id = ? AND role = 'dean'");
+                        $stmt->bind_param('ssssi', $newName, $newEmail, $newUsername, $newDesignation, $userId);
                         $stmt->execute();
                         $stmt->close();
 
                         $me['full_name'] = $newName;
                         $me['email'] = $newEmail;
+                        $me['username'] = $newUsername;
+                        $me['designation'] = $newDesignation;
                         $_SESSION['full_name'] = $newName;
+                        $_SESSION['username'] = $newUsername;
                         $success = 'Profile details updated successfully.';
                     }
                 } catch (mysqli_sql_exception $e) {
@@ -197,8 +220,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $photoUrl = !empty($me['photo']) ? UPLOAD_URL . $me['photo'] : '../background.png';
 $displayDesignation = trim((string)($me['designation'] ?? '')) ?: 'Dean';
-$displayDepartment = trim((string)($me['department'] ?? '')) ?: 'Higher Education Division';
-$displayEmployeeId = trim((string)($me['employee_id'] ?? '')) ?: 'Not assigned';
 
 $active = 'settings';
 $sidebarScope = 'Higher Education Division';
@@ -223,6 +244,7 @@ body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,
 .profile-card{display:flex;align-items:center;gap:24px}.profile-photo-lg{width:96px;height:96px;border-radius:50%;object-fit:cover;border:3px solid var(--violet);box-shadow:0 0 22px rgba(124,95,217,.3);background:var(--inner)}.photo-help{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.5}
 .form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:17px 20px;margin-bottom:20px}.form-group{display:flex;flex-direction:column;gap:7px}.form-group label{font-size:11px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}.form-group input{width:100%;padding:12px 13px;background:rgba(10,25,47,.72);border:1px solid rgba(255,255,255,.1);border-radius:9px;color:var(--light);font:14px 'DM Sans',sans-serif;outline:none;transition:.2s}.form-group input:focus{border-color:var(--violet);box-shadow:0 0 0 3px rgba(124,95,217,.16)}.form-group input:disabled{opacity:.65;cursor:not-allowed;background:rgba(10,25,47,.5)}
 .btn-primary{padding:11px 17px;border:0;border-radius:9px;background:var(--violet);color:#fff;font:600 14px 'DM Sans',sans-serif;cursor:pointer;box-shadow:0 4px 14px rgba(124,95,217,.3);transition:.2s}.btn-primary:hover{background:var(--violet-h);transform:translateY(-1px)}.btn-secondary{padding:11px 17px;border:1px solid rgba(255,255,255,.12);border-radius:9px;background:rgba(10,25,47,.5);color:var(--light);font:600 14px 'DM Sans',sans-serif;cursor:pointer}
+.setting-row{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap}.setting-row strong{display:block;font-size:14px;color:var(--text-l,#fff);margin-bottom:2px}.setting-row .appearance-hint{font-size:12px;color:var(--muted-l,var(--muted))}.appearance-choice-row{display:flex;gap:10px;flex-wrap:wrap}.appearance-choice{display:flex;align-items:center;gap:8px;padding:10px 16px;border-radius:9px;border:1px solid var(--line-strong-l,rgba(255,255,255,.12));background:var(--card-l,rgba(10,25,47,.5));color:var(--muted-l,var(--muted));font:600 13px 'DM Sans',sans-serif;cursor:pointer;transition:.2s}.appearance-choice:hover{border-color:#7C5FD9;color:#7C5FD9}.appearance-choice.active{background:rgba(124,95,217,.14);border-color:#7C5FD9;color:#7C5FD9}
 .password-note{font-size:12px;color:var(--muted);margin:-5px 0 18px}.info-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:20px}.info-item{padding:14px;border-radius:10px;background:rgba(10,25,47,.42);border:1px solid rgba(255,255,255,.06)}.info-item span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:5px}.info-item strong{font-size:14px;color:#fff;font-weight:600;word-break:break-word}
 @media(max-width:900px){.sidebar{width:220px}.main{padding:28px 24px}.form-grid,.info-grid{grid-template-columns:1fr}}@media(max-width:650px){body{display:block}.sidebar{width:100%;min-height:auto;padding:18px}.sb-nav{display:grid;grid-template-columns:repeat(2,1fr)}.sb-logout{margin-top:12px}.main{padding:24px 16px}.profile-card{align-items:flex-start;flex-direction:column}.form-grid,.info-grid{grid-template-columns:1fr}}
 </style>
@@ -238,6 +260,20 @@ body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,
 
     <?php if ($success): ?><div class="alert success"><i class="fa-solid fa-circle-check"></i><?= htmlspecialchars($success) ?></div><?php endif; ?>
     <?php foreach ($errors as $err): ?><div class="alert error"><i class="fa-solid fa-circle-exclamation"></i><?= htmlspecialchars($err) ?></div><?php endforeach; ?>
+
+    <div class="section">
+        <h2><i class="fa-solid fa-palette"></i> Appearance</h2>
+        <div class="setting-row">
+            <div>
+                <strong>Theme</strong>
+                <div class="appearance-hint">Light is the default portal appearance. Current: <span id="appearanceVal">Light</span></div>
+            </div>
+            <div class="appearance-choice-row">
+                <button type="button" class="appearance-choice" id="appearanceLightBtn" onclick="setAppearance('light')"><i class="fa-solid fa-sun"></i> Light</button>
+                <button type="button" class="appearance-choice" id="appearanceDarkBtn" onclick="setAppearance('dark')"><i class="fa-solid fa-moon"></i> Dark</button>
+            </div>
+        </div>
+    </div>
 
     <div class="section">
         <h2><i class="fa-solid fa-id-badge"></i> Profile Photo</h2>
@@ -263,10 +299,8 @@ body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,
             <div class="form-grid">
                 <div class="form-group"><label>Full Name</label><input type="text" name="full_name" maxlength="150" value="<?= htmlspecialchars($me['full_name'] ?? '') ?>" required></div>
                 <div class="form-group"><label>Email</label><input type="email" name="email" maxlength="150" value="<?= htmlspecialchars($me['email'] ?? '') ?>" required></div>
-                <div class="form-group"><label>Username</label><input type="text" value="<?= htmlspecialchars($me['username'] ?? '') ?>" disabled></div>
-                <div class="form-group"><label>Employee ID</label><input type="text" value="<?= htmlspecialchars($displayEmployeeId) ?>" disabled></div>
-                <div class="form-group"><label>Designation</label><input type="text" value="<?= htmlspecialchars($displayDesignation) ?>" disabled></div>
-                <div class="form-group"><label>Department / Office</label><input type="text" value="<?= htmlspecialchars($displayDepartment) ?>" disabled></div>
+                <div class="form-group"><label>Username</label><input type="text" name="username" maxlength="50" value="<?= htmlspecialchars($me['username'] ?? '') ?>" required autocomplete="username"></div>
+                <div class="form-group"><label>Designation</label><input type="text" name="designation" maxlength="100" value="<?= htmlspecialchars($me['designation'] ?? '') ?>"></div>
             </div>
             <button class="btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button>
         </form>

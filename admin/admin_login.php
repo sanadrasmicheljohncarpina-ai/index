@@ -60,23 +60,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <style>
 :root{
-    --dark-blue:#0B1F3A;
-    --blue-mid:#123B78;
-    --blue-inner:#0F294A;
-    --blue-accent:#3B82F6;
-    --blue-hover:#60A5FA;
-    --light:#EAF2FC;
-    --muted:#91A9C2;
+    --dark-blue:#201A10;
+    --blue-mid:#EFE6D0;
+    --blue-inner:#E9DFC6;
+    --blue-accent:#C9A227;
+    --blue-hover:#9C7A12;
+    --light:#2B2416;
+    --muted:#7A6F58;
     --radius:10px;
-    --shadow:0 8px 32px rgba(0,0,0,.45);
+    --shadow:0 8px 32px rgba(120,100,60,.18);
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{min-height:100%;background:var(--dark-blue)}
 body{
     min-height:100vh;
     background:
-        radial-gradient(circle at 10% 10%,rgba(59,130,246,.16),transparent 32%),
-        radial-gradient(circle at 90% 90%,rgba(96,165,250,.11),transparent 30%),
+        radial-gradient(circle at 10% 10%,rgba(201,162,39,.16),transparent 32%),
+        radial-gradient(circle at 90% 90%,rgba(240,202,90,.11),transparent 30%),
         var(--dark-blue);
     background-attachment:fixed;
     font-family:'DM Sans',sans-serif;color:var(--light);
@@ -88,13 +88,13 @@ body{
    Dean portals, kept in the Admin blue identity. */
 body::before{
     content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
-    background:linear-gradient(180deg,rgba(255,255,255,.025),transparent 26%,rgba(0,0,0,.12));
+    background:linear-gradient(180deg,rgba(20,15,8,.05),transparent 26%,rgba(120,100,60,.06));
 }
 .bg-grid{
     position:fixed;inset:0;z-index:0;pointer-events:none;
     background-image:
-        repeating-linear-gradient(45deg,rgba(59,130,246,.075) 0,rgba(59,130,246,.075) 1px,transparent 1px,transparent 26px),
-        repeating-linear-gradient(-45deg,rgba(59,130,246,.055) 0,rgba(59,130,246,.055) 1px,transparent 1px,transparent 26px);
+        repeating-linear-gradient(45deg,rgba(201,162,39,.075) 0,rgba(201,162,39,.075) 1px,transparent 1px,transparent 26px),
+        repeating-linear-gradient(-45deg,rgba(201,162,39,.055) 0,rgba(201,162,39,.055) 1px,transparent 1px,transparent 26px);
 }
 .hex-deco{position:fixed;z-index:0;pointer-events:none;opacity:.5}
 .hex-1{top:-60px;left:-60px}
@@ -103,43 +103,43 @@ body::before{
 .login-card{
     position:relative;z-index:10;width:100%;max-width:420px;
     padding:48px 44px 40px;
-    background:rgba(23,42,69,.84);
+    background:rgba(255,252,244,.92);
     backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
-    border:1px solid rgba(255,255,255,.12);border-radius:18px;
-    box-shadow:0 24px 70px rgba(0,0,0,.36),0 0 0 1px rgba(255,255,255,.02),0 0 90px rgba(59,130,246,.10);
+    border:1px solid rgba(20,15,8,.14);border-radius:18px;
+    box-shadow:0 24px 70px rgba(120,100,60,.14),0 0 0 1px rgba(20,15,8,.04),0 0 90px rgba(201,162,39,.10);
     transition:border-color .3s ease,box-shadow .3s ease;
     animation:cardIn .7s cubic-bezier(.22,1,.36,1) both;
 }
-.login-card:hover{border-color:rgba(96,165,250,.30);box-shadow:0 24px 70px rgba(0,0,0,.36),0 0 0 1px rgba(255,255,255,.02),0 0 100px rgba(59,130,246,.17)}
+.login-card:hover{border-color:rgba(240,202,90,.30);box-shadow:0 24px 70px rgba(120,100,60,.14),0 0 0 1px rgba(20,15,8,.04),0 0 100px rgba(201,162,39,.17)}
 @keyframes cardIn{from{opacity:0;transform:translateY(32px) scale(.97)}to{opacity:1;transform:none}}
 .card-header{text-align:center;margin-bottom:28px}
 .logo-img{
     width:72px;height:72px;border-radius:50%;object-fit:cover;display:block;
-    border:2.5px solid var(--blue-accent);box-shadow:0 0 22px rgba(59,130,246,.42);
+    border:2.5px solid var(--blue-accent);box-shadow:0 0 22px rgba(201,162,39,.42);
     margin:0 auto 16px;
 }
-.card-title{font-family:'Rajdhani',sans-serif;font-size:26px;font-weight:700;letter-spacing:2px;color:#fff;text-transform:uppercase}
+.card-title{font-family:'Rajdhani',sans-serif;font-size:26px;font-weight:700;letter-spacing:2px;color:#1F1B12;text-transform:uppercase}
 .card-subtitle{font-size:12px;color:var(--muted);letter-spacing:1.2px;text-transform:uppercase;margin-top:4px}
-.divider{height:1px;background:linear-gradient(90deg,transparent,rgba(59,130,246,.40),transparent);margin-bottom:24px}
+.divider{height:1px;background:linear-gradient(90deg,transparent,rgba(201,162,39,.40),transparent);margin-bottom:24px}
 .form-group{margin-bottom:18px}
 .form-label{display:block;font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:7px}
 .input-wrap{position:relative}
 .f-icon{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:14px;pointer-events:none;transition:color .2s}
 .form-input{
     width:100%;padding:12px 42px 12px 40px;min-height:50px;
-    background:rgba(10,25,47,.70);border:1px solid rgba(255,255,255,.10);border-radius:var(--radius);
+    background:rgba(0,0,0,.045);border:1px solid rgba(20,15,8,.12);border-radius:var(--radius);
     color:var(--light);font:500 14px 'DM Sans',sans-serif;outline:none;
     transition:border-color .25s,box-shadow .25s,background .25s;
 }
-.form-input::placeholder{color:rgba(160,179,198,.45)}
-.form-input:hover:not(:focus){border-color:rgba(96,165,250,.42)}
-.form-input:focus{border-color:var(--blue-accent);background:rgba(10,25,47,.84);box-shadow:0 0 0 3px rgba(59,130,246,.20)}
+.form-input::placeholder{color:rgba(122,111,88,.75)}
+.form-input:hover:not(:focus){border-color:rgba(240,202,90,.42)}
+.form-input:focus{border-color:var(--blue-accent);background:rgba(0,0,0,.06);box-shadow:0 0 0 3px rgba(201,162,39,.20)}
 .input-wrap:focus-within .f-icon{color:var(--blue-hover)}
 .toggle-pw{position:absolute;right:13px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:5px;line-height:1}
 .toggle-pw:hover{color:var(--blue-hover)}
 .alert{display:flex;align-items:flex-start;gap:8px;border-radius:8px;padding:11px 14px;font-size:13px;line-height:1.45;margin-bottom:18px}
-.alert-error{background:rgba(240,84,84,.12);border:1px solid rgba(240,84,84,.35);color:#ff8a8a}
-.alert-success{background:rgba(34,197,94,.10);border:1px solid rgba(34,197,94,.28);color:#86efac}
+.alert-error{background:rgba(240,84,84,.12);border:1px solid rgba(240,84,84,.35);color:#C0392B}
+.alert-success{background:rgba(34,197,94,.10);border:1px solid rgba(34,197,94,.28);color:#15803D}
 .forgot-row{text-align:right;margin-top:-10px;margin-bottom:14px}
 .forgot-row a{font-size:12px;color:var(--blue-hover);text-decoration:none;font-weight:600}
 .forgot-row a:hover{text-decoration:underline}
@@ -147,7 +147,7 @@ body::before{
     width:100%;min-height:52px;padding:13px;background:var(--blue-accent);border:none;border-radius:var(--radius);
     color:#fff;font:600 15px 'DM Sans',sans-serif;cursor:pointer;
     display:flex;align-items:center;justify-content:center;gap:8px;
-    box-shadow:0 4px 16px rgba(59,130,246,.40);
+    box-shadow:0 4px 16px rgba(201,162,39,.40);
     transition:background .2s,transform .15s,box-shadow .2s;
 }
 .btn-main:hover{background:var(--blue-hover);transform:translateY(-1px)}
@@ -155,21 +155,24 @@ body::before{
 .register-row{text-align:center;margin-top:16px;font-size:13px;color:var(--muted)}
 .register-row a{color:var(--blue-hover);font-weight:600;text-decoration:none;text-underline-offset:3px}
 .register-row a:hover{text-decoration:underline}
-.card-footer{text-align:center;margin-top:18px;padding-top:14px;border-top:1px solid rgba(255,255,255,.06);font-size:12px;color:var(--muted)}
+.card-footer{text-align:center;margin-top:18px;padding-top:14px;border-top:1px solid rgba(20,15,8,.08);font-size:12px;color:var(--muted)}
 .secure-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
-.secure-badge i{color:#4ade80;font-size:10px}
+.secure-badge i{color:#16A34A;font-size:10px}
 
-button:focus-visible,a:focus-visible,.photo-preview:focus-visible{outline:3px solid rgba(96,165,250,.38);outline-offset:2px}
+button:focus-visible,a:focus-visible,.photo-preview:focus-visible{outline:3px solid rgba(240,202,90,.38);outline-offset:2px}
 @media(prefers-reduced-motion:reduce){.login-card,.reg-card{animation:none;transition:none}.btn-main,.photo-preview{transition:none}}
 @media(max-width:480px){body{padding:16px}.login-card{padding:36px 22px 30px}.card-title{font-size:24px}}
 @media(max-height:700px){body{overflow:auto}}
 </style>
+
+<link rel="stylesheet" href="admin_appearance.css">
+<script src="admin_appearance.js"></script>
 </head>
 <body>
 <div class="bg-grid" aria-hidden="true"></div>
 
-<svg class="hex-deco hex-1" width="260" height="260" viewBox="0 0 260 260" aria-hidden="true"><polygon points="130,10 240,70 240,190 130,250 20,190 20,70" fill="none" stroke="#3B82F6" stroke-width="1"/><polygon points="130,50 200,90 200,170 130,210 60,170 60,90" fill="none" stroke="#3B82F6" stroke-width="1"/></svg>
-<svg class="hex-deco hex-2" width="300" height="300" viewBox="0 0 300 300" aria-hidden="true"><polygon points="150,10 280,80 280,220 150,290 20,220 20,80" fill="none" stroke="#60A5FA" stroke-width="1"/><polygon points="150,60 220,100 220,200 150,240 80,200 80,100" fill="none" stroke="#60A5FA" stroke-width="1"/></svg>
+<svg class="hex-deco hex-1" width="260" height="260" viewBox="0 0 260 260" aria-hidden="true"><polygon points="130,10 240,70 240,190 130,250 20,190 20,70" fill="none" stroke="#C9A227" stroke-width="1"/><polygon points="130,50 200,90 200,170 130,210 60,170 60,90" fill="none" stroke="#C9A227" stroke-width="1"/></svg>
+<svg class="hex-deco hex-2" width="300" height="300" viewBox="0 0 300 300" aria-hidden="true"><polygon points="150,10 280,80 280,220 150,290 20,220 20,80" fill="none" stroke="#9C7A12" stroke-width="1"/><polygon points="150,60 220,100 220,200 150,240 80,200 80,100" fill="none" stroke="#9C7A12" stroke-width="1"/></svg>
 
 <div class="login-card">
     <div class="card-header">

@@ -234,22 +234,22 @@ foreach ($questions as $q) { $questionGroups[$q['category'] ?: 'General'][] = $q
 <title>Evaluate <?= e($target['full_name']) ?> — PBI</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
-:root{--bg:#F8FAFC;--panel:#FFFFFF;--panel2:#E6F0FF;--inner:#F8FAFC;--line:#B9CDE5;--text:#0B1F3A;--muted:#67819E;--purple:#2563EB;--purple-dark:#2563EB;--green:#0F9F6E;--shadow:0 2px 4px rgba(30,82,144,.05),0 6px 16px rgba(30,82,144,.08)}
+:root{--bg:#FBFAF5;--panel:#FFFFFF;--panel2:#FFF8E1;--inner:#FBFAF5;--line:#D8C89A;--text:#2B2416;--muted:#7A6F58;--purple:#C9A227;--purple-dark:#C9A227;--green:#B8860B;--shadow:0 2px 4px rgba(93,72,22,.05),0 6px 16px rgba(93,72,22,.08)}
 *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif}
 .top{height:74px;background:#FFFFFF;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 34px;gap:26px;position:sticky;top:0;z-index:5}
 .brand{font-weight:800;letter-spacing:.4px;flex:1;color:var(--text)}.brand i{color:var(--purple);margin-right:9px}
 .account{color:var(--muted);font-size:13px}
 .wrap{max-width:820px;margin:auto;padding:34px}
 .back-link{color:var(--text);font-size:13.5px;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:8px;margin-bottom:20px;background:var(--panel);border:1px solid var(--line);padding:10px 16px;border-radius:9px}
-.back-link:hover{border-color:#93C5FD;background:var(--panel2)}
+.back-link:hover{border-color:#E3C96A;background:var(--panel2)}
 .person-card{display:flex;align-items:center;gap:16px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;box-shadow:var(--shadow);margin-bottom:22px}
 .person-photo{width:60px;height:60px;border-radius:50%;object-fit:cover;background:var(--inner);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:22px}
 .person-name{font-size:20px;font-weight:800;color:var(--text)}
 .person-meta{font-size:12.5px;color:var(--muted);margin-top:2px}
-.badge{display:inline-block;margin-top:6px;color:var(--purple);font-size:11.5px;background:#E6F0FF;padding:4px 10px;border-radius:99px;font-weight:700}
+.badge{display:inline-block;margin-top:6px;color:var(--purple);font-size:11.5px;background:#FFF8E1;padding:4px 10px;border-radius:99px;font-weight:700}
 .alert{border-radius:10px;padding:13px 16px;font-size:13.5px;margin-bottom:18px;display:flex;align-items:center;gap:8px}
 .alert-error{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.25);color:#ffb4b4}
-.alert-info{background:#E6F0FF;border:1px solid #B8D4F8;color:#2563EB}
+.alert-info{background:#FFF8E1;border:1px solid #E9D8A6;color:#C9A227}
 .q-block{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:var(--shadow);margin-bottom:12px}
 .q-cat{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--purple);margin-bottom:6px}
 .cat-heading{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--purple);margin:26px 0 10px;padding-bottom:8px;border-bottom:1px solid var(--line)}
@@ -267,7 +267,7 @@ foreach ($questions as $q) { $questionGroups[$q['category'] ?: 'General'][] = $q
 .rating-opt{display:flex;justify-content:center;align-items:center}
 .rating-opt input{position:absolute;opacity:0;pointer-events:none}
 .rating-opt label{width:38px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:7px;border:1px solid var(--line);background:var(--inner);color:var(--muted);font-size:13px;font-weight:800;cursor:pointer;transition:.15s ease}
-.rating-opt label:hover{border-color:#93C5FD;background:#F1F7FF}
+.rating-opt label:hover{border-color:#E3C96A;background:#F1F7FF}
 .rating-opt input:checked + label{background:var(--purple);border-color:var(--purple);color:#fff}
 .rating-readonly{display:flex;align-items:center;justify-content:center;gap:6px;font-weight:800;color:var(--text)}
 .rating-readonly .stars{color:#c4b5fd;letter-spacing:1px}
@@ -308,6 +308,9 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
 .feature-compact ::-webkit-scrollbar-button { display: block !important; width: 10px !important; height: 10px !important; background-color: transparent !important; }
 
 </style>
+
+<link rel="stylesheet" href="admin_appearance.css">
+<script src="admin_appearance.js"></script>
 </head>
 <body class="feature-compact">
 <header class="top">
@@ -373,7 +376,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
     <?php
         $manageLabel = 'Questionnaire → Executive Assistant Evaluation → ' . $type;
     ?>
-    <div class="alert alert-info"><i class="fa-solid fa-circle-info"></i> No questions have been assigned to <?= e($target['full_name']) ?> yet. Go to <a href="questionnaire.php?view=manage&eval_type=<?= urlencode($qEvalType) ?>&target=<?= urlencode($qTargetType) ?>&user_id=<?= $targetId ?>" style="color:#2563EB;font-weight:700;"><?= e($manageLabel) ?></a> and select this person to assign their questions.</div>
+    <div class="alert alert-info"><i class="fa-solid fa-circle-info"></i> No questions have been assigned to <?= e($target['full_name']) ?> yet. Go to <a href="questionnaire.php?view=manage&eval_type=<?= urlencode($qEvalType) ?>&target=<?= urlencode($qTargetType) ?>&user_id=<?= $targetId ?>" style="color:#C9A227;font-weight:700;"><?= e($manageLabel) ?></a> and select this person to assign their questions.</div>
 <?php else: ?>
     <form method="post">
         <?php $qn = 0; foreach ($questionGroups as $cat => $qs): ?>

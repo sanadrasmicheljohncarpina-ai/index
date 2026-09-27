@@ -936,3 +936,785 @@ main.main .subtle-head {
   }
 }
 
+
+/* =========================================================================
+   DEAN DARK THEME
+   Same toggle pattern as the Faculty portal: includes/dean_sidebar.php's
+   appearance script adds/removes a `dark-theme` class on <html> and
+   remembers the choice in localStorage. Every selector below is prefixed
+   with `html.dark-theme` so it's more specific than the plain selectors
+   above (and the later, hardcoded "workspace shell" block further up) and
+   wins regardless of stylesheet order.
+   ========================================================================= */
+html.dark-theme {
+  --page-l: #0A192F !important;
+  --card-l: #172A45 !important;
+  --line-l: rgba(255,255,255,.08) !important;
+  --line-strong-l: rgba(255,255,255,.18) !important;
+  --text-l: #E0E6F0 !important;
+  --muted-l: #A0B3C6 !important;
+  --input-l: #0F1F3D !important;
+  --shadow-l: 0 4px 20px rgba(0,0,0,.4) !important;
+
+  --dark: #0A192F !important;
+  --mid: #172A45 !important;
+  --inner: #0F1F3D !important;
+  --light: #E0E6F0 !important;
+  --muted: #A0B3C6 !important;
+  --border: rgba(255,255,255,.08) !important;
+  --page-bg: #0A192F !important;
+  --card-bg: #172A45 !important;
+  --card-border: rgba(255,255,255,.08) !important;
+  --portal-accent-bg: rgba(156,133,240,.16) !important;
+  --portal-accent: #9C85F0 !important;
+  --portal-accent-h: #C4B5FD !important;
+
+  background: #0A192F !important;
+  color-scheme: dark !important;
+}
+
+html.dark-theme body {
+  background: #0A192F !important;
+  background-image: none !important;
+  background-color: #0A192F !important;
+  color: #E0E6F0 !important;
+}
+
+html.dark-theme .main,
+html.dark-theme .content,
+html.dark-theme .page-content,
+html.dark-theme main {
+  background: transparent !important;
+  color: #E0E6F0 !important;
+}
+
+/* Core surfaces */
+html.dark-theme .section,
+html.dark-theme .stat-card,
+html.dark-theme .filter-bar,
+html.dark-theme .table-wrap,
+html.dark-theme .eval-table-wrap,
+html.dark-theme .person-card,
+html.dark-theme .q-block,
+html.dark-theme .comment-block,
+html.dark-theme .profile-card,
+html.dark-theme .tracker-card,
+html.dark-theme .structure-note,
+html.dark-theme .info-banner,
+html.dark-theme .eval-tabs,
+html.dark-theme .eval-switcher,
+html.dark-theme .eval-banner,
+html.dark-theme .sheet-header,
+html.dark-theme .scale-bar,
+html.dark-theme .avg-summary,
+html.dark-theme .comment-section,
+html.dark-theme .response-card,
+html.dark-theme .received-item,
+html.dark-theme .sum-card,
+html.dark-theme .standing-panel,
+html.dark-theme .person-row,
+html.dark-theme .eval-card,
+html.dark-theme .top-bar,
+html.dark-theme .content-panel,
+html.dark-theme .create-panel,
+html.dark-theme .period-card,
+html.dark-theme .history-card,
+html.dark-theme .gl-card,
+html.dark-theme .amber-card,
+html.dark-theme .green-card,
+html.dark-theme .red-card,
+html.dark-theme .no-archived,
+html.dark-theme .target-card,
+html.dark-theme .no-evaluated,
+html.dark-theme .cat-section,
+html.dark-theme .people-list,
+html.dark-theme .evaluator-grid,
+html.dark-theme .no-eval,
+html.dark-theme .no-data,
+html.dark-theme .shell .section {
+  background: var(--card-l) !important;
+  color: var(--text-l) !important;
+  border-color: var(--line-l) !important;
+  box-shadow: var(--shadow-l) !important;
+}
+
+html.dark-theme .notif-list li,
+html.dark-theme .countdown-box,
+html.dark-theme .bar-wrap,
+html.dark-theme .progress-track,
+html.dark-theme .comment-text,
+html.dark-theme .info-item,
+html.dark-theme .rating-badge,
+html.dark-theme .avg-bar-bg,
+html.dark-theme .eval-bar-bg,
+html.dark-theme .score-bar-bg,
+html.dark-theme .cat-bar,
+html.dark-theme .page-btn,
+html.dark-theme .filter-toggle,
+html.dark-theme .filter-menu,
+html.dark-theme .pagination,
+html.dark-theme .filter-menu-actions,
+html.dark-theme .mini-list li,
+html.dark-theme .q-table thead tr,
+html.dark-theme .eval-table thead tr,
+html.dark-theme thead tr {
+  background: var(--input-l) !important;
+  color: var(--text-l) !important;
+}
+
+html.dark-theme .sheet-header,
+html.dark-theme .eval-banner,
+html.dark-theme .eval-card,
+html.dark-theme .target-card,
+html.dark-theme .top-bar,
+html.dark-theme .history-card,
+html.dark-theme .no-archived,
+html.dark-theme .standing-panel,
+html.dark-theme .sum-card,
+html.dark-theme .person-row,
+html.dark-theme .comment-section,
+html.dark-theme .avg-summary,
+html.dark-theme .content-panel {
+  background: #172A45 !important;
+  color: var(--text-l) !important;
+}
+
+html.dark-theme .sheet-avatar-ph,
+html.dark-theme .target-avatar-ph,
+html.dark-theme .person-photo-ph,
+html.dark-theme .standing-photo-ph {
+  background: #0F1F3D !important;
+  border-color: var(--line-l) !important;
+  color: var(--muted-l) !important;
+}
+
+/* Typography / data text */
+html.dark-theme .page-title,
+html.dark-theme .page-header .page-title,
+html.dark-theme .page-header h1,
+html.dark-theme .page-header h2,
+html.dark-theme .section h2,
+html.dark-theme .section-title,
+html.dark-theme .tracker-heading,
+html.dark-theme .eval-modal-title,
+html.dark-theme .sheet-name,
+html.dark-theme .target-name,
+html.dark-theme .person-name,
+html.dark-theme .standing-name,
+html.dark-theme .sum-value,
+html.dark-theme .period-field-value,
+html.dark-theme .info-value,
+html.dark-theme .num,
+html.dark-theme .score-big,
+html.dark-theme .score-big .val,
+html.dark-theme .summary-score,
+html.dark-theme .received-score,
+html.dark-theme td,
+html.dark-theme .q-table td,
+html.dark-theme .eval-table td,
+html.dark-theme .rating-cell,
+html.dark-theme .q-text,
+html.dark-theme .q-table .q-text,
+html.dark-theme .eval-qtext {
+  color: var(--text-l) !important;
+}
+
+html.dark-theme .page-sub,
+html.dark-theme .muted,
+html.dark-theme .empty-note,
+html.dark-theme .no-results,
+html.dark-theme .filter-hint,
+html.dark-theme .count-note,
+html.dark-theme .person-meta,
+html.dark-theme .eval-by-date,
+html.dark-theme .eval-by-label,
+html.dark-theme .sum-label,
+html.dark-theme .sum-sub,
+html.dark-theme .standing-desig,
+html.dark-theme .pstat-lbl,
+html.dark-theme .description,
+html.dark-theme .helper,
+html.dark-theme .subtitle,
+html.dark-theme .small,
+html.dark-theme small,
+html.dark-theme .filter-field label,
+html.dark-theme .toolbar .count-note,
+html.dark-theme .period-field-label,
+html.dark-theme .info-label,
+html.dark-theme .no-comment,
+html.dark-theme .loading-eval,
+html.dark-theme .avg-bar-label,
+html.dark-theme .avg-out-of,
+html.dark-theme .received-meta {
+  color: var(--muted-l) !important;
+}
+
+html.dark-theme .eval-score-lbl {
+  color: var(--muted-l);
+}
+
+html.dark-theme label,
+html.dark-theme th,
+html.dark-theme .table-header,
+html.dark-theme .q-table th,
+html.dark-theme .eval-table th {
+  color: #A0B3C6 !important;
+}
+
+/* Tables / lists */
+html.dark-theme table.data,
+html.dark-theme table.data td,
+html.dark-theme table.data th,
+html.dark-theme .eval-table,
+html.dark-theme .eval-table td,
+html.dark-theme .eval-table th,
+html.dark-theme .q-table,
+html.dark-theme .q-table td,
+html.dark-theme .q-table th {
+  color: var(--text-l) !important;
+}
+
+html.dark-theme table.data th,
+html.dark-theme .q-table th,
+html.dark-theme .eval-table th {
+  border-color: var(--line-l) !important;
+  color: #A0B3C6 !important;
+  background: #0F1F3D !important;
+}
+
+html.dark-theme table.data td,
+html.dark-theme .q-table td,
+html.dark-theme .eval-table td {
+  border-color: var(--line-l) !important;
+}
+
+html.dark-theme table.data tbody tr:hover td,
+html.dark-theme .q-table tbody tr:hover td,
+html.dark-theme .eval-table tbody tr:hover td {
+  background: #1D3350 !important;
+}
+
+/* Forms / filters */
+html.dark-theme input,
+html.dark-theme select,
+html.dark-theme textarea,
+html.dark-theme .filter-field select,
+html.dark-theme .toolbar input[type="text"],
+html.dark-theme .toolbar select,
+html.dark-theme .search-wrap input,
+html.dark-theme .form-group input,
+html.dark-theme .comment-block textarea {
+  background: #0F1F3D !important;
+  color: var(--text-l) !important;
+  border-color: var(--line-strong-l) !important;
+}
+
+html.dark-theme input::placeholder,
+html.dark-theme textarea::placeholder {
+  color: #6B84A0 !important;
+}
+
+html.dark-theme input:focus,
+html.dark-theme select:focus,
+html.dark-theme textarea:focus {
+  border-color: #9C85F0 !important;
+  box-shadow: 0 0 0 3px rgba(156,133,240,.2) !important;
+}
+
+/* Tabs / segmented navigation */
+html.dark-theme .eval-tabs,
+html.dark-theme .eval-switcher,
+html.dark-theme .group-tabs,
+html.dark-theme .faculty-subtabs,
+html.dark-theme .desig-subtabs,
+html.dark-theme .status-tabs,
+html.dark-theme .tabs,
+html.dark-theme .level-tabs {
+  background: #172A45 !important;
+  border-color: var(--line-l) !important;
+  box-shadow: none !important;
+}
+
+html.dark-theme .eval-tab,
+html.dark-theme .tab,
+html.dark-theme .level-tab,
+html.dark-theme .status-tab,
+html.dark-theme .group-tab,
+html.dark-theme .faculty-subtab,
+html.dark-theme .desig-subtab {
+  color: var(--muted-l) !important;
+  background: transparent !important;
+}
+
+html.dark-theme .eval-tab:hover,
+html.dark-theme .tab:hover,
+html.dark-theme .level-tab:hover,
+html.dark-theme .status-tab:hover,
+html.dark-theme .group-tab:hover,
+html.dark-theme .faculty-subtab:hover,
+html.dark-theme .desig-subtab:hover {
+  background: #1D3350 !important;
+  color: var(--text-l) !important;
+}
+
+html.dark-theme .eval-tabs .active,
+html.dark-theme .eval-tab.active,
+html.dark-theme .group-tab.active,
+html.dark-theme .faculty-subtab.active,
+html.dark-theme .desig-subtab.active,
+html.dark-theme .status-tab.active,
+html.dark-theme .group-tab.active-all,
+html.dark-theme .group-tab.active-teacher,
+html.dark-theme .group-tab.active-staff {
+  background: rgba(156,133,240,.16) !important;
+  border-color: rgba(156,133,240,.35) !important;
+  color: #C4B5FD !important;
+}
+
+html.dark-theme .tab-badge,
+html.dark-theme .tab-count,
+html.dark-theme .eval-tab .badge {
+  background: #0F1F3D !important;
+  color: #A0B3C6 !important;
+}
+
+/* Accents, status pills and score bars */
+html.dark-theme .stat-card i,
+html.dark-theme .section h2 i,
+html.dark-theme .page-header i,
+html.dark-theme .info-banner i,
+html.dark-theme .structure-note i,
+html.dark-theme .eval-qno,
+html.dark-theme .fa-circle-info {
+  color: #9C85F0 !important;
+}
+
+html.dark-theme .period-badge {
+  background: rgba(156,133,240,.16) !important;
+  border-color: rgba(156,133,240,.35) !important;
+  color: #C4B5FD !important;
+}
+
+html.dark-theme .period-badge.closed,
+html.dark-theme .closed {
+  background: rgba(240,84,84,.16) !important;
+  border-color: rgba(240,84,84,.35) !important;
+  color: #FCA5A5 !important;
+}
+
+html.dark-theme .period-badge.amber,
+html.dark-theme .amber {
+  background: rgba(217,119,6,.18) !important;
+  border-color: rgba(217,119,6,.35) !important;
+  color: #FBBF24 !important;
+}
+
+html.dark-theme .pill.good,
+html.dark-theme .good {
+  background: rgba(16,185,129,.16) !important;
+  color: #4ADE80 !important;
+  border-color: rgba(16,185,129,.35) !important;
+}
+
+html.dark-theme .pill.warn,
+html.dark-theme .warn {
+  background: rgba(156,133,240,.16) !important;
+  color: #C4B5FD !important;
+  border-color: rgba(156,133,240,.35) !important;
+}
+
+html.dark-theme .status-pill,
+html.dark-theme .role-pill,
+html.dark-theme .yl-pill,
+html.dark-theme .desig-pill {
+  border-color: var(--line-l) !important;
+}
+
+html.dark-theme .yl-pill {
+  background: rgba(96,165,250,.16) !important;
+  color: #93C5FD !important;
+}
+
+html.dark-theme .role-pill {
+  background: #0F1F3D !important;
+  color: #A0B3C6 !important;
+}
+
+html.dark-theme .desig-pill {
+  background: #0F1F3D !important;
+  color: #A0B3C6 !important;
+}
+
+html.dark-theme .bar-wrap,
+html.dark-theme .score-bar-bg,
+html.dark-theme .eval-bar-bg,
+html.dark-theme .avg-bar-bg,
+html.dark-theme .cat-bar {
+  background: rgba(255,255,255,.08) !important;
+}
+
+html.dark-theme .bar-fill,
+html.dark-theme .eval-bar-fill,
+html.dark-theme .avg-bar-fill,
+html.dark-theme .score-bar-fill {
+  background: linear-gradient(90deg,#7C5FD9,#9C85F0) !important;
+}
+
+html.dark-theme .score-big,
+html.dark-theme .avg-score-big,
+html.dark-theme .avg-score-label,
+html.dark-theme .score-top,
+html.dark-theme .standing-score,
+html.dark-theme .pstat-val {
+  color: #4ADE80;
+}
+
+html.dark-theme .standing-title.low,
+html.dark-theme .score-low {
+  color: #FCA5A5 !important;
+}
+
+/* Evaluation form rating controls */
+html.dark-theme .rating-opt label,
+html.dark-theme .eval-rating-cell label {
+  background: #0F1F3D !important;
+  color: #A0B3C6 !important;
+  border-color: var(--line-strong-l) !important;
+}
+
+html.dark-theme .rating-opt label:hover,
+html.dark-theme .eval-rating-cell label:hover {
+  border-color: #9C85F0 !important;
+  background: rgba(156,133,240,.12) !important;
+}
+
+html.dark-theme .rating-opt input:checked + label,
+html.dark-theme .eval-rating-cell input:checked + label {
+  background: #7C5FD9 !important;
+  border-color: #7C5FD9 !important;
+  color: #FFFFFF !important;
+}
+
+html.dark-theme .eval-category-heading,
+html.dark-theme .cat-title,
+html.dark-theme .comment-title,
+html.dark-theme .eval-banner-title {
+  color: #C4B5FD !important;
+}
+
+/* Buttons */
+html.dark-theme .btn-primary,
+html.dark-theme .btn-submit,
+html.dark-theme .btn-eval,
+html.dark-theme .btn-apply,
+html.dark-theme .btn-solid,
+html.dark-theme .filter-apply,
+html.dark-theme .btn-print {
+  background: #7C5FD9 !important;
+  color: #FFFFFF !important;
+  border-color: #7C5FD9 !important;
+}
+
+html.dark-theme .btn-secondary,
+html.dark-theme .btn-view,
+html.dark-theme .btn-cancel,
+html.dark-theme .btn-icon,
+html.dark-theme .page-btn,
+html.dark-theme .filter-clear,
+html.dark-theme .back-btn,
+html.dark-theme .btn-archived-link,
+html.dark-theme .btn-archive,
+html.dark-theme .btn-restore,
+html.dark-theme .btn-action,
+html.dark-theme .action-btn {
+  background: #0F1F3D !important;
+  color: var(--text-l) !important;
+  border-color: var(--line-strong-l) !important;
+}
+
+html.dark-theme .btn-secondary:hover,
+html.dark-theme .btn-view:hover,
+html.dark-theme .btn-cancel:hover,
+html.dark-theme .btn-icon:hover,
+html.dark-theme .page-btn:hover,
+html.dark-theme .filter-clear:hover,
+html.dark-theme .back-btn:hover,
+html.dark-theme .btn-archived-link:hover,
+html.dark-theme .btn-archive:hover,
+html.dark-theme .btn-restore:hover,
+html.dark-theme .btn-action:hover,
+html.dark-theme .action-btn:hover {
+  background: rgba(156,133,240,.12) !important;
+  color: #C4B5FD !important;
+  border-color: rgba(156,133,240,.35) !important;
+}
+
+/* Alerts / notes */
+html.dark-theme .alert,
+html.dark-theme .alert-error,
+html.dark-theme .error {
+  background: rgba(240,84,84,.14) !important;
+  border-color: rgba(240,84,84,.35) !important;
+  color: #FCA5A5 !important;
+}
+
+html.dark-theme .alert-success,
+html.dark-theme .success {
+  background: rgba(16,185,129,.14) !important;
+  border-color: rgba(16,185,129,.35) !important;
+  color: #4ADE80 !important;
+}
+
+html.dark-theme .alert-info,
+html.dark-theme .stub-note,
+html.dark-theme .info-banner {
+  background: rgba(156,133,240,.12) !important;
+  border-color: rgba(156,133,240,.3) !important;
+}
+
+/* Results / received-evaluation details */
+html.dark-theme .response-card,
+html.dark-theme .received-item,
+html.dark-theme .q-result,
+html.dark-theme .comment-modal,
+html.dark-theme .info-grid > div {
+  background: #172A45 !important;
+  border-color: var(--line-l) !important;
+  color: var(--text-l) !important;
+}
+
+html.dark-theme .response-label,
+html.dark-theme .response-head,
+html.dark-theme .info-label,
+html.dark-theme .q-no {
+  color: var(--muted-l) !important;
+}
+
+html.dark-theme .response-comment,
+html.dark-theme .comment-modal,
+html.dark-theme .q-text,
+html.dark-theme .info-value,
+html.dark-theme .cat-name,
+html.dark-theme .cat-name-modal,
+html.dark-theme .q-score,
+html.dark-theme .q-score span {
+  color: var(--text-l) !important;
+}
+
+html.dark-theme .response-score,
+html.dark-theme .received-score {
+  background: rgba(16,185,129,.16) !important;
+  border-color: rgba(16,185,129,.35) !important;
+  color: #4ADE80 !important;
+}
+
+html.dark-theme .view-evals-btn {
+  background: rgba(156,133,240,.14) !important;
+  border-color: rgba(156,133,240,.35) !important;
+  color: #C4B5FD !important;
+}
+
+html.dark-theme .details-btn {
+  background: rgba(45,212,191,.14) !important;
+  border-color: rgba(45,212,191,.35) !important;
+  color: #5EEAD4 !important;
+}
+
+html.dark-theme .eval-modal-overlay {
+  background: rgba(0,0,0,.6) !important;
+}
+
+html.dark-theme .eval-modal {
+  background: #172A45 !important;
+  border-color: var(--line-l) !important;
+  box-shadow: 0 24px 80px rgba(0,0,0,.5) !important;
+}
+
+html.dark-theme .eval-modal-header {
+  border-bottom-color: var(--line-l) !important;
+}
+
+html.dark-theme .eval-modal-title,
+html.dark-theme .modal-section-title {
+  color: var(--text-l) !important;
+}
+
+html.dark-theme .rating-num,
+html.dark-theme .rating-lbl,
+html.dark-theme .eval-score,
+html.dark-theme .eval-score-lbl,
+html.dark-theme .avg-score-big,
+html.dark-theme .avg-score-label,
+html.dark-theme .pstat-val {
+  color: var(--text-l);
+}
+
+/* Notification dropdown */
+html.dark-theme .notif-dropdown,
+html.dark-theme .notif-dropdown-header {
+  background: #172A45 !important;
+  color: var(--text-l) !important;
+  border-color: var(--line-l) !important;
+}
+html.dark-theme .notif-dropdown-header { border-bottom-color: var(--line-l) !important; }
+html.dark-theme .notif-list li { border-color: transparent !important; }
+html.dark-theme .notif-list li i { color: #C4B5FD !important; }
+
+/* Account settings specific content */
+html.dark-theme .form-group input:disabled {
+  background: #0F1F3D !important;
+  color: #7C93AC !important;
+}
+html.dark-theme .info-item {
+  background: rgba(255,255,255,.03) !important;
+  border-color: var(--line-l) !important;
+}
+
+/* Scrollbar */
+html.dark-theme ::-webkit-scrollbar-track { background: #0F1F3D !important; }
+html.dark-theme ::-webkit-scrollbar-thumb { background: #2A4468 !important; border: 2px solid #0F1F3D !important; }
+
+@media(max-width:768px){
+  html.dark-theme body { background: #0A192F !important; }
+}
+
+/* -------------------------------------------------------------------------
+   Dean workspace shell — dark counterpart to the hardcoded white block
+   further up this file. Same selector list, so it wins the same way.
+   ------------------------------------------------------------------------- */
+html.dark-theme .main,
+html.dark-theme main.main {
+  background: #0F1F3D !important;
+  color: #E0E6F0 !important;
+  border-color: rgba(255,255,255,.08) !important;
+}
+
+html.dark-theme .main > .page-header,
+html.dark-theme main.main > .page-header {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+html.dark-theme .main .section,
+html.dark-theme .main .stat-card,
+html.dark-theme .main .filter-bar,
+html.dark-theme .main .table-wrap,
+html.dark-theme .main .eval-table-wrap,
+html.dark-theme .main .person-card,
+html.dark-theme .main .q-block,
+html.dark-theme .main .comment-block,
+html.dark-theme .main .profile-card,
+html.dark-theme .main .tracker-card,
+html.dark-theme .main .structure-note,
+html.dark-theme .main .info-banner,
+html.dark-theme .main .eval-tabs,
+html.dark-theme .main .eval-switcher,
+html.dark-theme .main .eval-banner,
+html.dark-theme .main .sheet-header,
+html.dark-theme .main .scale-bar,
+html.dark-theme .main .avg-summary,
+html.dark-theme .main .comment-section,
+html.dark-theme .main .response-card,
+html.dark-theme .main .received-item,
+html.dark-theme .main .sum-card,
+html.dark-theme .main .standing-panel,
+html.dark-theme .main .person-row,
+html.dark-theme .main .eval-card,
+html.dark-theme .main .top-bar,
+html.dark-theme .main .content-panel,
+html.dark-theme .main .create-panel,
+html.dark-theme .main .period-card,
+html.dark-theme .main .history-card,
+html.dark-theme .main .gl-card,
+html.dark-theme .main .amber-card,
+html.dark-theme .main .green-card,
+html.dark-theme .main .red-card,
+html.dark-theme .main .no-archived,
+html.dark-theme .main .target-card,
+html.dark-theme .main .no-evaluated,
+html.dark-theme .main .cat-section,
+html.dark-theme .main .people-list,
+html.dark-theme .main .evaluator-grid,
+html.dark-theme .main .no-eval,
+html.dark-theme .main .no-data,
+html.dark-theme .main .shell .section,
+html.dark-theme .main .feature-card,
+html.dark-theme main.main .section,
+html.dark-theme main.main .stat-card,
+html.dark-theme main.main .filter-bar,
+html.dark-theme main.main .table-wrap,
+html.dark-theme main.main .eval-table-wrap,
+html.dark-theme main.main .person-card,
+html.dark-theme main.main .q-block,
+html.dark-theme main.main .comment-block,
+html.dark-theme main.main .profile-card,
+html.dark-theme main.main .tracker-card,
+html.dark-theme main.main .structure-note,
+html.dark-theme main.main .info-banner,
+html.dark-theme main.main .eval-tabs,
+html.dark-theme main.main .eval-switcher,
+html.dark-theme main.main .eval-banner,
+html.dark-theme main.main .sheet-header,
+html.dark-theme main.main .scale-bar,
+html.dark-theme main.main .avg-summary,
+html.dark-theme main.main .comment-section,
+html.dark-theme main.main .response-card,
+html.dark-theme main.main .received-item,
+html.dark-theme main.main .sum-card,
+html.dark-theme main.main .standing-panel,
+html.dark-theme main.main .person-row,
+html.dark-theme main.main .eval-card,
+html.dark-theme main.main .top-bar,
+html.dark-theme main.main .content-panel,
+html.dark-theme main.main .create-panel,
+html.dark-theme main.main .period-card,
+html.dark-theme main.main .history-card,
+html.dark-theme main.main .gl-card,
+html.dark-theme main.main .amber-card,
+html.dark-theme main.main .green-card,
+html.dark-theme main.main .red-card,
+html.dark-theme main.main .no-archived,
+html.dark-theme main.main .target-card,
+html.dark-theme main.main .no-evaluated,
+html.dark-theme main.main .cat-section,
+html.dark-theme main.main .people-list,
+html.dark-theme main.main .evaluator-grid,
+html.dark-theme main.main .no-eval,
+html.dark-theme main.main .no-data,
+html.dark-theme main.main .shell .section,
+html.dark-theme main.main .feature-card {
+  background: #172A45 !important;
+  color: #E0E6F0 !important;
+  border-color: rgba(255,255,255,.08) !important;
+  box-shadow: 0 1px 5px rgba(0,0,0,.25) !important;
+}
+
+html.dark-theme .main table thead th,
+html.dark-theme .main .table-head,
+html.dark-theme .main .table-header,
+html.dark-theme .main .thead,
+html.dark-theme .main .subtle-head,
+html.dark-theme main.main table thead th,
+html.dark-theme main.main .table-head,
+html.dark-theme main.main .table-header,
+html.dark-theme main.main .thead,
+html.dark-theme main.main .subtle-head {
+  background: #0F1F3D !important;
+  color: #A0B3C6 !important;
+  border-color: rgba(255,255,255,.08) !important;
+}
+
+/* Printing always stays on a white page regardless of the active theme. */
+@media print {
+  html.dark-theme,
+  html.dark-theme body {
+    background: #FFFFFF !important;
+    color: #000000 !important;
+  }
+  html.dark-theme .main,
+  html.dark-theme main.main {
+    background: #FFFFFF !important;
+    color: #000000 !important;
+  }
+}

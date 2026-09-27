@@ -90,10 +90,10 @@ if ($sc) while ($r = $sc->fetch_assoc()) $sub_counts[$r['period_id']] = $r['c'];
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
-:root{--dark:#F8FAFC;--mid:#FFFFFF;--inner:#F4F8FF;--accent:#2563EB;--teal:#0E7490;--teal-h:#06A0C2;--light:#0B1F3A;--muted:#67819E;--danger:#D6455D;--border:rgba(30,82,144,.13);--radius:10px;--shadow:0 4px 20px rgba(30,82,144,.11);}
+:root{--dark:#FBFAF5;--mid:#FFFFFF;--inner:#FBF9F2;--accent:#C9A227;--teal:#8B6B1F;--teal-h:#06A0C2;--light:#2B2416;--muted:#7A6F58;--danger:#D6455D;--border:rgba(93,72,22,.13);--radius:10px;--shadow:0 4px 20px rgba(93,72,22,.11);}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);min-height:100vh;padding:32px 28px;}
-.toast{border-radius:8px;padding:12px 18px;font-size:13px;margin-bottom:24px;display:flex;align-items:center;gap:8px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);color:#6BCFA9;animation:fadeIn .3s ease;}
+.toast{border-radius:8px;padding:12px 18px;font-size:13px;margin-bottom:24px;display:flex;align-items:center;gap:8px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);color:#E6D49A;animation:fadeIn .3s ease;}
 @keyframes fadeIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
 .page-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:20px;border-bottom:1px solid var(--border);}
 .page-header h1{font-family:'Rajdhani',sans-serif;font-size:28px;font-weight:700;color:#fff;margin-bottom:4px;}
@@ -113,19 +113,19 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 
 /* PERIODS LIST */
 .period-card{background:var(--mid);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:12px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
-.period-card.active-period{border-color:rgba(13,148,136,.4);background:linear-gradient(135deg,var(--mid) 0%,rgba(14,116,144,.08) 100%);}
+.period-card.active-period{border-color:rgba(13,148,136,.4);background:linear-gradient(135deg,var(--mid) 0%,rgba(139,107,31,.08) 100%);}
 .period-main{flex:1;min-width:200px;}
 .period-label-text{font-family:'Rajdhani',sans-serif;font-size:18px;font-weight:700;color:#fff;margin-bottom:3px;}
 .period-meta{font-size:12px;color:var(--muted);}
 .status-badge{padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;display:inline-flex;align-items:center;gap:5px;}
-.status-active{background:rgba(34,197,94,.15);color:#32B98A;border:1px solid rgba(34,197,94,.3);}
+.status-active{background:rgba(34,197,94,.15);color:#D6B44A;border:1px solid rgba(34,197,94,.3);}
 .status-closed{background:rgba(160,179,198,.1);color:var(--muted);border:1px solid var(--border);}
 .period-stats{display:flex;gap:20px;flex-wrap:wrap;}
 .period-stat{text-align:center;}
 .period-stat-val{font-size:20px;font-weight:700;color:#fff;}
 .period-stat-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
 .period-actions{display:flex;gap:8px;flex-wrap:wrap;}
-.btn-activate{background:rgba(14,116,144,.10);border:1px solid rgba(14,116,144,.24);color:var(--teal-h);padding:7px 16px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;transition:all .2s;font-family:'DM Sans',sans-serif;}
+.btn-activate{background:rgba(139,107,31,.10);border:1px solid rgba(139,107,31,.24);color:var(--teal-h);padding:7px 16px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;transition:all .2s;font-family:'DM Sans',sans-serif;}
 .btn-activate:hover{background:var(--teal);color:#fff;border-color:var(--teal);}
 .btn-deactivate{background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.25);color:#fcd34d;padding:7px 16px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;transition:all .2s;font-family:'DM Sans',sans-serif;}
 .btn-deactivate:hover{background:rgba(251,191,36,.2);}
@@ -135,76 +135,76 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .empty-state i{font-size:36px;opacity:.3;display:block;margin-bottom:12px;}
 
 /* INFO BOX */
-.info-box{background:rgba(43,108,176,.1);border:1px solid rgba(37,99,235,.16);border-radius:10px;padding:14px 18px;margin-bottom:24px;font-size:13px;color:var(--muted);display:flex;gap:10px;align-items:flex-start;}
+.info-box{background:rgba(43,108,176,.1);border:1px solid rgba(201,162,39,.16);border-radius:10px;padding:14px 18px;margin-bottom:24px;font-size:13px;color:var(--muted);display:flex;gap:10px;align-items:flex-start;}
 .info-box i{color:#60a5fa;flex-shrink:0;margin-top:1px;}
 
 @media(max-width:600px){body{padding:20px 14px;}.form-grid{grid-template-columns:1fr;}}
 
 /* Admin Module light design system — matches the dashboard */
 :root{
-  --page-bg:#FFFFFF; --card-bg:#FFFFFF; --card-border:#D8E5F4;
-  --inner:#F7FAFF; --text-dark:#0B1F3A; --text-dim:#67819E;
-  --light:#0B1F3A; --muted:#67819E; --dark:#FFFFFF; --mid:#FFFFFF;
-  --border:#D8E5F4; --accent:#2563EB; --blue:#2563EB;
-  --gold:#C77A08; --gold-h:#D69612; --teal:#0E7490; --violet:#4968C8;
-  --danger:#D6455D; --success:#0F9F6E; --radius:12px;
-  --card-shadow:0 2px 4px rgba(30,82,144,.06),0 6px 16px rgba(30,82,144,.08);
+  --page-bg:#FFFFFF; --card-bg:#FFFFFF; --card-border:#E8DFC4;
+  --inner:#FCFAF4; --text-dark:#2B2416; --text-dim:#7A6F58;
+  --light:#2B2416; --muted:#7A6F58; --dark:#FFFFFF; --mid:#FFFFFF;
+  --border:#E8DFC4; --accent:#C9A227; --blue:#C9A227;
+  --gold:#C77A08; --gold-h:#D69612; --teal:#8B6B1F; --violet:#A88B2A;
+  --danger:#D6455D; --success:#B8860B; --radius:12px;
+  --card-shadow:0 2px 4px rgba(93,72,22,.06),0 6px 16px rgba(93,72,22,.08);
 }
 html{background:#FFFFFF;color-scheme:light;}
-body{background:#FFFFFF !important;color:#0B1F3A !important;}
+body{background:#FFFFFF !important;color:#2B2416 !important;}
 a{color:inherit;}
-.page-header h1,.page-title,.et-title,.section-title{color:#0B1F3A !important;}
-.page-header p,.page-sub,.et-sub,.et-updated,.muted,.hint{color:#67819E !important;}
-input,select,textarea{background:#fff !important;color:#0B1F3A !important;border-color:#B9CDE5 !important;}
+.page-header h1,.page-title,.et-title,.section-title{color:#2B2416 !important;}
+.page-header p,.page-sub,.et-sub,.et-updated,.muted,.hint{color:#7A6F58 !important;}
+input,select,textarea{background:#fff !important;color:#2B2416 !important;border-color:#D8C89A !important;}
 button{font-family:inherit;}
 .table-wrap,.content-panel,.create-panel,.period-card,.stat-card,.sector-card,.person-row,
 .sum-card,.standing-panel,.eval-card,.eval-banner,.info-banner,.section,.shell .section,
 .history-card,.gl-card,.amber-card,.green-card,.red-card{
-  background:#fff !important;border-color:#D8E5F4 !important;box-shadow:0 2px 4px rgba(30,82,144,.05),0 6px 16px rgba(30,82,144,.06) !important;
+  background:#fff !important;border-color:#E8DFC4 !important;box-shadow:0 2px 4px rgba(93,72,22,.05),0 6px 16px rgba(93,72,22,.06) !important;
 }
 .sector-tabs,.eval-switcher,.tabs,.level-tabs,.status-tabs{
-  background:#fff !important;border-color:#D8E5F4 !important;box-shadow:0 2px 4px rgba(30,82,144,.05) !important;
+  background:#fff !important;border-color:#E8DFC4 !important;box-shadow:0 2px 4px rgba(93,72,22,.05) !important;
 }
-.sector-tab,.eval-tab,.tab,.level-tab,.status-tab{color:#67819E !important;}
-.sector-tab:hover,.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover{color:#0B1F3A !important;background:#F7FAFF !important;}
-thead tr{background:#F8FAFC !important;}
-tbody tr:hover{background:#F8FAFC !important;}
-.btn-cancel,.btn-icon,.btn-back{background:#fff !important;color:#0B1F3A !important;border-color:#B9CDE5 !important;}
-.empty-state,.empty-cta{color:#67819E !important;}
+.sector-tab,.eval-tab,.tab,.level-tab,.status-tab{color:#7A6F58 !important;}
+.sector-tab:hover,.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover{color:#2B2416 !important;background:#FCFAF4 !important;}
+thead tr{background:#FFFFFF !important;}
+tbody tr:hover{background:#FFFFFF !important;}
+.btn-cancel,.btn-icon,.btn-back{background:#fff !important;color:#2B2416 !important;border-color:#D8C89A !important;}
+.empty-state,.empty-cta{color:#7A6F58 !important;}
 ::-webkit-scrollbar-track{background:#fff;}
-::-webkit-scrollbar-thumb{background:#B9CDE5;border:2px solid #fff;}
+::-webkit-scrollbar-thumb{background:#D8C89A;border:2px solid #fff;}
 
 body{padding:28px !important;}
-.page-header{border-color:#D8E5F4 !important;}
-.form-input{background:#fff !important;color:#0B1F3A !important;border-color:#B9CDE5 !important;}
-.info-box{background:#E6F0FF !important;border-color:#B8D4F8 !important;color:#67819E !important;}
+.page-header{border-color:#E8DFC4 !important;}
+.form-input{background:#fff !important;color:#2B2416 !important;border-color:#D8C89A !important;}
+.info-box{background:#FFF8E1 !important;border-color:#E9D8A6 !important;color:#7A6F58 !important;}
 .status-active{background:#ECFDF5 !important;color:#047857 !important;border-color:#A7F3D0 !important;}
-.status-closed{background:#F4F8FF !important;color:#67819E !important;border-color:#B9CDE5 !important;}
+.status-closed{background:#FBF9F2 !important;color:#7A6F58 !important;border-color:#D8C89A !important;}
 .btn-deactivate{background:#FFFBEB !important;color:#B45309 !important;border-color:#FDE68A !important;}
 .btn-del{background:#FEF2F2 !important;color:#B91C1C !important;border-color:#FECACA !important;}
 
 
 /* ── SHARP LIGHT ADMIN UI ── */
-html { background:#F8FAFC; }
+html { background:#FFFFFF; }
 body {
-  color:#0B1F3A !important;
-  background:#F8FAFC !important;
+  color:#2B2416 !important;
+  background:#FFFFFF !important;
   -webkit-font-smoothing:antialiased;
   text-rendering:optimizeLegibility;
 }
-h1,h2,h3,h4,h5,h6 { color:#0B1F3A; letter-spacing:-.01em; }
-p, .subtitle, .description, .helper, .muted, small { color:#67819E; }
-label, th { color:#294765; font-weight:600; }
-td { color:#0B1F3A; }
+h1,h2,h3,h4,h5,h6 { color:#2B2416; letter-spacing:-.01em; }
+p, .subtitle, .description, .helper, .muted, small { color:#7A6F58; }
+label, th { color:#5B4B2A; font-weight:600; }
+td { color:#2B2416; }
 input, select, textarea {
-  color:#0B1F3A;
+  color:#2B2416;
   background:#FFFFFF;
-  border-color:#B9CDE5;
+  border-color:#D8C89A;
 }
-input::placeholder, textarea::placeholder { color:#91A6BE; }
+input::placeholder, textarea::placeholder { color:#9B8B6A; }
 .card, .panel, .section, .table-card, .content-card {
-  border-color:#B9CDE5;
-  box-shadow:0 4px 14px rgba(30,82,144,.09);
+  border-color:#D8C89A;
+  box-shadow:0 4px 14px rgba(93,72,22,.09);
 }
 button, .btn { font-weight:700; }
 a { color:inherit; }
@@ -233,6 +233,9 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
 .feature-compact ::-webkit-scrollbar-button { display: block !important; width: 10px !important; height: 10px !important; background-color: transparent !important; }
 
 </style>
+
+<link rel="stylesheet" href="admin_appearance.css">
+<script src="admin_appearance.js"></script>
 </head>
 <body class="feature-compact">
 
@@ -336,7 +339,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
         <?php endif; ?>
 
         <?php if (!$is_active && ($sub_counts[$p['id']] ?? 0) === 0): ?>
-        <form method="POST" style="margin:0" onsubmit="return confirm('Delete this period? This cannot be undone.')">
+        <form method="POST" style="margin:0" onsubmit="return confirmSubmit(this, 'Delete this period? This cannot be undone.', {okLabel:'Delete'})">
             <input type="hidden" name="action" value="delete"/>
             <input type="hidden" name="period_id" value="<?= $p['id'] ?>"/>
             <button type="submit" class="btn-del"><i class="fa-solid fa-trash-can"></i></button>
@@ -347,5 +350,17 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
 <?php endforeach; endif; ?>
 
 <?php $mysqli->close(); ?>
+<script src="admin_ajax.php"></script>
+<script>
+// Submits a form only after the custom (non-native) confirm modal is accepted.
+function confirmSubmit(form, message, opts){
+    (async () => {
+        if (await PBI.confirm(message, opts)) {
+            HTMLFormElement.prototype.submit.call(form);
+        }
+    })();
+    return false;
+}
+</script>
 </body>
 </html>

@@ -216,7 +216,8 @@ body{min-height:100vh;background:var(--page-l);font-family:'DM Sans',sans-serif;
 .page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:28px;flex-wrap:wrap;gap:14px;}
 .page-title{font-family:'Rajdhani',sans-serif;font-size:28px;font-weight:700;color:var(--text-l);letter-spacing:1px;}
 .page-sub{font-size:13px;color:var(--muted-l);margin-top:4px;}
-.card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:30px;}
+.card-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:16px;margin-bottom:30px;}
+.stat-card-link{display:block;text-decoration:none;color:inherit;min-width:0;}
 .stat-card{background:var(--card-l);border:1px solid var(--line-l);border-radius:14px;padding:20px;box-shadow:var(--shadow-l);}
 .stat-card i{color:var(--violet-dark);font-size:20px;margin-bottom:10px;}
 .stat-card .num{font-size:26px;font-weight:700;color:var(--text-l);}
@@ -235,9 +236,6 @@ body{min-height:100vh;background:var(--page-l);font-family:'DM Sans',sans-serif;
 
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
 
-.report-btns{display:flex;flex-wrap:wrap;gap:10px;}
-.report-btns a, .qa-btns a{background:rgba(124,95,217,.12);border:1px solid rgba(124,95,217,.35);color:var(--violet-dark);padding:10px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:7px;transition:background .2s;}
-.report-btns a:hover, .qa-btns a:hover{background:rgba(124,95,217,.22);}
 
 .notif-list{list-style:none;font-size:13px;}
 .notif-list li{padding:10px 12px;border-radius:8px;background:var(--input-l);margin-bottom:8px;display:flex;align-items:center;gap:10px;}
@@ -283,9 +281,10 @@ body{min-height:100vh;background:var(--page-l);font-family:'DM Sans',sans-serif;
 
 .stub-note{font-size:11px;color:var(--violet-dark);background:rgba(124,95,217,.08);border:1px dashed rgba(124,95,217,.35);border-radius:8px;padding:8px 12px;margin-top:10px;}
 
-@media(max-width:900px){.two-col{grid-template-columns:1fr;}}
+@media(max-width:1200px){.card-grid{grid-template-columns:repeat(3,minmax(0,1fr));}}
+@media(max-width:900px){.two-col{grid-template-columns:1fr;}.card-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:560px){.card-grid{grid-template-columns:1fr;}}
 @media(max-width:768px){body{flex-direction:column;}.sidebar{width:100%;min-height:auto;}}
-.qa-disabled{display:inline-flex;align-items:center;gap:8px;padding:9px 13px;border-radius:8px;border:1px solid #D8E5F4;background:#F8FAFC;color:#94A3B8;font-weight:700;font-size:12.5px;cursor:not-allowed;}
 </style>
 </head>
 <body>
@@ -393,25 +392,21 @@ include __DIR__ . '/includes/dean_sidebar.php';
 
     <?php if ($structureActive): ?>
 
-    <!-- STATS (Phase 2, §7) — Teachers/Staff/EA awaiting evaluation, student
-         submission progress, the Dean's own rating, and total pending. The
-         old "Faculty/Staff Directory" cards are gone — Faculty/Staff record
-         management is out of the Dean's scope now (see dean_evaluation.php,
-         dean_evaluation_tracker.php). -->
+    <!-- OVERVIEW STATS — concise dashboard summary for the Dean. -->
     <div class="card-grid">
-        <a href="dean_evaluation.php?tab=faculty" style="text-decoration:none;color:inherit;">
+        <a href="dean_evaluation.php?tab=faculty" class="stat-card-link">
         <div class="stat-card"><i class="fa-solid fa-chalkboard-user"></i><div class="num"><?= $facultyPending ?></div><div class="label">Teachers Awaiting Evaluation</div></div>
         </a>
-        <a href="dean_evaluation.php?tab=staff" style="text-decoration:none;color:inherit;">
+        <a href="dean_evaluation.php?tab=staff" class="stat-card-link">
         <div class="stat-card"><i class="fa-solid fa-id-badge"></i><div class="num"><?= $staffPending ?></div><div class="label">Staff Awaiting Evaluation</div></div>
         </a>
-        <a href="dean_evaluation.php?tab=executive_assistant" style="text-decoration:none;color:inherit;">
+        <a href="dean_evaluation.php?tab=executive_assistant" class="stat-card-link">
         <div class="stat-card"><i class="fa-solid fa-user-tie"></i><div class="num"><?= $eaPending ?></div><div class="label">Executive Assistant Awaiting Evaluation</div></div>
         </a>
-        <a href="dean_evaluation_tracker.php" style="text-decoration:none;color:inherit;">
+        <a href="dean_evaluation_tracker.php" class="stat-card-link">
         <div class="stat-card"><i class="fa-solid fa-user-graduate"></i><div class="num"><?= $studentParticipationPct ?>%</div><div class="label">Student Submission Progress</div></div>
         </a>
-        <a href="dean_results.php" style="text-decoration:none;color:inherit;">
+        <a href="dean_results.php" class="stat-card-link">
         <div class="stat-card"><i class="fa-solid fa-star"></i><div class="num"><?= $myRating !== null ? $myRating : '—' ?></div><div class="label">Your Evaluation Rating</div></div>
         </a>
         <div class="stat-card"><i class="fa-solid fa-hourglass-half"></i><div class="num"><?= $pendingEvaluationsTotal ?></div><div class="label">Pending Evaluations</div></div>
@@ -424,59 +419,26 @@ include __DIR__ . '/includes/dean_sidebar.php';
     </div>
     <?php endif; ?>
 
-    <!-- REPORTS — Higher Education evaluation analytics only. These types
-         must match $validTypes in dean_reports.php exactly. -->
-    <div class="section">
-        <h2><i class="fa-solid fa-chart-line"></i> Reports &amp; Analytics</h2>
-        <div class="report-btns">
-            <a href="dean_reports.php?type=college_summary"><i class="fa-solid fa-file-lines"></i> <?= HIGHER_ED_LABEL ?> Summary</a>
-            <a href="dean_reports.php?type=faculty_performance"><i class="fa-solid fa-chalkboard-user"></i> Teacher Performance Report</a>
-            <a href="dean_reports.php?type=department_comparison"><i class="fa-solid fa-building-columns"></i> Department Comparison</a>
-            <a href="dean_reports.php?type=program_analytics"><i class="fa-solid fa-book"></i> Program Analytics</a>
-            <a href="dean_reports.php?type=accreditation_support"><i class="fa-solid fa-stamp"></i> Accreditation Support Report</a>
-        </div>
-    </div>
-
     <?php else: ?>
 
-    <!-- PERSONNEL OVERVIEW — evaluation-status stats (pending/completed,
-         your rating) aren't meaningful while the active period isn't
-         college, but the Dean's Higher Ed headcount still is. Shown on
-         its own here (no separate "Analytics unavailable" note below it
-         anymore) and doubles as quick navigation into each roster. -->
+    <!-- PERSONNEL OVERVIEW — simple headcount summary when the College
+         evaluation period is not currently active. -->
     <div class="card-grid">
-        <a href="dean_evaluation.php?tab=faculty" style="text-decoration:none;color:inherit;">
+        <a href="dean_evaluation.php?tab=faculty" class="stat-card-link">
         <div class="stat-card"><i class="fa-solid fa-chalkboard-user"></i><div class="num"><?= count($facultyList) ?></div><div class="label">Teachers on Record</div></div>
         </a>
-        <a href="dean_evaluation.php?tab=staff" style="text-decoration:none;color:inherit;">
+        <a href="dean_evaluation.php?tab=staff" class="stat-card-link">
         <div class="stat-card"><i class="fa-solid fa-id-badge"></i><div class="num"><?= count($staffList) ?></div><div class="label">Staff on Record</div></div>
         </a>
-        <a href="dean_evaluation.php?tab=executive_assistant" style="text-decoration:none;color:inherit;">
+        <a href="dean_evaluation.php?tab=executive_assistant" class="stat-card-link">
         <div class="stat-card"><i class="fa-solid fa-user-tie"></i><div class="num"><?= count($eaList) ?></div><div class="label">Executive Assistants on Record</div></div>
         </a>
-        <a href="dean_evaluation_tracker.php" style="text-decoration:none;color:inherit;">
+        <a href="dean_evaluation_tracker.php" class="stat-card-link">
         <div class="stat-card"><i class="fa-solid fa-user-graduate"></i><div class="num"><?= count($studentList) ?></div><div class="label">Students on Record</div></div>
         </a>
     </div>
 
     <?php endif; ?>
-
-    <!-- QUICK ACTIONS — Notifications moved into the bell button on the
-         Current Evaluation Period header above, so this no longer needs
-         to share a two-col row with it. -->
-    <div class="section">
-        <h2><i class="fa-solid fa-bolt"></i> Quick Actions</h2>
-        <div class="qa-btns">
-            <?php if ($evalOpen): ?>
-            <a href="dean_evaluation.php"><i class="fa-solid fa-clipboard-check"></i> Go to Evaluation</a>
-            <?php else: ?>
-            <span class="qa-disabled" title="Evaluation is closed until the scheduled opening time"><i class="fa-solid fa-lock"></i> Evaluation Closed</span>
-            <?php endif; ?>
-            <a href="dean_evaluation_tracker.php"><i class="fa-solid fa-satellite-dish"></i> Open Evaluation Tracker</a>
-            <a href="dean_results.php"><i class="fa-solid fa-star-half-stroke"></i> View My Results</a>
-            <a href="dean_reports.php"><i class="fa-solid fa-file-lines"></i> Generate Reports</a>
-        </div>
-    </div>
 
 </main>
 

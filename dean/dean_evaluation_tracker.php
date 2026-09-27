@@ -123,10 +123,10 @@ if (!in_array($status, $validStatus, true)) $status = '';
 // common year-level formats already used by the system (e.g. 1st_year,
 // 1st Year, 1st Year College) without changing the stored database values.
 $yearLevelOptions = [
-    '1st_year' => '1st Year',
-    '2nd_year' => '2nd Year',
-    '3rd_year' => '3rd Year',
-    '4th_year' => '4th Year',
+    '1st_year' => '1st Year College',
+    '2nd_year' => '2nd Year College',
+    '3rd_year' => '3rd Year College',
+    '4th_year' => '4th Year College',
 ];
 $yearLevelRegex = [
     '1st_year' => '(^|[^0-9a-z])(1st|first)[[:space:]_-]*year([^0-9a-z]|$)',
@@ -264,9 +264,7 @@ if ($structureActive) {
 
     // ── STUDENTS IN SCOPE ───────────────────────────────────────────────
     $whereSql = "role='student' AND is_active=1 AND account_status='approved'
-        AND (education_level IN ('college','higher_ed')
-             OR year_level REGEXP '^(1st|2nd|3rd|4th)[[:space:]_-]*Year'
-             OR year_level LIKE '%College%')";
+        AND LOWER(COALESCE(year_level,'')) REGEXP '^(1st|2nd|3rd|4th)[[:space:]_-]*year([[:space:]_-]*college)?$'";
     $types = '';
     $params = [];
 
@@ -529,6 +527,7 @@ body{min-height:100vh;background:var(--page);font-family:'DM Sans',system-ui,-ap
 
 .tracker-card{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:visible}
 .tracker-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 18px 14px;border-bottom:1px solid #E7EEF4;flex-wrap:wrap}
+.year-level-bar{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 18px;border-bottom:1px solid #E7EEF4;background:#F8FBFD;flex-wrap:wrap}.year-level-label{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;letter-spacing:.04em;color:#61768A;text-transform:uppercase;white-space:nowrap}.year-level-label i{color:#19A995;font-size:13px}.year-level-options{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.year-level-option{height:32px;padding:0 12px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #C9D7E2;border-radius:999px;background:#fff;color:#587086;text-decoration:none;font-size:11px;font-weight:700;transition:.18s ease}.year-level-option:hover{border-color:#8ACFC5;background:#F1FAF8;color:#138D7D}.year-level-option.active{border-color:#6AC8BC;background:#E7F7F4;color:#118E7E;box-shadow:0 1px 2px rgba(25,179,157,.08)}
 .tracker-heading{display:flex;align-items:center;gap:10px}.tracker-heading h2{font-size:18px;font-weight:700;color:var(--text)}.tracker-heading .count{font-size:12px;color:var(--muted)}
 .toolbar-actions{display:flex;align-items:center;gap:8px;position:relative}
 .filter-wrap{position:relative}.filter-toggle,.export-btn{height:36px;padding:0 13px;display:inline-flex;align-items:center;gap:8px;border-radius:8px;font-size:12px;font-weight:700;font-family:inherit;text-decoration:none;cursor:pointer}
@@ -558,7 +557,60 @@ table.data tbody tr:hover td{background:#FBFEFD}table.data tbody tr:last-child t
 .live-tracker{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;background:#ECFDF5;border:1px solid #A7F3D0;color:#0F9F6E;font-size:10.5px;font-weight:800;letter-spacing:.02em}.live-tracker.offline{background:#F8FAFC;border-color:#DCE7F1;color:#8092A2}.live-dot{width:6px;height:6px;border-radius:50%;background:#0F9F6E;display:inline-block;animation:livePulse 2s ease-in-out infinite}.live-tracker.offline .live-dot{background:#9AA9B5;animation:none}@keyframes livePulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.8)}}.tracker-table-state.is-empty-state .table-footer{display:none}.tracker-live-updated{font-size:10.5px;color:#7A8FA1;margin-left:4px;white-space:nowrap}
 
 @media(max-width:1000px){.main{padding:26px 22px 36px}.period-badge{width:100%;justify-content:flex-start}.tracker-toolbar{align-items:flex-start}.toolbar-actions{width:100%;justify-content:flex-end}.filter-menu{right:0}}
-@media(max-width:768px){body{flex-direction:column}.sidebar{width:100%;min-height:auto}.main{padding:20px 14px 30px}.page-title{font-size:24px}.tracker-toolbar{padding:15px 14px}.toolbar-actions{justify-content:stretch}.filter-wrap,.filter-toggle,.export-btn{flex:1}.filter-toggle,.export-btn{justify-content:center}.filter-menu{width:min(310px,calc(100vw - 28px));right:0}}
+@media(max-width:768px){body{flex-direction:column}.sidebar{width:100%;min-height:auto}.main{padding:20px 14px 30px}.page-title{font-size:24px}.tracker-toolbar{padding:15px 14px}.toolbar-actions{justify-content:stretch}.filter-wrap,.filter-toggle,.export-btn{flex:1}.filter-toggle,.export-btn{justify-content:center}.filter-menu{width:min(310px,calc(100vw - 28px));right:0}.year-level-bar{align-items:flex-start;padding:12px 14px}.year-level-options{width:100%}.year-level-option{flex:1;min-width:92px}}
+/* Dark theme: this page's own local classes (export button, live badge,
+   status pills, filter controls, pagination, student rows) aren't part of
+   includes/dean_light_theme.css, so they need overrides here. */
+html.dark-theme .export-btn{background:rgba(45,212,191,.14)!important;border-color:rgba(45,212,191,.35)!important;color:#5EEAD4!important;}
+html.dark-theme .export-btn:hover{background:rgba(45,212,191,.22)!important;}
+html.dark-theme .live-tracker{background:rgba(16,185,129,.16)!important;border-color:rgba(16,185,129,.35)!important;color:#4ADE80!important;}
+html.dark-theme .live-tracker.offline{background:#0F1F3D!important;border-color:rgba(255,255,255,.1)!important;color:#A0B3C6!important;}
+html.dark-theme .live-tracker.offline .live-dot{background:#5B7186!important;}
+html.dark-theme .status-pill.not_started{background:#0F1F3D!important;color:#A0B3C6!important;}
+html.dark-theme .status-pill.in_progress{background:rgba(217,119,6,.18)!important;color:#FBBF24!important;}
+html.dark-theme .status-pill.completed{background:rgba(16,185,129,.16)!important;color:#4ADE80!important;}
+html.dark-theme .filter-toggle{background:#0F1F3D!important;border-color:rgba(255,255,255,.14)!important;color:#A0B3C6!important;}
+html.dark-theme .filter-toggle:hover{background:#1D3350!important;border-color:rgba(255,255,255,.24)!important;}
+html.dark-theme .filter-toggle.active{border-color:rgba(45,212,191,.4)!important;color:#5EEAD4!important;background:rgba(45,212,191,.14)!important;}
+html.dark-theme .filter-count{background:#2DD4BF!important;color:#0A192F!important;}
+html.dark-theme .filter-menu{background:#172A45!important;border-color:rgba(255,255,255,.1)!important;box-shadow:0 12px 30px rgba(0,0,0,.5)!important;}
+html.dark-theme .filter-menu-title{color:#E0E6F0!important;}
+html.dark-theme .filter-field label{color:#A0B3C6!important;}
+html.dark-theme .filter-field input,html.dark-theme .filter-field select{background:#0F1F3D!important;border-color:rgba(255,255,255,.16)!important;color:#E0E6F0!important;}
+html.dark-theme .filter-field input:focus,html.dark-theme .filter-field select:focus{border-color:#2DD4BF!important;box-shadow:0 0 0 3px rgba(45,212,191,.18)!important;}
+html.dark-theme .filter-apply{background:#0D9488!important;border-color:#0D9488!important;color:#fff!important;}
+html.dark-theme .filter-clear{background:#0F1F3D!important;border-color:rgba(255,255,255,.16)!important;color:#A0B3C6!important;}
+html.dark-theme .page-btn{background:#172A45!important;border-color:rgba(255,255,255,.14)!important;color:#A0B3C6!important;}
+html.dark-theme .page-btn.active{background:rgba(45,212,191,.18)!important;color:#5EEAD4!important;border-color:rgba(45,212,191,.4)!important;}
+html.dark-theme .page-ellipsis{color:#5B7186!important;}
+html.dark-theme .structure-note{background:#172A45!important;border-color:rgba(255,255,255,.1)!important;}
+html.dark-theme .structure-note p{color:#A0B3C6!important;}
+html.dark-theme .structure-note p b{color:#E0E6F0!important;}
+html.dark-theme .info-banner{background:#172A45!important;border-color:rgba(255,255,255,.1)!important;}
+html.dark-theme .info-banner b{color:#E0E6F0!important;}
+html.dark-theme .info-banner p{color:#A0B3C6!important;}
+html.dark-theme .info-banner.closed{background:rgba(240,84,84,.12)!important;border-color:rgba(240,84,84,.3)!important;}
+html.dark-theme .empty-note{color:#A0B3C6!important;}
+html.dark-theme .stu-name{color:#E0E6F0!important;}
+html.dark-theme .stu-sub{color:#A0B3C6!important;}
+html.dark-theme .stu-avatar{background:rgba(45,212,191,.14)!important;border-color:rgba(45,212,191,.35)!important;color:#5EEAD4!important;}
+html.dark-theme .level-pill{background:rgba(45,212,191,.14)!important;border-color:rgba(45,212,191,.35)!important;color:#5EEAD4!important;}
+html.dark-theme .req-number,html.dark-theme .completed-number{color:#A0B3C6!important;}
+html.dark-theme .progress-pct{color:#A0B3C6!important;}
+html.dark-theme .progress-track{background:rgba(255,255,255,.08)!important;}
+html.dark-theme .progress-fill{background:#2DD4BF!important;}
+html.dark-theme .progress-last{color:#8092A2!important;}
+html.dark-theme .progress-chevron{color:#A0B3C6!important;}
+html.dark-theme .table-footer{color:#A0B3C6!important;}
+html.dark-theme .tracker-toolbar{border-bottom-color:rgba(255,255,255,.08)!important;}
+html.dark-theme .tracker-heading h2{color:#E0E6F0!important;}
+html.dark-theme .tracker-heading .count{color:#A0B3C6!important;}
+html.dark-theme .year-level-bar{background:#10223D!important;border-bottom-color:rgba(255,255,255,.08)!important;}
+html.dark-theme .year-level-label{color:#A0B3C6!important;}
+html.dark-theme .year-level-label i{color:#5EEAD4!important;}
+html.dark-theme .year-level-option{background:#0F1F3D!important;border-color:rgba(255,255,255,.14)!important;color:#A0B3C6!important;}
+html.dark-theme .year-level-option:hover{background:#17304C!important;border-color:rgba(45,212,191,.35)!important;color:#5EEAD4!important;}
+html.dark-theme .year-level-option.active{background:rgba(45,212,191,.14)!important;border-color:rgba(45,212,191,.42)!important;color:#5EEAD4!important;}
 </style>
 <link rel="stylesheet" href="includes/dean_light_theme.css"/>
 </head>
@@ -640,6 +692,16 @@ include __DIR__ . '/includes/dean_sidebar.php';
                     </form>
                 </div>
                 <a class="export-btn" href="<?= tracker_qs(['export' => 'csv']) ?>"><i class="fa-solid fa-download"></i> Export</a>
+            </div>
+        </div>
+
+        <div class="year-level-bar" aria-label="Filter students by college year level">
+            <div class="year-level-label"><i class="fa-solid fa-graduation-cap"></i><span>College Year Level</span></div>
+            <div class="year-level-options">
+                <a class="year-level-option<?= $yearLevel === '' ? ' active' : '' ?>" href="<?= tracker_qs(['year_level' => '', 'page' => 1]) ?>">All</a>
+                <?php foreach ($yearLevelOptions as $val => $lbl): ?>
+                    <a class="year-level-option<?= $yearLevel === $val ? ' active' : '' ?>" href="<?= tracker_qs(['year_level' => $val, 'page' => 1]) ?>"><?= htmlspecialchars($lbl) ?></a>
+                <?php endforeach; ?>
             </div>
         </div>
 
@@ -858,6 +920,26 @@ include __DIR__ . '/includes/dean_sidebar.php';
 })();
 </script>
 </script>
+
+<style id="dean-tracker-dark-final">
+/* Final dark-mode correction for the tracker table.
+   The shared light-theme layer changes text/borders but the tracker page
+   itself hardcodes white table cells, so the row surfaces need an explicit
+   dark background when the shared dark-theme class is active. */
+html.dark-theme table.data tbody td {
+  background:#172A45 !important;
+  color:#E0E6F0 !important;
+  border-bottom-color:rgba(255,255,255,.08) !important;
+}
+html.dark-theme table.data tbody tr:hover td {
+  background:#1D3350 !important;
+}
+html.dark-theme table.data thead th {
+  background:#0F1F3D !important;
+  color:#A0B3C6 !important;
+  border-bottom-color:rgba(255,255,255,.12) !important;
+}
+</style>
 </body>
 <link rel="stylesheet" href="includes/dean_light_theme.css" id="dean-light-theme-final"/>
 </html>

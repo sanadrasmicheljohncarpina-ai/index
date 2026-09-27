@@ -15,7 +15,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <style>
 :root{
-    --dark:#0B1F3A;--mid:#123B78;--inner:#183C6B;
+    --dark:#2B2416;--mid:#5A430F;--inner:#6F5317;
     --light:#EAF2FC;--muted:#89A7C5;
     --border:rgba(255,255,255,0.08);--radius:14px;
     --shadow:0 8px 32px rgba(0,0,0,0.45);
@@ -35,8 +35,8 @@ body{
 .wrap{position:relative;z-index:10;width:100%;max-width:920px;text-align:center;}
 
 .brand{margin-bottom:40px;}
-.brand-logo{width:78px;height:78px;border-radius:50%;object-fit:cover;border:2.5px solid #2563EB;
-    box-shadow:0 0 24px rgba(37,99,235,.22);margin:0 auto 16px;display:block;}
+.brand-logo{width:78px;height:78px;border-radius:50%;object-fit:cover;border:2.5px solid #C9A227;
+    box-shadow:0 0 24px rgba(201,162,39,.22);margin:0 auto 16px;display:block;}
 .brand-title{font-family:'Rajdhani',sans-serif;font-size:30px;font-weight:700;letter-spacing:1.5px;color:#fff;}
 .brand-sub{font-size:13px;color:var(--muted);letter-spacing:1px;margin-top:6px;text-transform:uppercase;}
 
@@ -53,7 +53,7 @@ body{
 .role-card:hover{transform:translateY(-4px);box-shadow:var(--shadow);border-color:var(--accent);}
 .role-icon{
     width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-    font-size:22px;background:rgba(37,99,235,.06);color:var(--accent);
+    font-size:22px;background:rgba(201,162,39,.06);color:var(--accent);
     border:2px solid var(--accent);
 }
 .role-name{font-family:'Rajdhani',sans-serif;font-size:18px;font-weight:700;color:#fff;}
@@ -61,11 +61,11 @@ body{
 
 /* per-role accent colors, matched to each dashboard's existing theme */
 .role-student   { --accent:#C77A08; }
-.role-faculty   { --accent:#0E7490; }
-.role-staff     { --accent:#2563EB; }
-.role-executive { --accent:#4968C8; }
-.role-schoolhead{ --accent:#2563EB; }
-.role-admin     { --accent:#1D4ED8; }
+.role-faculty   { --accent:#8B6B1F; }
+.role-staff     { --accent:#C9A227; }
+.role-executive { --accent:#A88B2A; }
+.role-schoolhead{ --accent:#C9A227; }
+.role-admin     { --accent:#9C7A12; }
 
 .footer-note{margin-top:36px;font-size:12px;color:var(--muted);}
 .footer-note a{color:#66A3FF;text-decoration:none;font-weight:600;}
@@ -74,6 +74,9 @@ body{
 @media(max-width:480px){.brand-title{font-size:24px;}}
 </style>
     <link rel="stylesheet" href="admin_ui_theme.css">
+
+<link rel="stylesheet" href="admin_appearance.css">
+<script src="admin_appearance.js"></script>
 </head>
 <body>
 <div class="bg-grid"></div>

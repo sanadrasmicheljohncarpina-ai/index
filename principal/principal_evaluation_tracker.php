@@ -602,6 +602,103 @@ html,body{background:var(--trk-page)!important;color:var(--trk-text)!important}
 @media(max-width:1100px){.stat-row{grid-template-columns:repeat(2,minmax(0,1fr))}.main{padding:26px 22px 36px}.period-badge{width:100%;justify-content:flex-start}}
 @media(max-width:768px){body{flex-direction:column}.main{padding:20px 14px 30px}.page-title{font-size:24px}.tracker-toolbar{padding:15px 14px}.toolbar-actions{width:100%;justify-content:stretch}.filter-wrap,.filter-toggle,.export-btn{flex:1}.filter-toggle,.export-btn{justify-content:center}.filter-menu{width:min(310px,calc(100vw - 28px));right:0}.stat-row{grid-template-columns:1fr}}
 </style>
+<style id="principal-tracker-dark-final">
+/* Final tracker-specific dark-mode cascade. The tracker contains a legacy
+   page-local light palette with !important rules; keep those untouched for
+   Light Mode and override them only when the Principal dark theme class is
+   active. This block intentionally sits after the page-local styles. */
+html.principal-theme-dark,
+html.principal-theme-dark body{background:#0A192F!important;color:#E0E6F0!important;color-scheme:dark!important;}
+html.principal-theme-dark .main,
+html.principal-theme-dark main.main{background:#0A192F!important;color:#E0E6F0!important;border-color:rgba(255,255,255,.08)!important;box-shadow:none!important;}
+html.principal-theme-dark .page-header,
+html.principal-theme-dark .page-header > div{background:transparent!important;color:#E0E6F0!important;}
+html.principal-theme-dark .page-title{color:#FFFFFF!important;}
+html.principal-theme-dark .page-sub{color:#A0B3C6!important;}
+html.principal-theme-dark .period-badge{background:#172A45!important;border-color:rgba(217,154,43,.35)!important;color:#DCE6F0!important;box-shadow:none!important;}
+html.principal-theme-dark .period-badge.closed{background:rgba(214,69,93,.10)!important;border-color:rgba(214,69,93,.35)!important;color:#FCA5A5!important;}
+html.principal-theme-dark .period-badge i{color:#19B39D!important;}
+html.principal-theme-dark .period-badge.closed i{color:#F87171!important;}
+html.principal-theme-dark .structure-note,
+html.principal-theme-dark .stat,
+html.principal-theme-dark .tracker-card,
+html.principal-theme-dark .filter-menu,
+html.principal-theme-dark .info-banner,
+html.principal-theme-dark .optional-card{background:#172A45!important;color:#E0E6F0!important;border-color:rgba(255,255,255,.09)!important;box-shadow:0 4px 18px rgba(0,0,0,.28)!important;}
+html.principal-theme-dark .structure-note p,
+html.principal-theme-dark .structure-note p b,
+html.principal-theme-dark .stat-num,
+html.principal-theme-dark .stat-label,
+html.principal-theme-dark .filter-menu-title,
+html.principal-theme-dark .tracker-heading h2,
+html.principal-theme-dark .tracker-heading .count,
+html.principal-theme-dark .info-banner b,
+html.principal-theme-dark .optional-title strong{color:#EAF0F7!important;}
+html.principal-theme-dark .structure-note p,
+html.principal-theme-dark .stat-caption,
+html.principal-theme-dark .filter-field label,
+html.principal-theme-dark .info-banner p,
+html.principal-theme-dark .optional-title span{color:#A0B3C6!important;}
+html.principal-theme-dark .tracker-toolbar{background:#172A45!important;border-bottom-color:rgba(255,255,255,.08)!important;}
+html.principal-theme-dark .filter-toggle,
+html.principal-theme-dark .export-btn,
+html.principal-theme-dark .filter-clear,
+html.principal-theme-dark .page-btn{background:#0F1F3D!important;color:#DCE6F0!important;border-color:rgba(255,255,255,.14)!important;}
+html.principal-theme-dark .filter-toggle:hover,
+html.principal-theme-dark .export-btn:hover,
+html.principal-theme-dark .filter-clear:hover,
+html.principal-theme-dark .page-btn:hover{background:#172A45!important;color:#FFFFFF!important;}
+html.principal-theme-dark .filter-toggle.active,
+html.principal-theme-dark .filter-apply,
+html.principal-theme-dark .page-btn.active{background:rgba(217,154,43,.16)!important;color:#F0B84D!important;border-color:rgba(217,154,43,.34)!important;}
+html.principal-theme-dark .filter-menu{background:#0F1F3D!important;}
+html.principal-theme-dark .filter-field input,
+html.principal-theme-dark .filter-field select{background:#0A192F!important;color:#E0E6F0!important;border-color:rgba(255,255,255,.14)!important;}
+html.principal-theme-dark .table-scroll{border-top-color:rgba(255,255,255,.07)!important;}
+html.principal-theme-dark table.data{background:#172A45!important;color:#DCE6F0!important;}
+html.principal-theme-dark table.data thead,
+html.principal-theme-dark table.data thead tr,
+html.principal-theme-dark table.data th{background:#0F1F3D!important;color:#BFD0E0!important;border-color:rgba(255,255,255,.08)!important;}
+html.principal-theme-dark table.data td{background:#172A45!important;color:#DCE6F0!important;border-color:rgba(255,255,255,.07)!important;}
+html.principal-theme-dark table.data tbody tr:nth-child(even) td{background:#15263F!important;}
+html.principal-theme-dark table.data tbody tr:hover td{background:rgba(255,255,255,.045)!important;}
+html.principal-theme-dark .stu-name{color:#EAF0F7!important;}
+html.principal-theme-dark .stu-sub,
+html.principal-theme-dark .progress-pct,
+html.principal-theme-dark .progress-last,
+html.principal-theme-dark .progress-chevron,
+html.principal-theme-dark .empty-note,
+html.principal-theme-dark .table-footer{color:#9FB2C6!important;}
+html.principal-theme-dark .req-number,
+html.principal-theme-dark .completed-number{color:#DCE6F0!important;}
+html.principal-theme-dark .level-pill{background:rgba(25,179,157,.13)!important;color:#6EE7D8!important;border-color:rgba(25,179,157,.30)!important;}
+html.principal-theme-dark .progress-track{background:rgba(255,255,255,.09)!important;}
+html.principal-theme-dark .page-btn.active{color:#F0B84D!important;}
+html.principal-theme-dark .info-banner.closed{background:rgba(214,69,93,.08)!important;border-color:rgba(214,69,93,.28)!important;}
+html.principal-theme-dark .live-tracker{background:rgba(16,185,129,.11)!important;border-color:rgba(16,185,129,.28)!important;color:#6EE7B7!important;}
+html.principal-theme-dark .live-tracker.offline{background:#0F1F3D!important;border-color:rgba(255,255,255,.10)!important;color:#9FB2C6!important;}
+html.principal-theme-dark .optional-card::before{background:#D99A2B!important;}
+html.principal-theme-dark .optional-card summary{background:#172A45!important;}
+html.principal-theme-dark .optional-card summary:hover{background:#1D3554!important;}
+html.principal-theme-dark .optional-title i{background:rgba(217,154,43,.12)!important;border-color:rgba(217,154,43,.28)!important;color:#F0B84D!important;}
+html.principal-theme-dark .optional-pill{background:rgba(217,154,43,.10)!important;color:#F0B84D!important;border-color:rgba(217,154,43,.28)!important;}
+html.principal-theme-dark .optional-body{background:#0F1F3D!important;border-top-color:rgba(255,255,255,.08)!important;}
+html.principal-theme-dark .optional-note{color:#A0B3C6!important;}
+html.principal-theme-dark .optional-table{background:#172A45!important;color:#DCE6F0!important;}
+html.principal-theme-dark .optional-table th{background:#0F1F3D!important;color:#BFD0E0!important;border-color:rgba(255,255,255,.08)!important;}
+html.principal-theme-dark .optional-table td{background:#172A45!important;color:#DCE6F0!important;border-color:rgba(255,255,255,.07)!important;}
+html.principal-theme-dark .optional-avatar{background:rgba(217,154,43,.10)!important;border-color:rgba(217,154,43,.28)!important;color:#F0B84D!important;}
+html.principal-theme-dark .optional-status.not_started{background:#26364A!important;color:#A9B7C7!important;}
+html.principal-theme-dark .optional-status.in_progress{background:rgba(217,154,43,.12)!important;color:#F0B84D!important;}
+html.principal-theme-dark .optional-status.completed{background:rgba(16,185,129,.11)!important;color:#6EE7B7!important;}
+@media print{
+  html.principal-theme-dark,
+  html.principal-theme-dark body,
+  html.principal-theme-dark .main,
+  html.principal-theme-dark main.main{background:#FFFFFF!important;color:#172033!important;}
+}
+</style>
+<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20260927.5" id="principal-dark-repairs"/>
 </head>
 <body>
 <?php
@@ -767,3 +864,4 @@ render_principal_sidebar('tracker', $me, $scopeLabel, $photo_src);
 </body>
 </html>
 <?php if($mysqli->ping())$mysqli->close(); ?>
+

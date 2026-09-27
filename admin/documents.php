@@ -115,13 +115,13 @@ $total_docs = array_sum($stats);
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
-:root{--dark:#F8FAFC;--mid:#FFFFFF;--inner:#F4F8FF;--accent:#2563EB;--hover:#1D4ED8;--teal:#0E7490;--gold:#C77A08;--light:#0B1F3A;--muted:#67819E;--danger:#D6455D;--border:rgba(30,82,144,.13);--radius:10px;--shadow:0 4px 20px rgba(30,82,144,.11);}
+:root{--dark:#FBFAF5;--mid:#FFFFFF;--inner:#FBF9F2;--accent:#C9A227;--hover:#9C7A12;--teal:#8B6B1F;--gold:#C77A08;--light:#2B2416;--muted:#7A6F58;--danger:#D6455D;--border:rgba(93,72,22,.13);--radius:10px;--shadow:0 4px 20px rgba(93,72,22,.11);}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);min-height:100vh;padding:28px;}
 
 /* TOAST */
 .toast{border-radius:8px;padding:12px 18px;font-size:13px;margin-bottom:22px;display:flex;align-items:center;gap:8px;animation:fadeIn .3s ease;}
-.toast-success{background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);color:#6BCFA9;}
+.toast-success{background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);color:#E6D49A;}
 .toast-error{background:rgba(240,84,84,.12);border:1px solid rgba(240,84,84,.3);color:#E78D9C;}
 @keyframes fadeIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
 
@@ -180,8 +180,8 @@ tbody td{padding:13px 16px;font-size:14px;vertical-align:middle;}
 /* FILE ICON */
 .file-icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
 .icon-pdf{background:rgba(240,84,84,.15);color:#E6788A;}
-.icon-word{background:rgba(43,108,176,.15);color:#93c5fd;}
-.icon-excel{background:rgba(34,197,94,.12);color:#32B98A;}
+.icon-word{background:rgba(43,108,176,.15);color:#E3C96A;}
+.icon-excel{background:rgba(34,197,94,.12);color:#D6B44A;}
 .icon-ppt{background:rgba(251,146,60,.12);color:#fb923c;}
 .icon-txt{background:rgba(160,179,198,.1);color:var(--muted);}
 
@@ -191,15 +191,15 @@ tbody td{padding:13px 16px;font-size:14px;vertical-align:middle;}
 
 /* VISIBILITY BADGE */
 .vis-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;}
-.vis-all{background:rgba(34,197,94,.12);color:#32B98A;}
-.vis-teacher{background:rgba(43,108,176,.15);color:#93c5fd;}
-.vis-staff{background:rgba(14,116,144,.10);color:#5eead4;}
+.vis-all{background:rgba(34,197,94,.12);color:#D6B44A;}
+.vis-teacher{background:rgba(43,108,176,.15);color:#E3C96A;}
+.vis-staff{background:rgba(139,107,31,.10);color:#5eead4;}
 .vis-student{background:rgba(217,119,6,.15);color:#fcd34d;}
 .vis-admin{background:rgba(160,179,198,.1);color:var(--muted);}
 
 /* ACTIONS */
 .action-row{display:flex;gap:8px;align-items:center;}
-.btn-download{background:rgba(43,108,176,.15);border:1px solid rgba(43,108,176,.3);color:#93c5fd;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;display:flex;align-items:center;gap:5px;transition:all .2s;}
+.btn-download{background:rgba(43,108,176,.15);border:1px solid rgba(43,108,176,.3);color:#E3C96A;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;display:flex;align-items:center;gap:5px;transition:all .2s;}
 .btn-download:hover{background:var(--accent);border-color:var(--accent);color:#fff;}
 .btn-delete{background:rgba(240,84,84,.1);border:1px solid rgba(240,84,84,.2);color:#E6788A;padding:5px 10px;border-radius:6px;font-size:12px;cursor:pointer;transition:all .2s;}
 .btn-delete:hover{background:rgba(240,84,84,.2);}
@@ -218,60 +218,60 @@ tbody td{padding:13px 16px;font-size:14px;vertical-align:middle;}
 
 /* Admin Module light design system — matches the dashboard */
 :root{
-  --page-bg:#FFFFFF; --card-bg:#FFFFFF; --card-border:#D8E5F4;
-  --inner:#F7FAFF; --text-dark:#0B1F3A; --text-dim:#67819E;
-  --light:#0B1F3A; --muted:#67819E; --dark:#FFFFFF; --mid:#FFFFFF;
-  --border:#D8E5F4; --accent:#2563EB; --blue:#2563EB;
-  --gold:#C77A08; --gold-h:#D69612; --teal:#0E7490; --violet:#4968C8;
-  --danger:#D6455D; --success:#0F9F6E; --radius:12px;
-  --card-shadow:0 2px 4px rgba(30,82,144,.06),0 6px 16px rgba(30,82,144,.08);
+  --page-bg:#FFFFFF; --card-bg:#FFFFFF; --card-border:#E8DFC4;
+  --inner:#FCFAF4; --text-dark:#2B2416; --text-dim:#7A6F58;
+  --light:#2B2416; --muted:#7A6F58; --dark:#FFFFFF; --mid:#FFFFFF;
+  --border:#E8DFC4; --accent:#C9A227; --blue:#C9A227;
+  --gold:#C77A08; --gold-h:#D69612; --teal:#8B6B1F; --violet:#A88B2A;
+  --danger:#D6455D; --success:#B8860B; --radius:12px;
+  --card-shadow:0 2px 4px rgba(93,72,22,.06),0 6px 16px rgba(93,72,22,.08);
 }
 html{background:#FFFFFF;color-scheme:light;}
-body{background:#FFFFFF !important;color:#0B1F3A !important;}
+body{background:#FFFFFF !important;color:#2B2416 !important;}
 a{color:inherit;}
-.page-header h1,.page-title,.et-title,.section-title{color:#0B1F3A !important;}
-.page-header p,.page-sub,.et-sub,.et-updated,.muted,.hint{color:#67819E !important;}
-input,select,textarea{background:#fff !important;color:#0B1F3A !important;border-color:#B9CDE5 !important;}
+.page-header h1,.page-title,.et-title,.section-title{color:#2B2416 !important;}
+.page-header p,.page-sub,.et-sub,.et-updated,.muted,.hint{color:#7A6F58 !important;}
+input,select,textarea{background:#fff !important;color:#2B2416 !important;border-color:#D8C89A !important;}
 button{font-family:inherit;}
 .table-wrap,.content-panel,.create-panel,.period-card,.stat-card,.sector-card,.person-row,
 .sum-card,.standing-panel,.eval-card,.eval-banner,.info-banner,.section,.shell .section,
 .history-card,.gl-card,.amber-card,.green-card,.red-card{
-  background:#fff !important;border-color:#D8E5F4 !important;box-shadow:0 2px 4px rgba(30,82,144,.05),0 6px 16px rgba(30,82,144,.06) !important;
+  background:#fff !important;border-color:#E8DFC4 !important;box-shadow:0 2px 4px rgba(93,72,22,.05),0 6px 16px rgba(93,72,22,.06) !important;
 }
 .sector-tabs,.eval-switcher,.tabs,.level-tabs,.status-tabs{
-  background:#fff !important;border-color:#D8E5F4 !important;box-shadow:0 2px 4px rgba(30,82,144,.05) !important;
+  background:#fff !important;border-color:#E8DFC4 !important;box-shadow:0 2px 4px rgba(93,72,22,.05) !important;
 }
-.sector-tab,.eval-tab,.tab,.level-tab,.status-tab{color:#67819E !important;}
-.sector-tab:hover,.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover{color:#0B1F3A !important;background:#F7FAFF !important;}
-thead tr{background:#F8FAFC !important;}
-tbody tr:hover{background:#F8FAFC !important;}
-.btn-cancel,.btn-icon,.btn-back{background:#fff !important;color:#0B1F3A !important;border-color:#B9CDE5 !important;}
-.empty-state,.empty-cta{color:#67819E !important;}
+.sector-tab,.eval-tab,.tab,.level-tab,.status-tab{color:#7A6F58 !important;}
+.sector-tab:hover,.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover{color:#2B2416 !important;background:#FCFAF4 !important;}
+thead tr{background:#FFFFFF !important;}
+tbody tr:hover{background:#FFFFFF !important;}
+.btn-cancel,.btn-icon,.btn-back{background:#fff !important;color:#2B2416 !important;border-color:#D8C89A !important;}
+.empty-state,.empty-cta{color:#7A6F58 !important;}
 ::-webkit-scrollbar-track{background:#fff;}
-::-webkit-scrollbar-thumb{background:#B9CDE5;border:2px solid #fff;}
+::-webkit-scrollbar-thumb{background:#D8C89A;border:2px solid #fff;}
 body{padding:28px !important;}
 
 /* ── SHARP LIGHT ADMIN UI ── */
-html { background:#F8FAFC; }
+html { background:#FFFFFF; }
 body {
-  color:#0B1F3A !important;
-  background:#F8FAFC !important;
+  color:#2B2416 !important;
+  background:#FFFFFF !important;
   -webkit-font-smoothing:antialiased;
   text-rendering:optimizeLegibility;
 }
-h1,h2,h3,h4,h5,h6 { color:#0B1F3A; letter-spacing:-.01em; }
-p, .subtitle, .description, .helper, .muted, small { color:#67819E; }
-label, th { color:#294765; font-weight:600; }
-td { color:#0B1F3A; }
+h1,h2,h3,h4,h5,h6 { color:#2B2416; letter-spacing:-.01em; }
+p, .subtitle, .description, .helper, .muted, small { color:#7A6F58; }
+label, th { color:#5B4B2A; font-weight:600; }
+td { color:#2B2416; }
 input, select, textarea {
-  color:#0B1F3A;
+  color:#2B2416;
   background:#FFFFFF;
-  border-color:#B9CDE5;
+  border-color:#D8C89A;
 }
-input::placeholder, textarea::placeholder { color:#91A6BE; }
+input::placeholder, textarea::placeholder { color:#9B8B6A; }
 .card, .panel, .section, .table-card, .content-card {
-  border-color:#B9CDE5;
-  box-shadow:0 4px 14px rgba(30,82,144,.09);
+  border-color:#D8C89A;
+  box-shadow:0 4px 14px rgba(93,72,22,.09);
 }
 button, .btn { font-weight:700; }
 a { color:inherit; }
@@ -300,6 +300,9 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
 .feature-compact ::-webkit-scrollbar-button { display: block !important; width: 10px !important; height: 10px !important; background-color: transparent !important; }
 
 </style>
+
+<link rel="stylesheet" href="admin_appearance.css">
+<script src="admin_appearance.js"></script>
 </head>
 <body class="feature-compact">
 
@@ -318,8 +321,8 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
 <!-- STATS -->
 <div class="stats-row">
     <div class="stat-card"><div class="stat-label">Total Documents</div><div class="stat-value"><?= $total_docs ?></div></div>
-    <div class="stat-card"><div class="stat-label">Visible to All</div><div class="stat-value" style="color:#32B98A"><?= $stats['All']??0 ?></div></div>
-    <div class="stat-card"><div class="stat-label">Faculty Only</div><div class="stat-value" style="color:#93c5fd"><?= $stats['Teacher']??0 ?></div></div>
+    <div class="stat-card"><div class="stat-label">Visible to All</div><div class="stat-value" style="color:#D6B44A"><?= $stats['All']??0 ?></div></div>
+    <div class="stat-card"><div class="stat-label">Faculty Only</div><div class="stat-value" style="color:#E3C96A"><?= $stats['Teacher']??0 ?></div></div>
     <div class="stat-card"><div class="stat-label">Staff Only</div><div class="stat-value" style="color:#5eead4"><?= $stats['Staff']??0 ?></div></div>
     <div class="stat-card"><div class="stat-label">Student Only</div><div class="stat-value" style="color:#fcd34d"><?= $stats['Student']??0 ?></div></div>
 </div>
@@ -460,7 +463,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
                         <i class="fa-solid fa-download"></i> Download
                     </a>
                     <a href="documents.php?delete_id=<?= $d['id'] ?>"
-                       onclick="return confirm('Delete this document permanently?')"
+                       onclick="return confirmNav(this, 'Delete this document permanently?', {okLabel:'Delete'})"
                        class="btn-delete" title="Delete">
                         <i class="fa-solid fa-trash-can"></i>
                     </a>
@@ -492,7 +495,17 @@ function filterDocs() {
         row.style.display = nm && vm && cm ? '' : 'none';
     });
 }
+// Navigates to a link's href only after the custom (non-native) confirm modal is accepted.
+function confirmNav(link, message, opts){
+    (async () => {
+        if (await PBI.confirm(message, opts)) {
+            window.location.href = link.href;
+        }
+    })();
+    return false;
+}
 </script>
+<script src="admin_ajax.php"></script>
 
 <?php $mysqli->close(); ?>
 </body>

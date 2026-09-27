@@ -13,6 +13,12 @@ if (empty($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', ['dean']))
     exit;
 }
 
+// ── CSRF TOKEN (archive / restore are POST-only) ─────────────────────────────
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+$csrfToken = $_SESSION['csrf_token'];
+
 // ── EXECUTIVE PROFILE (shared portal layout) ─────────────────
 $stmt = $mysqli->prepare("SELECT full_name, username, email, designation, photo, department FROM users WHERE id = ? LIMIT 1");
 $stmt->bind_param("i", $_SESSION['user_id']);
@@ -21,7 +27,8 @@ $me = $stmt->get_result()->fetch_assoc() ?: [];
 $stmt->close();
 $photo_src = !empty($me['photo']) ? '../image/' . $me['photo'] : '../image/pbi_logo';
 
-// ── ENSURE TABLES EXIST ───────────────────────────────────────
+// ── ENSURE TABLES EXIST (once per session) ───────────────────
+if (empty($_SESSION['dean_reports_schema_v1'])) {
 $mysqli->query("CREATE TABLE IF NOT EXISTS analytics_archive (
     id INT UNSIGNED NOT NULL AUTO_INCREMENT,
     target_user_id INT UNSIGNED NOT NULL,
@@ -68,34 +75,47 @@ if ($ctxCol && $ctxCol->num_rows === 0) {
     $mysqli->query("UPDATE evaluation_tracker et JOIN users u ON u.id=et.target_user_id SET et.evaluation_context=CASE WHEN u.role IN ('principal','dean') THEN 'school_head' WHEN u.role='staff' THEN 'staff' WHEN u.role='teacher' THEN 'teacher' ELSE et.evaluation_context END WHERE et.evaluation_context='teacher'");
 }
 
+$_SESSION['dean_reports_schema_v1'] = 1;
+}
+
 // Portal scope: Reports & Analytics is a pixel/function clone of the EA page,
 // but its dataset is restricted to the current executive's education division.
-$reportScope = 'DEAN';
-$reportScopeSql = ($reportScope === 'DEAN')
-    ? "(u.role IN ('dean','principal') OR u.role='staff' OR (u.role IN ('teacher','faculty') AND EXISTS (SELECT 1 FROM user_year_levels scope_uyl WHERE scope_uyl.user_id=u.id AND scope_uyl.year_level IN ('1st Year College','2nd Year College','3rd Year College','4th Year College'))))"
-    : "(u.role IN ('dean','principal') OR u.role='staff' OR (u.role IN ('teacher','faculty') AND EXISTS (SELECT 1 FROM user_year_levels scope_uyl WHERE scope_uyl.user_id=u.id AND scope_uyl.year_level IN ('Grade 7','Grade 8','Grade 9','Grade 10','Grade 11','Grade 12','Grade 7 - JHS','Grade 8 - JHS','Grade 9 - JHS','Grade 10 - JHS','Grade 11 - SHS','Grade 12 - SHS'))) )";
+$reportScopeSql = "(u.role IN ('dean','principal') OR u.role='staff' OR (u.role IN ('teacher','faculty') AND EXISTS (SELECT 1 FROM user_year_levels scope_uyl WHERE scope_uyl.user_id=u.id AND scope_uyl.year_level IN ('1st Year College','2nd Year College','3rd Year College','4th Year College'))))";
 // Student evaluators are independently restricted below to College. Keep the
 // portal's Higher Education scope explicit here as well for any summary queries.
 $reportStudentScopeSql = "(education_level='higher_ed' OR year_level IN ('1st Year College','2nd Year College','3rd Year College','4th Year College'))";
 
-// ── ARCHIVE / RESTORE ─────────────────────────────────────────
-if (isset($_GET['archive_id'])) {
-    $aid  = intval($_GET['archive_id']);
-    $scopeCheck = $mysqli->query("SELECT u.id FROM users u WHERE u.id=$aid AND $reportScopeSql LIMIT 1");
-    if (!$scopeCheck || !$scopeCheck->num_rows) { header("Location: ?group=".urlencode($_GET['group']??'All')."&eval_type=".urlencode($_GET['eval_type']??'student')); exit; }
-    $stmt = $mysqli->prepare("INSERT IGNORE INTO analytics_archive (target_user_id) VALUES (?)");
-    $stmt->bind_param("i", $aid); $stmt->execute(); $stmt->close();
-    $_SESSION['toast'] = "Personnel archived. Their data is kept and can be restored anytime.";
-    header("Location: dean_reports.php?group=".urlencode($_GET['group']??'All')."&eval_type=".urlencode($_GET['eval_type']??'student')); exit;
-}
-if (isset($_GET['restore_id'])) {
-    $rid  = intval($_GET['restore_id']);
+// ── ARCHIVE / RESTORE (POST + CSRF only) ─────────────────────
+// State-changing actions must never run from a plain GET link, otherwise a
+// crafted URL/image tag could archive personnel for a logged-in Dean.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['archive_id']) || isset($_POST['restore_id']))) {
+    if (!hash_equals($csrfToken, (string)($_POST['csrf_token'] ?? ''))) {
+        http_response_code(403);
+        exit('Invalid or expired request. Please go back, refresh the page and try again.');
+    }
+    $postEval  = in_array($_POST['eval_type'] ?? '', ['student','peer'], true) ? $_POST['eval_type'] : 'student';
+    $postGroup = (string)($_POST['group'] ?? 'All');
+    $qs = "group=" . urlencode($postGroup) . "&eval_type=" . urlencode($postEval);
+
+    if (isset($_POST['archive_id'])) {
+        $aid = intval($_POST['archive_id']);
+        $scopeCheck = $mysqli->query("SELECT u.id FROM users u WHERE u.id=$aid AND $reportScopeSql LIMIT 1");
+        if ($scopeCheck && $scopeCheck->num_rows) {
+            $stmt = $mysqli->prepare("INSERT IGNORE INTO analytics_archive (target_user_id) VALUES (?)");
+            $stmt->bind_param("i", $aid); $stmt->execute(); $stmt->close();
+            $_SESSION['toast'] = "Personnel archived. Their data is kept and can be restored anytime.";
+        }
+        header("Location: dean_reports.php?$qs"); exit;
+    }
+
+    $rid = intval($_POST['restore_id']);
     $scopeCheck = $mysqli->query("SELECT u.id FROM users u WHERE u.id=$rid AND $reportScopeSql LIMIT 1");
-    if (!$scopeCheck || !$scopeCheck->num_rows) { header("Location: ?view=archived&group=".urlencode($_GET['group']??'All')."&eval_type=".urlencode($_GET['eval_type']??'student')); exit; }
-    $stmt = $mysqli->prepare("DELETE FROM analytics_archive WHERE target_user_id=?");
-    $stmt->bind_param("i", $rid); $stmt->execute(); $stmt->close();
-    $_SESSION['toast'] = "Personnel restored to the main list.";
-    header("Location: dean_reports.php?group=".urlencode($_GET['group']??'All')."&eval_type=".urlencode($_GET['eval_type']??'student')."&view=archived"); exit;
+    if ($scopeCheck && $scopeCheck->num_rows) {
+        $stmt = $mysqli->prepare("DELETE FROM analytics_archive WHERE target_user_id=?");
+        $stmt->bind_param("i", $rid); $stmt->execute(); $stmt->close();
+        $_SESSION['toast'] = "Personnel restored to the main list.";
+    }
+    header("Location: dean_reports.php?$qs&view=archived"); exit;
 }
 
 $toast = $_SESSION['toast'] ?? ''; unset($_SESSION['toast']);
@@ -116,10 +136,8 @@ if (!in_array($activeEval, ['student','peer'], true)) $activeEval = 'student';
 $groupFilter = $_GET['group'] ?? 'All';
 $allowedGroups = $activeEval === 'student'
     ? ['All','Faculty','Staff','Dean']
-    : ['All','Faculty','Teacher','Staff'];
+    : ['All','Faculty','Teacher'];
 if (!in_array($groupFilter, $allowedGroups, true)) $groupFilter = 'All';
-$isMultiRole = false;
-$multiRoleSubFilter = 'All';
 $groupForOtherTabs = in_array($groupFilter, ['Faculty','Teacher','Staff'], true) ? $groupFilter : 'All';
 
 $settings = get_system_settings($mysqli);
@@ -132,10 +150,8 @@ $sqlQuote = static function (string $value) use ($mysqli): string {
 };
 $studentTypeSql = $sqlQuote('student');
 $peerTypesSql = implode(',', array_map($sqlQuote, ['peer','faculty_peer','staff_peer']));
-$multiRoleContextSql = $sqlQuote('multi_role');
 $teacherContextSql = $sqlQuote('teacher');
 $staffContextSql = $sqlQuote('staff');
-$multiRoleQuestionTypeSql = $sqlQuote('Multi-Role');
 
 // IMPORTANT: Dean Student Evaluation is Higher Education only.
 // Match the EA Student Evaluation evaluator model (evaluation_tracker.evaluator_id)
@@ -155,42 +171,31 @@ $collegeStudentEvaluatorPlainSql = "evaluator_id IN (
       AND (education_level='higher_ed' OR year_level IN ($collegeLevelsSql))
 )";
 
-$multiRoleClauseSql = "$periodSql AND et.eval_type=$studentTypeSql AND $collegeStudentEvaluatorSql AND (
-        et.evaluation_context=$multiRoleContextSql
-        OR EXISTS (
-            SELECT 1
-            FROM questionnaire_answers qam
-            JOIN user_questions uqm ON uqm.id = qam.user_question_id
-            WHERE qam.tracker_id = et.id
-              AND uqm.target_type = $multiRoleQuestionTypeSql
-              AND uqm.eval_type = $studentTypeSql
-        )
-    )";
-$multiRoleClausePlainSql = "$periodPlainSql AND eval_type=$studentTypeSql AND $collegeStudentEvaluatorPlainSql AND (
-        evaluation_context=$multiRoleContextSql
-        OR EXISTS (
-            SELECT 1
-            FROM questionnaire_answers qam
-            JOIN user_questions uqm ON uqm.id = qam.user_question_id
-            WHERE qam.tracker_id = evaluation_tracker.id
-              AND uqm.target_type = $multiRoleQuestionTypeSql
-              AND uqm.eval_type = $studentTypeSql
-        )
-    )";
+// IMPORTANT: Dean Peer-to-Peer is College teachers only. Both sides of a peer
+// evaluation (the evaluator AND the person being evaluated) must be teaching
+// personnel assigned to at least one College year level. Following this
+// file's own classification rule, a staff-role account with a College year
+// level is teaching staff, so it counts; Dean, Principal, non-teaching Staff
+// and basic-ed (JHS/SHS) teachers do not.
+$collegeTeacherIdsSql = "SELECT ct.id FROM users ct
+    WHERE ct.role IN ('teacher','faculty','staff')
+      AND EXISTS (SELECT 1 FROM user_year_levels ctyl
+                  WHERE ctyl.user_id=ct.id AND ctyl.year_level IN ($collegeLevelsSql))";
+$peerEvalSql = "$periodSql AND et.eval_type IN ($peerTypesSql)
+    AND et.evaluator_id IN ($collegeTeacherIdsSql)
+    AND et.target_user_id IN ($collegeTeacherIdsSql)";
+$peerEvalPlainSql = "$periodPlainSql AND eval_type IN ($peerTypesSql)
+    AND evaluator_id IN ($collegeTeacherIdsSql)
+    AND target_user_id IN ($collegeTeacherIdsSql)";
 
-if ($isMultiRole) {
-    $evalTypeSql = $multiRoleClauseSql;
-    $evalTypePlainSql = $multiRoleClausePlainSql;
-} else {
-    $evalTypeSql = match ($activeEval) {
-        'peer' => "$periodSql AND et.eval_type IN ($peerTypesSql)",
-        default => "$periodSql AND et.eval_type=$studentTypeSql AND $collegeStudentEvaluatorSql AND (COALESCE(et.evaluation_context,'teacher') IN ($teacherContextSql,$staffContextSql) OR et.target_user_id IN (SELECT id FROM users WHERE role='dean' AND is_active=1 AND account_status='approved'))"
-    };
-    $evalTypePlainSql = match ($activeEval) {
-        'peer' => "$periodPlainSql AND eval_type IN ($peerTypesSql)",
-        default => "$periodPlainSql AND eval_type=$studentTypeSql AND $collegeStudentEvaluatorPlainSql AND (COALESCE(evaluation_context,'teacher') IN ($teacherContextSql,$staffContextSql) OR target_user_id IN (SELECT id FROM users WHERE role='dean' AND is_active=1 AND account_status='approved'))"
-    };
-}
+$evalTypeSql = match ($activeEval) {
+    'peer' => $peerEvalSql,
+    default => "$periodSql AND et.eval_type=$studentTypeSql AND $collegeStudentEvaluatorSql AND (COALESCE(et.evaluation_context,'teacher') IN ($teacherContextSql,$staffContextSql) OR et.target_user_id IN (SELECT id FROM users WHERE role='dean' AND is_active=1 AND account_status='approved'))"
+};
+$evalTypePlainSql = match ($activeEval) {
+    'peer' => $peerEvalPlainSql,
+    default => "$periodPlainSql AND eval_type=$studentTypeSql AND $collegeStudentEvaluatorPlainSql AND (COALESCE(evaluation_context,'teacher') IN ($teacherContextSql,$staffContextSql) OR target_user_id IN (SELECT id FROM users WHERE role='dean' AND is_active=1 AND account_status='approved'))"
+};
 
 // ── VIEWS ─────────────────────────────────────────────────────
 $view       = $_GET['view']       ?? 'list';
@@ -203,12 +208,21 @@ $tracker_id = intval($_GET['tracker_id'] ?? 0);
 // Executive Assistant report. This helper is local to the Dean report so the
 // roster/count/table labels stay consistent without depending on admin_analytics.php.
 function ec_resolve_student_group_full($p, $mysqli) {
+    static $memo = [];
     $role = strtolower(trim((string)($p['role'] ?? '')));
     if ($role === 'principal' || $role === 'dean') return 'school_head';
 
     $uid = (int)($p['id'] ?? 0);
     if ($uid <= 0) return null;
+    if (array_key_exists($uid, $memo)) return $memo[$uid];
 
+    // Callers that already selected the three classification flags (the roster
+    // query) let us skip a per-user round trip; everyone else falls back to it.
+    if (isset($p['is_teaching_staff'], $p['has_teaching_assignment'], $p['has_year_level'])) {
+        // Keep exactly the columns the per-user query returns so the shared
+        // ec_has_*_function() helpers see the same input as before.
+        $u = array_intersect_key($p, array_flip(['id','full_name','designation','photo','source','role','sector','has_teaching_assignment','is_teaching_staff','has_year_level']));
+    } else {
     $stmt = $mysqli->prepare(
         "SELECT id, full_name, designation, photo, source, role, sector,
                 EXISTS(SELECT 1 FROM teaching_assignments ta WHERE ta.user_id=u.id) AS has_teaching_assignment,
@@ -223,21 +237,31 @@ function ec_resolve_student_group_full($p, $mysqli) {
     $stmt->execute();
     $u = $stmt->get_result()->fetch_assoc();
     $stmt->close();
+    }
     if (!$u) return null;
 
     // Mirror the shared Evaluation Context / Questionnaire teaching rule.
     $has_teacher = ((int)($u['is_teaching_staff'] ?? 0) === 1)
         || (function_exists('ec_has_teacher_function') && ec_has_teacher_function($u));
-    if ($has_teacher) return 'teacher';
+    if ($has_teacher) return $memo[$uid] = 'teacher';
 
     $has_staff = function_exists('ec_has_staff_function') && ec_has_staff_function($u);
     if ($role === 'staff' || $has_staff) {
-        return (
+        return $memo[$uid] = (
             (int)($u['has_teaching_assignment'] ?? 0) === 0
             && (int)($u['has_year_level'] ?? 0) === 0
         ) ? 'staff' : null;
     }
-    return null;
+    return $memo[$uid] = null;
+}
+
+// Fetch one row without fatalling when a query fails (query() returns false).
+function db_row(mysqli $db, string $sql): array {
+    $r = $db->query($sql);
+    if (!$r) return [];
+    $row = $r->fetch_assoc();
+    $r->free();
+    return $row ?: [];
 }
 
 function scoreLabel($s) {
@@ -257,6 +281,17 @@ function scoreColor($s) {
     return '#f87171';
 }
 
+// Satisfaction wording used by the cumulative report (print / Generate Report).
+// Same score bands as scoreLabel(), different labels.
+function scoreSatisfactionLabel($s) {
+    if ($s === null) return '—';
+    if ($s >= 4.5)  return 'Very Satisfied';
+    if ($s >= 3.5)  return 'Satisfied';
+    if ($s >= 2.5)  return 'Neither Satisfied nor Dissatisfied';
+    if ($s >= 1.5)  return 'Dissatisfied';
+    return 'Very Dissatisfied';
+}
+
 // Eval type UI config
 $evalLabel      = $activeEval === 'peer' ? 'Peer-to-Peer Evaluation' : 'Student Evaluation';
 $evalColor      = $activeEval === 'peer' ? '#7C3AED' : '#3B82F6';
@@ -271,34 +306,10 @@ $evaluatorNounP = $activeEval === 'peer' ? 'colleagues' : 'students';
 
 // ══════════════════════════════════════════════════════════════
 function render_exec_sidebar(string $active, array $me, string $photo_src): void {
-    $links = [
-        'dashboard' => ['dean_dashboard.php','fa-gauge','Dashboard'],
-        'evaluation' => ['dean_evaluation.php','fa-clipboard-check','My Evaluation'],
-        'tracker' => ['dean_evaluation_tracker.php','fa-satellite-dish','Evaluation Tracker'],
-        'results' => ['dean_results.php','fa-star-half-stroke','View Results'],
-        'reports' => ['dean_reports.php','fa-chart-line','Evaluation Reports'],
-        'settings' => ['dean_account_settings.php','fa-gear','Account Settings'],
-    ];
-    ?>
-    <aside class="sidebar">
-        <div class="sb-profile">
-            <img class="sb-photo" src="<?= htmlspecialchars($photo_src) ?>" alt="Profile"/>
-            <div class="sb-name"><?= htmlspecialchars($me['full_name'] ?? 'Dean') ?></div>
-            <div class="sb-role"><?= htmlspecialchars($me['designation'] ?? 'Dean') ?></div>
-            <div class="sb-scope">Higher Education Division</div>
-        </div>
-        <nav class="sb-nav">
-            <div class="sb-section-title">MAIN</div>
-            <?php foreach ($links as $key => [$href,$icon,$label]): ?>
-                <?php if ($key === 'settings'): ?>
-                    <div class="sb-section-title sb-section-title-account">ACCOUNT</div>
-                <?php endif; ?>
-                <a href="<?= htmlspecialchars($href) ?>" class="<?= $key === $active ? 'active' : '' ?>"><i class="fa-solid <?= htmlspecialchars($icon) ?>"></i> <?= htmlspecialchars($label) ?></a>
-            <?php endforeach; ?>
-        </nav>
-        <div class="sb-logout"><a href="dean_logout.php"><i class="fa-solid fa-right-from-bracket"></i> Log Out</a></div>
-    </aside>
-    <?php
+    // Single source of truth: includes/dean_sidebar.php (same nav as every
+    // other Dean page). Variables stay local to this function.
+    $sidebarScope = 'Higher Education Division';
+    include __DIR__ . '/includes/dean_sidebar.php';
 }
 
 // SHARED CSS HEAD (used across all sub-views)
@@ -309,6 +320,18 @@ function pageHead($title, $evalColor, $evalColorBg, $evalColorBorder) { ?>
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
+<script>
+// Apply the saved portal theme before the report stylesheet is parsed.
+// This prevents the report sheet from briefly or permanently inheriting
+// the light white surface when the portal is already using dark mode.
+(function(){
+  try {
+    if (localStorage.getItem('pbi_theme') === 'dark') {
+      document.documentElement.classList.add('dark-theme');
+    }
+  } catch (e) {}
+})();
+</script>
 <title><?= htmlspecialchars($title) ?> — PBI Evaluation Reports</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
@@ -488,11 +511,13 @@ input,select,textarea{background:#FFFFFF !important;color:#172033 !important;bor
 // VIEW: EVALUATION SHEET
 // ══════════════════════════════════════════════════════════════
 if ($view === 'sheet' && $target_id && $tracker_id) {
-    $tgt = $mysqli->query("SELECT id,full_name,designation,photo,role FROM users u WHERE u.id=$target_id AND $reportScopeSql LIMIT 1")->fetch_assoc();
+    $tgt = db_row($mysqli, "SELECT id,full_name,designation,photo,role FROM users u WHERE u.id=$target_id AND $reportScopeSql LIMIT 1");
     if (!$tgt) { http_response_code(404); exit('Personnel not found in this report scope.'); }
-    $stu = $mysqli->query("SELECT id,full_name,photo FROM users WHERE id=$student_id LIMIT 1")->fetch_assoc();
-    $trk = $mysqli->query("SELECT * FROM evaluation_tracker et WHERE et.id=$tracker_id AND et.target_user_id=$target_id AND $evalTypeSql LIMIT 1")->fetch_assoc();
+    $trk = db_row($mysqli, "SELECT * FROM evaluation_tracker et WHERE et.id=$tracker_id AND et.target_user_id=$target_id AND $evalTypeSql LIMIT 1");
     if (!$trk) { http_response_code(404); exit('Evaluation not found in this report scope.'); }
+    // Identify the evaluator from the tracker row itself so a hand-edited
+    // ?student_id= can never show a name that doesn't match the evaluation.
+    $stu = db_row($mysqli, "SELECT id,full_name,photo FROM users WHERE id=" . (int)($trk['evaluator_id'] ?? 0) . " LIMIT 1");
 
     $answers = [];
     // Student Teacher/Multi-Role questionnaires come from evaluation_questions;
@@ -519,6 +544,137 @@ if ($view === 'sheet' && $target_id && $tracker_id) {
     $scores = array_filter(array_column($answers,'answer_score'), fn($s) => $s !== null);
     $avg    = count($scores) ? round(array_sum($scores)/count($scores),2) : null;
     $remark = $trk['remarks'] ?? '';
+
+    // "Generate Report" (Evaluators List) opens this sheet with &report=1 so the
+    // clean cumulative report layout is shown on screen, exactly as it prints.
+    $reportMode = (($_GET['report'] ?? '') === '1');
+
+    // ── CUMULATIVE REPORT DATA (print / Generate Report layout) ───────────
+    // The report is the cumulative result for this person under the current
+    // evaluation type: every submission is pooled, each question shows its
+    // average rating across all evaluators, and the overall rating is the
+    // average of those per-question ratings. It uses the same evaluator set as
+    // the Evaluators List (same period, College-only scope, year-level filter).
+    $cumYear = trim((string)($_GET['year_level'] ?? ''));
+    $cumYearWhere = '';
+    if ($activeEval === 'student' && $cumYear !== '') {
+        $cumYearWhere = " AND TRIM(COALESCE(u.year_level,'')) = '" . $mysqli->real_escape_string($cumYear) . "'";
+    }
+    $cumTrackers = [];
+    $cq = $mysqli->query("
+        SELECT et.id AS tracker_id, et.submitted_at, et.remarks, u.role AS evaluator_role
+        FROM evaluation_tracker et
+        JOIN users u ON u.id = et.evaluator_id
+        WHERE et.target_user_id = $target_id AND $evalTypeSql $cumYearWhere
+        ORDER BY et.submitted_at DESC
+    ");
+    if ($cq) $cumTrackers = $cq->fetch_all(MYSQLI_ASSOC);
+    if (empty($cumTrackers) && $trk) {
+        // Safety net: never print an empty report for a valid sheet link.
+        $cumTrackers = [[
+            'tracker_id'     => (int)$trk['id'],
+            'submitted_at'   => $trk['submitted_at'],
+            'remarks'        => $trk['remarks'] ?? '',
+            'evaluator_role' => '',
+        ]];
+    }
+
+    $cumByCat = [];
+    $cumOverall = null;
+    if (!empty($cumTrackers)) {
+        $cumIds = implode(',', array_map('intval', array_column($cumTrackers, 'tracker_id')));
+        // Same two question sources / joins as the individual sheet above, so the
+        // cumulative numbers always agree with what "View" shows per evaluator.
+        $cqb = $mysqli->query("
+            SELECT category, q_id, question_text,
+                   COUNT(answer_score) AS total_responses,
+                   AVG(answer_score)   AS avg_score
+            FROM (
+                SELECT qa.question_id AS q_id, eq.question_text, eq.category, qa.answer_score
+                FROM questionnaire_answers qa
+                JOIN evaluation_questions eq ON eq.id = qa.question_id
+                WHERE qa.tracker_id IN ($cumIds) AND qa.question_source='evaluation'
+                UNION ALL
+                SELECT qa.user_question_id AS q_id, uq.question_text, uq.category, qa.answer_score
+                FROM questionnaire_answers qa
+                JOIN user_questions uq ON uq.id = qa.user_question_id
+                WHERE qa.tracker_id IN ($cumIds) AND qa.question_source='user'
+            ) cum_answers
+            WHERE answer_score IS NOT NULL
+            GROUP BY category, q_id, question_text
+            ORDER BY category, q_id
+        ");
+        if ($cqb) {
+            foreach ($cqb->fetch_all(MYSQLI_ASSOC) as $cRow) {
+                $cRow['avg_score'] = round((float)$cRow['avg_score'], 2);
+                $cumByCat[$cRow['category']][] = $cRow;
+            }
+        }
+        // Overall = flat average across every individual answer pooled together
+        // (same method the roster/Evaluated Personnel list uses: AVG(qa.answer_score)
+        // over all rows — see line ~1581). Previously this was the average of the
+        // rounded per-question averages instead, which only matches the roster
+        // figure when every question has the same number of responses — it
+        // silently drifts whenever a question is skipped by an evaluator or
+        // added/removed between evaluation cycles. Kept as its own direct query
+        // (not derived from $cumByCat's rounded per-question values) so it is
+        // exactly the same figure the roster shows.
+        $cumOverallRes = $mysqli->query("
+            SELECT AVG(answer_score) AS overall_avg
+            FROM (
+                SELECT qa.answer_score
+                FROM questionnaire_answers qa
+                WHERE qa.tracker_id IN ($cumIds) AND qa.question_source='evaluation' AND qa.answer_score IS NOT NULL
+                UNION ALL
+                SELECT qa.answer_score
+                FROM questionnaire_answers qa
+                WHERE qa.tracker_id IN ($cumIds) AND qa.question_source='user' AND qa.answer_score IS NOT NULL
+            ) cum_all_answers
+        ");
+        if ($cumOverallRes) {
+            $cumOverallRow = $cumOverallRes->fetch_assoc();
+            $cumOverall = $cumOverallRow && $cumOverallRow['overall_avg'] !== null
+                ? round((float)$cumOverallRow['overall_avg'], 2)
+                : null;
+        }
+    }
+
+    // Date(s) this person was evaluated.
+    $cumDates = array_filter(array_column($cumTrackers, 'submitted_at'));
+    if ($cumDates) {
+        $cumFrom = strtotime(min($cumDates));
+        $cumTo   = strtotime(max($cumDates));
+        $cumDateText = (date('Y-m-d', $cumFrom) === date('Y-m-d', $cumTo))
+            ? date('F d, Y', $cumTo)
+            : date('M d, Y', $cumFrom) . ' – ' . date('M d, Y', $cumTo);
+    } else {
+        $cumDateText = '—';
+    }
+
+    // Who evaluated, with counts — e.g. "4 Students" or "3 Faculty, 1 Staff".
+    $cumRoleLabels = ['student'=>'Students','teacher'=>'Faculty','faculty'=>'Faculty','staff'=>'Staff','dean'=>'Dean','principal'=>'Principal'];
+    $cumEvalCounts = [];
+    foreach ($cumTrackers as $ct) {
+        $r = strtolower(trim((string)($ct['evaluator_role'] ?? '')));
+        $lbl = $cumRoleLabels[$r] ?? ucfirst($evaluatorNounP);
+        $cumEvalCounts[$lbl] = ($cumEvalCounts[$lbl] ?? 0) + 1;
+    }
+    $cumEvalParts = [];
+    foreach ($cumEvalCounts as $lbl => $n) {
+        if ($n === 1 && $lbl === 'Students') $lbl = 'Student';
+        $cumEvalParts[] = $n . ' ' . $lbl;
+    }
+    $cumEvaluatedBy = implode(', ', $cumEvalParts);
+
+    // Comments from every evaluator, anonymous.
+    $cumRemarks = array_values(array_filter(
+        array_map(fn($t) => trim((string)($t['remarks'] ?? '')), $cumTrackers),
+        fn($r) => $r !== ''
+    ));
+
+    $cumRoleText = $tgt['role']==='principal' ? 'Principal'
+                 : ($tgt['role']==='dean' ? 'Dean'
+                 : (in_array($tgt['role'], ['teacher','faculty'], true) ? 'Faculty' : 'Staff'));
 
     $scaleItems  = [5=>'Always',4=>'Often',3=>'Sometimes',2=>'Rarely',1=>'Never'];
     $scaleColors = [5=>'#4ade80',4=>'#86efac',3=>'#facc15',2=>'#fb923c',1=>'#f87171'];
@@ -617,17 +773,17 @@ button, .btn { font-weight:700; }
 a { color:inherit; }
 </style>
 <link rel="stylesheet" href="includes/dean_light_theme.css"/>
-</head><body>
+</head><body class="<?= $reportMode ? 'report-mode' : '' ?>">
 </div>
 <?php render_exec_sidebar('reports', $me, $photo_src); ?>
 <main class="main">
 
 
 <div class="person-actions no-print" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-    <a href="?view=students&target_id=<?= $target_id ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>" class="back-btn">
+    <a href="?view=students&target_id=<?= $target_id ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?><?= $cumYear !== '' ? '&year_level=' . urlencode($cumYear) : '' ?>" class="back-btn">
         <i class="fa-solid fa-arrow-left"></i> Back to <?= ucfirst($evaluatorNounP) ?> List
     </a>
-    <button class="btn-print no-print" onclick="window.print()"><i class="fa-solid fa-print"></i> Print / Save PDF</button>
+    <button class="btn-print no-print" onclick="window.print()"><i class="fa-solid fa-print"></i> Print</button>
 </div>
 
 <!-- Eval type chip -->
@@ -635,6 +791,7 @@ a { color:inherit; }
     <i class="fa-solid <?= $evalIcon ?>"></i> <?= $evalLabel ?>
 </div>
 
+<div class="individual-sheet">
 <!-- SHEET HEADER -->
 <div class="sheet-header">
     <?php if ($tgt['photo']): ?><img class="sheet-avatar" src="../image/<?= htmlspecialchars($tgt['photo']) ?>" alt=""/>
@@ -744,6 +901,84 @@ a { color:inherit; }
 </div>
 <?php endif; ?>
 
+</div><!-- /.individual-sheet -->
+
+<!-- CUMULATIVE REPORT — this is what prints / shows in "Generate Report".
+     Every question shows the average rating across ALL evaluators, with the
+     total (overall cumulative) score under the last question. -->
+<div class="cumulative-sheet">
+    <div class="cum-topbar">
+        <span class="cum-type"><?= htmlspecialchars($evalLabel) ?></span>
+        <span class="cum-by">Evaluated by: <strong><?= htmlspecialchars($cumEvaluatedBy) ?></strong></span>
+    </div>
+
+    <div class="sheet-header">
+        <?php if ($tgt['photo']): ?><img class="sheet-avatar" src="../image/<?= htmlspecialchars($tgt['photo']) ?>" alt=""/>
+        <?php else: ?><div class="sheet-avatar-ph"><i class="fa-solid fa-user"></i></div><?php endif; ?>
+        <div>
+            <div class="sheet-name"><?= htmlspecialchars($tgt['full_name']) ?></div>
+            <div class="sheet-desig"><?= htmlspecialchars($tgt['designation']) ?> · <?= $cumRoleText ?></div>
+        </div>
+        <div class="cum-date">
+            <div class="cum-date-label">Date Evaluated</div>
+            <div class="cum-date-val"><?= htmlspecialchars($cumDateText) ?></div>
+        </div>
+    </div>
+
+    <?php $cumNum = 1; foreach ($cumByCat as $cat => $cRows): ?>
+    <div class="cat-section">
+        <div class="cat-title"><i class="fa-solid fa-layer-group" style="font-size:10px"></i> <?= htmlspecialchars($cat) ?></div>
+        <table class="q-table">
+            <thead><tr>
+                <th style="width:40px">No.</th>
+                <th>Statement / Question</th>
+                <th class="rating-col" style="width:150px">Avg. Rating</th>
+            </tr></thead>
+            <tbody>
+            <?php foreach ($cRows as $cRow):
+                $cs = $cRow['avg_score']; ?>
+            <tr>
+                <td class="q-num"><?= $cumNum++ ?></td>
+                <td><?= htmlspecialchars($cRow['question_text']) ?></td>
+                <td class="rating-cell">
+                    <div class="rating-badge">
+                        <span class="rating-num"><?= number_format($cs, 2) ?></span>
+                        <span class="rating-lbl"><?= scoreSatisfactionLabel($cs) ?></span>
+                    </div>
+                </td>
+            </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php endforeach; ?>
+
+    <?php if (empty($cumByCat)): ?>
+    <div class="cum-empty">No answers found for this evaluation.</div>
+    <?php endif; ?>
+
+    <?php if ($cumOverall !== null): ?>
+    <!-- TOTAL SCORE: sits directly under the last question -->
+    <div class="cum-total">
+        <div class="cum-total-label">Total Score</div>
+        <div class="cum-total-result">
+            <div class="avg-score-big"><?= number_format($cumOverall, 2) ?></div>
+            <div class="avg-score-label"><?= scoreSatisfactionLabel($cumOverall) ?></div>
+            <div class="avg-out-of">Overall cumulative rating · out of 5.00</div>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <div class="comment-section">
+        <div class="comment-title"><i class="fa-solid fa-comment-dots"></i> Comments, Suggestions &amp; Areas for Improvement</div>
+        <?php if (!empty($cumRemarks)): foreach ($cumRemarks as $cr): ?>
+        <div class="cum-remark">"<?= nl2br(htmlspecialchars($cr)) ?>"</div>
+        <?php endforeach; else: ?>
+        <div class="no-comment">No comments or suggestions were provided.</div>
+        <?php endif; ?>
+    </div>
+</div><!-- /.cumulative-sheet -->
+
 </main>
 
 <style id="executive-original-theme">
@@ -798,7 +1033,9 @@ input,select,textarea{background:#0F1F3D!important;color:var(--light)!important;
 input::placeholder,textarea::placeholder{color:#7890a8!important;}
 </style>
 <style id="dean-sheet-light-final">
-/* Final light-theme correction for the individual evaluation sheet. */
+/* Final light-theme correction for the individual evaluation sheet.
+   IMPORTANT: scoped to light mode so it cannot paint report sheets white
+   while the Dean portal is in dark mode. */
 html{background:#F8FAFC!important;color-scheme:light!important;}
 body{background:#F8FAFC!important;color:#0F172A!important;}
 .main{background:#F8FAFC!important;color:#0F172A!important;}
@@ -833,6 +1070,433 @@ body{background:#F8FAFC!important;color:#0F172A!important;}
 }
 </style>
 
+<!-- CUMULATIVE REPORT + PRINT LAYOUT. Kept at the very end of the document so
+     neither the dark/light theme blocks above nor dean_light_theme.css can
+     override it. Selectors are scoped to .cumulative-sheet. -->
+<style id="dean-cumulative-report">
+.cumulative-sheet{display:none;}
+body.report-mode .individual-sheet{display:none!important;}
+body.report-mode .cumulative-sheet{display:block!important;}
+body.report-mode .eval-type-chip{display:none!important;}
+
+html body .cumulative-sheet,
+html body .cumulative-sheet *{color:#000!important;}
+html body .cumulative-sheet{background:#fff!important;font-family:'Inter',sans-serif;}
+html body .cumulative-sheet .cum-topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;font-size:12px;margin:0 0 10px;padding:8px 14px;border:1px solid #ddd!important;background:#f5f5f5!important;border-radius:0!important;box-shadow:none!important;}
+html body .cumulative-sheet .cum-type{font-weight:700;text-transform:uppercase;letter-spacing:.8px;}
+html body .cumulative-sheet .sheet-header{display:flex;align-items:center;flex-wrap:wrap;gap:12px!important;padding:12px 16px!important;margin:0 0 10px!important;background:#fff!important;border:1px solid #ddd!important;border-radius:0!important;box-shadow:none!important;}
+html body .cumulative-sheet .sheet-avatar,
+html body .cumulative-sheet .sheet-avatar-ph{width:46px!important;height:46px!important;font-size:20px;}
+html body .cumulative-sheet .sheet-avatar-ph{background:#f1f5f9!important;}
+html body .cumulative-sheet .sheet-name{font-size:18px!important;font-family:'Rajdhani',sans-serif;font-weight:700;}
+html body .cumulative-sheet .sheet-desig{font-size:11px!important;}
+html body .cumulative-sheet .cum-date{margin-left:auto;text-align:right;}
+html body .cumulative-sheet .cum-date-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:2px;}
+html body .cumulative-sheet .cum-date-val{font-size:14px;font-weight:700;}
+
+html body .cumulative-sheet .cat-section{margin:0 0 12px!important;background:transparent!important;border:0!important;box-shadow:none!important;}
+html body .cumulative-sheet .cat-title{display:flex;align-items:center;gap:7px;margin:0 0 6px!important;padding:0 0 3px!important;background:none!important;border:0!important;border-bottom:1px solid #ddd!important;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;}
+html body .cumulative-sheet .q-table{width:100%;border-collapse:collapse;background:#fff!important;border:1px solid #ddd!important;border-radius:0!important;box-shadow:none!important;}
+html body .cumulative-sheet .q-table thead tr{background:#f5f5f5!important;}
+html body .cumulative-sheet .q-table th{padding:6px 10px!important;background:#f5f5f5!important;border:0!important;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;text-align:left;}
+html body .cumulative-sheet .q-table th.rating-col{text-align:center;}
+html body .cumulative-sheet .q-table td{padding:6px 10px!important;background:#fff!important;border:0!important;border-top:1px solid #eee!important;font-size:13px;line-height:1.25!important;vertical-align:middle!important;}
+html body .cumulative-sheet .q-table td.q-num{width:40px;font-weight:700;padding-top:6px!important;}
+html body .cumulative-sheet .q-table td.rating-cell{text-align:center;padding-top:6px!important;}
+html body .cumulative-sheet .q-table tr:hover td{background:#fff!important;}
+/* every rating badge is the same shape, whatever the label */
+html body .cumulative-sheet .rating-badge{display:inline-flex;flex-direction:column;justify-content:center;align-items:center;width:128px;height:38px;box-sizing:border-box;padding:2px 6px!important;gap:0!important;background:#fff!important;border:1px solid #ccc!important;border-radius:8px;}
+html body .cumulative-sheet .rating-num{font-size:14px!important;font-weight:700;line-height:1.1;}
+html body .cumulative-sheet .rating-lbl{font-size:8px!important;font-weight:600;text-transform:uppercase;letter-spacing:.5px;text-align:center;line-height:1.1;}
+
+/* Total Score: label left, overall result right under the rating column */
+html body .cumulative-sheet .cum-total{display:flex;justify-content:space-between;align-items:center;gap:14px;margin:0 0 12px;padding:12px 14px;background:#fff!important;border:1px solid #ddd!important;border-radius:0!important;box-shadow:none!important;}
+html body .cumulative-sheet .cum-total-label{font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:1px;}
+html body .cumulative-sheet .cum-total-result{text-align:right;margin-right:-2px;}
+html body .cumulative-sheet .avg-score-big{font-family:'Rajdhani',sans-serif;font-size:42px!important;font-weight:700;line-height:1;}
+html body .cumulative-sheet .avg-score-label{font-size:14px;font-weight:700;margin-top:4px;}
+html body .cumulative-sheet .avg-out-of{font-size:13px;margin-top:6px;}
+
+html body .cumulative-sheet .comment-section{margin:0 0 12px!important;padding:10px 14px!important;background:#fff!important;border:1px solid #ddd!important;border-radius:0!important;box-shadow:none!important;}
+html body .cumulative-sheet .comment-title{display:flex;align-items:center;gap:8px;margin:0 0 5px!important;padding:0!important;background:none!important;border:0!important;font-size:13px;font-weight:700;}
+html body .cumulative-sheet .cum-remark{font-size:13px;line-height:1.4;font-style:italic;margin-bottom:5px;}
+html body .cumulative-sheet .no-comment{font-size:13px;font-style:italic;}
+html body .cumulative-sheet .cum-empty{text-align:center;padding:24px;font-style:italic;border:1px solid #ddd;margin-bottom:12px;}
+
+/* Print: page margins + show only the cumulative report.
+   margin:0 on @page + real padding on body, instead of relying on @page
+   margins alone — some browsers' print dialogs (e.g. "Margins: None")
+   ignore @page margins entirely, printing content flush to the edge of
+   the paper. Padding on body can't be overridden that way, so this
+   guarantees a safe margin regardless of the browser's print-dialog
+   margin setting. */
+@page{margin:0!important;}
+@media print{
+  html,body{width:100%!important;height:auto!important;background:#fff!important;}
+  body{display:block!important;padding:16mm 14mm!important;margin:0!important;min-height:0!important;}
+  .sidebar,.sb-logout,.no-print{display:none!important;}
+  .main,main.main{margin:0!important;padding:0!important;min-height:0!important;background:#fff!important;border:0!important;border-radius:0!important;}
+  .individual-sheet{display:none!important;}
+  .cumulative-sheet{display:block!important;}
+  html body .cumulative-sheet .cum-topbar{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  /* long tables may continue on the next page, but never split a row or strand a title */
+  html body .cumulative-sheet .cat-section{break-inside:auto!important;page-break-inside:auto!important;}
+  html body .cumulative-sheet .cat-title{break-after:avoid;page-break-after:avoid;}
+  html body .cumulative-sheet .q-table thead{display:table-header-group;}
+  html body .cumulative-sheet .q-table tr{break-inside:avoid;page-break-inside:avoid;}
+  html body .cumulative-sheet .cum-total,
+  html body .cumulative-sheet .comment-section{break-inside:avoid;page-break-inside:avoid;}
+}
+</style>
+
+
+<style id="dean-reports-dark-final">
+/* -------------------------------------------------------------------------
+   Final dark-mode layer for Dean Evaluation Reports.
+   This is intentionally loaded last because this page contains several
+   legacy light-theme blocks and view-specific inline styles.
+   ------------------------------------------------------------------------- */
+html.dark-theme body {
+  background:#0A192F !important;
+  background-image:none !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .main {
+  background:#0F1F3D !important;
+  color:#E0E6F0 !important;
+}
+
+/* Main analytics tabs / filters */
+html.dark-theme .reports-top-tab,
+html.dark-theme .reports-filter-tab {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.12) !important;
+  color:#A0B3C6 !important;
+  box-shadow:none !important;
+}
+html.dark-theme .reports-top-tab:hover,
+html.dark-theme .reports-filter-tab:hover {
+  background:#1D3350 !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .reports-top-tab.active,
+html.dark-theme .reports-top-tab.peer.active,
+html.dark-theme .reports-filter-tab.active {
+  background:rgba(124,95,217,.16) !important;
+  border-color:rgba(156,133,240,.38) !important;
+  color:#C4B5FD !important;
+  box-shadow:none !important;
+}
+html.dark-theme .reports-top-badge,
+html.dark-theme .reports-filter-tab b {
+  background:#0F1F3D !important;
+  color:#A0B3C6 !important;
+}
+html.dark-theme .reports-top-tab.active .reports-top-badge,
+html.dark-theme .reports-filter-tab.active b {
+  background:rgba(124,95,217,.22) !important;
+  color:#C4B5FD !important;
+}
+
+html.dark-theme .reports-sub-filters,
+html.dark-theme .reports-designation-filters,
+html.dark-theme .reports-peer-note {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.08) !important;
+  color:#A0B3C6 !important;
+}
+html.dark-theme .reports-sub-label { color:#A0B3C6 !important; }
+html.dark-theme .reports-sub-tab,
+html.dark-theme .reports-designation-pill {
+  color:#A0B3C6 !important;
+}
+html.dark-theme .reports-sub-tab:hover,
+html.dark-theme .reports-designation-pill:hover {
+  background:#1D3350 !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .reports-sub-tab.active,
+html.dark-theme .reports-designation-pill.active {
+  background:rgba(124,95,217,.16) !important;
+  border-color:rgba(156,133,240,.35) !important;
+  color:#C4B5FD !important;
+}
+html.dark-theme .reports-sub-tab b,
+html.dark-theme .reports-designation-pill b {
+  background:#0F1F3D !important;
+  color:#A0B3C6 !important;
+}
+
+/* Report data panel */
+html.dark-theme .reports-data-panel {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.08) !important;
+  box-shadow:0 8px 28px rgba(0,0,0,.28) !important;
+}
+html.dark-theme .reports-data-title h2 { color:#E0E6F0 !important; }
+html.dark-theme .reports-data-title span { color:#A0B3C6 !important; }
+html.dark-theme .reports-data-title i { color:#9C85F0 !important; }
+html.dark-theme .reports-action-btn {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.14) !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .reports-action-btn:hover { background:#1D3350 !important; }
+html.dark-theme .reports-search-box {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.14) !important;
+}
+html.dark-theme .reports-search-box i { color:#8EA5BB !important; }
+html.dark-theme .reports-search-box input {
+  background:transparent !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .reports-search-box input::placeholder { color:#6B84A0 !important; }
+html.dark-theme .reports-active-filter-note {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.08) !important;
+  color:#A0B3C6 !important;
+}
+html.dark-theme .reports-active-filter-note button { color:#C4B5FD !important; }
+
+/* Main report table */
+html.dark-theme .reports-table th {
+  background:#0F1F3D !important;
+  color:#A0B3C6 !important;
+  border-top-color:rgba(255,255,255,.08) !important;
+  border-bottom-color:rgba(255,255,255,.10) !important;
+}
+html.dark-theme .reports-table td {
+  background:#172A45 !important;
+  color:#E0E6F0 !important;
+  border-bottom-color:rgba(255,255,255,.08) !important;
+}
+html.dark-theme .reports-table tbody tr:hover td {
+  background:#1D3350 !important;
+}
+html.dark-theme .reports-person-name { color:#E0E6F0 !important; }
+html.dark-theme .reports-designation-cell { color:#B6C6D6 !important; }
+html.dark-theme .reports-person-photo { border-color:rgba(255,255,255,.12) !important; }
+html.dark-theme .reports-person-photo.placeholder {
+  background:#0F1F3D !important;
+  color:#8EA5BB !important;
+}
+html.dark-theme .reports-role-badge.faculty {
+  background:rgba(37,99,216,.16) !important;
+  border-color:rgba(96,165,250,.32) !important;
+  color:#93C5FD !important;
+}
+html.dark-theme .reports-role-badge.staff,
+html.dark-theme .reports-role-badge.dean {
+  background:rgba(124,95,217,.16) !important;
+  border-color:rgba(156,133,240,.32) !important;
+  color:#C4B5FD !important;
+}
+html.dark-theme .reports-role-badge.principal {
+  background:rgba(217,119,6,.16) !important;
+  border-color:rgba(217,119,6,.32) !important;
+  color:#FBBF24 !important;
+}
+html.dark-theme .reports-score.high { color:#4ADE80 !important; }
+html.dark-theme .reports-score.mid { color:#FBBF24 !important; }
+html.dark-theme .reports-score.low { color:#FCA5A5 !important; }
+html.dark-theme .reports-date { color:#A0B3C6 !important; }
+html.dark-theme .reports-view-btn {
+  background:rgba(59,130,246,.14) !important;
+  border-color:rgba(96,165,250,.32) !important;
+  color:#93C5FD !important;
+}
+html.dark-theme .reports-view-btn:hover { background:rgba(59,130,246,.22) !important; }
+html.dark-theme .reports-archive-btn {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.14) !important;
+  color:#A0B3C6 !important;
+}
+html.dark-theme .reports-archive-btn:hover { background:#1D3350 !important; color:#E0E6F0 !important; }
+html.dark-theme .reports-empty-state,
+html.dark-theme .reports-no-search { color:#A0B3C6 !important; }
+html.dark-theme .reports-empty-state h3 { color:#E0E6F0 !important; }
+html.dark-theme .reports-empty-state i { color:#71879C !important; }
+html.dark-theme .reports-empty-state p { color:#A0B3C6 !important; }
+html.dark-theme .reports-live-status {
+  background:rgba(16,185,129,.14) !important;
+  border-color:rgba(16,185,129,.32) !important;
+  color:#4ADE80 !important;
+}
+html.dark-theme .reports-live-status.stale {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.10) !important;
+  color:#8EA5BB !important;
+}
+
+/* Shared report/detail controls */
+html.dark-theme .back-btn,
+html.dark-theme .detail-back,
+html.dark-theme .btn-archived-link {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.14) !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .back-btn:hover,
+html.dark-theme .detail-back:hover,
+html.dark-theme .btn-archived-link:hover {
+  background:#1D3350 !important;
+  color:#C4B5FD !important;
+}
+
+/* Detail / individual evaluation view */
+html.dark-theme .detail-eval-banner {
+  background:rgba(59,130,246,.10) !important;
+  border-color:rgba(96,165,250,.24) !important;
+}
+html.dark-theme .detail-eval-icon {
+  background:rgba(59,130,246,.14) !important;
+  border-color:rgba(96,165,250,.28) !important;
+  color:#93C5FD !important;
+}
+html.dark-theme .detail-eval-title { color:#93C5FD !important; }
+html.dark-theme .detail-eval-sub { color:#A0B3C6 !important; }
+html.dark-theme .detail-person-card,
+html.dark-theme .detail-results-panel,
+html.dark-theme .detail-legend {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.08) !important;
+  box-shadow:0 8px 28px rgba(0,0,0,.25) !important;
+}
+html.dark-theme .detail-person-avatar.ph {
+  background:#0F1F3D !important;
+  color:#8EA5BB !important;
+}
+html.dark-theme .detail-person-name { color:#E0E6F0 !important; }
+html.dark-theme .detail-person-desig,
+html.dark-theme .detail-stat-label,
+html.dark-theme .detail-legend-text,
+html.dark-theme .detail-results-title span,
+html.dark-theme .detail-year-filter label { color:#A0B3C6 !important; }
+html.dark-theme .detail-stat-value { color:#93C5FD !important; }
+html.dark-theme .detail-stat-value.score { color:#4ADE80 !important; }
+html.dark-theme .detail-legend-title { color:#E0E6F0 !important; }
+html.dark-theme .detail-year-filter select {
+  background:#0F1F3D !important;
+  color:#E0E6F0 !important;
+  border-color:rgba(255,255,255,.14) !important;
+}
+html.dark-theme .detail-results-title h2 { color:#E0E6F0 !important; }
+html.dark-theme .detail-results-title i { color:#9C85F0 !important; }
+html.dark-theme .detail-results-table th {
+  background:#0F1F3D !important;
+  color:#A0B3C6 !important;
+  border-bottom-color:rgba(255,255,255,.10) !important;
+}
+html.dark-theme .detail-results-table td {
+  background:#172A45 !important;
+  color:#E0E6F0 !important;
+  border-bottom-color:rgba(255,255,255,.08) !important;
+}
+html.dark-theme .detail-results-table tbody tr:hover td { background:#1D3350 !important; }
+html.dark-theme .detail-evaluator,
+html.dark-theme .detail-date,
+html.dark-theme .detail-role { color:#B8C7D7 !important; }
+html.dark-theme .detail-rating {
+  background:rgba(16,185,129,.14) !important;
+  color:#4ADE80 !important;
+}
+html.dark-theme .detail-view-btn {
+  background:rgba(59,130,246,.14) !important;
+  border-color:rgba(96,165,250,.32) !important;
+  color:#93C5FD !important;
+}
+html.dark-theme .detail-view-btn:hover { background:rgba(59,130,246,.22) !important; }
+html.dark-theme .detail-empty { color:#A0B3C6 !important; }
+html.dark-theme .detail-empty h3 { color:#E0E6F0 !important; }
+html.dark-theme .detail-empty p { color:#A0B3C6 !important; }
+
+/* Individual sheet view */
+html.dark-theme .sheet-header,
+html.dark-theme .scale-bar,
+html.dark-theme .comment-section,
+html.dark-theme .avg-summary {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.08) !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .sheet-name,
+html.dark-theme .avg-score-big,
+html.dark-theme .avg-score-label { color:#E0E6F0 !important; }
+html.dark-theme .sheet-desig,
+html.dark-theme .eval-by-label,
+html.dark-theme .eval-by-date,
+html.dark-theme .avg-out-of,
+html.dark-theme .scale-item,
+html.dark-theme .avg-bar-label { color:#A0B3C6 !important; }
+html.dark-theme .eval-by-name { color:#93C5FD !important; }
+html.dark-theme .sheet-avatar-ph {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.12) !important;
+  color:#8EA5BB !important;
+}
+html.dark-theme .eval-type-chip {
+  background:rgba(59,130,246,.12) !important;
+  border-color:rgba(96,165,250,.28) !important;
+  color:#93C5FD !important;
+}
+html.dark-theme .q-table {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.08) !important;
+}
+html.dark-theme .q-table thead tr,
+html.dark-theme .q-table th {
+  background:#0F1F3D !important;
+  color:#A0B3C6 !important;
+}
+html.dark-theme .q-table td {
+  background:#172A45 !important;
+  color:#E0E6F0 !important;
+  border-top-color:rgba(255,255,255,.08) !important;
+}
+html.dark-theme .q-table tr:hover td { background:#1D3350 !important; }
+html.dark-theme .rating-badge {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.08) !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .comment-text { color:#D7E0E9 !important; }
+html.dark-theme .avg-bar-bg { background:rgba(255,255,255,.08) !important; }
+
+/* Archived personnel */
+html.dark-theme .person-row,
+html.dark-theme .no-archived {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.08) !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .person-name { color:#E0E6F0 !important; }
+html.dark-theme .person-meta { color:#A0B3C6 !important; }
+html.dark-theme .person-photo-ph {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.12) !important;
+  color:#8EA5BB !important;
+}
+html.dark-theme .archived-badge {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.10) !important;
+  color:#A0B3C6 !important;
+}
+html.dark-theme .btn-restore {
+  background:rgba(124,95,217,.16) !important;
+  border:1px solid rgba(156,133,240,.35) !important;
+  color:#C4B5FD !important;
+}
+html.dark-theme .btn-restore:hover { background:rgba(124,95,217,.24) !important; }
+
+/* Keep dark-theme scrollbars readable */
+html.dark-theme ::-webkit-scrollbar-track { background:#0F1F3D !important; }
+html.dark-theme ::-webkit-scrollbar-thumb {
+  background:#2A4468 !important;
+  border:2px solid #0F1F3D !important;
+}
+</style>
+
 </body></html>
 <?php $mysqli->close(); exit; }
 
@@ -841,33 +1505,16 @@ body{background:#F8FAFC!important;color:#0F172A!important;}
 // Shows the selected person's evaluation summary and each received evaluation.
 // ══════════════════════════════════════════════════════════════
 if ($view === 'students' && $target_id) {
-    $tgt = $mysqli->query("SELECT id,full_name,designation,photo,role FROM users u WHERE u.id=$target_id AND $reportScopeSql LIMIT 1")->fetch_assoc();
+    $tgt = db_row($mysqli, "SELECT id,full_name,designation,photo,role FROM users u WHERE u.id=$target_id AND $reportScopeSql LIMIT 1");
     if (!$tgt) { http_response_code(404); exit('Personnel not found in this report scope.'); }
 
     // Keep the selected year level only for Student Evaluation.
     $selectedYearLevel = trim((string)($_GET['year_level'] ?? ''));
     $availableYearLevels = [];
     if ($activeEval === 'student') {
-        $ylq = $mysqli->query("
-            SELECT DISTINCT TRIM(COALESCE(s.year_level,'')) AS year_level
-            FROM evaluation_tracker et
-            JOIN users s ON s.id = et.evaluator_id
-            WHERE et.target_user_id = $target_id
-              AND $evalTypePlainSql
-              AND TRIM(COALESCE(s.year_level,'')) <> ''
-            ORDER BY
-              CASE TRIM(s.year_level)
-                WHEN '1st Year College' THEN 1
-                WHEN '2nd Year College' THEN 2
-                WHEN '3rd Year College' THEN 3
-                WHEN '4th Year College' THEN 4
-                ELSE 99
-              END,
-              TRIM(s.year_level)
-        ");
-        if ($ylq) {
-            while ($yr = $ylq->fetch_assoc()) $availableYearLevels[] = $yr['year_level'];
-        }
+        // Always offer every College year level, 1st through 4th, in order --
+        // not just the levels that happen to have evaluations for this person.
+        $availableYearLevels = ['1st Year College','2nd Year College','3rd Year College','4th Year College'];
         if ($selectedYearLevel !== '' && !in_array($selectedYearLevel, $availableYearLevels, true)) {
             $selectedYearLevel = '';
         }
@@ -902,8 +1549,15 @@ if ($view === 'students' && $target_id) {
     ");
     if ($eq) $evaluators = $eq->fetch_all(MYSQLI_ASSOC);
 
-    $allScores  = array_filter(array_column($evaluators,'avg_score'), fn($s) => $s !== null);
-    $overallAvg = count($allScores) ? round(array_sum($allScores)/count($allScores),2) : null;
+    // Pooled average over every individual answer — the same figure the roster
+    // and the cumulative sheet use (was: mean of per-evaluator means, which
+    // drifts whenever evaluators answer a different number of questions).
+    $overallAvg = null;
+    if (!empty($evaluators)) {
+        $evTrackerIds = implode(',', array_map('intval', array_column($evaluators, 'tracker_id')));
+        $oa = db_row($mysqli, "SELECT AVG(answer_score) AS a FROM questionnaire_answers WHERE tracker_id IN ($evTrackerIds) AND answer_score IS NOT NULL");
+        if (isset($oa['a']) && $oa['a'] !== null) $overallAvg = round((float)$oa['a'], 2);
+    }
 
     $scaleItems  = [5=>'Always',4=>'Often',3=>'Sometimes',2=>'Rarely',1=>'Never'];
     pageHead('Evaluation Details', $evalColor, $evalColorBg, $evalColorBorder);
@@ -957,6 +1611,8 @@ if ($view === 'students' && $target_id) {
 .detail-date{white-space:nowrap;color:#31516C!important;}
 .detail-view-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:8px 16px;border:1px solid #AFCBFF;border-radius:10px;background:#F1F6FF;color:#2363D4;text-decoration:none;font-size:11px;font-weight:800;}
 .detail-view-btn:hover{background:#E7F0FF;}
+.detail-report-btn{background:#2D66E1!important;border-color:#2D66E1!important;color:#fff!important;margin-right:6px;}
+.detail-report-btn:hover{background:#2459C9!important;}
 .detail-empty{text-align:center;padding:54px 22px;color:#70869A;}
 .detail-empty i{display:block;font-size:32px;margin-bottom:10px;color:#A4B5C5;}
 .detail-empty h3{font-family:'Rajdhani',sans-serif;font-size:19px;color:#163450;margin:0 0 4px;}
@@ -991,14 +1647,13 @@ if ($view === 'students' && $target_id) {
 
 <div class="detail-actions no-print">
     <a href="?group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>" class="detail-back"><i class="fa-solid fa-arrow-left"></i> Back to Analytics</a>
-    <button class="detail-print" onclick="window.print()"><i class="fa-solid fa-print"></i> Print / Save PDF</button>
 </div>
 
 <div class="detail-eval-banner">
     <div class="detail-eval-icon"><i class="fa-solid <?= $evalIcon ?>"></i></div>
     <div>
         <div class="detail-eval-title"><?= htmlspecialchars($evalLabel) ?></div>
-        <div class="detail-eval-sub"><?= $activeEval === 'peer' ? 'Evaluated by fellow teacher and staff personnel.' : 'Evaluated by students using the Student Evaluation questionnaire.' ?></div>
+        <div class="detail-eval-sub"><?= $activeEval === 'peer' ? 'Evaluated by fellow College teachers.' : 'Evaluated by students using the Student Evaluation questionnaire.' ?></div>
     </div>
 </div>
 
@@ -1078,7 +1733,7 @@ if ($view === 'students' && $target_id) {
         <?php foreach ($evaluators as $i => $ev):
             $sc = $ev['avg_score'] !== null ? round((float)$ev['avg_score'],2) : null;
             $roleLabel = $activeEval === 'peer'
-                ? (($ev['evaluator_role'] === 'teacher' || $ev['evaluator_role'] === 'faculty') ? 'Faculty / Peer' : 'Staff / Peer')
+                ? 'Faculty / Peer'
                 : 'Student';
             $dateEval = !empty($ev['submitted_at']) ? date('M d, Y', strtotime($ev['submitted_at'])) : '—';
         ?>
@@ -1090,7 +1745,13 @@ if ($view === 'students' && $target_id) {
             <td><span class="detail-rating" style="color:<?= scoreColor($sc) ?>;background:<?= scoreColor($sc) ?>18;"><?= htmlspecialchars(scoreLabel($sc)) ?></span></td>
             <td class="detail-date"><?= htmlspecialchars($dateEval) ?></td>
             <td>
-                <a class="detail-view-btn" href="?view=sheet&target_id=<?= $target_id ?>&student_id=<?= $ev['student_id'] ?>&tracker_id=<?= $ev['tracker_id'] ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>">
+                <?php $sheetQs = '?view=sheet&target_id=' . $target_id . '&student_id=' . (int)$ev['student_id'] . '&tracker_id=' . (int)$ev['tracker_id']
+                    . '&group=' . urlencode($groupFilter) . '&eval_type=' . $activeEval
+                    . ($selectedYearLevel !== '' ? '&year_level=' . urlencode($selectedYearLevel) : ''); ?>
+                <a class="detail-view-btn detail-report-btn" href="<?= $sheetQs ?>&report=1">
+                    <i class="fa-solid fa-file-lines"></i> Generate Report
+                </a>
+                <a class="detail-view-btn" href="<?= $sheetQs ?>">
                     <i class="fa-solid fa-eye"></i> View
                 </a>
             </td>
@@ -1103,6 +1764,354 @@ if ($view === 'students' && $target_id) {
 </div>
 
 </main>
+
+<style id="dean-reports-dark-final">
+/* -------------------------------------------------------------------------
+   Final dark-mode layer for Dean Evaluation Reports.
+   This is intentionally loaded last because this page contains several
+   legacy light-theme blocks and view-specific inline styles.
+   ------------------------------------------------------------------------- */
+html.dark-theme body {
+  background:#0A192F !important;
+  background-image:none !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .main {
+  background:#0F1F3D !important;
+  color:#E0E6F0 !important;
+}
+
+/* Main analytics tabs / filters */
+html.dark-theme .reports-top-tab,
+html.dark-theme .reports-filter-tab {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.12) !important;
+  color:#A0B3C6 !important;
+  box-shadow:none !important;
+}
+html.dark-theme .reports-top-tab:hover,
+html.dark-theme .reports-filter-tab:hover {
+  background:#1D3350 !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .reports-top-tab.active,
+html.dark-theme .reports-top-tab.peer.active,
+html.dark-theme .reports-filter-tab.active {
+  background:rgba(124,95,217,.16) !important;
+  border-color:rgba(156,133,240,.38) !important;
+  color:#C4B5FD !important;
+  box-shadow:none !important;
+}
+html.dark-theme .reports-top-badge,
+html.dark-theme .reports-filter-tab b {
+  background:#0F1F3D !important;
+  color:#A0B3C6 !important;
+}
+html.dark-theme .reports-top-tab.active .reports-top-badge,
+html.dark-theme .reports-filter-tab.active b {
+  background:rgba(124,95,217,.22) !important;
+  color:#C4B5FD !important;
+}
+
+html.dark-theme .reports-sub-filters,
+html.dark-theme .reports-designation-filters,
+html.dark-theme .reports-peer-note {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.08) !important;
+  color:#A0B3C6 !important;
+}
+html.dark-theme .reports-sub-label { color:#A0B3C6 !important; }
+html.dark-theme .reports-sub-tab,
+html.dark-theme .reports-designation-pill {
+  color:#A0B3C6 !important;
+}
+html.dark-theme .reports-sub-tab:hover,
+html.dark-theme .reports-designation-pill:hover {
+  background:#1D3350 !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .reports-sub-tab.active,
+html.dark-theme .reports-designation-pill.active {
+  background:rgba(124,95,217,.16) !important;
+  border-color:rgba(156,133,240,.35) !important;
+  color:#C4B5FD !important;
+}
+html.dark-theme .reports-sub-tab b,
+html.dark-theme .reports-designation-pill b {
+  background:#0F1F3D !important;
+  color:#A0B3C6 !important;
+}
+
+/* Report data panel */
+html.dark-theme .reports-data-panel {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.08) !important;
+  box-shadow:0 8px 28px rgba(0,0,0,.28) !important;
+}
+html.dark-theme .reports-data-title h2 { color:#E0E6F0 !important; }
+html.dark-theme .reports-data-title span { color:#A0B3C6 !important; }
+html.dark-theme .reports-data-title i { color:#9C85F0 !important; }
+html.dark-theme .reports-action-btn {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.14) !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .reports-action-btn:hover { background:#1D3350 !important; }
+html.dark-theme .reports-search-box {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.14) !important;
+}
+html.dark-theme .reports-search-box i { color:#8EA5BB !important; }
+html.dark-theme .reports-search-box input {
+  background:transparent !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .reports-search-box input::placeholder { color:#6B84A0 !important; }
+html.dark-theme .reports-active-filter-note {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.08) !important;
+  color:#A0B3C6 !important;
+}
+html.dark-theme .reports-active-filter-note button { color:#C4B5FD !important; }
+
+/* Main report table */
+html.dark-theme .reports-table th {
+  background:#0F1F3D !important;
+  color:#A0B3C6 !important;
+  border-top-color:rgba(255,255,255,.08) !important;
+  border-bottom-color:rgba(255,255,255,.10) !important;
+}
+html.dark-theme .reports-table td {
+  background:#172A45 !important;
+  color:#E0E6F0 !important;
+  border-bottom-color:rgba(255,255,255,.08) !important;
+}
+html.dark-theme .reports-table tbody tr:hover td {
+  background:#1D3350 !important;
+}
+html.dark-theme .reports-person-name { color:#E0E6F0 !important; }
+html.dark-theme .reports-designation-cell { color:#B6C6D6 !important; }
+html.dark-theme .reports-person-photo { border-color:rgba(255,255,255,.12) !important; }
+html.dark-theme .reports-person-photo.placeholder {
+  background:#0F1F3D !important;
+  color:#8EA5BB !important;
+}
+html.dark-theme .reports-role-badge.faculty {
+  background:rgba(37,99,216,.16) !important;
+  border-color:rgba(96,165,250,.32) !important;
+  color:#93C5FD !important;
+}
+html.dark-theme .reports-role-badge.staff,
+html.dark-theme .reports-role-badge.dean {
+  background:rgba(124,95,217,.16) !important;
+  border-color:rgba(156,133,240,.32) !important;
+  color:#C4B5FD !important;
+}
+html.dark-theme .reports-role-badge.principal {
+  background:rgba(217,119,6,.16) !important;
+  border-color:rgba(217,119,6,.32) !important;
+  color:#FBBF24 !important;
+}
+html.dark-theme .reports-score.high { color:#4ADE80 !important; }
+html.dark-theme .reports-score.mid { color:#FBBF24 !important; }
+html.dark-theme .reports-score.low { color:#FCA5A5 !important; }
+html.dark-theme .reports-date { color:#A0B3C6 !important; }
+html.dark-theme .reports-view-btn {
+  background:rgba(59,130,246,.14) !important;
+  border-color:rgba(96,165,250,.32) !important;
+  color:#93C5FD !important;
+}
+html.dark-theme .reports-view-btn:hover { background:rgba(59,130,246,.22) !important; }
+html.dark-theme .reports-archive-btn {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.14) !important;
+  color:#A0B3C6 !important;
+}
+html.dark-theme .reports-archive-btn:hover { background:#1D3350 !important; color:#E0E6F0 !important; }
+html.dark-theme .reports-empty-state,
+html.dark-theme .reports-no-search { color:#A0B3C6 !important; }
+html.dark-theme .reports-empty-state h3 { color:#E0E6F0 !important; }
+html.dark-theme .reports-empty-state i { color:#71879C !important; }
+html.dark-theme .reports-empty-state p { color:#A0B3C6 !important; }
+html.dark-theme .reports-live-status {
+  background:rgba(16,185,129,.14) !important;
+  border-color:rgba(16,185,129,.32) !important;
+  color:#4ADE80 !important;
+}
+html.dark-theme .reports-live-status.stale {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.10) !important;
+  color:#8EA5BB !important;
+}
+
+/* Shared report/detail controls */
+html.dark-theme .back-btn,
+html.dark-theme .detail-back,
+html.dark-theme .btn-archived-link {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.14) !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .back-btn:hover,
+html.dark-theme .detail-back:hover,
+html.dark-theme .btn-archived-link:hover {
+  background:#1D3350 !important;
+  color:#C4B5FD !important;
+}
+
+/* Detail / individual evaluation view */
+html.dark-theme .detail-eval-banner {
+  background:rgba(59,130,246,.10) !important;
+  border-color:rgba(96,165,250,.24) !important;
+}
+html.dark-theme .detail-eval-icon {
+  background:rgba(59,130,246,.14) !important;
+  border-color:rgba(96,165,250,.28) !important;
+  color:#93C5FD !important;
+}
+html.dark-theme .detail-eval-title { color:#93C5FD !important; }
+html.dark-theme .detail-eval-sub { color:#A0B3C6 !important; }
+html.dark-theme .detail-person-card,
+html.dark-theme .detail-results-panel,
+html.dark-theme .detail-legend {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.08) !important;
+  box-shadow:0 8px 28px rgba(0,0,0,.25) !important;
+}
+html.dark-theme .detail-person-avatar.ph {
+  background:#0F1F3D !important;
+  color:#8EA5BB !important;
+}
+html.dark-theme .detail-person-name { color:#E0E6F0 !important; }
+html.dark-theme .detail-person-desig,
+html.dark-theme .detail-stat-label,
+html.dark-theme .detail-legend-text,
+html.dark-theme .detail-results-title span,
+html.dark-theme .detail-year-filter label { color:#A0B3C6 !important; }
+html.dark-theme .detail-stat-value { color:#93C5FD !important; }
+html.dark-theme .detail-stat-value.score { color:#4ADE80 !important; }
+html.dark-theme .detail-legend-title { color:#E0E6F0 !important; }
+html.dark-theme .detail-year-filter select {
+  background:#0F1F3D !important;
+  color:#E0E6F0 !important;
+  border-color:rgba(255,255,255,.14) !important;
+}
+html.dark-theme .detail-results-title h2 { color:#E0E6F0 !important; }
+html.dark-theme .detail-results-title i { color:#9C85F0 !important; }
+html.dark-theme .detail-results-table th {
+  background:#0F1F3D !important;
+  color:#A0B3C6 !important;
+  border-bottom-color:rgba(255,255,255,.10) !important;
+}
+html.dark-theme .detail-results-table td {
+  background:#172A45 !important;
+  color:#E0E6F0 !important;
+  border-bottom-color:rgba(255,255,255,.08) !important;
+}
+html.dark-theme .detail-results-table tbody tr:hover td { background:#1D3350 !important; }
+html.dark-theme .detail-evaluator,
+html.dark-theme .detail-date,
+html.dark-theme .detail-role { color:#B8C7D7 !important; }
+html.dark-theme .detail-rating {
+  background:rgba(16,185,129,.14) !important;
+  color:#4ADE80 !important;
+}
+html.dark-theme .detail-view-btn {
+  background:rgba(59,130,246,.14) !important;
+  border-color:rgba(96,165,250,.32) !important;
+  color:#93C5FD !important;
+}
+html.dark-theme .detail-view-btn:hover { background:rgba(59,130,246,.22) !important; }
+html.dark-theme .detail-empty { color:#A0B3C6 !important; }
+html.dark-theme .detail-empty h3 { color:#E0E6F0 !important; }
+html.dark-theme .detail-empty p { color:#A0B3C6 !important; }
+
+/* Individual sheet view */
+html.dark-theme .sheet-header,
+html.dark-theme .scale-bar,
+html.dark-theme .comment-section,
+html.dark-theme .avg-summary {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.08) !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .sheet-name,
+html.dark-theme .avg-score-big,
+html.dark-theme .avg-score-label { color:#E0E6F0 !important; }
+html.dark-theme .sheet-desig,
+html.dark-theme .eval-by-label,
+html.dark-theme .eval-by-date,
+html.dark-theme .avg-out-of,
+html.dark-theme .scale-item,
+html.dark-theme .avg-bar-label { color:#A0B3C6 !important; }
+html.dark-theme .eval-by-name { color:#93C5FD !important; }
+html.dark-theme .sheet-avatar-ph {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.12) !important;
+  color:#8EA5BB !important;
+}
+html.dark-theme .eval-type-chip {
+  background:rgba(59,130,246,.12) !important;
+  border-color:rgba(96,165,250,.28) !important;
+  color:#93C5FD !important;
+}
+html.dark-theme .q-table {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.08) !important;
+}
+html.dark-theme .q-table thead tr,
+html.dark-theme .q-table th {
+  background:#0F1F3D !important;
+  color:#A0B3C6 !important;
+}
+html.dark-theme .q-table td {
+  background:#172A45 !important;
+  color:#E0E6F0 !important;
+  border-top-color:rgba(255,255,255,.08) !important;
+}
+html.dark-theme .q-table tr:hover td { background:#1D3350 !important; }
+html.dark-theme .rating-badge {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.08) !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .comment-text { color:#D7E0E9 !important; }
+html.dark-theme .avg-bar-bg { background:rgba(255,255,255,.08) !important; }
+
+/* Archived personnel */
+html.dark-theme .person-row,
+html.dark-theme .no-archived {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.08) !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .person-name { color:#E0E6F0 !important; }
+html.dark-theme .person-meta { color:#A0B3C6 !important; }
+html.dark-theme .person-photo-ph {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.12) !important;
+  color:#8EA5BB !important;
+}
+html.dark-theme .archived-badge {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.10) !important;
+  color:#A0B3C6 !important;
+}
+html.dark-theme .btn-restore {
+  background:rgba(124,95,217,.16) !important;
+  border:1px solid rgba(156,133,240,.35) !important;
+  color:#C4B5FD !important;
+}
+html.dark-theme .btn-restore:hover { background:rgba(124,95,217,.24) !important; }
+
+/* Keep dark-theme scrollbars readable */
+html.dark-theme ::-webkit-scrollbar-track { background:#0F1F3D !important; }
+html.dark-theme ::-webkit-scrollbar-thumb {
+  background:#2A4468 !important;
+  border:2px solid #0F1F3D !important;
+}
+</style>
+
 </body></html>
 <?php $mysqli->close(); exit; }
 
@@ -1129,20 +2138,6 @@ if ($view === 'archived') {
         GROUP BY u.id ORDER BY aa.archived_at DESC
     ");
     if ($res) $archived = $res->fetch_all(MYSQLI_ASSOC);
-    if ($isMultiRole) {
-        $archived = array_values(array_filter($archived, function(array $person) use ($groupFilter) {
-            if (!ec_has_additional_role($person)) return false;
-            if ($groupFilter === 'MultiRoleTeacher') {
-                $base = strtolower(trim((string)$person['role']));
-                return $base === 'teacher' || $base === 'faculty' || strtolower(trim((string)$person['secondary_role'])) === 'teacher';
-            }
-            if ($groupFilter === 'MultiRoleStaff') {
-                $base = strtolower(trim((string)$person['role']));
-                return !($base === 'teacher' || $base === 'faculty' || strtolower(trim((string)$person['secondary_role'])) === 'teacher');
-            }
-            return true;
-        }));
-    }
 
     pageHead('Archived Personnel', $evalColor, $evalColorBg, $evalColorBorder);
     ?>
@@ -1210,15 +2205,19 @@ a { color:inherit; }
             <div class="person-name"><?= htmlspecialchars($p['full_name']) ?></div>
             <div class="person-meta">
                 <span class="archived-badge"><i class="fa-solid fa-box-archive"></i> Archived <?= date('M d, Y', strtotime($p['archived_at'])) ?></span>
-                <span><?= $p['role']==='teacher'?'Teacher':'Staff' ?> · <?= htmlspecialchars($p['designation']) ?></span>
+                <span><?= $p['role']==='teacher'?'Teacher':'Staff' ?> · <?= htmlspecialchars((string)($p['designation'] ?? '')) ?></span>
                 <span><?= $p['total_responses'] ?> evaluation<?= $p['total_responses']!=1?'s':'' ?></span>
                 <?php if ($avg !== null): ?><span style="color:<?= scoreColor($avg) ?>;font-weight:700;"><?= number_format($avg,2) ?> avg</span><?php endif; ?>
             </div>
         </div>
-        <a class="btn-restore" href="?restore_id=<?= $p['id'] ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>"
-           onclick="return confirm('Restore <?= htmlspecialchars(addslashes($p['full_name'])) ?> to the analytics list?')">
-            <i class="fa-solid fa-rotate-left"></i> Restore
-        </a>
+        <form method="post" action="dean_reports.php" style="margin:0"
+              onsubmit="return confirm(<?= htmlspecialchars(json_encode('Restore ' . $p['full_name'] . ' to the analytics list?', JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') ?>)">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>"/>
+            <input type="hidden" name="restore_id" value="<?= (int)$p['id'] ?>"/>
+            <input type="hidden" name="group" value="<?= htmlspecialchars($groupFilter) ?>"/>
+            <input type="hidden" name="eval_type" value="<?= htmlspecialchars($activeEval) ?>"/>
+            <button type="submit" class="btn-restore" style="font-family:inherit"><i class="fa-solid fa-rotate-left"></i> Restore</button>
+        </form>
     </div>
 </div>
 <?php endforeach; ?>
@@ -1227,7 +2226,7 @@ a { color:inherit; }
 <?php $mysqli->close(); ?>
 </main>
 
-<style id="executive-original-theme">
+<style id="executive-original-theme-2">
 :root{
  --dark:#0A192F;--mid:#172A45;--inner:#0F1F3D;
  --violet:#7C5FD9;--violet-h:#9C85F0;--violet-dark:#5F45B8;
@@ -1279,6 +2278,354 @@ input,select,textarea{background:#0F1F3D!important;color:var(--light)!important;
 input::placeholder,textarea::placeholder{color:#7890a8!important;}
 </style>
 
+
+<style id="dean-reports-dark-final">
+/* -------------------------------------------------------------------------
+   Final dark-mode layer for Dean Evaluation Reports.
+   This is intentionally loaded last because this page contains several
+   legacy light-theme blocks and view-specific inline styles.
+   ------------------------------------------------------------------------- */
+html.dark-theme body {
+  background:#0A192F !important;
+  background-image:none !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .main {
+  background:#0F1F3D !important;
+  color:#E0E6F0 !important;
+}
+
+/* Main analytics tabs / filters */
+html.dark-theme .reports-top-tab,
+html.dark-theme .reports-filter-tab {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.12) !important;
+  color:#A0B3C6 !important;
+  box-shadow:none !important;
+}
+html.dark-theme .reports-top-tab:hover,
+html.dark-theme .reports-filter-tab:hover {
+  background:#1D3350 !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .reports-top-tab.active,
+html.dark-theme .reports-top-tab.peer.active,
+html.dark-theme .reports-filter-tab.active {
+  background:rgba(124,95,217,.16) !important;
+  border-color:rgba(156,133,240,.38) !important;
+  color:#C4B5FD !important;
+  box-shadow:none !important;
+}
+html.dark-theme .reports-top-badge,
+html.dark-theme .reports-filter-tab b {
+  background:#0F1F3D !important;
+  color:#A0B3C6 !important;
+}
+html.dark-theme .reports-top-tab.active .reports-top-badge,
+html.dark-theme .reports-filter-tab.active b {
+  background:rgba(124,95,217,.22) !important;
+  color:#C4B5FD !important;
+}
+
+html.dark-theme .reports-sub-filters,
+html.dark-theme .reports-designation-filters,
+html.dark-theme .reports-peer-note {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.08) !important;
+  color:#A0B3C6 !important;
+}
+html.dark-theme .reports-sub-label { color:#A0B3C6 !important; }
+html.dark-theme .reports-sub-tab,
+html.dark-theme .reports-designation-pill {
+  color:#A0B3C6 !important;
+}
+html.dark-theme .reports-sub-tab:hover,
+html.dark-theme .reports-designation-pill:hover {
+  background:#1D3350 !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .reports-sub-tab.active,
+html.dark-theme .reports-designation-pill.active {
+  background:rgba(124,95,217,.16) !important;
+  border-color:rgba(156,133,240,.35) !important;
+  color:#C4B5FD !important;
+}
+html.dark-theme .reports-sub-tab b,
+html.dark-theme .reports-designation-pill b {
+  background:#0F1F3D !important;
+  color:#A0B3C6 !important;
+}
+
+/* Report data panel */
+html.dark-theme .reports-data-panel {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.08) !important;
+  box-shadow:0 8px 28px rgba(0,0,0,.28) !important;
+}
+html.dark-theme .reports-data-title h2 { color:#E0E6F0 !important; }
+html.dark-theme .reports-data-title span { color:#A0B3C6 !important; }
+html.dark-theme .reports-data-title i { color:#9C85F0 !important; }
+html.dark-theme .reports-action-btn {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.14) !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .reports-action-btn:hover { background:#1D3350 !important; }
+html.dark-theme .reports-search-box {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.14) !important;
+}
+html.dark-theme .reports-search-box i { color:#8EA5BB !important; }
+html.dark-theme .reports-search-box input {
+  background:transparent !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .reports-search-box input::placeholder { color:#6B84A0 !important; }
+html.dark-theme .reports-active-filter-note {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.08) !important;
+  color:#A0B3C6 !important;
+}
+html.dark-theme .reports-active-filter-note button { color:#C4B5FD !important; }
+
+/* Main report table */
+html.dark-theme .reports-table th {
+  background:#0F1F3D !important;
+  color:#A0B3C6 !important;
+  border-top-color:rgba(255,255,255,.08) !important;
+  border-bottom-color:rgba(255,255,255,.10) !important;
+}
+html.dark-theme .reports-table td {
+  background:#172A45 !important;
+  color:#E0E6F0 !important;
+  border-bottom-color:rgba(255,255,255,.08) !important;
+}
+html.dark-theme .reports-table tbody tr:hover td {
+  background:#1D3350 !important;
+}
+html.dark-theme .reports-person-name { color:#E0E6F0 !important; }
+html.dark-theme .reports-designation-cell { color:#B6C6D6 !important; }
+html.dark-theme .reports-person-photo { border-color:rgba(255,255,255,.12) !important; }
+html.dark-theme .reports-person-photo.placeholder {
+  background:#0F1F3D !important;
+  color:#8EA5BB !important;
+}
+html.dark-theme .reports-role-badge.faculty {
+  background:rgba(37,99,216,.16) !important;
+  border-color:rgba(96,165,250,.32) !important;
+  color:#93C5FD !important;
+}
+html.dark-theme .reports-role-badge.staff,
+html.dark-theme .reports-role-badge.dean {
+  background:rgba(124,95,217,.16) !important;
+  border-color:rgba(156,133,240,.32) !important;
+  color:#C4B5FD !important;
+}
+html.dark-theme .reports-role-badge.principal {
+  background:rgba(217,119,6,.16) !important;
+  border-color:rgba(217,119,6,.32) !important;
+  color:#FBBF24 !important;
+}
+html.dark-theme .reports-score.high { color:#4ADE80 !important; }
+html.dark-theme .reports-score.mid { color:#FBBF24 !important; }
+html.dark-theme .reports-score.low { color:#FCA5A5 !important; }
+html.dark-theme .reports-date { color:#A0B3C6 !important; }
+html.dark-theme .reports-view-btn {
+  background:rgba(59,130,246,.14) !important;
+  border-color:rgba(96,165,250,.32) !important;
+  color:#93C5FD !important;
+}
+html.dark-theme .reports-view-btn:hover { background:rgba(59,130,246,.22) !important; }
+html.dark-theme .reports-archive-btn {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.14) !important;
+  color:#A0B3C6 !important;
+}
+html.dark-theme .reports-archive-btn:hover { background:#1D3350 !important; color:#E0E6F0 !important; }
+html.dark-theme .reports-empty-state,
+html.dark-theme .reports-no-search { color:#A0B3C6 !important; }
+html.dark-theme .reports-empty-state h3 { color:#E0E6F0 !important; }
+html.dark-theme .reports-empty-state i { color:#71879C !important; }
+html.dark-theme .reports-empty-state p { color:#A0B3C6 !important; }
+html.dark-theme .reports-live-status {
+  background:rgba(16,185,129,.14) !important;
+  border-color:rgba(16,185,129,.32) !important;
+  color:#4ADE80 !important;
+}
+html.dark-theme .reports-live-status.stale {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.10) !important;
+  color:#8EA5BB !important;
+}
+
+/* Shared report/detail controls */
+html.dark-theme .back-btn,
+html.dark-theme .detail-back,
+html.dark-theme .btn-archived-link {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.14) !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .back-btn:hover,
+html.dark-theme .detail-back:hover,
+html.dark-theme .btn-archived-link:hover {
+  background:#1D3350 !important;
+  color:#C4B5FD !important;
+}
+
+/* Detail / individual evaluation view */
+html.dark-theme .detail-eval-banner {
+  background:rgba(59,130,246,.10) !important;
+  border-color:rgba(96,165,250,.24) !important;
+}
+html.dark-theme .detail-eval-icon {
+  background:rgba(59,130,246,.14) !important;
+  border-color:rgba(96,165,250,.28) !important;
+  color:#93C5FD !important;
+}
+html.dark-theme .detail-eval-title { color:#93C5FD !important; }
+html.dark-theme .detail-eval-sub { color:#A0B3C6 !important; }
+html.dark-theme .detail-person-card,
+html.dark-theme .detail-results-panel,
+html.dark-theme .detail-legend {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.08) !important;
+  box-shadow:0 8px 28px rgba(0,0,0,.25) !important;
+}
+html.dark-theme .detail-person-avatar.ph {
+  background:#0F1F3D !important;
+  color:#8EA5BB !important;
+}
+html.dark-theme .detail-person-name { color:#E0E6F0 !important; }
+html.dark-theme .detail-person-desig,
+html.dark-theme .detail-stat-label,
+html.dark-theme .detail-legend-text,
+html.dark-theme .detail-results-title span,
+html.dark-theme .detail-year-filter label { color:#A0B3C6 !important; }
+html.dark-theme .detail-stat-value { color:#93C5FD !important; }
+html.dark-theme .detail-stat-value.score { color:#4ADE80 !important; }
+html.dark-theme .detail-legend-title { color:#E0E6F0 !important; }
+html.dark-theme .detail-year-filter select {
+  background:#0F1F3D !important;
+  color:#E0E6F0 !important;
+  border-color:rgba(255,255,255,.14) !important;
+}
+html.dark-theme .detail-results-title h2 { color:#E0E6F0 !important; }
+html.dark-theme .detail-results-title i { color:#9C85F0 !important; }
+html.dark-theme .detail-results-table th {
+  background:#0F1F3D !important;
+  color:#A0B3C6 !important;
+  border-bottom-color:rgba(255,255,255,.10) !important;
+}
+html.dark-theme .detail-results-table td {
+  background:#172A45 !important;
+  color:#E0E6F0 !important;
+  border-bottom-color:rgba(255,255,255,.08) !important;
+}
+html.dark-theme .detail-results-table tbody tr:hover td { background:#1D3350 !important; }
+html.dark-theme .detail-evaluator,
+html.dark-theme .detail-date,
+html.dark-theme .detail-role { color:#B8C7D7 !important; }
+html.dark-theme .detail-rating {
+  background:rgba(16,185,129,.14) !important;
+  color:#4ADE80 !important;
+}
+html.dark-theme .detail-view-btn {
+  background:rgba(59,130,246,.14) !important;
+  border-color:rgba(96,165,250,.32) !important;
+  color:#93C5FD !important;
+}
+html.dark-theme .detail-view-btn:hover { background:rgba(59,130,246,.22) !important; }
+html.dark-theme .detail-empty { color:#A0B3C6 !important; }
+html.dark-theme .detail-empty h3 { color:#E0E6F0 !important; }
+html.dark-theme .detail-empty p { color:#A0B3C6 !important; }
+
+/* Individual sheet view */
+html.dark-theme .sheet-header,
+html.dark-theme .scale-bar,
+html.dark-theme .comment-section,
+html.dark-theme .avg-summary {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.08) !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .sheet-name,
+html.dark-theme .avg-score-big,
+html.dark-theme .avg-score-label { color:#E0E6F0 !important; }
+html.dark-theme .sheet-desig,
+html.dark-theme .eval-by-label,
+html.dark-theme .eval-by-date,
+html.dark-theme .avg-out-of,
+html.dark-theme .scale-item,
+html.dark-theme .avg-bar-label { color:#A0B3C6 !important; }
+html.dark-theme .eval-by-name { color:#93C5FD !important; }
+html.dark-theme .sheet-avatar-ph {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.12) !important;
+  color:#8EA5BB !important;
+}
+html.dark-theme .eval-type-chip {
+  background:rgba(59,130,246,.12) !important;
+  border-color:rgba(96,165,250,.28) !important;
+  color:#93C5FD !important;
+}
+html.dark-theme .q-table {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.08) !important;
+}
+html.dark-theme .q-table thead tr,
+html.dark-theme .q-table th {
+  background:#0F1F3D !important;
+  color:#A0B3C6 !important;
+}
+html.dark-theme .q-table td {
+  background:#172A45 !important;
+  color:#E0E6F0 !important;
+  border-top-color:rgba(255,255,255,.08) !important;
+}
+html.dark-theme .q-table tr:hover td { background:#1D3350 !important; }
+html.dark-theme .rating-badge {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.08) !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .comment-text { color:#D7E0E9 !important; }
+html.dark-theme .avg-bar-bg { background:rgba(255,255,255,.08) !important; }
+
+/* Archived personnel */
+html.dark-theme .person-row,
+html.dark-theme .no-archived {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.08) !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .person-name { color:#E0E6F0 !important; }
+html.dark-theme .person-meta { color:#A0B3C6 !important; }
+html.dark-theme .person-photo-ph {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.12) !important;
+  color:#8EA5BB !important;
+}
+html.dark-theme .archived-badge {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.10) !important;
+  color:#A0B3C6 !important;
+}
+html.dark-theme .btn-restore {
+  background:rgba(124,95,217,.16) !important;
+  border:1px solid rgba(156,133,240,.35) !important;
+  color:#C4B5FD !important;
+}
+html.dark-theme .btn-restore:hover { background:rgba(124,95,217,.24) !important; }
+
+/* Keep dark-theme scrollbars readable */
+html.dark-theme ::-webkit-scrollbar-track { background:#0F1F3D !important; }
+html.dark-theme ::-webkit-scrollbar-thumb {
+  background:#2A4468 !important;
+  border:2px solid #0F1F3D !important;
+}
+</style>
+
 </body></html>
 <?php exit; }
 
@@ -1291,7 +2638,8 @@ $whereRole = match ($activeEval) {
     // A Staff account can be a Teaching Staff member and therefore belongs
     // under Faculty; a true Non-Teaching Staff account belongs under Staff.
     'student' => "u.role IN ('teacher','staff','faculty','dean')",
-    'peer'    => "u.role IN ('teacher','staff','faculty','dean','principal')",
+    // Peer targets are restricted to College teachers by $peerEvalSql itself.
+    'peer'    => "u.role IN ('teacher','faculty','staff')",
     default   => "u.role IN ('teacher','staff')"
 };
 
@@ -1301,13 +2649,15 @@ $res = $mysqli->query("
            aa.archived_at,
            COUNT(DISTINCT et.id) AS total_responses,
            MAX(et.submitted_at) AS last_evaluated,
-           AVG(qa.answer_score)  AS avg_score
+           AVG(qa.answer_score)  AS avg_score,
+           SUM(qa.answer_score)  AS score_sum,
+           COUNT(qa.answer_score) AS score_cnt
     FROM users u
     JOIN evaluation_tracker et ON et.target_user_id=u.id AND $evalTypeSql
     LEFT JOIN questionnaire_answers qa ON qa.tracker_id=et.id
     LEFT JOIN analytics_archive aa ON aa.target_user_id=u.id
     WHERE $whereRole AND u.is_active=1 AND $reportScopeSql
-      AND (aa.id IS NULL OR " . ($isMultiRole ? '1=1' : '0=1') . ")
+      AND aa.id IS NULL
     GROUP BY u.id
     ORDER BY avg_score DESC, u.full_name ASC
 ");
@@ -1331,30 +2681,28 @@ if ($activeEval === 'student') {
     }
     unset($person);
 
-    if (!$isMultiRole) {
-        $people = array_values(array_filter($people, function (array $p) use ($groupFilter) {
-            $resolved = strtolower(trim((string)($p['student_resolved_group'] ?? '')));
-            $rawRole  = strtolower(trim((string)($p['role'] ?? '')));
-            if ($groupFilter === 'Faculty') return $resolved === 'teacher';
-            if ($groupFilter === 'Staff') return $resolved === 'staff';
-            if ($groupFilter === 'Dean') return $rawRole === 'dean' && $resolved === 'school_head';
-            return true;
-        }));
-    }
+    $people = array_values(array_filter($people, function (array $p) use ($groupFilter) {
+        $resolved = strtolower(trim((string)($p['student_resolved_group'] ?? '')));
+        $rawRole  = strtolower(trim((string)($p['role'] ?? '')));
+        if ($groupFilter === 'Faculty') return $resolved === 'teacher';
+        if ($groupFilter === 'Staff') return $resolved === 'staff';
+        if ($groupFilter === 'Dean') return $rawRole === 'dean' && $resolved === 'school_head';
+        return true;
+    }));
 }
 
 $top4 = array_slice($people, 0, 4);
 $low4 = array_slice(array_reverse($people), 0, 4);
 
 $totalResponses = array_sum(array_column($people,'total_responses'));
-$scores         = array_filter(array_column($people,'avg_score'), fn($s) => $s !== null);
-$overallAvg     = count($scores) ? round(array_sum($scores)/count($scores),2) : null;
+$poolCnt        = array_sum(array_column($people,'score_cnt'));
+$overallAvg     = $poolCnt > 0 ? round(array_sum(array_column($people,'score_sum')) / $poolCnt, 2) : null;
 
-$totalStudents = $mysqli->query("SELECT COUNT(*) AS c
+$totalStudents = db_row($mysqli, "SELECT COUNT(*) AS c
     FROM users us
     WHERE us.role='student'
       AND us.is_active=1
-      AND (us.education_level='higher_ed' OR us.year_level IN ('1st Year College','2nd Year College','3rd Year College','4th Year College'))")->fetch_assoc()['c'] ?? 0;
+      AND (us.education_level='higher_ed' OR us.year_level IN ('1st Year College','2nd Year College','3rd Year College','4th Year College'))")['c'] ?? 0;
 $facCount = 0;
 $staffCount = 0;
 $studentDeanCount = 0;
@@ -1363,7 +2711,12 @@ $totalFacStaff = 0;
 // Match the EA Student Evaluation roster counts for the Higher Education Dean:
 // Faculty, non-teaching Staff, and Dean. College Student Evaluation does not
 // include Principal targets in the Dean portal.
-$studentRosterQ = $mysqli->query("SELECT id, full_name, designation, photo, role, secondary_role, sector, source
+$studentRosterQ = $mysqli->query("SELECT id, full_name, designation, photo, role, secondary_role, sector, source,
+           EXISTS(SELECT 1 FROM teaching_assignments ta WHERE ta.user_id=u.id) AS has_teaching_assignment,
+           (u.role='teacher' OR u.sector='Teacher'
+            OR EXISTS(SELECT 1 FROM teaching_assignments ta2 WHERE ta2.user_id=u.id)
+            OR EXISTS(SELECT 1 FROM user_year_levels yl2 WHERE yl2.user_id=u.id)) AS is_teaching_staff,
+           EXISTS(SELECT 1 FROM user_year_levels yl WHERE yl.user_id=u.id) AS has_year_level
     FROM users u
     WHERE u.is_active=1
       AND u.account_status='approved'
@@ -1385,44 +2738,20 @@ if ($studentRosterQ) {
 }
 $totalFacStaff = $facCount + $staffCount + $studentDeanCount;
 
-$multiRoleFacCount = 0;
-$multiRoleStaffCount = 0;
-$mrUsers = $mysqli->query("SELECT id, role, secondary_role, designation, source, account_status, is_active
-    FROM users u
-    WHERE role IN ('teacher','staff','faculty')
-      AND is_active=1
-      AND (account_status='approved' OR source='admin_nologin')
-      AND $reportScopeSql");
-if ($mrUsers) {
-    while ($u = $mrUsers->fetch_assoc()) {
-        if (!ec_has_additional_role($u)) continue;
-        $baseRole = strtolower(trim((string)$u['role']));
-        if ($baseRole === 'teacher' || $baseRole === 'faculty' || strtolower(trim((string)$u['secondary_role'])) === 'teacher') {
-            $multiRoleFacCount++;
-        } else {
-            $multiRoleStaffCount++;
-        }
-    }
-    $mrUsers->free();
-}
-$multiRoleTotal = $multiRoleFacCount + $multiRoleStaffCount;
-if ($isMultiRole) {
-    $facCount = $multiRoleFacCount;
-    $staffCount = $multiRoleStaffCount;
-    $totalFacStaff = $multiRoleTotal;
-} elseif ($groupFilter === 'Teacher' || $groupFilter === 'Staff') {
+if ($groupFilter === 'Teacher' || $groupFilter === 'Staff') {
     $totalFacStaff = $groupFilter === 'Teacher' ? $facCount : $staffCount;
 }
 
-$archivedCount = $mysqli->query("SELECT COUNT(*) as c FROM analytics_archive aa JOIN users u ON u.id=aa.target_user_id WHERE $reportScopeSql")->fetch_assoc()['c'] ?? 0;
-$studentEvalCount = $mysqli->query("SELECT COUNT(DISTINCT et.id) as c
+$archivedCount = db_row($mysqli, "SELECT COUNT(*) as c FROM analytics_archive aa JOIN users u ON u.id=aa.target_user_id WHERE $reportScopeSql")['c'] ?? 0;
+$studentEvalCount = db_row($mysqli, "SELECT COUNT(DISTINCT et.id) as c
     FROM evaluation_tracker et
     JOIN users u ON u.id=et.target_user_id
     WHERE et.eval_type='student'
       AND $collegeStudentEvaluatorSql
       AND COALESCE(et.evaluation_context,'teacher') IN ('teacher','staff')
-      AND $reportScopeSql")->fetch_assoc()['c'] ?? 0;
-$multiRoleEvalCount = $mysqli->query("SELECT COUNT(DISTINCT et.id) AS c
+      AND $periodSql
+      AND $reportScopeSql")['c'] ?? 0;
+$multiRoleEvalCount = db_row($mysqli, "SELECT COUNT(DISTINCT et.id) AS c
     FROM evaluation_tracker et JOIN users u ON u.id=et.target_user_id
     WHERE et.period_id=$period_id_int
       AND et.eval_type='student'
@@ -1430,9 +2759,11 @@ $multiRoleEvalCount = $mysqli->query("SELECT COUNT(DISTINCT et.id) AS c
       AND (et.evaluation_context='multi_role' OR EXISTS (
         SELECT 1 FROM questionnaire_answers qam JOIN user_questions uqm ON uqm.id=qam.user_question_id
         WHERE qam.tracker_id=et.id AND uqm.target_type='Multi-Role' AND uqm.eval_type='student'
-    )) AND $reportScopeSql")->fetch_assoc()['c'] ?? 0;
-$peerEvalCount = $mysqli->query("SELECT COUNT(DISTINCT et.id) as c FROM evaluation_tracker et JOIN users u ON u.id=et.target_user_id WHERE et.period_id=$period_id_int
-      AND et.eval_type IN ('peer','faculty_peer','staff_peer') AND $reportScopeSql")->fetch_assoc()['c'] ?? 0;
+    )) AND $reportScopeSql")['c'] ?? 0;
+$peerEvalCount = db_row($mysqli, "SELECT COUNT(DISTINCT et.id) AS c FROM evaluation_tracker et WHERE $peerEvalSql")['c'] ?? 0;
+$peerTeacherCount = db_row($mysqli, "SELECT COUNT(*) AS c FROM users u
+    WHERE u.is_active=1 AND u.account_status='approved'
+      AND u.id IN ($collegeTeacherIdsSql)")['c'] ?? 0;
 
 $staffDesigCounts = [];
 $sdq = $mysqli->query("SELECT designation, COUNT(*) as c FROM users u WHERE u.role='staff' AND u.is_active=1 AND $reportScopeSql GROUP BY designation ORDER BY designation");
@@ -1587,7 +2918,6 @@ a { color:inherit; }
             <a href="?view=archived&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>" class="reports-archive-link">
                 <i class="fa-solid fa-box-archive"></i> Archived<?php if ($archivedCount > 0): ?><span class="reports-archive-count"><?= $archivedCount ?></span><?php endif; ?>
             </a>
-            <button class="reports-print-btn" onclick="window.print()"><i class="fa-solid fa-print"></i> Print / Save PDF</button>
         </div>
     </div>
 
@@ -1605,17 +2935,11 @@ a { color:inherit; }
     </div>
     <?php else: ?>
     <div class="reports-filter-tabs">
-        <a href="?group=All&eval_type=peer" class="reports-filter-tab <?= $groupFilter==='All'?'active':'' ?>">
-            <i class="fa-solid fa-users"></i><span>All</span><b><?= $facCount + $staffCount ?></b>
-        </a>
-        <a href="?group=Teacher&eval_type=peer" class="reports-filter-tab <?= $groupFilter==='Teacher'?'active':'' ?>">
-            <i class="fa-solid fa-chalkboard-user"></i><span>Teacher</span><b><?= $facCount ?></b>
-        </a>
-        <a href="?group=Staff&eval_type=peer" class="reports-filter-tab <?= $groupFilter==='Staff'?'active':'' ?>">
-            <i class="fa-solid fa-briefcase"></i><span>Staff</span><b><?= $staffCount ?></b>
+        <a href="?group=All&eval_type=peer" class="reports-filter-tab active">
+            <i class="fa-solid fa-chalkboard-user"></i><span>College Teachers</span><b><?= $peerTeacherCount ?></b>
         </a>
     </div>
-    <div class="reports-peer-note"><i class="fa-solid fa-circle-info"></i><span><strong>Peer-to-Peer Evaluations</strong> — results submitted by fellow teacher and staff personnel.</span></div>
+    <div class="reports-peer-note"><i class="fa-solid fa-circle-info"></i><span><strong>Peer-to-Peer Evaluations</strong> — results submitted by fellow College teachers.</span></div>
     <?php endif; ?>
 
     <!-- Main data panel styled after the supplied reference layout. -->
@@ -1666,7 +2990,6 @@ a { color:inherit; }
                 <?php foreach ($people as $i => $p):
                     $avg = $p['avg_score'] !== null ? round((float)$p['avg_score'], 2) : null;
                     $rawRole = strtolower(trim((string)($p['role'] ?? '')));
-                    $isArchived = !empty($p['archived_at']);
                     if ($activeEval === 'student') {
                         $resolvedGroup = strtolower(trim((string)($p['student_resolved_group'] ?? '')));
                         if ($resolvedGroup === 'teacher') {
@@ -1681,13 +3004,13 @@ a { color:inherit; }
                             $roleLabel = ucfirst($rawRole);
                         }
                     } else {
-                        $roleLabel = $isMultiRole ? 'Multi-Role' : (in_array($rawRole, ['teacher','faculty'], true) ? 'Faculty' : 'Staff');
+                        $roleLabel = in_array($rawRole, ['teacher','faculty'], true) ? 'Faculty' : 'Staff';
                     }
                     $isFac = $roleLabel === 'Faculty';
                     $lastEval = !empty($p['last_evaluated']) ? date('M d, Y', strtotime($p['last_evaluated'])) : '—';
                     $searchText = trim(($p['full_name'] ?? '') . ' ' . ($p['designation'] ?? '') . ' ' . $roleLabel);
                 ?>
-                    <tr class="reports-person-row" data-search="<?= htmlspecialchars(strtolower($searchText)) ?>" data-desig="<?= htmlspecialchars($p['designation']) ?>">
+                    <tr class="reports-person-row" data-search="<?= htmlspecialchars(strtolower($searchText)) ?>" data-desig="<?= htmlspecialchars((string)($p['designation'] ?? '')) ?>">
                         <td class="col-no"><?= $i + 1 ?></td>
                         <td>
                             <a class="reports-person-link" href="?view=students&target_id=<?= $p['id'] ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>">
@@ -1695,18 +3018,14 @@ a { color:inherit; }
                                 <span class="reports-person-name"><?= htmlspecialchars($p['full_name']) ?></span>
                             </a>
                         </td>
-                        <td class="reports-designation-cell"><?= !empty($p['designation']) ? htmlspecialchars($p['designation']) : '—' ?></td>
+                        <td class="reports-designation-cell"><?= !empty($p['designation']) ? htmlspecialchars((string)($p['designation'] ?? '')) : '—' ?></td>
                         <td><span class="reports-role-badge <?= $isFac ? 'faculty' : (in_array($roleLabel, ['Dean','Principal'], true) ? strtolower($roleLabel) : 'staff') ?>"><i class="fa-solid <?= $roleLabel === 'Dean' ? 'fa-graduation-cap' : ($roleLabel === 'Principal' ? 'fa-user-tie' : ($isFac ? 'fa-chalkboard-user' : 'fa-briefcase')) ?>"></i><?= htmlspecialchars($roleLabel) ?></span></td>
                         <td><span class="reports-score <?= $avg !== null && $avg >= 4.5 ? 'high' : ($avg !== null && $avg >= 3.5 ? 'mid' : 'low') ?>"><?= $avg !== null ? number_format($avg,2) : '—' ?></span></td>
                         <td class="reports-date"><?= htmlspecialchars($lastEval) ?></td>
                         <td class="col-actions">
                             <div class="reports-row-actions">
                                 <a class="reports-view-btn" href="?view=students&target_id=<?= $p['id'] ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>"><i class="fa-solid fa-eye"></i> View</a>
-                                <?php if ($isArchived && $isMultiRole): ?>
-                                    <a class="reports-archive-btn" href="?restore_id=<?= $p['id'] ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>&view=archived"><i class="fa-solid fa-rotate-left"></i> Restore</a>
-                                <?php else: ?>
-                                    <button type="button" class="reports-archive-btn" onclick="archivePerson(<?= $p['id'] ?>,'<?= htmlspecialchars(addslashes($p['full_name'])) ?>')"><i class="fa-solid fa-box-archive"></i> Archive</button>
-                                <?php endif; ?>
+                                <button type="button" class="reports-archive-btn" onclick="archivePerson(<?= (int)$p['id'] ?>, <?= htmlspecialchars(json_encode((string)$p['full_name'], JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') ?>)"><i class="fa-solid fa-box-archive"></i> Archive</button>
                             </div>
                         </td>
                     </tr>
@@ -1906,9 +3225,23 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 function archivePerson(id, name) {
-    if (confirm(`Archive "${name}"? They'll be hidden from this list but their evaluation data is kept and can be restored anytime.`)) {
-        window.location.href = `?archive_id=${id}&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>`;
-    }
+    if (!confirm(`Archive "${name}"? They'll be hidden from this list but their evaluation data is kept and can be restored anytime.`)) return;
+    const f = document.createElement('form');
+    f.method = 'post';
+    f.action = 'dean_reports.php';
+    const fields = {
+        archive_id: id,
+        group: <?= json_encode($groupFilter) ?>,
+        eval_type: <?= json_encode($activeEval) ?>,
+        csrf_token: <?= json_encode($csrfToken) ?>
+    };
+    Object.keys(fields).forEach(function(k){
+        const i = document.createElement('input');
+        i.type = 'hidden'; i.name = k; i.value = fields[k];
+        f.appendChild(i);
+    });
+    document.body.appendChild(f);
+    f.submit();
 }
 
 // ── LIVE REPORT UPDATES ────────────────────────────────────────────────
@@ -1927,12 +3260,12 @@ function archivePerson(id, name) {
         }
         search.addEventListener('input', function(){ sessionStorage.setItem(storageKey, search.value); });
     }
-    if (status) status.title = 'Live — checks for new evaluations every 10 seconds';
+    if (status) status.title = 'Live — checks for new evaluations every 30 seconds';
     const base = 'dean_reports_live_api.php?eval_type=<?= urlencode($activeEval) ?>&group=<?= urlencode($groupFilter) ?>';
     let lastSignature = null;
     let busy = false;
     function pollReports(){
-        if (busy) return;
+        if (busy || document.hidden) return;
         busy = true;
         fetch(base, {credentials:'same-origin', cache:'no-store'})
             .then(function(r){ if(!r.ok) throw new Error('status'); return r.json(); })
@@ -1956,12 +3289,13 @@ function archivePerson(id, name) {
             .finally(function(){ busy = false; });
     }
     pollReports();
-    setInterval(pollReports, 10000);
+    setInterval(pollReports, 30000);
+    document.addEventListener('visibilitychange', function(){ if (!document.hidden) pollReports(); });
 })();
 </script>
 <?php $mysqli->close(); ?>
 
-<style id="executive-original-theme">
+<style id="executive-original-theme-3">
 :root{
  --dark:#0A192F;--mid:#172A45;--inner:#0F1F3D;
  --violet:#7C5FD9;--violet-h:#9C85F0;--violet-dark:#5F45B8;
@@ -2013,6 +3347,726 @@ input,select,textarea{background:#0F1F3D!important;color:var(--light)!important;
 input::placeholder,textarea::placeholder{color:#7890a8!important;}
 </style>
 
+
+<style id="dean-reports-dark-final">
+/* -------------------------------------------------------------------------
+   Final dark-mode layer for Dean Evaluation Reports.
+   This is intentionally loaded last because this page contains several
+   legacy light-theme blocks and view-specific inline styles.
+   ------------------------------------------------------------------------- */
+html.dark-theme body {
+  background:#0A192F !important;
+  background-image:none !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .main {
+  background:#0F1F3D !important;
+  color:#E0E6F0 !important;
+}
+
+/* Main analytics tabs / filters */
+html.dark-theme .reports-top-tab,
+html.dark-theme .reports-filter-tab {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.12) !important;
+  color:#A0B3C6 !important;
+  box-shadow:none !important;
+}
+html.dark-theme .reports-top-tab:hover,
+html.dark-theme .reports-filter-tab:hover {
+  background:#1D3350 !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .reports-top-tab.active,
+html.dark-theme .reports-top-tab.peer.active,
+html.dark-theme .reports-filter-tab.active {
+  background:rgba(124,95,217,.16) !important;
+  border-color:rgba(156,133,240,.38) !important;
+  color:#C4B5FD !important;
+  box-shadow:none !important;
+}
+html.dark-theme .reports-top-badge,
+html.dark-theme .reports-filter-tab b {
+  background:#0F1F3D !important;
+  color:#A0B3C6 !important;
+}
+html.dark-theme .reports-top-tab.active .reports-top-badge,
+html.dark-theme .reports-filter-tab.active b {
+  background:rgba(124,95,217,.22) !important;
+  color:#C4B5FD !important;
+}
+
+html.dark-theme .reports-sub-filters,
+html.dark-theme .reports-designation-filters,
+html.dark-theme .reports-peer-note {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.08) !important;
+  color:#A0B3C6 !important;
+}
+html.dark-theme .reports-sub-label { color:#A0B3C6 !important; }
+html.dark-theme .reports-sub-tab,
+html.dark-theme .reports-designation-pill {
+  color:#A0B3C6 !important;
+}
+html.dark-theme .reports-sub-tab:hover,
+html.dark-theme .reports-designation-pill:hover {
+  background:#1D3350 !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .reports-sub-tab.active,
+html.dark-theme .reports-designation-pill.active {
+  background:rgba(124,95,217,.16) !important;
+  border-color:rgba(156,133,240,.35) !important;
+  color:#C4B5FD !important;
+}
+html.dark-theme .reports-sub-tab b,
+html.dark-theme .reports-designation-pill b {
+  background:#0F1F3D !important;
+  color:#A0B3C6 !important;
+}
+
+/* Report data panel */
+html.dark-theme .reports-data-panel {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.08) !important;
+  box-shadow:0 8px 28px rgba(0,0,0,.28) !important;
+}
+html.dark-theme .reports-data-title h2 { color:#E0E6F0 !important; }
+html.dark-theme .reports-data-title span { color:#A0B3C6 !important; }
+html.dark-theme .reports-data-title i { color:#9C85F0 !important; }
+html.dark-theme .reports-action-btn {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.14) !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .reports-action-btn:hover { background:#1D3350 !important; }
+html.dark-theme .reports-search-box {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.14) !important;
+}
+html.dark-theme .reports-search-box i { color:#8EA5BB !important; }
+html.dark-theme .reports-search-box input {
+  background:transparent !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .reports-search-box input::placeholder { color:#6B84A0 !important; }
+html.dark-theme .reports-active-filter-note {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.08) !important;
+  color:#A0B3C6 !important;
+}
+html.dark-theme .reports-active-filter-note button { color:#C4B5FD !important; }
+
+/* Main report table */
+html.dark-theme .reports-table th {
+  background:#0F1F3D !important;
+  color:#A0B3C6 !important;
+  border-top-color:rgba(255,255,255,.08) !important;
+  border-bottom-color:rgba(255,255,255,.10) !important;
+}
+html.dark-theme .reports-table td {
+  background:#172A45 !important;
+  color:#E0E6F0 !important;
+  border-bottom-color:rgba(255,255,255,.08) !important;
+}
+html.dark-theme .reports-table tbody tr:hover td {
+  background:#1D3350 !important;
+}
+html.dark-theme .reports-person-name { color:#E0E6F0 !important; }
+html.dark-theme .reports-designation-cell { color:#B6C6D6 !important; }
+html.dark-theme .reports-person-photo { border-color:rgba(255,255,255,.12) !important; }
+html.dark-theme .reports-person-photo.placeholder {
+  background:#0F1F3D !important;
+  color:#8EA5BB !important;
+}
+html.dark-theme .reports-role-badge.faculty {
+  background:rgba(37,99,216,.16) !important;
+  border-color:rgba(96,165,250,.32) !important;
+  color:#93C5FD !important;
+}
+html.dark-theme .reports-role-badge.staff,
+html.dark-theme .reports-role-badge.dean {
+  background:rgba(124,95,217,.16) !important;
+  border-color:rgba(156,133,240,.32) !important;
+  color:#C4B5FD !important;
+}
+html.dark-theme .reports-role-badge.principal {
+  background:rgba(217,119,6,.16) !important;
+  border-color:rgba(217,119,6,.32) !important;
+  color:#FBBF24 !important;
+}
+html.dark-theme .reports-score.high { color:#4ADE80 !important; }
+html.dark-theme .reports-score.mid { color:#FBBF24 !important; }
+html.dark-theme .reports-score.low { color:#FCA5A5 !important; }
+html.dark-theme .reports-date { color:#A0B3C6 !important; }
+html.dark-theme .reports-view-btn {
+  background:rgba(59,130,246,.14) !important;
+  border-color:rgba(96,165,250,.32) !important;
+  color:#93C5FD !important;
+}
+html.dark-theme .reports-view-btn:hover { background:rgba(59,130,246,.22) !important; }
+html.dark-theme .reports-archive-btn {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.14) !important;
+  color:#A0B3C6 !important;
+}
+html.dark-theme .reports-archive-btn:hover { background:#1D3350 !important; color:#E0E6F0 !important; }
+html.dark-theme .reports-empty-state,
+html.dark-theme .reports-no-search { color:#A0B3C6 !important; }
+html.dark-theme .reports-empty-state h3 { color:#E0E6F0 !important; }
+html.dark-theme .reports-empty-state i { color:#71879C !important; }
+html.dark-theme .reports-empty-state p { color:#A0B3C6 !important; }
+html.dark-theme .reports-live-status {
+  background:rgba(16,185,129,.14) !important;
+  border-color:rgba(16,185,129,.32) !important;
+  color:#4ADE80 !important;
+}
+html.dark-theme .reports-live-status.stale {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.10) !important;
+  color:#8EA5BB !important;
+}
+
+/* Shared report/detail controls */
+html.dark-theme .back-btn,
+html.dark-theme .detail-back,
+html.dark-theme .btn-archived-link {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.14) !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .back-btn:hover,
+html.dark-theme .detail-back:hover,
+html.dark-theme .btn-archived-link:hover {
+  background:#1D3350 !important;
+  color:#C4B5FD !important;
+}
+
+/* Detail / individual evaluation view */
+html.dark-theme .detail-eval-banner {
+  background:rgba(59,130,246,.10) !important;
+  border-color:rgba(96,165,250,.24) !important;
+}
+html.dark-theme .detail-eval-icon {
+  background:rgba(59,130,246,.14) !important;
+  border-color:rgba(96,165,250,.28) !important;
+  color:#93C5FD !important;
+}
+html.dark-theme .detail-eval-title { color:#93C5FD !important; }
+html.dark-theme .detail-eval-sub { color:#A0B3C6 !important; }
+html.dark-theme .detail-person-card,
+html.dark-theme .detail-results-panel,
+html.dark-theme .detail-legend {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.08) !important;
+  box-shadow:0 8px 28px rgba(0,0,0,.25) !important;
+}
+html.dark-theme .detail-person-avatar.ph {
+  background:#0F1F3D !important;
+  color:#8EA5BB !important;
+}
+html.dark-theme .detail-person-name { color:#E0E6F0 !important; }
+html.dark-theme .detail-person-desig,
+html.dark-theme .detail-stat-label,
+html.dark-theme .detail-legend-text,
+html.dark-theme .detail-results-title span,
+html.dark-theme .detail-year-filter label { color:#A0B3C6 !important; }
+html.dark-theme .detail-stat-value { color:#93C5FD !important; }
+html.dark-theme .detail-stat-value.score { color:#4ADE80 !important; }
+html.dark-theme .detail-legend-title { color:#E0E6F0 !important; }
+html.dark-theme .detail-year-filter select {
+  background:#0F1F3D !important;
+  color:#E0E6F0 !important;
+  border-color:rgba(255,255,255,.14) !important;
+}
+html.dark-theme .detail-results-title h2 { color:#E0E6F0 !important; }
+html.dark-theme .detail-results-title i { color:#9C85F0 !important; }
+html.dark-theme .detail-results-table th {
+  background:#0F1F3D !important;
+  color:#A0B3C6 !important;
+  border-bottom-color:rgba(255,255,255,.10) !important;
+}
+html.dark-theme .detail-results-table td {
+  background:#172A45 !important;
+  color:#E0E6F0 !important;
+  border-bottom-color:rgba(255,255,255,.08) !important;
+}
+html.dark-theme .detail-results-table tbody tr:hover td { background:#1D3350 !important; }
+html.dark-theme .detail-evaluator,
+html.dark-theme .detail-date,
+html.dark-theme .detail-role { color:#B8C7D7 !important; }
+html.dark-theme .detail-rating {
+  background:rgba(16,185,129,.14) !important;
+  color:#4ADE80 !important;
+}
+html.dark-theme .detail-view-btn {
+  background:rgba(59,130,246,.14) !important;
+  border-color:rgba(96,165,250,.32) !important;
+  color:#93C5FD !important;
+}
+html.dark-theme .detail-view-btn:hover { background:rgba(59,130,246,.22) !important; }
+html.dark-theme .detail-empty { color:#A0B3C6 !important; }
+html.dark-theme .detail-empty h3 { color:#E0E6F0 !important; }
+html.dark-theme .detail-empty p { color:#A0B3C6 !important; }
+
+/* Individual sheet view */
+html.dark-theme .sheet-header,
+html.dark-theme .scale-bar,
+html.dark-theme .comment-section,
+html.dark-theme .avg-summary {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.08) !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .sheet-name,
+html.dark-theme .avg-score-big,
+html.dark-theme .avg-score-label { color:#E0E6F0 !important; }
+html.dark-theme .sheet-desig,
+html.dark-theme .eval-by-label,
+html.dark-theme .eval-by-date,
+html.dark-theme .avg-out-of,
+html.dark-theme .scale-item,
+html.dark-theme .avg-bar-label { color:#A0B3C6 !important; }
+html.dark-theme .eval-by-name { color:#93C5FD !important; }
+html.dark-theme .sheet-avatar-ph {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.12) !important;
+  color:#8EA5BB !important;
+}
+html.dark-theme .eval-type-chip {
+  background:rgba(59,130,246,.12) !important;
+  border-color:rgba(96,165,250,.28) !important;
+  color:#93C5FD !important;
+}
+html.dark-theme .q-table {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.08) !important;
+}
+html.dark-theme .q-table thead tr,
+html.dark-theme .q-table th {
+  background:#0F1F3D !important;
+  color:#A0B3C6 !important;
+}
+html.dark-theme .q-table td {
+  background:#172A45 !important;
+  color:#E0E6F0 !important;
+  border-top-color:rgba(255,255,255,.08) !important;
+}
+html.dark-theme .q-table tr:hover td { background:#1D3350 !important; }
+html.dark-theme .rating-badge {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.08) !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .comment-text { color:#D7E0E9 !important; }
+html.dark-theme .avg-bar-bg { background:rgba(255,255,255,.08) !important; }
+
+/* Archived personnel */
+html.dark-theme .person-row,
+html.dark-theme .no-archived {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.08) !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .person-name { color:#E0E6F0 !important; }
+html.dark-theme .person-meta { color:#A0B3C6 !important; }
+html.dark-theme .person-photo-ph {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.12) !important;
+  color:#8EA5BB !important;
+}
+html.dark-theme .archived-badge {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.10) !important;
+  color:#A0B3C6 !important;
+}
+html.dark-theme .btn-restore {
+  background:rgba(124,95,217,.16) !important;
+  border:1px solid rgba(156,133,240,.35) !important;
+  color:#C4B5FD !important;
+}
+html.dark-theme .btn-restore:hover { background:rgba(124,95,217,.24) !important; }
+
+/* Keep dark-theme scrollbars readable */
+html.dark-theme ::-webkit-scrollbar-track { background:#0F1F3D !important; }
+html.dark-theme ::-webkit-scrollbar-thumb {
+  background:#2A4468 !important;
+  border:2px solid #0F1F3D !important;
+}
+</style>
+<style id="dean-cumulative-dark-screen-final">
+/* Final dark-mode correction for the generated/cumulative report sheet.
+   The cumulative report intentionally keeps a white print layout, but on-screen
+   it must inherit the active Dean dark theme instead of leaving white panels. */
+@media screen {
+  body.report-mode .cumulative-sheet,
+  body.report-mode .cumulative-sheet * {
+    color:#E0E6F0 !important;
+  }
+
+  body.report-mode .cumulative-sheet {
+    background:#172A45 !important;
+    border-color:rgba(255,255,255,.08) !important;
+    box-shadow:0 8px 32px rgba(0,0,0,.45) !important;
+  }
+
+  body.report-mode .cumulative-sheet .cum-topbar,
+  body.report-mode .cumulative-sheet .sheet-header,
+  body.report-mode .cumulative-sheet .cum-total,
+  body.report-mode .cumulative-sheet .comment-section {
+    background:#172A45 !important;
+    border-color:rgba(255,255,255,.08) !important;
+    box-shadow:none !important;
+  }
+
+  body.report-mode .cumulative-sheet .cum-topbar {
+    background:#0F1F3D !important;
+  }
+
+  body.report-mode .cumulative-sheet .cat-section {
+    background:transparent !important;
+    border:0 !important;
+    box-shadow:none !important;
+  }
+
+  body.report-mode .cumulative-sheet .cat-title {
+    background:transparent !important;
+    color:#C4B5FD !important;
+    border-bottom-color:rgba(255,255,255,.12) !important;
+  }
+
+  body.report-mode .cumulative-sheet .q-table {
+    background:#172A45 !important;
+    border-color:rgba(255,255,255,.08) !important;
+  }
+
+  body.report-mode .cumulative-sheet .q-table thead tr,
+  body.report-mode .cumulative-sheet .q-table th {
+    background:#0F1F3D !important;
+    color:#A0B3C6 !important;
+    border-color:rgba(255,255,255,.08) !important;
+  }
+
+  body.report-mode .cumulative-sheet .q-table td,
+  body.report-mode .cumulative-sheet .q-table tbody tr {
+    background:#172A45 !important;
+    color:#E0E6F0 !important;
+    border-color:rgba(255,255,255,.07) !important;
+  }
+
+  body.report-mode .cumulative-sheet .q-table tr:hover td {
+    background:#1D3350 !important;
+  }
+
+  body.report-mode .cumulative-sheet .rating-badge {
+    background:#0F1F3D !important;
+    color:#E0E6F0 !important;
+    border-color:rgba(255,255,255,.12) !important;
+  }
+
+  body.report-mode .cumulative-sheet .rating-num {
+    color:#E0E6F0 !important;
+  }
+
+  body.report-mode .cumulative-sheet .rating-lbl {
+    color:#A0B3C6 !important;
+  }
+
+  body.report-mode .cumulative-sheet .sheet-avatar-ph {
+    background:#0F1F3D !important;
+    border-color:rgba(255,255,255,.12) !important;
+    color:#8EA5BB !important;
+  }
+
+  body.report-mode .cumulative-sheet .sheet-name {
+    color:#E0E6F0 !important;
+  }
+
+  body.report-mode .cumulative-sheet .sheet-desig,
+  body.report-mode .cumulative-sheet .cum-by,
+  body.report-mode .cumulative-sheet .cum-date-label,
+  body.report-mode .cumulative-sheet .cum-remark,
+  body.report-mode .cumulative-sheet .no-comment,
+  body.report-mode .cumulative-sheet .avg-out-of {
+    color:#A0B3C6 !important;
+  }
+
+  body.report-mode .cumulative-sheet .cum-date-val {
+    color:#E0E6F0 !important;
+  }
+
+  body.report-mode .cumulative-sheet .cum-total-label {
+    color:#C4B5FD !important;
+  }
+
+  body.report-mode .cumulative-sheet .avg-score-big {
+    color:#4ADE80 !important;
+  }
+
+  body.report-mode .cumulative-sheet .avg-score-label {
+    color:#4ADE80 !important;
+  }
+
+  body.report-mode .cumulative-sheet .comment-title {
+    background:transparent !important;
+    color:#C4B5FD !important;
+    border:0 !important;
+  }
+}
+</style>
+
 </body>
 <link rel="stylesheet" href="includes/dean_light_theme.css" id="dean-light-theme-final"/>
+<style id="dean-generated-sheet-dark-final-v4">
+@media screen {
+  html.dark-theme body.report-mode .cumulative-sheet,
+  html.dark-theme body.report-mode .cumulative-sheet *,
+  html.dark-theme body.report-mode .individual-sheet,
+  html.dark-theme body.report-mode .individual-sheet * {
+    box-sizing:border-box;
+  }
+
+  /* Generated cumulative report */
+  html.dark-theme body.report-mode .cumulative-sheet {
+    background:#172A45 !important;
+    color:#E0E6F0 !important;
+    border-color:rgba(255,255,255,.08) !important;
+  }
+  html.dark-theme body.report-mode .cumulative-sheet .cum-topbar,
+  html.dark-theme body.report-mode .cumulative-sheet .sheet-header,
+  html.dark-theme body.report-mode .cumulative-sheet .cum-total,
+  html.dark-theme body.report-mode .cumulative-sheet .comment-section {
+    background:#172A45 !important;
+    color:#E0E6F0 !important;
+    border-color:rgba(255,255,255,.08) !important;
+  }
+  html.dark-theme body.report-mode .cumulative-sheet .cum-topbar {
+    background:#0F1F3D !important;
+  }
+  html.dark-theme body.report-mode .cumulative-sheet .cat-section {
+    background:transparent !important;
+    border:0 !important;
+  }
+  html.dark-theme body.report-mode .cumulative-sheet .cat-title {
+    background:transparent !important;
+    color:#C4B5FD !important;
+    border-bottom-color:rgba(255,255,255,.12) !important;
+  }
+  html.dark-theme body.report-mode .cumulative-sheet .q-table,
+  html.dark-theme body.report-mode .cumulative-sheet .q-table tbody,
+  html.dark-theme body.report-mode .cumulative-sheet .q-table tr,
+  html.dark-theme body.report-mode .cumulative-sheet .q-table td {
+    background:#172A45 !important;
+    color:#E0E6F0 !important;
+    border-color:rgba(255,255,255,.08) !important;
+  }
+  html.dark-theme body.report-mode .cumulative-sheet .q-table thead tr,
+  html.dark-theme body.report-mode .cumulative-sheet .q-table th {
+    background:#0F1F3D !important;
+    color:#A0B3C6 !important;
+    border-color:rgba(255,255,255,.10) !important;
+  }
+  html.dark-theme body.report-mode .cumulative-sheet .q-table tr:hover td {
+    background:#1D3350 !important;
+  }
+  html.dark-theme body.report-mode .cumulative-sheet .rating-badge {
+    background:#0F1F3D !important;
+    color:#E0E6F0 !important;
+    border-color:rgba(255,255,255,.12) !important;
+  }
+  html.dark-theme body.report-mode .cumulative-sheet .sheet-name,
+  html.dark-theme body.report-mode .cumulative-sheet .cum-date-val,
+  html.dark-theme body.report-mode .cumulative-sheet .rating-num {
+    color:#E0E6F0 !important;
+  }
+  html.dark-theme body.report-mode .cumulative-sheet .sheet-desig,
+  html.dark-theme body.report-mode .cumulative-sheet .cum-by,
+  html.dark-theme body.report-mode .cumulative-sheet .cum-date-label,
+  html.dark-theme body.report-mode .cumulative-sheet .cum-remark,
+  html.dark-theme body.report-mode .cumulative-sheet .no-comment,
+  html.dark-theme body.report-mode .cumulative-sheet .avg-out-of,
+  html.dark-theme body.report-mode .cumulative-sheet .rating-lbl {
+    color:#A0B3C6 !important;
+  }
+  html.dark-theme body.report-mode .cumulative-sheet .cum-total-label,
+  html.dark-theme body.report-mode .cumulative-sheet .comment-title {
+    color:#C4B5FD !important;
+  }
+  html.dark-theme body.report-mode .cumulative-sheet .avg-score-big,
+  html.dark-theme body.report-mode .cumulative-sheet .avg-score-label {
+    color:#4ADE80 !important;
+  }
+  html.dark-theme body.report-mode .cumulative-sheet .sheet-avatar-ph {
+    background:#0F1F3D !important;
+    border-color:rgba(255,255,255,.12) !important;
+    color:#8EA5BB !important;
+  }
+
+  /* Generated individual report/detail sheet, kept dark as a fallback if
+     the page is opened directly without the cumulative switch. */
+  html.dark-theme body.report-mode .individual-sheet,
+  html.dark-theme body.report-mode .individual-sheet .sheet-header,
+  html.dark-theme body.report-mode .individual-sheet .scale-bar,
+  html.dark-theme body.report-mode .individual-sheet .comment-section,
+  html.dark-theme body.report-mode .individual-sheet .avg-summary {
+    background:#172A45 !important;
+    color:#E0E6F0 !important;
+    border-color:rgba(255,255,255,.08) !important;
+  }
+  html.dark-theme body.report-mode .individual-sheet .q-table,
+  html.dark-theme body.report-mode .individual-sheet .q-table tbody,
+  html.dark-theme body.report-mode .individual-sheet .q-table tr,
+  html.dark-theme body.report-mode .individual-sheet .q-table td {
+    background:#172A45 !important;
+    color:#E0E6F0 !important;
+    border-color:rgba(255,255,255,.08) !important;
+  }
+  html.dark-theme body.report-mode .individual-sheet .q-table thead tr,
+  html.dark-theme body.report-mode .individual-sheet .q-table th {
+    background:#0F1F3D !important;
+    color:#A0B3C6 !important;
+  }
+}
+</style>
+<style id="dean-generated-sheet-dark-final-v3">
+/* Final screen-only dark-mode override for generated evaluation sheets.
+   Loaded after dean_light_theme.css so no legacy light/report rule can paint
+   these report surfaces white. Printing intentionally remains unchanged. */
+@media screen {
+  html.dark-theme,
+  html.dark-theme body { color-scheme:dark !important; }
+  html.dark-theme body.report-mode .individual-sheet,
+  html.dark-theme body.report-mode .individual-sheet .sheet-header,
+  html.dark-theme body.report-mode .individual-sheet .scale-bar,
+  html.dark-theme body.report-mode .individual-sheet .cat-section,
+  html.dark-theme body.report-mode .individual-sheet .comment-section,
+  html.dark-theme body.report-mode .individual-sheet .avg-summary {
+    background:#172A45 !important;
+    color:#E0E6F0 !important;
+    border-color:rgba(255,255,255,.08) !important;
+    box-shadow:none !important;
+  }
+  html.dark-theme body.report-mode .individual-sheet .cat-section {
+    background:transparent !important;
+    border-color:rgba(255,255,255,.08) !important;
+  }
+  html.dark-theme body.report-mode .individual-sheet .cat-title,
+  html.dark-theme body.report-mode .individual-sheet .comment-title {
+    background:#172A45 !important;
+    color:#C4B5FD !important;
+    border-color:rgba(255,255,255,.10) !important;
+  }
+  html.dark-theme body.report-mode .individual-sheet .q-table,
+  html.dark-theme body.report-mode .individual-sheet .q-table tbody,
+  html.dark-theme body.report-mode .individual-sheet .q-table tr,
+  html.dark-theme body.report-mode .individual-sheet .q-table td {
+    background:#172A45 !important;
+    color:#E0E6F0 !important;
+    border-color:rgba(255,255,255,.08) !important;
+  }
+  html.dark-theme body.report-mode .individual-sheet .q-table thead,
+  html.dark-theme body.report-mode .individual-sheet .q-table thead tr,
+  html.dark-theme body.report-mode .individual-sheet .q-table th {
+    background:#0F1F3D !important;
+    color:#A0B3C6 !important;
+    border-color:rgba(255,255,255,.10) !important;
+  }
+  html.dark-theme body.report-mode .individual-sheet .q-table tr:hover td {
+    background:#1D3350 !important;
+  }
+  html.dark-theme body.report-mode .individual-sheet .sheet-name,
+  html.dark-theme body.report-mode .individual-sheet .sheet-desig,
+  html.dark-theme body.report-mode .individual-sheet .eval-by-label,
+  html.dark-theme body.report-mode .individual-sheet .eval-by-date,
+  html.dark-theme body.report-mode .individual-sheet .avg-out-of,
+  html.dark-theme body.report-mode .individual-sheet .scale-item,
+  html.dark-theme body.report-mode .individual-sheet .avg-bar-label,
+  html.dark-theme body.report-mode .individual-sheet .avg-bar-val,
+  html.dark-theme body.report-mode .individual-sheet .q-num,
+  html.dark-theme body.report-mode .individual-sheet .rating-cell {
+    color:#E0E6F0 !important;
+  }
+  html.dark-theme body.report-mode .individual-sheet .sheet-desig,
+  html.dark-theme body.report-mode .individual-sheet .eval-by-label,
+  html.dark-theme body.report-mode .individual-sheet .eval-by-date,
+  html.dark-theme body.report-mode .individual-sheet .avg-out-of,
+  html.dark-theme body.report-mode .individual-sheet .scale-item,
+  html.dark-theme body.report-mode .individual-sheet .avg-bar-label {
+    color:#A0B3C6 !important;
+  }
+  html.dark-theme body.report-mode .individual-sheet .sheet-avatar-ph {
+    background:#0F1F3D !important;
+    color:#8EA5BB !important;
+    border-color:rgba(255,255,255,.12) !important;
+  }
+  html.dark-theme body.report-mode .individual-sheet .rating-badge {
+    background:#0F1F3D !important;
+    color:#E0E6F0 !important;
+    border-color:rgba(255,255,255,.12) !important;
+  }
+  html.dark-theme body.report-mode .individual-sheet .comment-text,
+  html.dark-theme body.report-mode .individual-sheet .avg-bar-bg {
+    background:#0F1F3D !important;
+    color:#E0E6F0 !important;
+  }
+  /* Cumulative generated report */
+  html.dark-theme body.report-mode .cumulative-sheet,
+  html.dark-theme body.report-mode .cumulative-sheet .cum-topbar,
+  html.dark-theme body.report-mode .cumulative-sheet .sheet-header,
+  html.dark-theme body.report-mode .cumulative-sheet .cat-section,
+  html.dark-theme body.report-mode .cumulative-sheet .cum-total,
+  html.dark-theme body.report-mode .cumulative-sheet .comment-section {
+    background:#172A45 !important;
+    color:#E0E6F0 !important;
+    border-color:rgba(255,255,255,.08) !important;
+    box-shadow:none !important;
+  }
+  html.dark-theme body.report-mode .cumulative-sheet .cum-topbar,
+  html.dark-theme body.report-mode .cumulative-sheet .q-table thead tr,
+  html.dark-theme body.report-mode .cumulative-sheet .q-table th,
+  html.dark-theme body.report-mode .cumulative-sheet .rating-badge {
+    background:#0F1F3D !important;
+  }
+  html.dark-theme body.report-mode .cumulative-sheet .cat-title,
+  html.dark-theme body.report-mode .cumulative-sheet .comment-title {
+    background:transparent !important;
+    color:#C4B5FD !important;
+    border-color:rgba(255,255,255,.10) !important;
+  }
+  html.dark-theme body.report-mode .cumulative-sheet .q-table,
+  html.dark-theme body.report-mode .cumulative-sheet .q-table tbody,
+  html.dark-theme body.report-mode .cumulative-sheet .q-table tr,
+  html.dark-theme body.report-mode .cumulative-sheet .q-table td {
+    background:#172A45 !important;
+    color:#E0E6F0 !important;
+    border-color:rgba(255,255,255,.08) !important;
+  }
+  html.dark-theme body.report-mode .cumulative-sheet .q-table th {
+    color:#A0B3C6 !important;
+  }
+  html.dark-theme body.report-mode .cumulative-sheet .sheet-name,
+  html.dark-theme body.report-mode .cumulative-sheet .rating-num,
+  html.dark-theme body.report-mode .cumulative-sheet .rating-lbl,
+  html.dark-theme body.report-mode .cumulative-sheet .cum-date-val {
+    color:#E0E6F0 !important;
+  }
+  html.dark-theme body.report-mode .cumulative-sheet .sheet-desig,
+  html.dark-theme body.report-mode .cumulative-sheet .cum-by,
+  html.dark-theme body.report-mode .cumulative-sheet .cum-date-label,
+  html.dark-theme body.report-mode .cumulative-sheet .cum-remark,
+  html.dark-theme body.report-mode .cumulative-sheet .no-comment,
+  html.dark-theme body.report-mode .cumulative-sheet .avg-out-of,
+  html.dark-theme body.report-mode .cumulative-sheet .rating-lbl {
+    color:#A0B3C6 !important;
+  }
+  html.dark-theme body.report-mode .cumulative-sheet .cum-total-label {
+    color:#C4B5FD !important;
+  }
+  html.dark-theme body.report-mode .cumulative-sheet .sheet-avatar-ph {
+    background:#0F1F3D !important;
+    border-color:rgba(255,255,255,.12) !important;
+    color:#8EA5BB !important;
+  }
+}
+</style>
 </html>

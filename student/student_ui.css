@@ -80,11 +80,11 @@ body:has(.card)::before {
 /* ---------------------------------------------------------------------
    Dashboard shell
    --------------------------------------------------------------------- */
-body:has(.app-shell) {
+body.light-theme:has(.app-shell) {
   background: #f8fafc !important;
 }
 
-body:has(.app-shell) .main {
+body.light-theme:has(.app-shell) .main {
   background:
     radial-gradient(circle at 100% 0%, rgba(245,158,11,.045), transparent 27%),
     linear-gradient(180deg, #f8fafc 0%, #f3f6fa 100%) !important;
@@ -129,58 +129,58 @@ body:has(.app-shell) .sidebar {
   text-transform: uppercase;
 }
 
-body:has(.app-shell) .main {
+body.light-theme:has(.app-shell) .main {
   border-color: #e6ebf2 !important;
   box-shadow: 0 0 0 1px rgba(255,255,255,.6), 0 12px 28px rgba(15,23,42,.05) !important;
 }
 
-body:has(.app-shell) .workspace-kicker {
+body.light-theme:has(.app-shell) .workspace-kicker {
   letter-spacing: 1px;
 }
-body:has(.app-shell) .workspace-title {
+body.light-theme:has(.app-shell) .workspace-title {
   letter-spacing: -.2px;
 }
-body:has(.app-shell) .workspace-subtitle {
+body.light-theme:has(.app-shell) .workspace-subtitle {
   max-width: 720px;
 }
-body:has(.app-shell) .workspace-meta .workspace-pill {
+body.light-theme:has(.app-shell) .workspace-meta .workspace-pill {
   background: rgba(255,255,255,.82) !important;
   border-color: #dde5ef !important;
   box-shadow: 0 4px 12px rgba(15,23,42,.05) !important;
 }
 
 /* More legible stat cards. */
-body:has(.app-shell) .stat-card {
+body.light-theme:has(.app-shell) .stat-card {
   border-color: #e2e8f0 !important;
   box-shadow: 0 7px 18px rgba(15,23,42,.055) !important;
   transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
 }
-body:has(.app-shell) .stat-card:hover {
+body.light-theme:has(.app-shell) .stat-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 12px 24px rgba(15,23,42,.08) !important;
   border-color: #d7e1ec !important;
 }
-body:has(.app-shell) .stat-card:nth-child(1) { border-top: 3px solid #f59e0b !important; }
-body:has(.app-shell) .stat-card:nth-child(2) { border-top: 3px solid #22c55e !important; }
-body:has(.app-shell) .stat-card:nth-child(3) { border-top: 3px solid #eab308 !important; }
-body:has(.app-shell) .stat-card:nth-child(4) { border-top: 3px solid #3b82f6 !important; }
+body.light-theme:has(.app-shell) .stat-card:nth-child(1) { border-top: 3px solid #f59e0b !important; }
+body.light-theme:has(.app-shell) .stat-card:nth-child(2) { border-top: 3px solid #22c55e !important; }
+body.light-theme:has(.app-shell) .stat-card:nth-child(3) { border-top: 3px solid #eab308 !important; }
+body.light-theme:has(.app-shell) .stat-card:nth-child(4) { border-top: 3px solid #3b82f6 !important; }
 
-body:has(.app-shell) .progress-wrap {
+body.light-theme:has(.app-shell) .progress-wrap {
   border-color: #e2e8f0 !important;
   box-shadow: 0 7px 18px rgba(15,23,42,.05) !important;
 }
-body:has(.app-shell) .progress-bar-bg { background: #e7edf4 !important; }
-body:has(.app-shell) .progress-bar-fill {
+body.light-theme:has(.app-shell) .progress-bar-bg { background: #e7edf4 !important; }
+body.light-theme:has(.app-shell) .progress-bar-fill {
   background: linear-gradient(90deg, #d97706, #f59e0b) !important;
 }
 
 /* Primary CTA gets a more deliberate hierarchy. */
-body:has(.app-shell) .dash-cta {
+body.light-theme:has(.app-shell) .dash-cta {
   border-color: #f0d9b0 !important;
   background: linear-gradient(135deg, #fffdf8 0%, #ffffff 72%) !important;
   box-shadow: 0 9px 22px rgba(217,119,6,.07) !important;
 }
-body:has(.app-shell) .btn-primary-cta {
+body.light-theme:has(.app-shell) .btn-primary-cta {
   min-height: 42px;
   padding-inline: 16px !important;
   box-shadow: 0 8px 16px rgba(217,119,6,.15);
@@ -188,7 +188,7 @@ body:has(.app-shell) .btn-primary-cta {
 
 /* A small piece of orientation copy helps students understand the consequence
    of submission without adding another large panel. */
-.student-eval-note {
+body.light-theme .student-eval-note {
   display: flex;
   align-items: flex-start;
   gap: 9px;
@@ -201,53 +201,53 @@ body:has(.app-shell) .btn-primary-cta {
   font-size: 11.5px;
   line-height: 1.55;
 }
-.student-eval-note i { color: #3b82f6; margin-top: 2px; }
+body.light-theme .student-eval-note i { color: #3b82f6; margin-top: 2px; }
 
 /* Evaluation categories become more obviously clickable. */
-body:has(.app-shell) .cat-btn {
+body.light-theme:has(.app-shell) .cat-btn {
   min-height: 176px;
   border-color: #e1e8f0 !important;
   box-shadow: 0 8px 18px rgba(15,23,42,.05) !important;
   background: linear-gradient(180deg, #fff 0%, #fbfcfe 100%) !important;
 }
-body:has(.app-shell) .cat-btn:hover,
-body:has(.app-shell) .cat-btn.active {
+body.light-theme:has(.app-shell) .cat-btn:hover,
+body.light-theme:has(.app-shell) .cat-btn.active {
   border-color: #f0b557 !important;
   box-shadow: 0 14px 28px rgba(217,119,6,.10) !important;
 }
-body:has(.app-shell) .cat-meta { color: #64748b !important; }
-body:has(.app-shell) .cat-done-pill {
+body.light-theme:has(.app-shell) .cat-meta { color: #64748b !important; }
+body.light-theme:has(.app-shell) .cat-done-pill {
   background: #ecfdf3 !important;
   border-color: #bbf7d0 !important;
   color: #15803d !important;
 }
 
-body:has(.app-shell) .members-panel {
+body.light-theme:has(.app-shell) .members-panel {
   border-color: #e2e8f0 !important;
   box-shadow: 0 10px 24px rgba(15,23,42,.06) !important;
 }
-body:has(.app-shell) .person-card {
+body.light-theme:has(.app-shell) .person-card {
   background: #fbfcfe !important;
   border-color: #e1e8f0 !important;
   box-shadow: 0 6px 16px rgba(15,23,42,.04) !important;
 }
-body:has(.app-shell) .person-card:hover:not(.done) {
+body.light-theme:has(.app-shell) .person-card:hover:not(.done) {
   border-color: #efb25a !important;
   box-shadow: 0 12px 24px rgba(217,119,6,.08) !important;
 }
-body:has(.app-shell) .person-card.done {
+body.light-theme:has(.app-shell) .person-card.done {
   opacity: .74;
 }
-body:has(.app-shell) .person-avatar,
-body:has(.app-shell) .person-avatar-ph {
+body.light-theme:has(.app-shell) .person-avatar,
+body.light-theme:has(.app-shell) .person-avatar-ph {
   box-shadow: 0 0 0 4px #fff, 0 4px 12px rgba(15,23,42,.08);
 }
-body:has(.app-shell) .eval-btn:not(:disabled) {
+body.light-theme:has(.app-shell) .eval-btn:not(:disabled) {
   min-height: 38px;
   border-radius: 9px;
   box-shadow: 0 6px 13px rgba(217,119,6,.12);
 }
-body:has(.app-shell) .eval-btn:disabled {
+body.light-theme:has(.app-shell) .eval-btn:disabled {
   min-height: 38px;
   border: 1px solid #e2e8f0 !important;
   background: #f8fafc !important;
@@ -255,45 +255,45 @@ body:has(.app-shell) .eval-btn:disabled {
 }
 
 /* History and guidelines cards. */
-body:has(.app-shell) .history-card,
-body:has(.app-shell) .gl-card {
+body.light-theme:has(.app-shell) .history-card,
+body.light-theme:has(.app-shell) .gl-card {
   border-color: #e2e8f0 !important;
   box-shadow: 0 7px 18px rgba(15,23,42,.05) !important;
 }
-body:has(.app-shell) .history-card:hover {
+body.light-theme:has(.app-shell) .history-card:hover {
   border-color: #d7e1ec !important;
   box-shadow: 0 11px 24px rgba(15,23,42,.07) !important;
   transform: translateY(-1px);
 }
-body:has(.app-shell) .history-comment {
+body.light-theme:has(.app-shell) .history-comment {
   border-left: 3px solid #f2c980;
   padding-left: 10px;
 }
-body:has(.app-shell) .gl-card h3 {
+body.light-theme:has(.app-shell) .gl-card h3 {
   margin-bottom: 13px;
 }
-body:has(.app-shell) .gl-card li + li { margin-top: 5px; }
-body:has(.app-shell) .gl-scale-row {
+body.light-theme:has(.app-shell) .gl-card li + li { margin-top: 5px; }
+body.light-theme:has(.app-shell) .gl-scale-row {
   padding: 7px 0;
   border-bottom: 1px dashed #e5eaf0;
 }
-body:has(.app-shell) .gl-scale-row:last-child { border-bottom: 0; }
+body.light-theme:has(.app-shell) .gl-scale-row:last-child { border-bottom: 0; }
 
 /* Modal polish + mobile-friendly questionnaire. */
-body:has(.app-shell) .modal-overlay,
-body:has(.app-shell) .photo-modal-overlay {
+body.light-theme:has(.app-shell) .modal-overlay,
+body.light-theme:has(.app-shell) .photo-modal-overlay {
   background: rgba(9, 17, 30, .64) !important;
   backdrop-filter: blur(4px);
 }
-body:has(.app-shell) .modal,
-body:has(.app-shell) .photo-modal {
+body.light-theme:has(.app-shell) .modal,
+body.light-theme:has(.app-shell) .photo-modal {
   border-color: #dfe6ef !important;
   box-shadow: 0 30px 80px rgba(15,23,42,.24) !important;
 }
-body:has(.app-shell) .modal-header {
+body.light-theme:has(.app-shell) .modal-header {
   box-shadow: 0 1px 0 #eef2f6;
 }
-body:has(.app-shell) .modal-footer {
+body.light-theme:has(.app-shell) .modal-footer {
   position: sticky;
   bottom: 0;
   z-index: 2;
@@ -301,48 +301,48 @@ body:has(.app-shell) .modal-footer {
   border-top: 1px solid #e7edf4 !important;
   backdrop-filter: blur(8px);
 }
-body:has(.app-shell) .eval-form-wrap {
+body.light-theme:has(.app-shell) .eval-form-wrap {
   overflow-x: auto !important;
   -webkit-overflow-scrolling: touch;
 }
-body:has(.app-shell) .eval-form-table {
+body.light-theme:has(.app-shell) .eval-form-table {
   min-width: 650px;
 }
-body:has(.app-shell) .eval-form-table th:first-child,
-body:has(.app-shell) .eval-form-table td:first-child {
+body.light-theme:has(.app-shell) .eval-form-table th:first-child,
+body.light-theme:has(.app-shell) .eval-form-table td:first-child {
   min-width: 360px;
 }
-body:has(.app-shell) .eval-form-rating label {
+body.light-theme:has(.app-shell) .eval-form-rating label {
   box-shadow: 0 2px 5px rgba(15,23,42,.03);
 }
-body:has(.app-shell) .eval-form-rating input:focus-visible + label {
+body.light-theme:has(.app-shell) .eval-form-rating input:focus-visible + label {
   outline: 3px solid rgba(14,165,233,.22);
   outline-offset: 2px;
 }
-body:has(.app-shell) .comment-box {
+body.light-theme:has(.app-shell) .comment-box {
   border: 1px solid #e5eaf0;
 }
-body:has(.app-shell) .comment-textarea {
+body.light-theme:has(.app-shell) .comment-textarea {
   background: #fff !important;
   border-color: #dbe3ec !important;
   color: #0f172a !important;
 }
-body:has(.app-shell) .comment-textarea:focus {
+body.light-theme:has(.app-shell) .comment-textarea:focus {
   border-color: #f2b24c !important;
   box-shadow: 0 0 0 3px rgba(217,119,6,.12);
 }
 
 /* Cleaner status alerts. */
-body:has(.app-shell) .alert {
+body.light-theme:has(.app-shell) .alert {
   border-radius: 11px !important;
   padding: 12px 14px !important;
 }
-body:has(.app-shell) .alert-success {
+body.light-theme:has(.app-shell) .alert-success {
   background: #f0fdf4 !important;
   border-color: #bbf7d0 !important;
   color: #166534 !important;
 }
-body:has(.app-shell) .alert-error {
+body.light-theme:has(.app-shell) .alert-error {
   background: #fef2f2 !important;
   border-color: #fecaca !important;
   color: #991b1b !important;
@@ -350,7 +350,7 @@ body:has(.app-shell) .alert-error {
 
 /* Small screen refinements. */
 @media (max-width: 900px) {
-  body:has(.app-shell) .main {
+  body.light-theme:has(.app-shell) .main {
     padding-top: 68px !important;
   }
   .student-sidebar-brand { padding-top: 2px; }
@@ -360,41 +360,41 @@ body:has(.app-shell) .alert-error {
   .login-card, .reg-card, body:has(.card) .card {
     padding-inline: 22px !important;
   }
-  body:has(.app-shell) .main {
+  body.light-theme:has(.app-shell) .main {
     padding-inline: 14px !important;
   }
-  body:has(.app-shell) .workspace-meta {
+  body.light-theme:has(.app-shell) .workspace-meta {
     display: grid !important;
     grid-template-columns: 1fr;
   }
-  body:has(.app-shell) .workspace-pill {
+  body.light-theme:has(.app-shell) .workspace-pill {
     width: 100%;
     justify-content: center;
   }
-  body:has(.app-shell) .category-grid {
+  body.light-theme:has(.app-shell) .category-grid {
     gap: 10px;
   }
-  body:has(.app-shell) .cat-btn {
+  body.light-theme:has(.app-shell) .cat-btn {
     min-height: 155px;
     padding: 20px 14px 16px;
   }
-  body:has(.app-shell) .members-grid {
+  body.light-theme:has(.app-shell) .members-grid {
     grid-template-columns: 1fr 1fr !important;
     padding-inline: 12px !important;
   }
-  body:has(.app-shell) .modal {
+  body.light-theme:has(.app-shell) .modal {
     max-height: 95vh !important;
     border-radius: 15px !important;
   }
-  body:has(.app-shell) .modal-footer {
+  body.light-theme:has(.app-shell) .modal-footer {
     display: grid !important;
     grid-template-columns: 1fr 1.3fr;
   }
 }
 
 @media (max-width: 430px) {
-  body:has(.app-shell) .members-grid { grid-template-columns: 1fr !important; }
-  body:has(.app-shell) .page-title { font-size: 22px !important; }
+  body.light-theme:has(.app-shell) .members-grid { grid-template-columns: 1fr !important; }
+  body.light-theme:has(.app-shell) .page-title { font-size: 22px !important; }
   .login-card, .reg-card, body:has(.card) .card {
     padding: 24px 16px 22px !important;
     border-radius: 16px !important;

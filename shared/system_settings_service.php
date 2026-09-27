@@ -75,6 +75,7 @@ function ss_raw(mysqli $mysqli): array {
         'eval_start' => '',
         'eval_end' => '',
         'maintenance' => 0,
+        'year_level_edit_mode' => 'locked',
         'rule_only_during_period' => 1,
         'rule_edit_after_submit' => 0,
         'rule_one_submission' => 1,
@@ -108,6 +109,9 @@ function ss_raw(mysqli $mysqli): array {
 
     if (!isset($defaults['control_mode']) || !in_array($defaults['control_mode'], ['schedule','open','closed'], true)) {
         $defaults['control_mode'] = 'schedule';
+    }
+    if (!isset($defaults['year_level_edit_mode']) || !in_array($defaults['year_level_edit_mode'], ['locked','open'], true)) {
+        $defaults['year_level_edit_mode'] = 'locked';
     }
     $defaults['auto_schedule'] = (int)!empty($defaults['auto_schedule']);
     $defaults['maintenance'] = (int)!empty($defaults['maintenance']);

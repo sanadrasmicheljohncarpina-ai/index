@@ -13,6 +13,21 @@ require_once 'db.php';
 require_once dirname(__DIR__) . '/shared/system_settings_service.php';
 require_once 'principal_notifications_feed.php';   // safe_scalar(), esc_list(), principal_build_notifications()
 require_once 'school_head_structure_gate.php';
+require_once __DIR__ . '/principal_sidebar.php';
+
+if (!function_exists('principal_theme_assets')) {
+    function principal_theme_assets(): void {
+        static $done = false;
+        if ($done) return;
+        $done = true;
+        ?>
+<script>(function(){try{if(localStorage.getItem('pbi_theme') === 'dark'){document.documentElement.classList.add('principal-theme-dark-pending');}}catch(e){}})();</script>
+<link rel="stylesheet" href="includes/principal_theme.css?v=20260927.3"/>
+<script defer src="includes/principal_theme.js?v=20260927.3"></script>
+        <?php
+    }
+}
+   // the one shared Principal sidebar
 
 // ── AUTH GUARD ────────────────────────────────────────────
 if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'principal') {
@@ -95,6 +110,24 @@ if ($settings['eval_end']) {
     $daysRemaining = (int)ceil($diff / 86400);
 }
 
+// Dashboard schedule display uses the same Asia/Manila timezone as the
+// centralized evaluation scheduler.
+$displayTimezone = new DateTimeZone('Asia/Manila');
+$formatScheduleDateTime = static function ($value) use ($displayTimezone): string {
+    if (empty($value)) return '—';
+    try {
+        return (new DateTime((string)$value, $displayTimezone))->setTimezone($displayTimezone)->format('M j, Y g:i A');
+    } catch (Throwable $e) {
+        return '—';
+    }
+};
+$evalOpenDisplay = $structureActive && $evalOpen;
+$dashboardStatusLabel = $evalOpenDisplay ? 'Open' : ($hasPeriod ? 'Scheduled' : 'Closed');
+$dashboardStatusClass = $evalOpenDisplay ? 'open' : 'closed';
+$dashboardStatusHeadline = $evalOpenDisplay
+    ? 'Evaluation is currently open.'
+    : 'Evaluation is currently closed — waiting for the scheduled opening.';
+
 // ── HEADLINE STATS ONLY ────────────────────────────────────
 // Six numbers, nothing per-person and nothing per-grade. The old page ran an
 // N+1 query per teacher and per grade here; all of that moved to the pages
@@ -166,6 +199,7 @@ $scopeLabel = $myLevel === 'both' ? 'Junior High & Senior High' : ($myLevel === 
 <title>PBI — Principal Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+<?php principal_theme_assets(); ?>
 <style>
 :root{--dark:#0A192F;--mid:#172A45;--inner:#0F1F3D;--amber:#d99a2b;--amber-h:#f0b84d;--amber-dark:#b8801f;--light:#E0E6F0;--muted:#A0B3C6;--radius:10px;--shadow:0 8px 32px rgba(0,0,0,0.45);--danger:#f05454;--good:#10B981;}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -749,28 +783,7 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
 </head>
 <body>
 
-<aside class="sidebar">
-    <div class="sb-profile">
-        <img class="sb-photo" src="<?= htmlspecialchars($photo_src) ?>" alt="Profile"/>
-        <div class="sb-name"><?= htmlspecialchars($me['full_name'] ?? 'Principal') ?></div>
-        <div class="sb-role"><?= htmlspecialchars($me['designation'] ?? 'Principal') ?></div>
-        <div class="sb-scope"><?= htmlspecialchars($scopeLabel) ?></div>
-    </div>
-    <nav class="sb-nav" aria-label="Principal navigation">
-        <div class="sb-nav-section-label">MAIN</div>
-        <a href="principal_dashboard.php" class="active"><i class="fa-solid fa-gauge"></i> Dashboard</a>
-        <a href="principal_evaluations.php"><i class="fa-solid fa-clipboard-list"></i> Evaluation</a>
-        <a href="principal_evaluation_tracker.php"><i class="fa-solid fa-satellite-dish"></i> Evaluation Tracker</a>
-        <a href="principal_results.php"><i class="fa-solid fa-star-half-stroke"></i> View Results</a>
-        <a href="principal_reports.php"><i class="fa-solid fa-chart-line"></i> Reports</a>
-
-        <div class="sb-nav-section-label">ADMINISTRATION</div>
-        <a href="principal_account_settings.php"><i class="fa-solid fa-gear"></i> Settings</a>
-
-        <div class="sb-nav-section-label">ACCOUNT</div>
-        <a href="../logout.php" class="sb-logout-link"><i class="fa-solid fa-right-from-bracket"></i> Log Out</a>
-    </nav>
-</aside>
+<?php render_principal_sidebar('dashboard', $me, $scopeLabel, $photo_src); ?>
 
 <main class="main">
     <div class="page-header">
@@ -822,41 +835,27 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
     </div>
     <?php endif; ?>
 
-    <!-- ── PERIOD STRIP (condensed) ── -->
-    <div class="period-strip">
+    <!-- ── EVALUATION SCHEDULE ── -->
+    <div class="schedule-status <?= $dashboardStatusClass ?>">
+        <i class="fa-solid <?= $evalOpenDisplay ? 'fa-lock-open' : 'fa-lock' ?>"></i>
+        <strong><?= htmlspecialchars($dashboardStatusHeadline) ?></strong>
+    </div>
+    <div class="period-strip evaluation-schedule-strip">
         <div class="period-item">
             <div class="k">Academic Year</div>
             <div class="v"><?= htmlspecialchars($settings['academic_year']) ?></div>
         </div>
         <div class="period-item">
-            <div class="k">Structure</div>
-            <div class="v"><?= BASIC_ED_LABEL ?></div>
+            <div class="k">Evaluation Opens</div>
+            <div class="v"><?= htmlspecialchars($formatScheduleDateTime($settings['eval_start'] ?? null)) ?></div>
         </div>
         <div class="period-item">
-            <div class="k">Term</div>
-            <div class="v"><?= htmlspecialchars($settings['academic_term']) ?></div>
-        </div>
-        <div class="period-item">
-            <div class="k">Window</div>
-            <div class="v">
-                <?= $settings['eval_start'] ? htmlspecialchars(date('M j', strtotime($settings['eval_start']))) : '—' ?>
-                &ndash;
-                <?= $settings['eval_end'] ? htmlspecialchars(date('M j, Y', strtotime($settings['eval_end']))) : '—' ?>
-            </div>
+            <div class="k">Evaluation Closes</div>
+            <div class="v"><?= htmlspecialchars($formatScheduleDateTime($settings['eval_end'] ?? null)) ?></div>
         </div>
         <div class="period-item">
             <div class="k">Status</div>
-            <div class="v"><span class="period-badge <?= htmlspecialchars($settings['status']['cls']) ?>" style="font-size:11px;"><?= htmlspecialchars($settings['status']['label']) ?></span></div>
-        </div>
-        <?php if ($hasPeriod && $evalOpen && $daysRemaining !== null && $daysRemaining >= 0): ?>
-        <div class="period-item">
-            <div class="k">Days Left</div>
-            <div class="v"><?= $daysRemaining ?></div>
-        </div>
-        <?php endif; ?>
-        <div class="period-note">
-            <strong><?= htmlspecialchars($settings['message']['headline']) ?></strong>
-            <?= htmlspecialchars($settings['message']['sub']) ?>
+            <div class="v"><span class="period-badge <?= $dashboardStatusClass ?>" style="font-size:11px;"><?= htmlspecialchars($dashboardStatusLabel) ?></span></div>
         </div>
     </div>
 
@@ -1100,6 +1099,18 @@ table tbody tr:hover,.person-row:hover,.standing-item:hover{background:#f8fafc!i
 .period-badge{background:rgba(217,154,43,.12)!important;border-color:rgba(217,154,43,.28)!important;}
 .period-badge.closed{background:rgba(240,84,84,.10)!important;border-color:rgba(240,84,84,.28)!important;color:#dc2626!important;}
 .period-badge.gray{background:#f1f5f9!important;border-color:#cbd5e1!important;color:#64748b!important;}
+
+/* Dashboard evaluation schedule: closed/scheduled is red; open is green. */
+.schedule-status{display:flex;align-items:center;gap:8px;width:max-content;max-width:100%;margin:0 0 18px;padding:9px 14px;border-radius:999px;font-size:13px;border:1px solid;}
+.schedule-status i{font-size:13px;}
+.schedule-status.closed{color:#b91c1c!important;background:rgba(240,84,84,.10)!important;border-color:rgba(240,84,84,.38)!important;}
+.schedule-status.open{color:#047857!important;background:rgba(16,185,129,.10)!important;border-color:rgba(16,185,129,.35)!important;}
+.period-badge.closed{background:rgba(240,84,84,.10)!important;border-color:rgba(240,84,84,.38)!important;color:#b91c1c!important;}
+.period-badge.open{background:rgba(16,185,129,.10)!important;border-color:rgba(16,185,129,.35)!important;color:#047857!important;}
+.evaluation-schedule-strip{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr));gap:26px;margin-bottom:22px;}
+@media(max-width:900px){.evaluation-schedule-strip{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:560px){.evaluation-schedule-strip{grid-template-columns:1fr;}.schedule-status{width:100%;}}
+
 
 /* Forms */
 input,select,textarea,
@@ -1350,3 +1361,5 @@ main.main > .page-header{
   }
 }
 </style>
+
+<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20260927" id="principal-dark-repairs"/>

@@ -112,23 +112,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <style>
 :root{
-    --dark-blue:#0B1F3A;
-    --blue-mid:#123B78;
-    --blue-inner:#0F294A;
-    --blue-accent:#3B82F6;
-    --blue-hover:#60A5FA;
-    --light:#EAF2FC;
-    --muted:#91A9C2;
+    --dark-blue:#201A10;
+    --blue-mid:#EFE6D0;
+    --blue-inner:#E9DFC6;
+    --blue-accent:#C9A227;
+    --blue-hover:#9C7A12;
+    --light:#2B2416;
+    --muted:#7A6F58;
     --radius:10px;
-    --shadow:0 8px 32px rgba(0,0,0,.45);
+    --shadow:0 8px 32px rgba(120,100,60,.18);
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{min-height:100%;background:var(--dark-blue)}
 body{
     min-height:100vh;
     background:
-        radial-gradient(circle at 10% 10%,rgba(59,130,246,.16),transparent 32%),
-        radial-gradient(circle at 90% 90%,rgba(96,165,250,.11),transparent 30%),
+        radial-gradient(circle at 10% 10%,rgba(201,162,39,.16),transparent 32%),
+        radial-gradient(circle at 90% 90%,rgba(240,202,90,.11),transparent 30%),
         var(--dark-blue);
     background-attachment:fixed;
     font-family:'DM Sans',sans-serif;color:var(--light);
@@ -140,13 +140,13 @@ body{
    Dean portals, kept in the Admin blue identity. */
 body::before{
     content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
-    background:linear-gradient(180deg,rgba(255,255,255,.025),transparent 26%,rgba(0,0,0,.12));
+    background:linear-gradient(180deg,rgba(20,15,8,.05),transparent 26%,rgba(120,100,60,.06));
 }
 .bg-grid{
     position:fixed;inset:0;z-index:0;pointer-events:none;
     background-image:
-        repeating-linear-gradient(45deg,rgba(59,130,246,.075) 0,rgba(59,130,246,.075) 1px,transparent 1px,transparent 26px),
-        repeating-linear-gradient(-45deg,rgba(59,130,246,.055) 0,rgba(59,130,246,.055) 1px,transparent 1px,transparent 26px);
+        repeating-linear-gradient(45deg,rgba(201,162,39,.075) 0,rgba(201,162,39,.075) 1px,transparent 1px,transparent 26px),
+        repeating-linear-gradient(-45deg,rgba(201,162,39,.055) 0,rgba(201,162,39,.055) 1px,transparent 1px,transparent 26px);
 }
 .hex-deco{position:fixed;z-index:0;pointer-events:none;opacity:.5}
 .hex-1{top:-60px;left:-60px}
@@ -155,98 +155,101 @@ body::before{
 .reg-card{
     position:relative;z-index:10;width:min(100%,580px);
     padding:28px 36px 22px;
-    background:rgba(23,42,69,.84);
+    background:rgba(255,252,244,.92);
     backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
-    border:1px solid rgba(255,255,255,.12);border-radius:16px;
-    box-shadow:0 24px 70px rgba(0,0,0,.36),0 0 0 1px rgba(255,255,255,.02),0 0 90px rgba(59,130,246,.10);
+    border:1px solid rgba(20,15,8,.14);border-radius:16px;
+    box-shadow:0 24px 70px rgba(120,100,60,.14),0 0 0 1px rgba(20,15,8,.04),0 0 90px rgba(201,162,39,.10);
     transition:border-color .3s ease,box-shadow .3s ease;
     animation:cardIn .65s cubic-bezier(.22,1,.36,1) both;
 }
-.reg-card:hover{border-color:rgba(96,165,250,.30);box-shadow:0 24px 70px rgba(0,0,0,.36),0 0 0 1px rgba(255,255,255,.02),0 0 100px rgba(59,130,246,.17)}
+.reg-card:hover{border-color:rgba(240,202,90,.30);box-shadow:0 24px 70px rgba(120,100,60,.14),0 0 0 1px rgba(20,15,8,.04),0 0 100px rgba(201,162,39,.17)}
 @keyframes cardIn{from{opacity:0;transform:translateY(24px) scale(.98)}to{opacity:1;transform:none}}
 .card-header{text-align:center;margin-bottom:16px}
 .logo-img{
     width:58px;height:58px;border-radius:50%;object-fit:cover;display:block;
-    border:2px solid var(--blue-accent);box-shadow:0 0 18px rgba(59,130,246,.36);
+    border:2px solid var(--blue-accent);box-shadow:0 0 18px rgba(201,162,39,.36);
     margin:0 auto 9px;
 }
-.card-title{font-family:'Rajdhani',sans-serif;font-size:23px;font-weight:700;letter-spacing:1.55px;color:#fff;text-transform:uppercase}
+.card-title{font-family:'Rajdhani',sans-serif;font-size:23px;font-weight:700;letter-spacing:1.55px;color:#1F1B12;text-transform:uppercase}
 .card-subtitle{font-size:10.5px;color:var(--muted);letter-spacing:.95px;text-transform:uppercase;margin-top:2px}
-.divider{height:1px;background:linear-gradient(90deg,transparent,rgba(59,130,246,.36),transparent);margin-bottom:14px}
+.divider{height:1px;background:linear-gradient(90deg,transparent,rgba(201,162,39,.36),transparent);margin-bottom:14px}
 .alert{display:flex;align-items:flex-start;gap:10px;border-radius:10px;padding:10px 12px;font-size:11px;line-height:1.5;margin-bottom:14px}
-.alert-error{background:rgba(248,113,113,.10);border:1px solid rgba(248,113,113,.30);color:#FF9A9A}
+.alert-error{background:rgba(248,113,113,.10);border:1px solid rgba(248,113,113,.30);color:#C0392B}
 .photo-upload-area{
     display:grid;grid-template-columns:auto 1fr;align-items:center;gap:12px;
     padding:10px 12px;margin-bottom:15px;border-radius:10px;
-    background:rgba(10,25,47,.30);border:1px solid rgba(255,255,255,.08);
+    background:rgba(0,0,0,.02);border:1px solid rgba(20,15,8,.10);
 }
 .photo-preview{
     width:64px;height:64px;border-radius:50%;background:var(--blue-inner);
-    border:2px dashed rgba(59,130,246,.52);overflow:hidden;display:flex;
+    border:2px dashed rgba(201,162,39,.52);overflow:hidden;display:flex;
     align-items:center;justify-content:center;cursor:pointer;transition:.2s;flex-shrink:0;
 }
-.photo-preview:hover{border-color:var(--blue-hover);box-shadow:0 0 0 4px rgba(59,130,246,.10)}
+.photo-preview:hover{border-color:var(--blue-hover);box-shadow:0 0 0 4px rgba(201,162,39,.10)}
 .photo-preview img{width:100%;height:100%;object-fit:cover;display:none}
 .photo-preview .ph-icon{color:var(--muted);font-size:20px;transition:.2s}
 .photo-preview:hover .ph-icon{color:var(--blue-hover)}
-.photo-info p{font-size:12px;color:#fff;font-weight:700;margin-bottom:3px}
+.photo-info p{font-size:12px;color:#1F1B12;font-weight:700;margin-bottom:3px}
 .photo-info span{font-size:9.5px;color:var(--muted);line-height:1.35}
 .btn-photo{
     display:inline-flex;align-items:center;gap:6px;margin-top:6px;padding:6px 9px;border-radius:7px;
-    background:rgba(59,130,246,.13);border:1px solid rgba(59,130,246,.34);color:var(--blue-hover);
+    background:rgba(201,162,39,.13);border:1px solid rgba(201,162,39,.34);color:var(--blue-hover);
     font:600 9.5px 'DM Sans',sans-serif;cursor:pointer;transition:.2s;
 }
-.btn-photo:hover{background:rgba(59,130,246,.20);border-color:rgba(59,130,246,.55)}
+.btn-photo:hover{background:rgba(201,162,39,.20);border-color:rgba(201,162,39,.55)}
 input[type="file"]{display:none}
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:11px 10px}
 .form-row .full{grid-column:1/-1}
 .form-group{display:flex;flex-direction:column;gap:4px}
 .form-label{font-size:9.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
-.required{color:#FF9696;font-weight:700;margin-left:2px}
+.required{color:#C0392B;font-weight:700;margin-left:2px}
 .input-wrap{position:relative}
 .f-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:11.5px;pointer-events:none;transition:color .2s}
 .form-input{
     width:100%;min-height:43px;padding:10px 38px 10px 35px;
-    background:rgba(10,25,47,.68);border:1px solid rgba(255,255,255,.11);border-radius:8px;
+    background:rgba(0,0,0,.045);border:1px solid rgba(20,15,8,.13);border-radius:8px;
     color:var(--light);font:500 12px 'DM Sans',sans-serif;outline:none;
     transition:border-color .2s,box-shadow .2s,background .2s;
 }
-.form-input::placeholder{color:rgba(160,179,198,.40)}
-.form-input:hover:not(:focus){border-color:rgba(96,165,250,.42);background:rgba(10,25,47,.76)}
-.form-input:focus{border-color:var(--blue-accent);background:rgba(10,25,47,.80);box-shadow:0 0 0 3px rgba(59,130,246,.18)}
+.form-input::placeholder{color:rgba(122,111,88,.70)}
+.form-input:hover:not(:focus){border-color:rgba(240,202,90,.42);background:rgba(0,0,0,.05)}
+.form-input:focus{border-color:var(--blue-accent);background:rgba(0,0,0,.055);box-shadow:0 0 0 3px rgba(201,162,39,.18)}
 .input-wrap:focus-within .f-icon{color:var(--blue-hover)}
 .toggle-pw{position:absolute;right:9px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:11.5px;padding:4px}
 .toggle-pw:hover{color:var(--blue-hover)}
-.pw-strength{height:3px;border-radius:99px;margin-top:5px;background:rgba(255,255,255,.08);transition:all .3s}
+.pw-strength{height:3px;border-radius:99px;margin-top:5px;background:rgba(20,15,8,.10);transition:all .3s}
 .pw-hint{font-size:9px;color:var(--muted);margin-top:2px;min-height:12px}
 .btn-main{
     width:100%;min-height:45px;margin-top:11px;padding:10px 13px;background:var(--blue-accent);
     border:none;border-radius:8px;color:#fff;font:700 13.5px 'DM Sans',sans-serif;letter-spacing:.3px;cursor:pointer;
     display:flex;align-items:center;justify-content:center;gap:9px;
-    box-shadow:0 7px 20px rgba(59,130,246,.30);
+    box-shadow:0 7px 20px rgba(201,162,39,.30);
     transition:background .2s,transform .15s,box-shadow .2s;
 }
-.btn-main:hover{background:var(--blue-hover);transform:translateY(-1px);box-shadow:0 10px 28px rgba(59,130,246,.38)}
+.btn-main:hover{background:var(--blue-hover);transform:translateY(-1px);box-shadow:0 10px 28px rgba(201,162,39,.38)}
 .btn-main:active{transform:translateY(1px)}
-.card-footer{text-align:center;margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,.07);font-size:10.5px;line-height:1.5;color:var(--muted)}
+.card-footer{text-align:center;margin-top:12px;padding-top:10px;border-top:1px solid rgba(20,15,8,.09);font-size:10.5px;line-height:1.5;color:var(--muted)}
 .card-footer a{color:var(--blue-hover);font-weight:700;text-decoration:none;text-underline-offset:3px}
 .card-footer a:hover{text-decoration:underline}
-.secure-badge{display:inline-flex;align-items:center;gap:5px;font-size:9px;color:#8FA4B8;margin-top:4px}
-.secure-badge i{color:#4ade80;font-size:9px}
+.secure-badge{display:inline-flex;align-items:center;gap:5px;font-size:9px;color:#8A7C61;margin-top:4px}
+.secure-badge i{color:#16A34A;font-size:9px}
 
-button:focus-visible,a:focus-visible,.photo-preview:focus-visible{outline:3px solid rgba(96,165,250,.38);outline-offset:2px}
+button:focus-visible,a:focus-visible,.photo-preview:focus-visible{outline:3px solid rgba(240,202,90,.38);outline-offset:2px}
 @media(prefers-reduced-motion:reduce){.login-card,.reg-card{animation:none;transition:none}.btn-main,.photo-preview{transition:none}}
 @media(max-width:700px){body{padding:16px 12px;align-items:flex-start;overflow-y:auto}.reg-card{padding:24px 18px 18px;margin:auto 0}.hex-1,.hex-2{opacity:.24}}
 @media(max-height:760px) and (min-width:701px){body{align-items:flex-start;overflow-y:auto;padding-top:16px;padding-bottom:16px}.reg-card{margin:auto 0}}
 @media(max-width:520px){.form-row{grid-template-columns:1fr;gap:10px}.form-row .full{grid-column:auto}}
 @media(max-width:480px){.logo-img{width:54px;height:54px}.card-title{font-size:21px}}
 </style>
+
+<link rel="stylesheet" href="admin_appearance.css">
+<script src="admin_appearance.js"></script>
 </head>
 <body>
 <div class="bg-grid" aria-hidden="true"></div>
 
-<svg class="hex-deco hex-1" width="260" height="260" viewBox="0 0 260 260" aria-hidden="true"><polygon points="130,10 240,70 240,190 130,250 20,190 20,70" fill="none" stroke="#3B82F6" stroke-width="1"/><polygon points="130,50 200,90 200,170 130,210 60,170 60,90" fill="none" stroke="#3B82F6" stroke-width="1"/></svg>
-<svg class="hex-deco hex-2" width="300" height="300" viewBox="0 0 300 300" aria-hidden="true"><polygon points="150,10 280,80 280,220 150,290 20,220 20,80" fill="none" stroke="#60A5FA" stroke-width="1"/><polygon points="150,60 220,100 220,200 150,240 80,200 80,100" fill="none" stroke="#60A5FA" stroke-width="1"/></svg>
+<svg class="hex-deco hex-1" width="260" height="260" viewBox="0 0 260 260" aria-hidden="true"><polygon points="130,10 240,70 240,190 130,250 20,190 20,70" fill="none" stroke="#C9A227" stroke-width="1"/><polygon points="130,50 200,90 200,170 130,210 60,170 60,90" fill="none" stroke="#C9A227" stroke-width="1"/></svg>
+<svg class="hex-deco hex-2" width="300" height="300" viewBox="0 0 300 300" aria-hidden="true"><polygon points="150,10 280,80 280,220 150,290 20,220 20,80" fill="none" stroke="#9C7A12" stroke-width="1"/><polygon points="150,60 220,100 220,200 150,240 80,200 80,100" fill="none" stroke="#9C7A12" stroke-width="1"/></svg>
 
 <div class="reg-card">
     <div class="card-header">
@@ -378,9 +381,9 @@ function checkStrength(val) {
     if (/[A-Z]/.test(val))         score++;
     if (/[0-9]/.test(val))         score++;
     if (/[^A-Za-z0-9]/.test(val))  score++;
-    const colors = ['#ff4444','#ff8800','#f0c040','#32B98A'];
+    const colors = ['#ff4444','#ff8800','#f0c040','#D6B44A'];
     const labels = ['Weak','Fair','Good','Strong'];
-    if (!val) { bar.style.background = 'rgba(255,255,255,.08)'; hint.textContent = ''; return; }
+    if (!val) { bar.style.background = 'rgba(20,15,8,.10)'; hint.textContent = ''; return; }
     bar.style.background = colors[score - 1] || colors[0];
     hint.textContent     = labels[score - 1] || 'Weak';
     hint.style.color     = colors[score - 1] || colors[0];

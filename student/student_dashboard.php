@@ -353,6 +353,52 @@ $activePeriodRow = $mysqli->query("SELECT id, semester FROM evaluation_periods W
 $period_is_open  = (bool)$activePeriodRow;
 $active_period_semester = $activePeriodRow['semester'] ?? null;
 
+// ── LIVE SCHEDULE GATE ─────────────────────────────────────
+// evaluation_periods.is_active only identifies the applicable period.
+// Actual availability is controlled by system_settings.php's Follow
+// Schedule / Force Open / Force Closed mode and the exact Asia/Manila
+// opening/closing instants. This prevents an active period from opening
+// Student evaluations early.
+function student_live_schedule_is_open(mysqli $mysqli): bool {
+    $rows = [];
+    $res = $mysqli->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('control_mode','eval_start','eval_end','schedule_timezone')");
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            $rows[$row['setting_key']] = (string)($row['setting_value'] ?? '');
+        }
+        $res->free();
+    }
+
+    $mode = strtolower(trim($rows['control_mode'] ?? 'schedule'));
+    if ($mode === 'open') return true;
+    if ($mode === 'closed') return false;
+
+    $tzName = trim($rows['schedule_timezone'] ?? '') ?: 'Asia/Manila';
+    try { $tz = new DateTimeZone($tzName); } catch (Throwable $e) { $tz = new DateTimeZone('Asia/Manila'); }
+
+    $parse = static function(string $raw) use ($tz): ?DateTimeImmutable {
+        $raw = trim($raw);
+        if ($raw === '') return null;
+        foreach (['Y-m-d\TH:i', 'Y-m-d H:i:s', 'Y-m-d H:i'] as $fmt) {
+            $dt = DateTimeImmutable::createFromFormat($fmt, $raw, $tz);
+            $err = DateTimeImmutable::getLastErrors();
+            if ($dt instanceof DateTimeImmutable && ($err === false || (($err['warning_count'] ?? 0) === 0 && ($err['error_count'] ?? 0) === 0))) {
+                return $dt;
+            }
+        }
+        try { return new DateTimeImmutable($raw, $tz); } catch (Throwable $e) { return null; }
+    };
+
+    $start = $parse($rows['eval_start'] ?? '');
+    $end   = $parse($rows['eval_end'] ?? '');
+    if (!$start || !$end || $end <= $start) return false;
+
+    $now = new DateTimeImmutable('now', $tz);
+    return $now >= $start && $now < $end;
+}
+
+$period_is_open = $period_is_open && student_live_schedule_is_open($mysqli);
+
 // ── LEVEL-SCOPED PERIOD GATING ────────────────────────────────
 // JH/SHS only evaluate once, at the end of the school year (a period
 // whose semester = 'School Year'). College evaluates per-term (1st
@@ -371,6 +417,93 @@ if ($period_is_open) {
         $period_is_open = false;
     }
 }
+
+// ── CURRENT EVALUATION PERIOD CARD (DASHBOARD DISPLAY) ─────────
+// Re-reads the same system_settings row student_live_schedule_is_open()
+// already consulted above, this time keeping the values around so the
+// dashboard card can show them (rather than just the open/closed
+// boolean). Cheap, read-only, and kept deliberately separate from the
+// gate function so a display change here can never affect the actual
+// open/closed decision.
+$periodSettings = [];
+$psRes = $mysqli->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('control_mode','eval_start','eval_end','schedule_timezone','year_level_edit_mode')");
+if ($psRes) {
+    while ($row = $psRes->fetch_assoc()) { $periodSettings[$row['setting_key']] = (string)($row['setting_value'] ?? ''); }
+    $psRes->free();
+}
+$period_control_mode = strtolower(trim($periodSettings['control_mode'] ?? 'schedule'));
+$period_tz_name = trim($periodSettings['schedule_timezone'] ?? '') ?: 'Asia/Manila';
+try { $period_tz = new DateTimeZone($period_tz_name); } catch (Throwable $e) { $period_tz = new DateTimeZone('Asia/Manila'); }
+
+// ── YEAR-LEVEL SELF-EDIT GATE ────────────────────────────────
+// A student changing their own Year Level immediately changes which
+// Faculty/Staff roster they're eligible to evaluate (see
+// isMatchedViaAssignment() / canStudentEvaluateTarget() above), so
+// letting this be freely self-editable at any time is an access-control
+// hole, not just a data-quality one -- a student could switch into
+// another year level's roster, evaluate, and switch back.
+//
+// Editable only when BOTH hold:
+//   1. The EA has explicitly turned editing on via system_settings
+//      (year_level_edit_mode='open'), same admin-toggle pattern as
+//      control_mode -- default is 'locked' so this is opt-in, not
+//      opt-out.
+//   2. No evaluation period is currently open ($period_is_open, already
+//      computed above) -- a fail-safe independent of the EA remembering
+//      to flip the switch back off after promotion season, since an
+//      open evaluation period is exactly when this hole is exploitable.
+// The EA's own edit of a student's year level via Account Management is
+// a separate, admin-authenticated code path and is NOT subject to this
+// gate.
+$year_level_edit_open = (strtolower(trim($periodSettings['year_level_edit_mode'] ?? 'locked')) === 'open');
+$year_level_editable   = $year_level_edit_open && !$period_is_open;
+$year_level_locked_reason = !$year_level_edit_open
+    ? 'Year level updates are currently closed. Contact the EA if this needs correcting.'
+    : ($period_is_open ? 'Year level can\'t be changed while an evaluation period is open. Contact the EA if this is incorrect.' : '');
+
+function student_dashboard_parse_period_dt(string $raw, DateTimeZone $tz): ?DateTimeImmutable {
+    $raw = trim($raw);
+    if ($raw === '') return null;
+    foreach (['Y-m-d\TH:i', 'Y-m-d H:i:s', 'Y-m-d H:i'] as $fmt) {
+        $dt = DateTimeImmutable::createFromFormat($fmt, $raw, $tz);
+        $err = DateTimeImmutable::getLastErrors();
+        if ($dt instanceof DateTimeImmutable && ($err === false || (($err['warning_count'] ?? 0) === 0 && ($err['error_count'] ?? 0) === 0))) {
+            return $dt;
+        }
+    }
+    try { return new DateTimeImmutable($raw, $tz); } catch (Throwable $e) { return null; }
+}
+function student_dashboard_format_period_dt(?DateTimeImmutable $dt, string $tzName): string {
+    if (!$dt) return 'Not set';
+    return $dt->format('F j, Y') . ' · ' . $dt->format('g:i A') . ' (' . $tzName . ')';
+}
+$period_opens_label  = student_dashboard_format_period_dt(student_dashboard_parse_period_dt($periodSettings['eval_start'] ?? '', $period_tz), $period_tz_name);
+$period_closes_label = student_dashboard_format_period_dt(student_dashboard_parse_period_dt($periodSettings['eval_end'] ?? '', $period_tz), $period_tz_name);
+
+// Academic Year: not one of the columns this file already selects from
+// evaluation_periods. Read it if the column exists; otherwise fall back
+// to the Philippine school-year convention (year rolls over ~June) off
+// today's date, so the card still shows something reasonable.
+// NOTE: if evaluation_periods does carry an academic_year column under a
+// different name, swap the column name below to match.
+$academic_year_label = null;
+$ayCol = $mysqli->query("SHOW COLUMNS FROM evaluation_periods LIKE 'academic_year'");
+if ($ayCol && $ayCol->num_rows > 0 && $activePeriodRow) {
+    $ayRow = $mysqli->query("SELECT academic_year FROM evaluation_periods WHERE id=" . (int)$activePeriodRow['id'] . " LIMIT 1")->fetch_assoc();
+    $academic_year_label = $ayRow['academic_year'] ?? null;
+}
+if (!$academic_year_label) {
+    $ayStart = ((int)date('n') >= 6) ? (int)date('Y') : (int)date('Y') - 1;
+    $academic_year_label = $ayStart . '-' . ($ayStart + 1);
+}
+
+// Academic Structure: derived from the period's own semester value --
+// a 'School Year' period is the once-per-year Basic Ed (JHS/SHS) window;
+// anything else (1st/2nd Semester, Summer) is the per-term Higher Ed
+// (College) window. Mirrors the exact check already used for
+// $is_school_year_period above.
+$academic_structure_label = (trim((string)$active_period_semester) === 'School Year') ? 'Basic Education' : 'Higher Education';
+
 $ctxCol=$mysqli->query("SHOW COLUMNS FROM evaluation_tracker LIKE 'evaluation_context'");
 if ($ctxCol && $ctxCol->num_rows===0) {
     $mysqli->query("ALTER TABLE evaluation_tracker ADD COLUMN evaluation_context VARCHAR(30) NOT NULL DEFAULT 'teacher'");
@@ -549,6 +682,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
             $profile_error = "Username cannot contain spaces.";
         } elseif (!empty($year_level_options) && !in_array($new_year_level, $year_level_options, true)) {
             $profile_error = "Please select a valid year/grade level.";
+        } elseif ($new_year_level !== $student_year_level && !$year_level_editable) {
+            // Real gate lives here, not just in the disabled <select> below --
+            // disabling the field client-side doesn't stop a crafted POST.
+            // Only blocks actual changes; re-saving other profile fields with
+            // the same year level still goes through even while locked.
+            $profile_error = $year_level_locked_reason ?: "Year level updates are currently closed.";
         } elseif ($new_email !== '' && !filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
             $profile_error = "Please enter a valid email address.";
         } elseif (mb_strlen($new_email) > 150) {
@@ -636,7 +775,8 @@ $land_on_settings = ($profile_error || $profile_success || $password_error || $p
 // Reads from the same question source the admin assigns for this
 // person's student-evaluation context:
 //   - Staff   -> user_questions (per-person, target_type='Staff')
-//   - Teacher -> evaluation_questions (shared pool, target_type='Teacher')
+//   - Teacher -> qn_get_faculty_questions() -- the same shared-bank helper
+//                the admin Faculty question-bank editor itself calls
 if (isset($_GET['get_questions'])) {
     header('Content-Type: application/json');
     try {
@@ -734,15 +874,18 @@ if (isset($_GET['get_questions'])) {
         if (!$has_teacher_context) {
             throw new Exception('This person is not configured for a Teacher evaluation.');
         }
-        $q = $mysqli->prepare(
-            "SELECT id,question_text,category,'evaluation' AS question_source
-             FROM evaluation_questions
-             WHERE target_type='Faculty' AND eval_type='general'
-             ORDER BY category,id"
+        // Pulled straight from the same helper the admin Faculty question-bank
+        // editor uses (QuestionnaireService.php: qn_get_faculty_questions()),
+        // instead of a hand-rolled query here duplicating its filter logic.
+        // This guarantees the student modal always shows exactly what the
+        // admin bank shows -- no separate WHERE clause to fall out of sync.
+        $questions = array_map(
+            static function (array $q): array {
+                $q['question_source'] = 'evaluation';
+                return $q;
+            },
+            qn_get_faculty_questions($mysqli)
         );
-        $q->execute();
-        $questions=$q->get_result()->fetch_all(MYSQLI_ASSOC);
-        $q->close();
         if (empty($questions)) throw new Exception('No Teacher questions have been set up yet.');
 
         echo json_encode(['success'=>true,'questions'=>$questions]);
@@ -845,14 +988,12 @@ foreach ($eligible_school_head_roles as $role_value => $role_label) {
 // every person in $grouped so the button can be disabled up front
 // instead of failing after the fact.
 //
-// Teacher/Faculty draws from the single shared evaluation_questions pool
-// (target_type='Teacher', eval_type='student'), so one count covers
-// everyone in that group. Staff, Principal, and Dean are per-person sets
-// in user_questions, so they're looked up individually.
-$teacherQCount = $mysqli->query(
-    "SELECT COUNT(*) AS c FROM evaluation_questions WHERE target_type='Faculty' AND eval_type='general'"
-)->fetch_assoc()['c'] ?? 0;
-$facultyHasQuestions = $teacherQCount > 0;
+// Teacher/Faculty draws from the same shared Faculty question bank the
+// admin editor manages, via qn_get_faculty_questions() -- same source as
+// the actual fetch below, so this precheck can never drift out of sync
+// with what the modal ends up showing. Staff, Principal, and Dean are
+// per-person sets in user_questions, so they're looked up individually.
+$facultyHasQuestions = count(qn_get_faculty_questions($mysqli)) > 0;
 
 $perUserQCounts = [];
 $puq = $mysqli->query(
@@ -1067,6 +1208,17 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .period-pill{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;border-radius:20px;padding:4px 12px;margin-bottom:20px;}
 .period-pill.open{background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);color:#4ade80;}
 .period-pill.closed{background:rgba(240,84,84,.1);border:1px solid rgba(240,84,84,.3);color:#fca5a5;}
+.period-info-card{background:var(--mid);border:1px solid var(--border);border-radius:14px;padding:22px 24px;margin-bottom:22px;}
+.period-info-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px;}
+.period-info-title{display:flex;align-items:center;gap:10px;font-family:'Rajdhani',sans-serif;font-size:17px;font-weight:700;color:#fff;}
+.period-info-title i{color:var(--gold-h);font-size:16px;}
+.period-info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:20px 24px;}
+.period-info-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:6px;}
+.period-info-val{font-size:14px;font-weight:700;color:#fff;line-height:1.4;}
+.period-info-val.status-open{color:#4ade80;}
+.period-info-val.status-closed{color:#fca5a5;}
+.period-info-note{margin-top:18px;padding-top:14px;border-top:1px solid var(--border);font-size:12px;color:var(--muted);}
+.period-info-note strong{color:var(--light);}
 .dash-cta{background:var(--mid);border:1px solid var(--border);border-radius:14px;padding:26px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;}
 .dash-cta-icon{width:52px;height:52px;border-radius:12px;background:rgba(217,119,6,.15);display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--gold-h);flex-shrink:0;}
 .dash-cta-text{flex:1;min-width:180px;}
@@ -1164,7 +1316,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 
 /* ── SETTINGS VIEW ── */
 .settings-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
-.settings-row .profile-dd-avatar,.settings-row .profile-dd-avatar-ph{width:64px;height:64px;font-size:24px;}
+.settings-row .profile-dd-avatar,.settings-row .profile-dd-avatar-ph,.settings-row .profile-dd-avatar-logo{width:64px;height:64px;font-size:24px;}
+.profile-dd-avatar-logo{width:44px;height:44px;border-radius:50%;object-fit:contain;padding:6px;background:var(--inner);border:2px solid var(--gold);flex-shrink:0;}
 .settings-row .profile-dd-name{font-size:16px;}
 .settings-info{flex:1;min-width:160px;}
 .settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;}
@@ -1173,10 +1326,17 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .settings-field input,.settings-field select{width:100%;padding:11px 14px;background:var(--inner);border:1px solid var(--border);border-radius:9px;color:#fff;font-size:13.5px;}
 .settings-field input:focus,.settings-field select:focus{outline:none;border-color:var(--gold-h);}
 .settings-field input[readonly]{color:var(--muted);cursor:not-allowed;}
+.settings-field select:disabled{color:var(--muted);cursor:not-allowed;opacity:.7;}
+.settings-field-note{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);margin-top:7px;}
+.settings-field-note i{color:var(--gold-h);}
 .settings-field .pw-wrap input{padding-right:40px;}
 .settings-field .pw-toggle{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;}
 .settings-field .pw-toggle:hover{color:#fff;}
 .settings-hint{font-size:11.5px;color:var(--muted);margin:-8px 0 16px;}
+.appearance-choice-row{display:flex;gap:10px;flex-wrap:wrap;}
+.appearance-choice{border:1px solid var(--border);background:var(--inner);color:var(--light);border-radius:10px;padding:10px 16px;font:700 12.5px 'DM Sans',sans-serif;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:.18s ease;}
+.appearance-choice:hover{border-color:var(--gold-h);color:var(--gold-h);}
+.appearance-choice.active{background:rgba(217,119,6,.14);border-color:var(--gold-h);color:var(--gold-h);}
 @media(max-width:600px){.settings-grid{grid-template-columns:1fr;}}
 .btn-logout{padding:11px 22px;background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.25);border-radius:var(--radius);color:#dc2626;font-weight:700;font-size:13.5px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;text-decoration:none;transition:background .2s;}
 .btn-logout:hover{background:rgba(220,38,38,.15);}
@@ -1247,66 +1407,72 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
    white workspace + dark-navy amber sidebar look. Nothing above
    this block was removed -- every class, tab, icon and piece of
    text still renders exactly as before; only the colors change.
+   Scoped under body.light-theme so Dark (the page's original navy
+   + gold look) is reachable again via the Appearance toggle.
    ══════════════════════════════════════════════════════════════ */
-:root{
+body.light-theme{
     --dark:#ffffff;--mid:#ffffff;--inner:#f5f7fb;
     --light:#172033;--muted:#64748b;--border:#e2e8f0;
+    color-scheme:light;
 }
-html{background:#FFFFFF;color-scheme:light;}
-body{background:#FFFFFF!important;color:#172033!important;}
+body.light-theme{background:#FFFFFF!important;color:#172033!important;}
 
 /* The sidebar stays the dark-navy "chrome" (matching the reference
-   screenshot); the rest of the page -- including the logo, which now
-   lives in the sidebar -- is part of the light workspace. The .main
-   column itself is a pale inset panel (#F3F6FA) so it reads as a
-   distinct workspace sitting on the pure-white outer page, with the
-   white cards (--mid) floating a shade lighter on top of it. */
-.sidebar{background:#0A192F!important;border-right:1px solid #172A45!important;}
-.main{background:#F3F6FA;border-radius:22px;margin:20px auto;min-height:calc(100vh - 40px);}
-@media(max-width:900px){.main{margin:16px;border-radius:18px;min-height:calc(100vh - 32px);}}
-.hamburger-btn{color:#475569!important;border-color:#e2e8f0!important;}
-.profile-name{color:#172033!important;}
-.profile-caret{color:#64748b!important;}
-.profile-trigger:hover{background:rgba(15,23,42,.05)!important;}
-.side-section-label{color:#A0B3C6!important;}
-.side-nav-item{color:#E0E6F0!important;}
-.side-nav-item i{color:#A0B3C6!important;}
-.side-nav-item.active i{color:var(--gold-h)!important;}
+   screenshot) in both Light and Dark; the rest of the page -- including
+   the logo, which now lives in the sidebar -- is part of the light
+   workspace only when Light is active. The .main column itself is a
+   pale inset panel (#F3F6FA) so it reads as a distinct workspace sitting
+   on the pure-white outer page, with the white cards (--mid) floating a
+   shade lighter on top of it. */
+body.light-theme .sidebar{background:#0A192F!important;border-right:1px solid #172A45!important;}
+body.light-theme .main{background:#F3F6FA;border-radius:22px;margin:20px auto;min-height:calc(100vh - 40px);}
+@media(max-width:900px){body.light-theme .main{margin:16px;border-radius:18px;min-height:calc(100vh - 32px);}}
+body.light-theme .hamburger-btn{color:#475569!important;border-color:#e2e8f0!important;}
+body.light-theme .profile-name{color:#172033!important;}
+body.light-theme .profile-caret{color:#64748b!important;}
+body.light-theme .profile-trigger:hover{background:rgba(15,23,42,.05)!important;}
+body.light-theme .side-section-label{color:#A0B3C6!important;}
+body.light-theme .side-nav-item{color:#E0E6F0!important;}
+body.light-theme .side-nav-item i{color:#A0B3C6!important;}
+body.light-theme .side-nav-item.active i{color:var(--gold-h)!important;}
 
 /* Headings/labels that were hardcoded to white text for the old dark
    cards now need to read dark-on-white on the new light cards. */
-.page-title,.stat-num,.dash-cta-text h3,.cat-name,.panel-header-title,
-.subgroup-header,.person-name,.history-name,.gl-card h3,.modal-name,
-.photo-modal-title,.profile-dd-name,.reminder-banner .rb-title{color:#0f172a!important;}
-.panel-close-btn:hover,.modal-close:hover,.reminder-banner .rb-dismiss:hover{color:#0f172a!important;}
+body.light-theme .page-title,body.light-theme .stat-num,body.light-theme .dash-cta-text h3,body.light-theme .cat-name,body.light-theme .panel-header-title,
+body.light-theme .subgroup-header,body.light-theme .person-name,body.light-theme .history-name,body.light-theme .gl-card h3,body.light-theme .modal-name,
+body.light-theme .photo-modal-title,body.light-theme .profile-dd-name,body.light-theme .reminder-banner .rb-title{color:#0f172a!important;}
+body.light-theme .panel-close-btn:hover,body.light-theme .modal-close:hover,body.light-theme .reminder-banner .rb-dismiss:hover{color:#0f172a!important;}
 
 /* Settings form fields (Profile Details / Change Password) were styled
    for the old dark card too -- white text on the new near-white input
    background is unreadable, so force dark text + a light-but-visible
    input background here as well. */
-.settings-field label{color:#64748b!important;}
-.settings-field input,.settings-field select{background:#ffffff!important;border:1px solid #cbd5e1!important;color:#0f172a!important;}
-.settings-field input::placeholder{color:#94a3b8!important;}
-.settings-field input:focus,.settings-field select:focus{border-color:#D97706!important;box-shadow:0 0 0 3px rgba(217,119,6,.12)!important;}
-.settings-field input[readonly]{background:#eef2f7!important;border-color:#e2e8f0!important;color:#64748b!important;box-shadow:none!important;}
-.settings-field .pw-toggle{color:#94a3b8!important;}
-.settings-field .pw-toggle:hover{color:#0f172a!important;}
-.settings-hint{color:#64748b!important;}
+body.light-theme .settings-field label{color:#64748b!important;}
+body.light-theme .settings-field input,body.light-theme .settings-field select{background:#ffffff!important;border:1px solid #cbd5e1!important;color:#0f172a!important;}
+body.light-theme .settings-field input::placeholder{color:#94a3b8!important;}
+body.light-theme .settings-field input:focus,body.light-theme .settings-field select:focus{border-color:#D97706!important;box-shadow:0 0 0 3px rgba(217,119,6,.12)!important;}
+body.light-theme .settings-field input[readonly]{background:#eef2f7!important;border-color:#e2e8f0!important;color:#64748b!important;box-shadow:none!important;}
+body.light-theme .settings-field select:disabled{background:#eef2f7!important;border-color:#e2e8f0!important;color:#64748b!important;}
+body.light-theme .settings-field-note{color:#64748b!important;}
+body.light-theme .settings-field-note i{color:#D97706!important;}
+body.light-theme .settings-field .pw-toggle{color:#94a3b8!important;}
+body.light-theme .settings-field .pw-toggle:hover{color:#0f172a!important;}
+body.light-theme .settings-hint{color:#64748b!important;}
 
 /* Status pills/badges used pale, low-opacity text meant for a dark
    backdrop -- darken them so they stay legible on white/near-white. */
-.period-pill.open,.cat-done-pill,.done-badge,.alert-success{color:#16a34a!important;}
-.period-pill.closed,.alert-error{color:#dc2626!important;}
-.reminder-banner .rb-meta{color:#7c3aed!important;}
+body.light-theme .period-pill.open,body.light-theme .cat-done-pill,body.light-theme .done-badge,body.light-theme .alert-success{color:#16a34a!important;}
+body.light-theme .period-pill.closed,body.light-theme .alert-error{color:#dc2626!important;}
+body.light-theme .reminder-banner .rb-meta{color:#7c3aed!important;}
 
 /* Fill in tracks/rows that were a faint white-on-dark wash and would
    otherwise vanish (white-on-white) now that their card is white. */
-.progress-bar-bg{background:#e2e8f0!important;}
-.scale-legend{background:#f8fafc!important;}
-.r-btn{background:#f8fafc!important;}
-.profile-dd-btn:hover{background:rgba(15,23,42,.05)!important;}
-.eval-form-table th{background:#f8fafc!important;}
-.eval-form-table td{border-bottom:1px solid #eef2f7!important;}
+body.light-theme .progress-bar-bg{background:#e2e8f0!important;}
+body.light-theme .scale-legend{background:#f8fafc!important;}
+body.light-theme .r-btn{background:#f8fafc!important;}
+body.light-theme .profile-dd-btn:hover{background:rgba(15,23,42,.05)!important;}
+body.light-theme .eval-form-table th{background:#f8fafc!important;}
+body.light-theme .eval-form-table td{border-bottom:1px solid #eef2f7!important;}
 
 /* ══════════════════════════════════════════════════════════════
    ALIGNED STUDENT WORKSPACE
@@ -1435,26 +1601,34 @@ body{background:#FFFFFF!important;color:#172033!important;}
 .side-nav-badge{background:rgba(245,158,11,.22)!important;color:#FFD9A0!important;font-weight:800;font-size:10px;}
 .side-nav-item:focus-visible{outline:2px solid #FBBF24;outline-offset:2px;}
 
-/* ── Workspace (white / pale) ── */
-.workspace-title,.page-title,.stat-num,.dash-cta-text h3{color:#0F172A!important;}
-.workspace-subtitle,.page-sub,.stat-lbl,.dash-cta-text p,.year-level-badge,.progress-label{color:#475569!important;}
-.workspace-kicker{color:#64748B!important;}
-.workspace-kicker i,.workspace-pill i{color:#D97706!important;}
-.workspace-pill{color:#1E293B!important;}
-.workspace-pill.muted{color:#475569!important;background:#FFFFFF!important;}
-.progress-label span,.progress-pct{color:#B45309!important;}
-.period-pill.open{background:#DCFCE7!important;border-color:#86EFAC!important;color:#15803D!important;}
-.period-pill.closed{background:#FEE2E2!important;border-color:#FCA5A5!important;color:#B91C1C!important;}
-.stat-card:nth-child(1) i{background:#FEF3C7!important;color:#B45309!important;}
-.stat-card:nth-child(2) i{background:#DCFCE7!important;color:#15803D!important;}
-.stat-card:nth-child(3) i{background:#FEF9C3!important;color:#A16207!important;}
-.stat-card:nth-child(4) i{background:#DBEAFE!important;color:#1D4ED8!important;}
-.dash-cta-icon{background:#FEF3C7!important;color:#B45309!important;}
+/* ── Workspace (white / pale) — only when Light is active ── */
+body.light-theme .workspace-title,body.light-theme .page-title,body.light-theme .stat-num,body.light-theme .dash-cta-text h3{color:#0F172A!important;}
+body.light-theme .workspace-subtitle,body.light-theme .page-sub,body.light-theme .stat-lbl,body.light-theme .dash-cta-text p,body.light-theme .year-level-badge,body.light-theme .progress-label{color:#475569!important;}
+body.light-theme .workspace-kicker{color:#64748B!important;}
+body.light-theme .workspace-kicker i,body.light-theme .workspace-pill i{color:#D97706!important;}
+body.light-theme .workspace-pill{color:#1E293B!important;}
+body.light-theme .workspace-pill.muted{color:#475569!important;background:#FFFFFF!important;}
+body.light-theme .progress-label span,body.light-theme .progress-pct{color:#B45309!important;}
+body.light-theme .period-pill.open{background:#DCFCE7!important;border-color:#86EFAC!important;color:#15803D!important;}
+body.light-theme .period-pill.closed{background:#FEE2E2!important;border-color:#FCA5A5!important;color:#B91C1C!important;}
+body.light-theme .period-info-card{background:#FFFFFF!important;border-color:#E2E8F0!important;box-shadow:0 5px 14px rgba(0,0,0,.06);}
+body.light-theme .period-info-title{color:#0F172A!important;}
+body.light-theme .period-info-lbl{color:#64748B!important;}
+body.light-theme .period-info-val{color:#0F172A!important;}
+body.light-theme .period-info-val.status-open{color:#15803D!important;}
+body.light-theme .period-info-val.status-closed{color:#B91C1C!important;}
+body.light-theme .period-info-note{color:#475569!important;border-top-color:#E2E8F0!important;}
+body.light-theme .period-info-note strong{color:#1E293B!important;}
+body.light-theme .stat-card:nth-child(1) i{background:#FEF3C7!important;color:#B45309!important;}
+body.light-theme .stat-card:nth-child(2) i{background:#DCFCE7!important;color:#15803D!important;}
+body.light-theme .stat-card:nth-child(3) i{background:#FEF9C3!important;color:#A16207!important;}
+body.light-theme .stat-card:nth-child(4) i{background:#DBEAFE!important;color:#1D4ED8!important;}
+body.light-theme .dash-cta-icon{background:#FEF3C7!important;color:#B45309!important;}
 
 @media print{html,body{background:#fff!important;}}
 </style>
 </head>
-<body>
+<body class="light-theme">
 
 <!-- PHOTO UPLOAD MODAL -->
 <div class="photo-modal-overlay" id="photoModal">
@@ -1502,7 +1676,8 @@ body{background:#FFFFFF!important;color:#172033!important;}
         <div class="sb-profile-wrap">
             <div class="sb-avatar-wrap">
                 <?php if ($student_photo): ?>
-                <img class="sb-avatar" src="../image/<?= htmlspecialchars($student_photo) ?>" alt=""/>
+                <img class="sb-avatar" src="../image/<?= htmlspecialchars($student_photo) ?>" alt=""
+                     onerror="this.onerror=null;this.src='../image/pbi_logo';this.classList.add('sb-avatar-fallback');"/>
                 <?php else: ?>
                 <img class="sb-avatar sb-avatar-fallback" src="../image/pbi_logo" alt="PBI" onerror="this.style.display='none'"/>
                 <?php endif; ?>
@@ -1585,6 +1760,43 @@ body{background:#FFFFFF!important;color:#172033!important;}
                 </div>
             </div>
 
+            <div class="period-info-card">
+                <div class="period-info-head">
+                    <div class="period-info-title"><i class="fa-solid fa-calendar-days"></i> Current Evaluation Period</div>
+                </div>
+                <div class="period-info-grid">
+                    <div>
+                        <div class="period-info-lbl">Academic Year</div>
+                        <div class="period-info-val"><?= htmlspecialchars($academic_year_label) ?></div>
+                    </div>
+                    <div>
+                        <div class="period-info-lbl">Academic Structure</div>
+                        <div class="period-info-val"><?= htmlspecialchars($academic_structure_label) ?></div>
+                    </div>
+                    <div>
+                        <div class="period-info-lbl">Academic Term</div>
+                        <div class="period-info-val"><?= htmlspecialchars($active_period_semester ?: 'No active period') ?></div>
+                    </div>
+                    <div>
+                        <div class="period-info-lbl">Status</div>
+                        <div class="period-info-val <?= $period_is_open ? 'status-open' : 'status-closed' ?>"><?= $period_is_open ? 'Open' : 'Closed' ?></div>
+                    </div>
+                    <div>
+                        <div class="period-info-lbl">Evaluation Opens</div>
+                        <div class="period-info-val"><?= htmlspecialchars($period_opens_label) ?></div>
+                    </div>
+                    <div>
+                        <div class="period-info-lbl">Evaluation Closes</div>
+                        <div class="period-info-val"><?= htmlspecialchars($period_closes_label) ?></div>
+                    </div>
+                </div>
+                <?php if ($period_control_mode === 'open'): ?>
+                <div class="period-info-note"><strong>Evaluation is open.</strong> Force Open is overriding the configured schedule.</div>
+                <?php elseif ($period_control_mode === 'closed'): ?>
+                <div class="period-info-note"><strong>Evaluation is closed.</strong> Force Closed is overriding the configured schedule.</div>
+                <?php endif; ?>
+            </div>
+
             <div class="stat-grid">
                 <div class="stat-card"><i class="fa-solid fa-users"></i><div class="stat-num"><?= $total_evaluatees ?></div><div class="stat-lbl">To evaluate</div></div>
                 <div class="stat-card"><i class="fa-solid fa-circle-check"></i><div class="stat-num"><?= $total_done ?></div><div class="stat-lbl">Completed</div></div>
@@ -1608,7 +1820,7 @@ body{background:#FFFFFF!important;color:#172033!important;}
                 </div>
                 <button class="btn-primary-cta" onclick="switchView('<?= $total_pending > 0 ? 'evaluate' : 'history' ?>')">
                     <i class="fa-solid <?= $total_pending > 0 ? 'fa-arrow-right' : 'fa-clock-rotate-left' ?>"></i>
-                    <?= $total_pending > 0 ? 'Continue Evaluations' : 'View History' ?>
+                    <?= $total_pending > 0 ? ($total_done > 0 ? 'Continue Evaluations' : 'Start Evaluations') : 'View History' ?>
                 </button>
             </div>
         </div>
@@ -1814,9 +2026,10 @@ body{background:#FFFFFF!important;color:#172033!important;}
                 <h3><i class="fa-solid fa-user"></i> Profile</h3>
                 <div class="settings-row">
                     <?php if ($student_photo): ?>
-                    <img class="profile-dd-avatar" src="../image/<?= htmlspecialchars($student_photo) ?>" alt=""/>
+                    <img class="profile-dd-avatar" src="../image/<?= htmlspecialchars($student_photo) ?>" alt=""
+                         onerror="this.onerror=null;this.src='../image/pbi_logo';this.classList.remove('profile-dd-avatar');this.classList.add('profile-dd-avatar-logo');"/>
                     <?php else: ?>
-                    <div class="profile-dd-avatar-ph"><i class="fa-solid fa-user"></i></div>
+                    <img class="profile-dd-avatar-logo" src="../image/pbi_logo" alt="PBI" onerror="this.outerHTML='&lt;div class=&quot;profile-dd-avatar-ph&quot;&gt;&lt;i class=&quot;fa-solid fa-user&quot;&gt;&lt;/i&gt;&lt;/div&gt;'"/>
                     <?php endif; ?>
                     <div class="settings-info">
                         <div class="profile-dd-name"><?= htmlspecialchars($student_name) ?></div>
@@ -1825,6 +2038,15 @@ body{background:#FFFFFF!important;color:#172033!important;}
                     <button class="btn-primary-cta" onclick="openPhotoModal()">
                         <i class="fa-solid fa-camera"></i> Update Profile Photo
                     </button>
+                </div>
+            </div>
+
+            <div class="gl-card">
+                <h3><i class="fa-solid fa-palette"></i> Appearance</h3>
+                <div class="settings-hint" style="margin-bottom:12px;">Choose how the portal is displayed on this device.</div>
+                <div class="appearance-choice-row">
+                    <button type="button" class="appearance-choice" id="appearanceLightBtn" onclick="setAppearance('light')"><i class="fa-solid fa-sun"></i> Light</button>
+                    <button type="button" class="appearance-choice" id="appearanceDarkBtn" onclick="setAppearance('dark')"><i class="fa-solid fa-moon"></i> Dark</button>
                 </div>
             </div>
 
@@ -1855,7 +2077,10 @@ body{background:#FFFFFF!important;color:#172033!important;}
                         <div class="settings-field">
                             <label for="set_yearlevel">Year Level</label>
                             <?php if (!empty($year_level_options)): ?>
-                            <select id="set_yearlevel" name="year_level" required>
+                            <?php if (!$year_level_editable): ?>
+                            <input type="hidden" name="year_level" value="<?= htmlspecialchars($student_year_level ?? '') ?>"/>
+                            <?php endif; ?>
+                            <select id="set_yearlevel" name="year_level" required<?= !$year_level_editable ? ' disabled' : '' ?>>
                                 <?php
                                 $current_yl_matched = false;
                                 foreach ($year_level_options as $opt):
@@ -1869,7 +2094,10 @@ body{background:#FFFFFF!important;color:#172033!important;}
                                 <?php endif; ?>
                             </select>
                             <?php else: ?>
-                            <input type="text" id="set_yearlevel" name="year_level" maxlength="30" value="<?= htmlspecialchars($student_year_level ?? '') ?>"/>
+                            <input type="text" id="set_yearlevel" name="year_level" maxlength="30"<?= !$year_level_editable ? ' readonly' : '' ?> value="<?= htmlspecialchars($student_year_level ?? '') ?>"/>
+                            <?php endif; ?>
+                            <?php if (!$year_level_editable): ?>
+                            <div class="settings-field-note"><i class="fa-solid fa-lock"></i> <?= htmlspecialchars($year_level_locked_reason) ?></div>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -2177,6 +2405,29 @@ document.getElementById('evalForm').addEventListener('submit', function(e) {
 <?php if ($submit_success || $submit_error): ?>
 switchView('evaluate');
 <?php endif; ?>
+
+// ── Appearance toggle (Dark / Light) ──
+// Same mechanism as the Faculty portal: a plain localStorage-backed,
+// per-device preference toggled via body.classList('light-theme').
+function applyAppearance(mode) {
+    const normalized = mode === 'dark' ? 'dark' : 'light';
+    document.body.classList.toggle('light-theme', normalized === 'light');
+    const lightBtn = document.getElementById('appearanceLightBtn');
+    const darkBtn  = document.getElementById('appearanceDarkBtn');
+    if (lightBtn) lightBtn.classList.toggle('active', normalized === 'light');
+    if (darkBtn) darkBtn.classList.toggle('active', normalized === 'dark');
+}
+function setAppearance(mode) {
+    const normalized = mode === 'dark' ? 'dark' : 'light';
+    localStorage.setItem('pbi_theme', normalized);
+    applyAppearance(normalized);
+}
+document.addEventListener('DOMContentLoaded', function() {
+    const savedTheme = localStorage.getItem('pbi_theme');
+    const theme = savedTheme === 'dark' ? 'dark' : 'light';
+    localStorage.setItem('pbi_theme', theme);
+    applyAppearance(theme);
+});
 </script>
 </body>
 </html>

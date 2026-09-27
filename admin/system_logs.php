@@ -31,10 +31,10 @@ if ($mysqli->ping()) $mysqli->close();
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --page-bg:#F8FAFC;--card-bg:#FFFFFF;--inner:#F4F8FF;--card-border:#B9CDE5;
-  --text-dark:#0B1F3A;--text-dim:#67819E;
-  --radius:10px;--card-shadow:0 1px 2px rgba(30,82,144,.05),0 4px 12px rgba(30,82,144,.06);
-  --accent:#2563EB;--accent-bg:rgba(37,99,235,.08);--accent-border:rgba(37,99,235,.16);--hover:#2563EB;
+  --page-bg:#FBFAF5;--card-bg:#FFFFFF;--inner:#FBF9F2;--card-border:#D8C89A;
+  --text-dark:#2B2416;--text-dim:#7A6F58;
+  --radius:10px;--card-shadow:0 1px 2px rgba(93,72,22,.05),0 4px 12px rgba(93,72,22,.06);
+  --accent:#C9A227;--accent-bg:rgba(201,162,39,.08);--accent-border:rgba(201,162,39,.16);--hover:#C9A227;
 }
 *{box-sizing:border-box} body{margin:0;background:var(--page-bg);color:var(--text-dark);font-family:'Inter',Segoe UI,Arial,sans-serif}
 .wrap{max-width:1320px;margin:auto;padding:34px}
@@ -86,6 +86,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
 .feature-compact ::-webkit-scrollbar-button { display: block !important; width: 10px !important; height: 10px !important; background-color: transparent !important; }
 
 </style>
+
 <link rel="stylesheet" href="admin_appearance.css">
 <script src="admin_appearance.js"></script>
 </head>
@@ -124,11 +125,11 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
 /* Same feed_full source and rendering logic as the dashboard used to run
    inline — only relocated to its own page. */
 function escH(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-const SEVERITY_COLORS = { green:'#0F9F6E', yellow:'#C77A08', red:'#D6455D', blue:'#2563EB', info:'#2563EB' };
+const SEVERITY_COLORS = { green:'#B8860B', yellow:'#C77A08', red:'#D6455D', blue:'#C9A227', info:'#C9A227' };
 function activityColor(a){
     if(a.color) return a.color;
     if(a.severity && SEVERITY_COLORS[a.severity]) return SEVERITY_COLORS[a.severity];
-    return a.type==='role_change' ? '#4968C8' : '#2563EB';
+    return a.type==='role_change' ? '#A88B2A' : '#C9A227';
 }
 function renderLogsTable(feedFull){
     const body=document.getElementById('logsTableBody');if(!body)return;

@@ -12,6 +12,7 @@ session_start();
 require_once 'db.php';
 require_once '../shared/eligibility.php';
 require_once '../shared/EvaluationContextService.php';
+require_once '../shared/system_settings_service.php';
 require_once '../shared/QuestionnaireService.php';
 qn_migrate_legacy_once($mysqli);
 
@@ -33,6 +34,58 @@ $csrf_token = $_SESSION['csrf_token'];
 function csrf_check(): bool {
     return isset($_POST['csrf_token']) && hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token']);
 }
+
+// Centralized live schedule gate for Faculty/Staff evaluation access.
+// Follow Schedule uses Asia/Manila and the configured [start, end) window.
+// Force Open / Force Closed remain explicit overrides.
+function fs_schedule_settings(mysqli $mysqli): array {
+    $out = [];
+    $rs = $mysqli->query("SELECT setting_key, setting_value FROM system_settings");
+    if ($rs) {
+        while ($row = $rs->fetch_assoc()) {
+            $out[(string)$row['setting_key']] = (string)$row['setting_value'];
+        }
+        $rs->free();
+    }
+    return $out;
+}
+
+function fs_parse_manila_datetime(?string $raw): ?DateTimeImmutable {
+    $raw = trim((string)$raw);
+    if ($raw === '') return null;
+    $tz = new DateTimeZone('Asia/Manila');
+    $formats = ['Y-m-d\\TH:i:s', 'Y-m-d\\TH:i', 'Y-m-d H:i:s', 'Y-m-d H:i'];
+    foreach ($formats as $format) {
+        $dt = DateTimeImmutable::createFromFormat($format, $raw, $tz);
+        if ($dt !== false) {
+            $errors = DateTimeImmutable::getLastErrors();
+            if ($errors === false || ($errors['warning_count'] ?? 0) === 0 && ($errors['error_count'] ?? 0) === 0) {
+                return $dt;
+            }
+        }
+    }
+    try {
+        return new DateTimeImmutable($raw, $tz);
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
+function fs_schedule_is_open(mysqli $mysqli): bool {
+    $s = fs_schedule_settings($mysqli);
+    $mode = strtolower(trim((string)($s['control_mode'] ?? 'schedule')));
+
+    if ($mode === 'open') return true;
+    if ($mode === 'closed') return false;
+
+    $start = fs_parse_manila_datetime($s['eval_start'] ?? '');
+    $end   = fs_parse_manila_datetime($s['eval_end'] ?? '');
+    if (!$start || !$end || $end <= $start) return false;
+
+    $now = new DateTimeImmutable('now', new DateTimeZone('Asia/Manila'));
+    return $now >= $start && $now < $end;
+}
+
 
 // ── FETCH PROFILE PHOTO ───────────────────────────────────────
 $phRes = $mysqli->prepare("SELECT photo FROM users WHERE id=? LIMIT 1");
@@ -94,29 +147,62 @@ $period = null;
 $pr = $mysqli->query("SELECT * FROM evaluation_periods WHERE is_active=1 LIMIT 1");
 if ($pr) $period = $pr->fetch_assoc();
 
+// The active-period flag is not the schedule clock. Always evaluate the
+// live Asia/Manila schedule so a future period cannot appear open early.
+$evaluation_open = fs_schedule_is_open($mysqli);
+
+// ── DASHBOARD SCHEDULE SUMMARY ─────────────────────────────────────
+// Read the same database-backed settings used by the admin Settings page so
+// Faculty/Staff see the exact opening/closing date and time on their dashboard.
+$dashboard_sys = ss_raw($mysqli);
+$dashboard_structure_labels = ss_structure_labels();
+$dashboard_structure = $dashboard_structure_labels[$dashboard_sys['acad_structure'] ?? ''] ?? ucfirst((string)($dashboard_sys['acad_structure'] ?? ''));
+$dashboard_acad_year = trim((string)($dashboard_sys['acad_year'] ?? ($period['school_year'] ?? '')));
+$dashboard_term = trim((string)($dashboard_sys['acad_term'] ?? ($period['semester'] ?? '')));
+$dashboard_start_raw = trim((string)($dashboard_sys['eval_start'] ?? ''));
+$dashboard_end_raw = trim((string)($dashboard_sys['eval_end'] ?? ''));
+$dashboard_start = $dashboard_start_raw !== '' ? ss_parse_datetime($dashboard_start_raw) : null;
+$dashboard_end = $dashboard_end_raw !== '' ? ss_parse_datetime($dashboard_end_raw) : null;
+$dashboard_tz = new DateTimeZone((string)($dashboard_sys['schedule_timezone'] ?? 'Asia/Manila'));
+
+$dashboard_status = 'Scheduled';
+if (($dashboard_sys['control_mode'] ?? 'schedule') === 'open') {
+    $dashboard_status = 'Open';
+} elseif (($dashboard_sys['control_mode'] ?? 'schedule') === 'closed') {
+    $dashboard_status = 'Closed';
+} elseif ($dashboard_start && $dashboard_end) {
+    $dashboard_now = new DateTimeImmutable('now', $dashboard_tz);
+    if ($dashboard_now < $dashboard_start) {
+        $dashboard_status = 'Scheduled';
+    } elseif ($dashboard_now >= $dashboard_end) {
+        $dashboard_status = 'Closed';
+    } else {
+        $dashboard_status = 'Open';
+    }
+}
+
+$dashboard_window = 'Not configured';
+if ($dashboard_start && $dashboard_end) {
+    $dashboard_window = $dashboard_start->format('M j, Y') . ' – ' . $dashboard_end->format('M j, Y');
+}
+$dashboard_open_display = $dashboard_start ? $dashboard_start->format('M j, Y g:i A') : 'Not configured';
+$dashboard_close_display = $dashboard_end ? $dashboard_end->format('M j, Y g:i A') : 'Not configured';
+$dashboard_status_class = strtolower($dashboard_status);
+
 // ── MY EVALUATION RESULTS ─────────────────────────────────────
+// Mirrors staff_dashboard.php: all-time totals (not period-scoped) so the
+// "Performance by Category" card behaves identically for Faculty accounts.
 $my_avg   = null;
 $my_total = 0;
 $my_scores = [];
 
-if ($period) {
-    $period_id_int = (int)$period['id'];
-    $res_stmt = $mysqli->prepare("
-        SELECT AVG(qa.answer_score) as avg_score, COUNT(DISTINCT et.id) as total
-        FROM questionnaire_answers qa
-        JOIN evaluation_tracker et ON et.id = qa.tracker_id
-        WHERE et.target_user_id = ? AND et.period_id = ?
-    ");
-    $res_stmt->bind_param("ii", $user_id, $period_id_int);
-} else {
-    $res_stmt = $mysqli->prepare("
-        SELECT AVG(qa.answer_score) as avg_score, COUNT(DISTINCT et.id) as total
-        FROM questionnaire_answers qa
-        JOIN evaluation_tracker et ON et.id = qa.tracker_id
-        WHERE et.target_user_id = ?
-    ");
-    $res_stmt->bind_param("i", $user_id);
-}
+$res_stmt = $mysqli->prepare("
+    SELECT AVG(qa.answer_score) as avg_score, COUNT(DISTINCT et.id) as total
+    FROM evaluation_tracker et
+    JOIN questionnaire_answers qa ON qa.tracker_id = et.id
+    WHERE et.target_user_id = ?
+");
+$res_stmt->bind_param("i", $user_id);
 $res_stmt->execute();
 $res = $res_stmt->get_result();
 if ($res) {
@@ -126,28 +212,21 @@ if ($res) {
 }
 $res_stmt->close();
 
-if ($period) {
-    $period_id_int = (int)$period['id'];
-    $cat_stmt = $mysqli->prepare("
-        SELECT eq.category, AVG(qa.answer_score) as avg_cat, COUNT(qa.id) as cnt
-        FROM questionnaire_answers qa
-        JOIN evaluation_tracker et ON et.id = qa.tracker_id
-        JOIN evaluation_questions eq ON eq.id = qa.question_id
-        WHERE et.target_user_id = ? AND et.period_id = ?
-        GROUP BY eq.category
-    ");
-    $cat_stmt->bind_param("ii", $user_id, $period_id_int);
-} else {
-    $cat_stmt = $mysqli->prepare("
-        SELECT eq.category, AVG(qa.answer_score) as avg_cat, COUNT(qa.id) as cnt
-        FROM questionnaire_answers qa
-        JOIN evaluation_tracker et ON et.id = qa.tracker_id
-        JOIN evaluation_questions eq ON eq.id = qa.question_id
-        WHERE et.target_user_id = ?
-        GROUP BY eq.category
-    ");
-    $cat_stmt->bind_param("i", $user_id);
-}
+$cat_stmt = $mysqli->prepare("
+    SELECT COALESCE(uq.category, eq.category, 'General') AS category,
+           AVG(qa.answer_score) AS avg_cat
+    FROM questionnaire_answers qa
+    JOIN evaluation_tracker et ON et.id = qa.tracker_id
+    LEFT JOIN user_questions uq
+      ON qa.question_source='user'
+     AND uq.id = COALESCE(qa.user_question_id, qa.question_id)
+    LEFT JOIN evaluation_questions eq
+      ON qa.question_source='evaluation'
+     AND eq.id = qa.question_id
+    WHERE et.target_user_id = ?
+    GROUP BY COALESCE(uq.category, eq.category, 'General')
+");
+$cat_stmt->bind_param("i", $user_id);
 $cat_stmt->execute();
 $cat_res = $cat_stmt->get_result();
 if ($cat_res) $my_scores = $cat_res->fetch_all(MYSQLI_ASSOC);
@@ -385,6 +464,11 @@ if ($page === 'peer_eval' && isset($_GET['tid'])) {
         }
     }
 
+    if ($peer_target && !$evaluation_open) {
+        $peer_group_error = 'Evaluation is currently closed. It will open at the scheduled time set by the administrator.';
+        $peer_target = null;
+    }
+
     if ($peer_target) {
         $form_type = 'faculty_peer';
         $fu = $mysqli->prepare("SELECT id FROM questionnaire_forms WHERE eval_type=? AND is_active=1 ORDER BY id DESC LIMIT 1");
@@ -489,7 +573,7 @@ $prefStmt->close();
 
 // Save personal dashboard preferences.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_preferences'])) {
-    if (!csrf_check()) { $_SESSION['toast_error'] = 'Your session expired. Please try again.'; header('Location: ' . __FILE__ . '?page=profile'); exit; }
+    if (!csrf_check()) { $_SESSION['toast_error'] = 'Your session expired. Please try again.'; header('Location: ' . __FILE__ . '?page=settings'); exit; }
     $p1 = isset($_POST['email_on_designation_update']) ? 1 : 0;
     $p2 = isset($_POST['email_on_new_evaluation']) ? 1 : 0;
     $p3 = isset($_POST['show_result_details']) ? 1 : 0;
@@ -497,7 +581,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_preferences'])) 
     $up = $mysqli->prepare("INSERT INTO user_preferences (user_id,email_on_designation_update,email_on_new_evaluation,show_result_details,compact_dashboard) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE email_on_designation_update=VALUES(email_on_designation_update),email_on_new_evaluation=VALUES(email_on_new_evaluation),show_result_details=VALUES(show_result_details),compact_dashboard=VALUES(compact_dashboard)");
     $up->bind_param('iiiii', $user_id, $p1, $p2, $p3, $p4); $up->execute(); $up->close();
     $_SESSION['toast'] = 'Settings saved successfully.';
-    header('Location: ' . __FILE__ . '?page=profile'); exit;
+    header('Location: ' . __FILE__ . '?page=settings'); exit;
 }
 
 // ── ENSURE A UNIQUE CONSTRAINT BACKS THE DUPLICATE-EVAL CHECK ──
@@ -546,10 +630,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_peer'])) {
         header("Location: faculty_dashboard.php?page=peer&group=" . urlencode($submitted_group)); exit;
     }
 
-    if (!$pid) {
+    // Re-check the live schedule on the server. This blocks stale pages and
+    // direct POSTs before the configured opening time and at/after closing.
+    if (!fs_schedule_is_open($mysqli)) {
+        $_SESSION['toast_error'] = "Evaluation is currently closed. Please return at the scheduled opening time.";
+        header("Location: faculty_dashboard.php?page=peer&group=" . urlencode($submitted_group)); exit;
+    }
+
+    // Never trust the period id carried by the browser. Use the currently
+    // active period after the live schedule check.
+    $currentPeriod = null;
+    $currentPeriodResult = $mysqli->query("SELECT * FROM evaluation_periods WHERE is_active=1 LIMIT 1");
+    if ($currentPeriodResult) $currentPeriod = $currentPeriodResult->fetch_assoc();
+    if (!$currentPeriod) {
         $_SESSION['toast_error'] = "No evaluation period is currently open.";
         header("Location: faculty_dashboard.php?page=peer&group=" . urlencode($submitted_group)); exit;
     }
+    $pid = (int)$currentPeriod['id'];
 
     // Re-validate the target server-side. Dean/Principal targets are strictly
     // limited to the specific role requested, and the evaluator must
@@ -586,7 +683,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_peer'])) {
             FROM user_questions
             WHERE user_id=? AND target_type=? AND eval_type='general'
         ");
-        $validQStmt->bind_param("is", $tid, $submitted_group === 'principal' ? 'Principal' : 'Dean');
+        $targetType = $submitted_group === 'principal' ? 'Principal' : 'Dean';
+        $validQStmt->bind_param("is", $tid, $targetType);
         $validQStmt->execute();
         $validQRes = $validQStmt->get_result();
         $valid_question_ids = [];
@@ -817,7 +915,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_notifications_re
 // ── MY NOTIFICATIONS (bell) ──────────────────────────────────
 $my_notifications = [];
 $unread_count     = 0;
-$nq = $mysqli->prepare("SELECT type, message, is_read, created_at FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 15");
+$nq = $mysqli->prepare("SELECT id, type, message, is_read, created_at FROM notifications WHERE user_id=? ORDER BY created_at DESC, id DESC LIMIT 15");
 $nq->bind_param("i", $user_id);
 $nq->execute();
 $nres = $nq->get_result();
@@ -843,13 +941,25 @@ $perf_color = $my_avg === null ? '#6b7280' : ($my_avg >= 4 ? '#4ade80' : ($my_av
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Faculty Dashboard — PBI</title>
+<script>
+// Prevent a flash of the wrong theme: if the saved preference is "dark" but the
+// page markup below defaults to class="light-theme", hide the page until the
+// real theme JS (further down) applies the correct class and reveals it.
+(function(){
+    try{
+        if (localStorage.getItem('pbi_theme') === 'dark') {
+            document.write('<style id="theme-fouc-guard">body{visibility:hidden}</style>');
+        }
+    }catch(e){}
+})();
+</script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
 :root{
     --dark:#0A192F; --mid:#172A45; --inner:#0F1F3D;
-    --accent:#2B6CB0; --hover:#4C78B8;
-    --teal:#0D9488; --teal-light:rgba(13,148,136,.15); --teal-hover:#14B8A6;
+    --accent:#2563EB; --hover:#1D4ED8;
+    --teal:#2563EB; --teal-light:rgba(37,99,235,.14); --teal-hover:#1D4ED8;
     --light:#E0E6F0; --muted:#A0B3C6;
     --danger:#F05454; --success:#22C55E;
     --border:rgba(255,255,255,0.08);
@@ -858,8 +968,8 @@ $perf_color = $my_avg === null ? '#6b7280' : ($my_avg >= 4 ? '#4ade80' : ($my_av
 }
 body.light-theme{
     --dark:#F3F6FB; --mid:#FFFFFF; --inner:#EEF2F8;
-    --accent:#2B6CB0; --hover:#1E4E82;
-    --teal:#0D9488; --teal-light:rgba(13,148,136,.10); --teal-hover:#0F766E;
+    --accent:#2563EB; --hover:#1D4ED8;
+    --teal:#2563EB; --teal-light:rgba(37,99,235,.10); --teal-hover:#1D4ED8;
     --light:#16263B; --muted:#5B7186;
     --danger:#DC2626; --success:#16A34A;
     --border:rgba(15,31,61,0.10);
@@ -889,6 +999,7 @@ body.light-theme .eval-name,
 body.light-theme .q-text-new,
 body.light-theme .profile-name,
 body.light-theme .notif-header-title,
+body.light-theme .eval-group-title,
 body.light-theme .photo-modal-title{color:var(--light);}
 body.light-theme .level-view-empty,
 body.light-theme .peer-select-hint.warn,
@@ -944,6 +1055,20 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .toast-success{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.28);color:#86efac;}
 .toast-error{background:rgba(240,84,84,.1);border:1px solid rgba(240,84,84,.28);color:#fca5a5;}
 @keyframes fadeUp{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.evaluation-schedule-card{background:#fff;border:1px solid rgba(30,82,144,.14);border-radius:16px;padding:22px 26px;margin:0 0 22px;box-shadow:0 5px 18px rgba(15,35,60,.035);}
+.schedule-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px;align-items:start;}
+.schedule-summary-item{min-width:0;}
+.schedule-label{display:block;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#E19A1D;margin-bottom:7px;}
+.schedule-summary-item strong{display:block;font-size:15px;line-height:1.25;color:#10243E;font-weight:700;white-space:normal;}
+.schedule-status{display:inline-flex;align-items:center;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid #F3B0B0;background:#FFF1F1;color:#B42318;}
+.schedule-status.open{border-color:#91E7B2;background:#E8FFF1;color:#168447;}
+.schedule-status.closed{border-color:#F3B0B0;background:#FFF1F1;color:#B42318;}
+.schedule-times{margin-top:19px;padding-top:16px;border-top:1px solid rgba(30,82,144,.10);}
+.schedule-message{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:13px;color:#5C7187;}
+.schedule-message i{color:#E19A1D;font-size:15px;margin-right:2px;}
+.schedule-message strong{color:#10243E;}
+@media(max-width:900px){.schedule-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:600px){.evaluation-schedule-card{padding:18px 20px;}.schedule-summary-grid{grid-template-columns:1fr 1fr;gap:16px;}.schedule-message{display:block;line-height:1.7;}.schedule-message i{margin-right:5px;}}
 .welcome-bar{background:linear-gradient(135deg, var(--mid) 0%, rgba(13,148,136,.12) 100%);border:1px solid rgba(13,148,136,.18);border-radius:var(--radius);padding:24px 28px;margin-bottom:22px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;}
 .welcome-text h2{font-family:'Rajdhani',sans-serif;font-size:22px;font-weight:700;color:#fff;margin-bottom:5px;letter-spacing:.3px;}
 .welcome-text p{font-size:13px;color:var(--muted);line-height:1.5;}
@@ -1114,10 +1239,16 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .no-period-warn{background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.18);border-radius:10px;padding:16px 20px;margin-bottom:18px;display:flex;gap:10px;align-items:center;font-size:13px;color:#fcd34d;}
 
 /* ── EVALUATION — STEP 1: DESIGNATION SELECT ── */
-.desig-select-chips{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:4px;}
-.desig-select-chip{display:flex;align-items:center;gap:8px;padding:14px 22px;border-radius:10px;border:2px solid var(--border);background:var(--inner);color:var(--light);font-size:14px;font-weight:700;text-decoration:none;transition:all .2s;}
-.desig-select-chip:hover{border-color:var(--teal);color:var(--teal-hover);background:rgba(13,148,136,.1);}
-.desig-select-chip .dsc-count{color:var(--muted);font-weight:600;margin-left:2px;}
+.eval-group-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:18px;margin-bottom:4px;}
+.eval-group-card{background:var(--inner);border:1px solid var(--border);border-radius:14px;padding:30px 20px;display:flex;flex-direction:column;align-items:center;text-align:center;text-decoration:none;transition:all .2s;}
+.eval-group-card:hover{border-color:var(--teal);transform:translateY(-3px);box-shadow:var(--shadow);}
+.eval-group-icon{width:58px;height:58px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:16px;}
+.eval-group-icon.blue{background:rgba(59,130,246,.14);color:#3B82F6;}
+.eval-group-icon.green{background:rgba(34,197,94,.14);color:#22C55E;}
+.eval-group-icon.purple{background:rgba(139,92,246,.14);color:#8B5CF6;}
+.eval-group-icon.gold{background:rgba(245,158,11,.14);color:#F59E0B;}
+.eval-group-title{font-family:'Rajdhani',sans-serif;font-size:17px;font-weight:700;color:#fff;margin-bottom:4px;}
+.eval-group-count{font-size:12.5px;color:var(--muted);}
 .peer-select-hint{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;margin-top:14px;}
 .peer-select-hint.warn{color:#fcd34d;}
 
@@ -1141,6 +1272,13 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .notif-meta{font-size:11px;color:var(--muted);}
 .notif-empty{text-align:center;padding:32px 16px;color:var(--muted);font-size:13px;}
 .notif-empty i{font-size:28px;display:block;margin-bottom:8px;opacity:.2;}
+.live-notif-toast{position:fixed;top:74px;right:28px;z-index:250;max-width:380px;display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:1px solid rgba(16,185,129,.35);border-radius:12px;background:var(--mid);box-shadow:0 16px 40px rgba(0,0,0,.25);color:var(--light);opacity:0;transform:translateY(-10px);pointer-events:none;transition:opacity .22s ease,transform .22s ease;}
+.live-notif-toast.show{opacity:1;transform:translateY(0);}
+.live-notif-toast-icon{width:30px;height:30px;flex:0 0 30px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(16,185,129,.12);color:#10b981;}
+.live-notif-toast strong{display:block;font-size:12px;color:#fff;margin-bottom:2px;}
+.live-notif-toast span{display:block;font-size:12px;line-height:1.4;color:var(--light);}
+@media (max-width:700px){.live-notif-toast{left:16px;right:16px;top:70px;max-width:none;}}
+
 
 /* ── SIDEBAR PROFILE DROPDOWN ── */
 .profile-dd-btn{width:100%;padding:9px 10px;border-radius:10px;border:none;background:none;color:var(--light);font-size:13.5px;font-weight:600;font-family:'DM Sans',sans-serif;cursor:pointer;display:flex;align-items:center;gap:12px;transition:background .18s;text-align:left;text-decoration:none;}
@@ -1176,7 +1314,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 
 @media(max-width:1024px){.stats-grid{grid-template-columns:repeat(2,1fr);}}
 @media(max-width:900px){.sidebar{transform:translateX(-100%);}.sidebar.open{transform:translateX(0);}.top-nav{left:0;}.main{margin-left:0;}.hamburger{display:block;}}
-@media(max-width:600px){.main{padding:16px;}.stats-grid{grid-template-columns:1fr 1fr;}.peer-grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr));}.desig-input-row{flex-direction:column;}.welcome-bar{padding:18px 20px;}.welcome-text h2{font-size:19px;}.desig-select-chips{flex-direction:column;}}
+@media(max-width:600px){.main{padding:16px;}.stats-grid{grid-template-columns:1fr 1fr;}.peer-grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr));}.desig-input-row{flex-direction:column;}.welcome-bar{padding:18px 20px;}.welcome-text h2{font-size:19px;}.eval-group-grid{grid-template-columns:1fr;}}
 
 /* STAFF-STYLE PROFILE / ROLE LAYOUT — Faculty theme */
 .profile-hero{background:linear-gradient(135deg,var(--mid) 0%,rgba(13,148,136,.18) 100%);border:1px solid rgba(13,148,136,.25);border-radius:16px;padding:28px;margin-bottom:22px;display:flex;align-items:center;justify-content:space-between;gap:22px;flex-wrap:wrap;}
@@ -1314,73 +1452,460 @@ body.light-theme .btn-save-photo{
     color:#FFFFFF;
 }
 
-    </style>
+    
+/* Core light surfaces — Faculty */
+body.light-theme,
+body.light-theme .main{background:#F3F6FB;color:#16263B;}
+body.light-theme .sidebar,
+body.light-theme .top-nav{background:#FFFFFF;}
+body.light-theme .nav-page-title,
+body.light-theme .sidebar-title,
+body.light-theme .welcome-text h2,
+body.light-theme .section-title,
+body.light-theme .stat-card-val,
+body.light-theme .peer-name,
+body.light-theme .eval-name{color:#16263B;}
+
+/* ── Final Faculty white + blue role theme ───────────────────────────── */
+body.light-theme{
+    --accent:#2563EB;
+    --hover:#1D4ED8;
+    --teal:#2563EB;
+    --teal-light:rgba(37,99,235,.10);
+    --teal-hover:#1D4ED8;
+    --dark:#F3F6FB;
+    --mid:#FFFFFF;
+    --inner:#F8FAFD;
+    --light:#16263B;
+    --muted:#52677A;
+    --border:rgba(15,31,61,.10);
+    --shadow:0 6px 22px rgba(15,31,61,.055);
+}
+body.light-theme .nav-section-label{color:#1D4ED8;text-shadow:none;}
+body.light-theme .nav-link{color:#52677A;}
+body.light-theme .nav-link:hover{background:rgba(37,99,235,.055);color:#16263B;}
+body.light-theme .nav-link.active{background:rgba(37,99,235,.10);color:#1D4ED8;border-left:3px solid #2563EB;padding-left:9px;}
+body.light-theme .nav-link.active i{color:#2563EB;}
+body.light-theme .nav-badge{background:#2563EB;color:#fff;}
+body.light-theme .period-badge{background:rgba(37,99,235,.08);border-color:rgba(37,99,235,.20);color:#1D4ED8;}
+body.light-theme .sidebar-sub{color:#1D4ED8;}
+body.light-theme .brand-avatar{border-color:#2563EB;box-shadow:0 0 10px rgba(37,99,235,.16);background:#EEF2F8;}
+body.light-theme .brand-avatar .brand-initials{color:#1D4ED8;}
+body.light-theme .welcome-bar{background:linear-gradient(135deg,#FFFFFF 0%,rgba(37,99,235,.055) 100%);border-color:rgba(37,99,235,.16);}
+body.light-theme .welcome-text p strong{color:#2563EB;}
+body.light-theme .score-chip{background:rgba(37,99,235,.07);border-color:rgba(37,99,235,.18);}
+body.light-theme .score-chip .sc-val{color:#1D4ED8;}
+body.light-theme .stat-card-val.teal{color:#1D4ED8;}
+body.light-theme .section-title i{color:#2563EB !important;}
+body.light-theme .btn-view-details{background:rgba(37,99,235,.07);border-color:rgba(37,99,235,.20);color:#1D4ED8;}
+body.light-theme .btn-view-all-evals{background:rgba(37,99,235,.07);border-color:rgba(37,99,235,.18);color:#1D4ED8;}
+body.light-theme .btn-view-all-evals:hover{background:rgba(37,99,235,.12);}
+body.light-theme .profile-hero{background:linear-gradient(135deg,#FFFFFF 0%,rgba(37,99,235,.06) 100%);border-color:rgba(37,99,235,.18);}
+body.light-theme .profile-hero-avatar{border-color:#2563EB;box-shadow:0 0 18px rgba(37,99,235,.20);color:#1D4ED8;}
+body.light-theme .profile-hero-desig,
+body.light-theme .profile-desig-badge{color:#1D4ED8;}
+body.light-theme .profile-desig-badge{background:rgba(37,99,235,.08);border-color:rgba(37,99,235,.20);}
+body.light-theme .suggestion-chip:hover{background:rgba(37,99,235,.08);border-color:rgba(37,99,235,.24);color:#1D4ED8;}
+body.light-theme .suggestion-chip.is-current{background:rgba(37,99,235,.11);border-color:#2563EB;color:#1D4ED8;}
+body.light-theme .peer-card:hover{border-color:rgba(37,99,235,.24);box-shadow:0 8px 24px rgba(37,99,235,.08);}
+body.light-theme .eval-group-card:hover{border-color:#2563EB;box-shadow:0 8px 24px rgba(37,99,235,.08);}
+body.light-theme .level-view-wrap.flash{border-color:#2563EB;box-shadow:0 0 0 3px rgba(37,99,235,.14);}
+body.light-theme .level-view-pill{background:rgba(37,99,235,.08);color:#1D4ED8;border-color:rgba(37,99,235,.20);}
+body.light-theme .photo-upload-circle{border-color:rgba(37,99,235,.35);}
+body.light-theme .photo-upload-btn{background:rgba(37,99,235,.07);border-color:rgba(37,99,235,.22);color:#1D4ED8;}
+body.light-theme .btn-save-photo,
+body.light-theme .btn-submit-new,
+body.light-theme .btn-update-desig,
+body.light-theme .btn-eval-peer,
+body.light-theme .btn-proceed-peer{background:#2563EB;}
+body.light-theme .eval-form-rating label:hover{border-color:#2563EB;color:#1D4ED8;background:rgba(37,99,235,.07);}
+body.light-theme .eval-form-rating input:checked + label{background:#2563EB;border-color:#2563EB;color:#fff;}
+body.light-theme .q-category-header{color:#1D4ED8;border-bottom-color:rgba(37,99,235,.18);}
+body.light-theme .legend-pill{background:rgba(37,99,235,.07);border-color:rgba(37,99,235,.18);color:#1D4ED8;}
+body.light-theme .scale-legend-num{background:#2563EB;}
+body.light-theme .notif-item.unread{background:rgba(37,99,235,.05);}
+body.light-theme .profile-dd-btn:hover .profile-dd-icon{background:rgba(37,99,235,.12);color:#1D4ED8;}
+body.light-theme .settings-card-head .sicon{background:rgba(37,99,235,.09);color:#1D4ED8;}
+body.light-theme .compact-eval-qno{color:#1D4ED8;}
+body.light-theme .compact-eval-rating button:hover{border-color:#2563EB;background:rgba(37,99,235,.07);}
+body.light-theme .compact-eval-rating button.selected{background:#2563EB;border-color:#2563EB;}
+
+
+/* LIGHT CONTENT + DARK ROLE SIDEBAR */
+body.light-theme .sidebar{
+    background:#172A45 !important;
+    border-right-color:rgba(255,255,255,.08) !important;
+}
+body.light-theme .sidebar-brand{
+    background:#172A45 !important;
+    border-bottom-color:rgba(255,255,255,.08) !important;
+}
+body.light-theme .sidebar-brand:hover{
+    background:#1B3455 !important;
+}
+body.light-theme .sidebar-title{
+    color:#FFFFFF !important;
+}
+body.light-theme .sidebar-sub{
+    color:#60A5FA !important;
+}
+body.light-theme .sidebar-caret{
+    color:#A0B3C6 !important;
+}
+body.light-theme .brand-avatar{
+    border-color:#2563EB !important;
+    background:#0F1F3D !important;
+    box-shadow:0 0 12px rgba(37,99,235,.28) !important;
+}
+body.light-theme .brand-avatar .brand-initials{
+    color:#60A5FA !important;
+}
+body.light-theme .sidebar-profile-dropdown{
+    background:#0F1F3D !important;
+    border-color:rgba(255,255,255,.08) !important;
+}
+body.light-theme .profile-dd-btn{
+    color:#E0E6F0 !important;
+}
+body.light-theme .profile-dd-btn:hover{
+    background:rgba(255,255,255,.06) !important;
+}
+body.light-theme .profile-dd-btn i{
+    color:#A0B3C6 !important;
+}
+body.light-theme .dd-appearance-val{
+    background:rgba(255,255,255,.08) !important;
+    color:#A0B3C6 !important;
+}
+body.light-theme .nav-section-label{
+    color:#93C5FD !important;
+    text-shadow:0 1px 8px rgba(37,99,235,.12) !important;
+}
+body.light-theme .nav-link{
+    color:#A0B3C6 !important;
+}
+body.light-theme .nav-link:hover{
+    background:rgba(255,255,255,.06) !important;
+    color:#FFFFFF !important;
+}
+body.light-theme .nav-link.active{
+    background:rgba(37,99,235,.18) !important;
+    color:#FFFFFF !important;
+    border-left:3px solid #2563EB !important;
+}
+body.light-theme .nav-link.active i{
+    color:#3B82F6 !important;
+}
+body.light-theme .nav-link .badge{
+    background:#2563EB !important;
+    color:#FFFFFF !important;
+}
+body.light-theme .nav-icon-blue{color:#3B82F6 !important;}
+body.light-theme .nav-icon-purple{color:#8B5CF6 !important;}
+body.light-theme .nav-icon-green{color:#22C55E !important;}
+body.light-theme .nav-icon-orange{color:#F97316 !important;}
+body.light-theme .profile-dd-icon.dd-icon-blue{color:#60A5FA !important;}
+body.light-theme .profile-dd-icon.dd-icon-amber{color:#FBBF24 !important;}
+body.light-theme .profile-dd-icon.dd-icon-purple{color:#A78BFA !important;}
+body.light-theme .sidebar-footer{
+    border-top-color:rgba(255,255,255,.08) !important;
+    background:#172A45 !important;
+}
+body.light-theme .btn-logout-side{
+    background:rgba(240,84,84,.08) !important;
+    border-color:rgba(240,84,84,.30) !important;
+    color:#FCA5A5 !important;
+}
+body.light-theme .btn-logout-side:hover{
+    background:rgba(240,84,84,.16) !important;
+}
+
+/* ================================================================
+   REFERENCE-STYLE LIGHT DASHBOARD
+   Inspired by the Student Portal visual language: dark sidebar,
+   airy light workspace, crisp white cards, soft borders/shadows,
+   role accent used consistently throughout.
+   ================================================================ */
+body.light-theme{
+    --light:#13263F;
+    --muted:#536A82;
+    --dark:#F4F7FB;
+    --mid:#FFFFFF;
+    --inner:#F7F9FC;
+    --border:#DFE6EE;
+    --accent:#2563EB;
+    --hover:#1D4ED8;
+    --teal:#2563EB;
+    --teal-hover:#1D4ED8;
+    --teal-light:rgba(37,99,235,.10);
+    --shadow:0 8px 26px rgba(18,43,73,.06);
+}
+body.light-theme .sidebar{
+    background:#081B2E !important;
+    border-right:1px solid rgba(255,255,255,.08) !important;
+}
+body.light-theme .sidebar-brand,
+body.light-theme .sidebar-footer{background:#081B2E !important;}
+body.light-theme .sidebar-brand{border-bottom-color:rgba(255,255,255,.08) !important;}
+body.light-theme .sidebar-title{color:#fff !important;}
+body.light-theme .sidebar-sub{color:#60A5FA !important;}
+body.light-theme .nav-section-label{color:#93C5FD !important;}
+body.light-theme .nav-link{color:#B6C5D6 !important;}
+body.light-theme .nav-link:hover{background:rgba(255,255,255,.06) !important;color:#fff !important;}
+body.light-theme .nav-link.active{background:rgba(37,99,235,.16) !important;color:#fff !important;border-left:3px solid #2563EB !important;}
+body.light-theme .nav-link.active i{color:#60A5FA !important;}
+body.light-theme .sidebar-caret{color:#AFC0D2 !important;}
+body.light-theme .brand-avatar{border-color:#2563EB !important;box-shadow:0 0 14px rgba(37,99,235,.25) !important;}
+body.light-theme .sidebar-profile-dropdown{background:#0E2944 !important;border-color:rgba(255,255,255,.08) !important;}
+body.light-theme .profile-dd-btn{color:#E6EDF5 !important;}
+body.light-theme .profile-dd-btn:hover{background:rgba(255,255,255,.06) !important;}
+body.light-theme .dd-appearance-val{background:rgba(255,255,255,.08) !important;color:#B6C5D6 !important;}
+body.light-theme .sidebar-footer{border-top-color:rgba(255,255,255,.08) !important;}
+body.light-theme .btn-logout-side{background:rgba(248,113,113,.08) !important;color:#FCA5A5 !important;border-color:rgba(248,113,113,.28) !important;}
+body.light-theme .btn-logout-side:hover{background:rgba(248,113,113,.15) !important;}
+body.light-theme .top-nav{background:#FFFFFF !important;border-bottom-color:#DEE6EF !important;box-shadow:0 2px 14px rgba(15,34,55,.04) !important;}
+body.light-theme .nav-page-title{color:#13263F !important;}
+body.light-theme .period-badge{background:rgba(37,99,235,.07) !important;border-color:rgba(37,99,235,.20) !important;color:#1D4ED8 !important;}
+body.light-theme .main{background:#F4F7FB !important;color:#13263F !important;padding:24px 28px 42px !important;}
+
+/* Dashboard shell */
+body.light-theme .dashboard-shell{
+    background:linear-gradient(180deg,#FFFFFF 0%,#F8FAFD 100%);
+    border:1px solid #E1E8F0;
+    border-radius:22px;
+    padding:22px 28px 180px;
+    box-shadow:0 10px 28px rgba(19,38,63,.045);
+    min-height:calc(100vh - 112px);
+}
+body.light-theme .evaluation-schedule-card{background:#FFFFFF;border-color:rgba(30,82,144,.13);box-shadow:0 5px 18px rgba(30,82,144,.04);}
+body.light-theme .schedule-summary-item strong{color:#10243E;}
+body.light-theme .dashboard-intro{margin:2px 2px 18px;}
+body.light-theme .dashboard-kicker{
+    color:#D97706;font-size:11px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;
+    display:flex;align-items:center;gap:7px;margin-bottom:5px;
+}
+body.light-theme .dashboard-intro h1{
+    margin:0;font-family:'Rajdhani',sans-serif;font-size:28px;line-height:1.05;font-weight:800;
+    letter-spacing:.2px;color:#10243E;
+}
+body.light-theme .dashboard-intro p{margin-top:7px;font-size:13px;color:#5C7187;}
+body.light-theme .dashboard-intro .status-pill{
+    display:inline-flex;align-items:center;gap:7px;margin-top:14px;padding:6px 12px;border-radius:20px;
+    background:#E8FFF1;border:1px solid #91E7B2;color:#168447;font-size:11.5px;font-weight:700;
+}
+
+body.light-theme .dashboard-intro .status-pill.closed{background:#FFF1F1;border-color:#F3B0B0;color:#B42318;}
+
+/* Welcome card */
+body.light-theme .welcome-bar{
+    background:linear-gradient(135deg,#FFFFFF 0%,#F5F9FF 100%) !important;
+    border:1px solid rgba(37,99,235,.20) !important;
+    border-radius:17px !important;padding:24px 28px !important;margin-bottom:20px !important;
+    box-shadow:0 5px 18px rgba(37,99,235,.05);
+}
+body.light-theme .welcome-text h2{color:#11263F !important;font-size:23px !important;}
+body.light-theme .welcome-text p{color:#5E7388 !important;}
+body.light-theme .welcome-text p strong{color:#2563EB !important;}
+body.light-theme .score-chip{
+    background:#F0F5FF !important;border:1px solid #CADBFF !important;border-radius:15px !important;
+    max-width:340px;min-width:230px;padding:16px 26px !important;
+}
+body.light-theme .score-chip .sc-val{color:#2563EB !important;font-size:39px !important;}
+body.light-theme .score-chip .sc-lbl{color:#66798D !important;}
+
+/* Statistic cards */
+body.light-theme .stats-grid{gap:14px !important;margin-bottom:20px !important;}
+body.light-theme .stat-card{
+    position:relative;background:#FFFFFF !important;border:1px solid #E0E7EF !important;
+    border-radius:15px !important;padding:18px 20px 20px !important;box-shadow:0 6px 18px rgba(20,42,67,.045) !important;
+    overflow:hidden;
+}
+body.light-theme .stat-card::before{content:'';position:absolute;left:0;right:0;top:0;height:3px;background:#2563EB;}
+body.light-theme .stat-card:nth-child(2)::before{background:#10B981;}
+body.light-theme .stat-card:nth-child(3)::before{background:#F59E0B;}
+body.light-theme .stat-card:nth-child(4)::before{background:#3B82F6;}
+body.light-theme .stat-card-icon{
+    width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+    margin-bottom:12px;font-size:15px;
+}
+body.light-theme .stat-card-icon.blue{background:#E6EEFF;color:#2563EB;}
+body.light-theme .stat-card-icon.green{background:#E5F9ED;color:#10B981;}
+body.light-theme .stat-card-icon.gold{background:#FFF4D8;color:#D88900;}
+body.light-theme .stat-card-icon.sky{background:#E5F0FF;color:#3478E5;}
+body.light-theme .stat-card-lbl{color:#5E7388 !important;font-size:10.5px !important;letter-spacing:.9px !important;}
+body.light-theme .stat-card-val{color:#12263F !important;font-size:28px !important;}
+body.light-theme .stat-card-val.teal{color:#2563EB !important;}
+body.light-theme .stat-card-val.gold{color:#D88900 !important;}
+
+/* Section cards and expandable evaluation row */
+body.light-theme .section-card{
+    background:#FFFFFF !important;border:1px solid #E1E8F0 !important;border-radius:16px !important;
+    padding:20px 22px !important;margin-bottom:18px !important;box-shadow:0 5px 18px rgba(20,42,67,.04) !important;
+}
+body.light-theme .section-title{color:#13263F !important;font-size:17px !important;}
+body.light-theme .section-title i{color:#2563EB !important;}
+body.light-theme .btn-view-all-evals{
+    background:#F0F5FF !important;border-color:#CFDDFF !important;color:#2563EB !important;
+    border-radius:10px !important;padding:12px 15px !important;
+}
+body.light-theme .btn-view-all-evals:hover{background:#E7EEFF !important;}
+body.light-theme .eval-item{background:#F8FAFD !important;border:1px solid #E1E8F0 !important;}
+body.light-theme .eval-item-left .anon{color:#20364F !important;}
+body.light-theme .eval-item-left .meta{color:#6E8093 !important;}
+body.light-theme .btn-view-details{background:#EFF4FF !important;border-color:#CEDBFF !important;color:#2563EB !important;}
+body.light-theme .btn-view-details:hover{background:#E4ECFF !important;}
+body.light-theme .empty-state{color:#66798D !important;}
+
+/* Profile / role page visual language */
+body.light-theme .profile-hero,
+body.light-theme .role-card,
+body.light-theme .students-grid > *,
+body.light-theme .peer-card,
+body.light-theme .ea-table-card,
+body.light-theme .section-card{
+    box-shadow:0 5px 18px rgba(20,42,67,.035);
+}
+body.light-theme .profile-hero{background:linear-gradient(135deg,#FFFFFF 0%,#F1F7FF 100%) !important;border-color:#CFE0FF !important;}
+body.light-theme .profile-hero-name{color:#11263F !important;}
+body.light-theme .profile-hero-desig{background:#EEF4FF !important;border-color:#CBDCFF !important;color:#2563EB !important;}
+body.light-theme .role-card{background:#FFFFFF !important;border-color:#CFDAFF !important;}
+body.light-theme .role-card-title{color:#13263F !important;}
+body.light-theme .role-card::before{background:linear-gradient(90deg,#2563EB,#60A5FA) !important;}
+body.light-theme .role-chip{background:#F7F9FC !important;border-color:#DDE5EE !important;color:#51677F !important;}
+body.light-theme .role-chip:hover,.role-chip.is-current{background:#EEF4FF !important;border-color:#AFC8FF !important;color:#2563EB !important;}
+body.light-theme .level-view-wrap{background:#F8FAFD !important;border-color:#DDE6EF !important;}
+body.light-theme .level-view-pill{background:#E9F1FF !important;color:#2563EB !important;border-color:#C5D8FF !important;}
+
+@media(max-width:900px){
+    body.light-theme .dashboard-shell{padding:18px 16px 130px;border-radius:16px;}
+    body.light-theme .main{padding:18px 14px 28px !important;}
+}
+
+/* Settings is now a first-class sidebar destination. */
+.settings-page-head{
+    display:flex;align-items:flex-start;justify-content:space-between;gap:20px;
+    margin:0 0 18px;padding:0 2px;
+}
+.settings-page-kicker{
+    display:flex;align-items:center;gap:7px;color:var(--teal);
+    font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;
+    margin-bottom:5px;
+}
+.settings-page-title{
+    margin:0;color:var(--light);font-family:'Rajdhani',sans-serif;
+    font-size:28px;font-weight:700;
+}
+.settings-page-subtitle{margin:3px 0 0;color:var(--muted);font-size:12.5px;line-height:1.5;}
+.settings-appearance-current{
+    display:inline-flex;align-items:center;gap:7px;padding:8px 11px;border-radius:999px;
+    background:rgba(37,99,235,.08);border:1px solid rgba(37,99,235,.18);
+    color:#1D4ED8;font-size:11px;font-weight:700;white-space:nowrap;
+}
+.appearance-choice-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:2px;}
+.appearance-choice{
+    border:1px solid var(--border);background:var(--mid);color:var(--light);
+    border-radius:10px;padding:10px 14px;font:700 12px 'DM Sans',sans-serif;cursor:pointer;
+    display:inline-flex;align-items:center;gap:8px;transition:.18s ease;
+}
+.appearance-choice:hover{border-color:var(--teal);color:var(--teal-hover);}
+.appearance-choice.active{background:rgba(37,99,235,.10);border-color:rgba(37,99,235,.28);color:#1D4ED8;}
+body.light-theme .settings-card{background:#FFFFFF;border-color:rgba(15,31,61,.10);box-shadow:0 5px 18px rgba(30,82,144,.06);}
+body.light-theme .settings-card-head h3{color:#16263B;}
+body.light-theme .settings-card-head p{color:#5B7186;}
+body.light-theme .setting-row{border-top-color:rgba(15,31,61,.08);}
+body.light-theme .setting-row strong{color:#16263B;}
+body.light-theme .setting-row span{color:#5B7186;}
+body.light-theme .account-fact{background:#F8FAFC;border-color:rgba(15,31,61,.08);}
+body.light-theme .account-fact label{color:#5B7186;}
+body.light-theme .account-fact b{color:#16263B;}
+body.light-theme .settings-page-title{color:#16263B;}
+body.light-theme .settings-page-subtitle{color:#5B7186;}
+body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-color:#D8E3EF;}
+
+/* Unified Student-style sidebar structure for Faculty; existing role accent retained. */
+:root { --sidebar-w:248px; --role-accent:#2563EB; --role-accent-light:#60A5FA; }
+.sidebar { width:var(--sidebar-w) !important; background:#0A192F !important; border-right:1px solid #172A45 !important; box-shadow:6px 0 20px rgba(0,0,0,.16); }
+.sidebar-brand.portal-brand { min-height:68px; padding:14px 17px !important; border-bottom:1px solid rgba(255,255,255,.08) !important; display:flex; align-items:center; gap:11px; cursor:default; }
+.portal-brand-logo { width:38px; height:38px; flex:0 0 38px; border-radius:11px; display:flex; align-items:center; justify-content:center; overflow:hidden; background:#0F1F3D; border:1px solid #2563EB; box-shadow:0 0 14px rgba(37,99,235,.18); }
+.portal-brand-logo img { width:100%; height:100%; object-fit:cover; display:block; }
+.portal-brand-copy { min-width:0; display:flex; flex-direction:column; line-height:1.2; }
+.portal-brand-copy strong { font-family:'Rajdhani',sans-serif; font-size:15px; font-weight:700; color:#F8FAFC; letter-spacing:.25px; }
+.portal-brand-copy span { margin-top:3px; font-size:10px; color:#8FA6BF; font-weight:600; letter-spacing:.15px; white-space:nowrap; }
+.portal-sidebar-profile { padding:18px 16px 17px; text-align:center; border-bottom:1px solid rgba(255,255,255,.08); }
+.portal-profile-avatar-wrap { margin:0 auto 11px; display:flex; justify-content:center; }
+.portal-profile-avatar { width:64px; height:64px; border-radius:50%; object-fit:cover; border:2px solid #2563EB; background:#0F1F3D; box-shadow:0 0 15px rgba(37,99,235,.18); display:flex; align-items:center; justify-content:center; }
+.portal-profile-fallback { color:#60A5FA; font-family:'Rajdhani',sans-serif; font-size:17px; font-weight:700; }
+.portal-profile-name { color:#F8FAFC; font-size:13px; line-height:1.35; font-weight:700; word-break:break-word; }
+.portal-profile-role { margin-top:3px; color:#8FA6BF; font-size:10px; text-transform:uppercase; letter-spacing:.7px; font-weight:700; line-height:1.35; }
+.portal-sidebar-nav { flex:1; padding:16px 10px !important; overflow-y:auto; }
+.portal-sidebar-nav .nav-section-label { padding:0 8px !important; margin:0 0 7px !important; font-size:9.5px !important; font-weight:800 !important; letter-spacing:1.25px !important; text-align:left !important; color:#8FA6BF !important; text-shadow:none !important; }
+.portal-sidebar-nav .nav-section-label.sidebar-section-secondary { margin-top:17px !important; }
+.portal-sidebar-nav .nav-link { min-height:40px; margin:2px 2px !important; padding:9px 11px !important; border-left:0 !important; border-radius:8px !important; gap:10px; color:#CBD8E8 !important; font-size:13px !important; font-weight:500 !important; line-height:1.2; }
+.portal-sidebar-nav .nav-link i { width:18px; font-size:14px; color:#8FA6BF !important; text-align:center; flex:0 0 18px; }
+.portal-sidebar-nav .nav-link:hover { background:rgba(255,255,255,.07) !important; color:#FFFFFF !important; }
+.portal-sidebar-nav .nav-link:hover i { color:#60A5FA !important; }
+.portal-sidebar-nav .nav-link.active { background:linear-gradient(90deg,rgba(37,99,235,.18),rgba(255,255,255,.025)) !important; color:#FFFFFF !important; font-weight:700 !important; box-shadow:inset 3px 0 0 #60A5FA; }
+.portal-sidebar-nav .nav-link.active i { color:#60A5FA !important; }
+.portal-sidebar-nav .side-nav-badge, .portal-sidebar-nav .nav-badge { margin-left:auto; background:rgba(37,99,235,.22) !important; color:#BFDBFE !important; border-radius:20px; padding:2px 7px; font-size:9px; font-weight:800; }
+.sidebar-footer { padding:13px 14px 15px !important; border-top:1px solid rgba(255,255,255,.08) !important; }
+.btn-logout-side { padding:9px 11px !important; border-radius:8px !important; }
+@media(max-width:900px) { .sidebar { width:248px !important; transform:translateX(-100%); transition:transform .22s ease; } .sidebar.open { transform:translateX(0); box-shadow:12px 0 34px rgba(0,0,0,.45); } .top-nav { left:0 !important; } .main { margin-left:0 !important; } }
+@media(max-width:520px) { .portal-sidebar-nav { padding-left:9px !important; padding-right:9px !important; } }
+
+</style>
 </head>
 <body class="light-theme">
 
 <aside class="sidebar" id="sidebar">
-    <div class="sidebar-brand" id="sidebarProfile" onclick="toggleSidebarDD(event)">
-        <div class="brand-avatar">
-            <?php if ($faculty_photo): ?>
-            <img src="<?= UPLOAD_URL . htmlspecialchars($faculty_photo) ?>" alt=""/>
-            <?php else: ?>
-            <span class="brand-initials"><?= htmlspecialchars($initials) ?></span>
-            <?php endif; ?>
+    <div class="sidebar-brand portal-brand">
+        <div class="portal-brand-logo"><img src="../image/pbi_logo" alt="PBI" onerror="this.style.display='none'"/></div>
+        <div class="portal-brand-copy">
+            <strong>Faculty Portal</strong>
+            <span>Evaluation Workspace</span>
         </div>
-        <div style="overflow:hidden;flex:1;">
-            <div class="sidebar-title"><?= htmlspecialchars($full_name) ?></div>
-            <div class="sidebar-sub"><?= htmlspecialchars($designation) ?></div>
-        </div>
-        <i class="fa-solid fa-chevron-down sidebar-caret" id="sidebarCaret"></i>
-    </div>
-    <div class="sidebar-profile-dropdown" id="sidebarProfileDropdown">
-        <a href="faculty_dashboard.php?page=profile" class="profile-dd-btn">
-            <span class="profile-dd-icon dd-icon-blue"><i class="fa-solid fa-gear"></i></span>
-            Settings
-        </a>
-        <a href="change_password.php" class="profile-dd-btn">
-            <span class="profile-dd-icon dd-icon-amber"><i class="fa-solid fa-lock"></i></span>
-            Change Password
-        </a>
-        <button type="button" class="profile-dd-btn" id="appearanceBtn" onclick="toggleAppearance(event)">
-            <span class="profile-dd-icon dd-icon-purple"><i class="fa-solid fa-palette"></i></span>
-            Appearance
-            <span class="dd-appearance-val" id="appearanceVal">Light</span>
-        </button>
-        <div class="profile-dd-divider"></div>
-        <a href="../logout.php" class="profile-dd-btn logout"
-           onclick="return confirm('Log out of your faculty session?')">
-            <span class="profile-dd-icon"><i class="fa-solid fa-power-off"></i></span>
-            Sign Out
-        </a>
     </div>
 
-    <nav class="sidebar-nav">
+    <div class="portal-sidebar-profile">
+        <div class="portal-profile-avatar-wrap">
+            <?php if ($faculty_photo): ?>
+            <img class="portal-profile-avatar" src="<?= UPLOAD_URL . htmlspecialchars($faculty_photo) ?>" alt=""/>
+            <?php else: ?>
+            <span class="portal-profile-avatar portal-profile-fallback"><?= htmlspecialchars($initials) ?></span>
+            <?php endif; ?>
+        </div>
+        <div class="portal-profile-name"><?= htmlspecialchars($full_name) ?></div>
+        <div class="portal-profile-role">FACULTY<?= $designation ? ' · ' . htmlspecialchars($designation) : '' ?></div>
+    </div>
+
+    <nav class="sidebar-nav portal-sidebar-nav">
         <div class="nav-section-label">Main</div>
         <a href="faculty_dashboard.php?page=dashboard" class="nav-link <?= $page==='dashboard'?'active':'' ?>">
-            <i class="fa-solid fa-house nav-icon-blue"></i> Dashboard
+            <i class="fa-solid fa-house"></i><span>Dashboard</span>
         </a>
         <a href="faculty_dashboard.php?page=profile" class="nav-link <?= $page==='profile'?'active':'' ?>">
-            <i class="fa-solid fa-id-badge nav-icon-purple"></i> Role &amp; Designation
+            <i class="fa-solid fa-id-badge"></i><span>Role &amp; Designation</span>
         </a>
 
-        <div class="nav-section-label">Evaluation</div>
+        <div class="nav-section-label sidebar-section-secondary">Evaluation</div>
         <a href="faculty_dashboard.php?page=my_results" class="nav-link <?= $page==='my_results'?'active':'' ?>">
-            <i class="fa-solid fa-chart-bar nav-icon-green"></i> My Results
+            <i class="fa-solid fa-chart-bar"></i><span>My Results</span>
         </a>
         <a href="faculty_dashboard.php?page=peer" class="nav-link <?= in_array($page,['peer','peer_eval'])?'active':'' ?>">
-            <i class="fa-solid fa-users-viewfinder nav-icon-orange"></i> Evaluation
+            <i class="fa-solid fa-users-viewfinder"></i><span>My Evaluation</span>
             <?php if ($page==='peer' && (!empty($peers_all) || !empty($school_heads))): ?>
-            <span class="nav-badge"><?= (count($peers_all) - count($done_peers)) + (count($school_heads) - count($done_school_heads)) ?></span>
+            <span class="side-nav-badge"><?= (count($peers_all) - count($done_peers)) + (count($school_heads) - count($done_school_heads)) ?></span>
             <?php endif; ?>
         </a>
 
+        <div class="nav-section-label sidebar-section-secondary">Support</div>
+        <a href="faculty_dashboard.php?page=settings" class="nav-link <?= $page==='settings'?'active':'' ?>">
+            <i class="fa-solid fa-gear"></i><span>Settings</span>
+        </a>
     </nav>
 
     <div class="sidebar-footer">
-        <a href="../logout.php" class="btn-logout-side"
-           onclick="return confirm('Log out of your faculty session?')">
-            <i class="fa-solid fa-power-off"></i> Log Out
+        <a href="../logout.php" class="btn-logout-side" onclick="return confirm('Log out of your faculty session?')">
+            <i class="fa-solid fa-power-off"></i><span>Log Out</span>
         </a>
     </div>
 </aside>
@@ -1437,7 +1962,7 @@ body.light-theme .btn-save-photo{
             <i class="fa-solid fa-bars"></i>
         </button>
         <div class="nav-page-title">
-            <?php $titles=['dashboard'=>'Dashboard','profile'=>'Role & Designation','my_results'=>'My Results','peer'=>'Evaluation','peer_eval'=>'Evaluate'];
+            <?php $titles=['dashboard'=>'Dashboard','profile'=>'Role & Designation','my_results'=>'My Results','peer'=>'Evaluation','peer_eval'=>'Evaluate','settings'=>'Settings'];
             echo $titles[$page] ?? 'Dashboard'; ?>
         </div>
     </div>
@@ -1473,7 +1998,7 @@ body.light-theme .btn-save-photo{
                         $n_icon  = $is_eval ? 'fa-star' : 'fa-id-badge';
                         $n_color = $is_eval ? '#facc15' : '#2B6CB0';
                     ?>
-                    <div class="notif-item <?= empty($n['is_read'])?'unread':'' ?>">
+                    <div class="notif-item <?= empty($n['is_read'])?'unread':'' ?>" data-notification-id="<?= (int)$n['id'] ?>">
                         <div class="notif-icon" style="color:<?= $n_color ?>;background:<?= $n_color ?>22;"><i class="fa-solid <?= $n_icon ?>"></i></div>
                         <div style="flex:1;min-width:0;">
                             <div class="notif-text"><?= htmlspecialchars($n['message']) ?></div>
@@ -1498,6 +2023,42 @@ body.light-theme .btn-save-photo{
 
 <?php if ($page === 'dashboard'): ?>
 
+<div class="dashboard-shell">
+    <div class="dashboard-intro">
+        <div class="dashboard-kicker"><i class="fa-solid fa-chart-line"></i> Dashboard Overview</div>
+        <h1>Faculty Evaluation Workspace</h1>
+        <p>Review your evaluation results and manage your professional evaluation activities in one place.</p>
+        <?php if ($period): ?>
+        <span class="status-pill <?= $evaluation_open ? '' : 'closed' ?>">
+                <i class="fa-solid <?= $evaluation_open ? 'fa-lock-open' : 'fa-lock' ?>"></i>
+                <?= $evaluation_open ? 'Evaluation period is currently open' : 'Evaluation is currently closed — waiting for the scheduled opening' ?>
+            </span>
+        <?php endif; ?>
+    </div>
+
+    <div class="evaluation-schedule-card">
+        <div class="schedule-summary-grid">
+            <div class="schedule-summary-item">
+                <span class="schedule-label">Academic Year</span>
+                <strong><?= htmlspecialchars($dashboard_acad_year ?: '—') ?></strong>
+            </div>
+            <div class="schedule-summary-item">
+                <span class="schedule-label">Evaluation Opens</span>
+                <strong><?= htmlspecialchars($dashboard_open_display) ?></strong>
+            </div>
+            <div class="schedule-summary-item">
+                <span class="schedule-label">Evaluation Closes</span>
+                <strong><?= htmlspecialchars($dashboard_close_display) ?></strong>
+            </div>
+            <div class="schedule-summary-item schedule-status-item">
+                <span class="schedule-label">Status</span>
+                <span class="schedule-status <?= htmlspecialchars($dashboard_status_class) ?>">
+                    <?= htmlspecialchars($dashboard_status) ?>
+                </span>
+            </div>
+        </div>
+    </div>
+
 <div class="welcome-bar">
     <div class="welcome-text">
         <h2>Welcome, <?= htmlspecialchars($first_name) ?>!</h2>
@@ -1515,18 +2076,22 @@ body.light-theme .btn-save-photo{
 
 <div class="stats-grid">
     <div class="stat-card">
+        <div class="stat-card-icon blue"><i class="fa-solid fa-users"></i></div>
         <div class="stat-card-lbl">Evaluations Received</div>
         <div class="stat-card-val teal"><?= $my_total ?></div>
     </div>
     <div class="stat-card">
+        <div class="stat-card-icon green"><i class="fa-solid fa-circle-check"></i></div>
         <div class="stat-card-lbl">Overall Average</div>
         <div class="stat-card-val gold"><?= $my_avg !== null ? number_format($my_avg, 2) . ' / 5' : '—' ?></div>
     </div>
     <div class="stat-card">
+        <div class="stat-card-icon gold"><i class="fa-solid fa-award"></i></div>
         <div class="stat-card-lbl">Performance Level</div>
         <div class="stat-card-val sm" style="color:<?= $perf_color ?>"><?= $perf_label ?></div>
     </div>
     <div class="stat-card">
+        <div class="stat-card-icon sky"><i class="fa-solid fa-calendar"></i></div>
         <div class="stat-card-lbl">Current Period</div>
         <div class="stat-card-val sm" style="color:var(--teal-hover)">
             <?= $period ? htmlspecialchars($period['semester'] ?? '—') : 'None' ?>
@@ -1588,6 +2153,8 @@ body.light-theme .btn-save-photo{
         </div>
     <?php endforeach; endif; ?>
     </div>
+</div>
+
 </div>
 
 <?php elseif ($page === 'profile'): ?>
@@ -1667,8 +2234,35 @@ body.light-theme .btn-save-photo{
         </div>
     </div>
 
-    <div class="settings-grid">
-        <div class="settings-card full">
+    <?php elseif ($page === 'settings'): ?>
+
+<div class="settings-page-head">
+    <div>
+        <div class="settings-page-kicker"><i class="fa-solid fa-gear"></i> Personal Settings</div>
+        <h2 class="settings-page-title">Settings</h2>
+        <p class="settings-page-subtitle">Manage your account preferences, appearance, notifications, security, and evaluation access.</p>
+    </div>
+    <div class="settings-appearance-current"><i class="fa-solid fa-circle-half-stroke"></i> Current: <span id="appearanceVal">Light</span></div>
+</div>
+
+<div class="settings-grid">
+<div class="settings-card">
+            <div class="settings-card-head">
+                <div class="sicon"><i class="fa-solid fa-palette"></i></div>
+                <div><h3>Appearance</h3><p>Choose how the portal is displayed on this device.</p></div>
+            </div>
+            <div class="setting-row" style="border-top:0;padding-top:0;align-items:flex-start;">
+                <div style="padding-top:2px;">
+                    <strong>Theme</strong>
+                    <span>Light is the default portal appearance.</span>
+                </div>
+                <div class="appearance-choice-row">
+                    <button type="button" class="appearance-choice" id="appearanceLightBtn" onclick="setAppearance('light')"><i class="fa-solid fa-sun"></i> Light</button>
+                    <button type="button" class="appearance-choice" id="appearanceDarkBtn" onclick="setAppearance('dark')"><i class="fa-solid fa-moon"></i> Dark</button>
+                </div>
+            </div>
+        </div>
+<div class="settings-card full">
             <div class="settings-card-head"><div class="sicon"><i class="fa-solid fa-user-shield"></i></div><div><h3>Account Overview</h3><p>Your access is controlled by the system administrator.</p></div></div>
             <div class="account-facts">
                 <div class="account-fact"><label>Account Name</label><b><?= htmlspecialchars($full_name) ?></b></div>
@@ -1777,8 +2371,8 @@ $teacher_count = count(array_filter($peers_all, fn($p) => resolve_peer_group($my
 $staff_count = count(array_filter($peers_all, fn($p) => resolve_peer_group($mysqli, $p) === 'staff'));
 ?>
 
-<?php if (!$period): ?>
-<div class="no-period-warn"><i class="fa-solid fa-clock"></i> No active evaluation period. Evaluation is currently closed.</div>
+<?php if (!$evaluation_open): ?>
+<div class="no-period-warn"><i class="fa-solid fa-clock"></i> Evaluation is currently closed until the scheduled opening time.</div>
 <?php endif; ?>
 
 <div class="section-card">
@@ -1786,21 +2380,29 @@ $staff_count = count(array_filter($peers_all, fn($p) => resolve_peer_group($mysq
     <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Choose who you want to evaluate. Faculty can evaluate fellow faculty, staff members, or the Dean / Principal.</p>
 
     <div class="fg-label" style="margin-bottom:10px;"><i class="fa-solid fa-bolt" style="margin-right:5px"></i>Step 1: Select Evaluation Group</div>
-    <div class="desig-select-chips">
-        <a href="faculty_dashboard.php?page=peer&group=teacher" class="desig-select-chip">
-            <i class="fa-solid fa-chalkboard-user" style="color:var(--teal-hover)"></i> Faculty <span class="dsc-count">(<?= $teacher_count ?>)</span>
+    <div class="eval-group-grid">
+        <a href="faculty_dashboard.php?page=peer&group=teacher" class="eval-group-card">
+            <div class="eval-group-icon blue"><i class="fa-solid fa-chalkboard-user"></i></div>
+            <div class="eval-group-title">Faculty</div>
+            <div class="eval-group-count"><?= $teacher_count ?> member<?= $teacher_count == 1 ? '' : 's' ?></div>
         </a>
-        <a href="faculty_dashboard.php?page=peer&group=staff" class="desig-select-chip">
-            <i class="fa-solid fa-briefcase" style="color:var(--teal-hover)"></i> Staff <span class="dsc-count">(<?= $staff_count ?>)</span>
+        <a href="faculty_dashboard.php?page=peer&group=staff" class="eval-group-card">
+            <div class="eval-group-icon green"><i class="fa-solid fa-briefcase"></i></div>
+            <div class="eval-group-title">Staff</div>
+            <div class="eval-group-count"><?= $staff_count ?> member<?= $staff_count == 1 ? '' : 's' ?></div>
         </a>
         <?php if ($can_evaluate_principal): ?>
-        <a href="faculty_dashboard.php?page=peer&group=principal" class="desig-select-chip">
-            <i class="fa-solid fa-user-tie" style="color:var(--teal-hover)"></i> Principal <span class="dsc-count">(<?= count($principal_targets) ?>)</span>
+        <a href="faculty_dashboard.php?page=peer&group=principal" class="eval-group-card">
+            <div class="eval-group-icon purple"><i class="fa-solid fa-user-tie"></i></div>
+            <div class="eval-group-title">Principal</div>
+            <div class="eval-group-count"><?= count($principal_targets) ?> member<?= count($principal_targets) == 1 ? '' : 's' ?></div>
         </a>
         <?php endif; ?>
         <?php if ($can_evaluate_dean): ?>
-        <a href="faculty_dashboard.php?page=peer&group=dean" class="desig-select-chip">
-            <i class="fa-solid fa-graduation-cap" style="color:var(--teal-hover)"></i> Dean <span class="dsc-count">(<?= count($dean_targets) ?>)</span>
+        <a href="faculty_dashboard.php?page=peer&group=dean" class="eval-group-card">
+            <div class="eval-group-icon gold"><i class="fa-solid fa-graduation-cap"></i></div>
+            <div class="eval-group-title">Dean</div>
+            <div class="eval-group-count"><?= count($dean_targets) ?> member<?= count($dean_targets) == 1 ? '' : 's' ?></div>
         </a>
         <?php endif; ?>
     </div>
@@ -1820,8 +2422,8 @@ $staff_count = count(array_filter($peers_all, fn($p) => resolve_peer_group($mysq
 
 <a href="faculty_dashboard.php?page=peer" class="back-link"><i class="fa-solid fa-arrow-left"></i> Change Evaluation Group</a>
 
-<?php if (!$period): ?>
-<div class="no-period-warn"><i class="fa-solid fa-clock"></i> No active evaluation period. Evaluation is currently closed.</div>
+<?php if (!$evaluation_open): ?>
+<div class="no-period-warn"><i class="fa-solid fa-clock"></i> Evaluation is currently closed until the scheduled opening time.</div>
 <?php endif; ?>
 
 <div class="section-card">
@@ -1861,7 +2463,7 @@ $staff_count = count(array_filter($peers_all, fn($p) => resolve_peer_group($mysq
             <?php if ($done): ?>
             <div class="done-badge"><i class="fa-solid fa-circle-check"></i> Done</div>
             <?php else: ?>
-            <button class="btn-eval-peer" <?= !$period?'disabled':'' ?>
+            <button class="btn-eval-peer" <?= !$evaluation_open?'disabled':'' ?>
                     onclick="window.location='faculty_dashboard.php?page=peer_eval&tid=<?= $p['id'] ?>&group=<?= urlencode($peer_group) ?>'">
                 Evaluate
             </button>
@@ -1949,7 +2551,7 @@ $staff_count = count(array_filter($peers_all, fn($p) => resolve_peer_group($mysq
     <div class="comment-box-new">
         <i class="fa-solid fa-comment-dots comment-box-icon"></i>
         <div class="comment-box-inner">
-            <div class="comment-box-label">Comments &amp; Suggestions <span style="font-size:11px;color:var(--muted);font-weight:400">(Optional)</span></div>
+            <div class="comment-box-label">Comments &amp; Suggestions</div>
             <textarea name="comment" class="comment-textarea-new" placeholder="Share your thoughts or suggestions…"></textarea>
         </div>
     </div>
@@ -2100,28 +2702,17 @@ document.addEventListener('click', function(e) {
     }
 });
 
-// ── Sidebar profile dropdown ──
-function toggleSidebarDD(e) {
-    e.stopPropagation();
-    const dd     = document.getElementById('sidebarProfileDropdown');
-    const caret  = document.getElementById('sidebarCaret');
-    dd.classList.toggle('open');
-    caret.style.transform = dd.classList.contains('open') ? 'rotate(180deg)' : '';
-}
-document.addEventListener('click', function(e) {
-    const sidebarProfile = document.getElementById('sidebarProfile');
-    const dd = document.getElementById('sidebarProfileDropdown');
-    if (sidebarProfile && dd && !sidebarProfile.contains(e.target) && !dd.contains(e.target)) {
-        dd.classList.remove('open');
-        document.getElementById('sidebarCaret').style.transform = '';
-    }
-});
+// ── Real-time notification bell ──
+let notificationKnownIds = new Set();
+let notificationFirstRefresh = true;
+let notificationRefreshBusy = false;
 
-// ── Notification bell ──
 function toggleNotifDropdown(e) {
     e.stopPropagation();
-    document.getElementById('notifDropdown').classList.toggle('show');
+    document.getElementById('notifDropdown')?.classList.toggle('show');
+    refreshNotifications();
 }
+
 document.addEventListener('click', function(e) {
     const wrap = document.getElementById('notifWrap');
     if (wrap && !wrap.contains(e.target)) {
@@ -2129,29 +2720,183 @@ document.addEventListener('click', function(e) {
     }
 });
 
+function escapeNotificationHtml(value) {
+    return String(value ?? '').replace(/[&<>\"']/g, ch => ({
+        '&':'&amp;', '<':'&lt;', '>':'&gt;', '\"':'&quot;', "'":'&#039;'
+    }[ch] || ch));
+}
+
+function notificationVisual(type) {
+    if (type === 'evaluation_received') {
+        return { icon: 'fa-star', color: '#facc15' };
+    }
+    if (type === 'designation_update') {
+        return { icon: 'fa-id-badge', color: '#2B6CB0' };
+    }
+    return { icon: 'fa-bell', color: 'var(--teal-hover)' };
+}
+
+function renderLiveNotifications(items) {
+    const list = document.querySelector('#notifDropdown .notif-list');
+    if (!list) return;
+
+    if (!items.length) {
+        list.innerHTML = '<div class="notif-empty"><i class="fa-regular fa-bell-slash"></i>No notifications yet.</div>';
+        return;
+    }
+
+    list.innerHTML = items.map(n => {
+        const v = notificationVisual(n.type);
+        const unread = Number(n.is_read) === 0;
+        return `<div class="notif-item ${unread ? 'unread' : ''}" data-notification-id="${Number(n.id) || 0}">
+` +
+            `  <div class="notif-icon" style="color:${v.color};background:${v.color}22;"><i class="fa-solid ${v.icon}"></i></div>
+` +
+            `  <div style="flex:1;min-width:0;">
+` +
+            `    <div class="notif-text">${escapeNotificationHtml(n.message)}</div>
+` +
+            `    <div class="notif-meta">${escapeNotificationHtml(n.created_at_label)}</div>
+` +
+            `  </div>
+` +
+            `</div>`;
+    }).join('');
+}
+
+function updateNotificationBadge(count) {
+    const button = document.getElementById('notifBtn');
+    const existing = document.getElementById('notifBadge');
+    const safeCount = Math.max(0, Number(count) || 0);
+
+    button?.classList.toggle('has-unread', safeCount > 0);
+
+    if (safeCount > 0) {
+        const label = safeCount > 99 ? '99+' : String(safeCount);
+        if (existing) {
+            existing.textContent = label;
+        } else if (button) {
+            const badge = document.createElement('span');
+            badge.className = 'notif-badge show';
+            badge.id = 'notifBadge';
+            badge.textContent = label;
+            button.appendChild(badge);
+        }
+    } else if (existing) {
+        existing.remove();
+    }
+}
+
+function showLiveNotificationToast(notification) {
+    const existing = document.getElementById('liveNotifToast');
+    if (existing) existing.remove();
+
+    const toast = document.createElement('div');
+    toast.id = 'liveNotifToast';
+    toast.className = 'live-notif-toast';
+    toast.innerHTML = `<div class="live-notif-toast-icon"><i class="fa-solid fa-bell"></i></div>` +
+        `<div><strong>New notification</strong><span>${escapeNotificationHtml(notification.message)}</span></div>`;
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('show'));
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 250);
+    }, 5000);
+}
+
+async function refreshNotifications(showNewToast = true) {
+    if (notificationRefreshBusy || document.hidden) return;
+    notificationRefreshBusy = true;
+    try {
+        const response = await fetch('notifications_api.php?_=' + Date.now(), {
+            method: 'GET',
+            credentials: 'same-origin',
+            cache: 'no-store',
+            headers: { 'Accept': 'application/json' }
+        });
+        if (!response.ok) throw new Error('Notification request failed');
+        const data = await response.json();
+        if (!data.success) throw new Error(data.message || 'Notification request failed');
+
+        const incoming = Array.isArray(data.notifications) ? data.notifications : [];
+        if (!notificationFirstRefresh && showNewToast) {
+            const newUnread = incoming.filter(n => Number(n.is_read) === 0 && !notificationKnownIds.has(Number(n.id)));
+            if (newUnread.length) showLiveNotificationToast(newUnread[0]);
+        }
+
+        notificationKnownIds = new Set(incoming.map(n => Number(n.id)));
+        notificationFirstRefresh = false;
+        renderLiveNotifications(incoming);
+        updateNotificationBadge(data.unread_count);
+    } catch (err) {
+        // Keep the last rendered notification state when polling temporarily fails.
+        console.debug('Notification polling:', err.message);
+    } finally {
+        notificationRefreshBusy = false;
+    }
+}
+
+function startNotificationPolling() {
+    refreshNotifications(false);
+    setInterval(() => refreshNotifications(true), 5000);
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) refreshNotifications(false);
+    });
+
+    const markReadForm = document.querySelector('#notifDropdown form');
+    if (markReadForm) {
+        markReadForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            try {
+                const response = await fetch('notifications_api.php', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    cache: 'no-store',
+                    headers: { 'Accept': 'application/json' },
+                    body: new FormData(markReadForm)
+                });
+                if (!response.ok) throw new Error('Mark-read request failed');
+                const data = await response.json();
+                if (!data.success) throw new Error(data.message || 'Mark-read request failed');
+                renderLiveNotifications(Array.isArray(data.notifications) ? data.notifications : []);
+                updateNotificationBadge(data.unread_count);
+            } catch (err) {
+                console.debug('Mark notifications read:', err.message);
+            }
+        });
+    }
+}
+
+document.addEventListener('DOMContentLoaded', startNotificationPolling);
+
 // ── Appearance toggle (Dark / Light) ──
 function applyAppearance(mode) {
-    document.body.classList.toggle('light-theme', mode === 'light');
-    const val = document.getElementById('appearanceVal');
-    if (val) val.textContent = mode === 'light' ? 'Light' : 'Dark';
+    const normalized = mode === 'dark' ? 'dark' : 'light';
+    document.body.classList.toggle('light-theme', normalized === 'light');
+    const value = document.getElementById('appearanceVal');
+    if (value) value.textContent = normalized === 'light' ? 'Light' : 'Dark';
+    const lightBtn = document.getElementById('appearanceLightBtn');
+    const darkBtn  = document.getElementById('appearanceDarkBtn');
+    if (lightBtn) lightBtn.classList.toggle('active', normalized === 'light');
+    if (darkBtn) darkBtn.classList.toggle('active', normalized === 'dark');
 }
-function toggleAppearance(e) {
-    e.stopPropagation();
-    const current = localStorage.getItem('pbi_theme') || 'dark';
-    const next = current === 'dark' ? 'light' : 'dark';
-    localStorage.setItem('pbi_theme', next);
-    applyAppearance(next);
+function setAppearance(mode) {
+    const normalized = mode === 'dark' ? 'dark' : 'light';
+    localStorage.setItem('pbi_theme', normalized);
+    applyAppearance(normalized);
 }
 document.addEventListener('DOMContentLoaded', function() {
     const savedTheme = localStorage.getItem('pbi_theme');
-    const theme = savedTheme === 'dark' || savedTheme === 'light' ? savedTheme : 'light';
+    const theme = savedTheme === 'dark' ? 'dark' : 'light';
+    localStorage.setItem('pbi_theme', theme);
     applyAppearance(theme);
+    // Reveal the page now that the correct theme class is in place
+    // (only needed when the FOUC guard above hid it for the dark case).
+    document.body.style.visibility = 'visible';
 });
 
 // ── Profile photo modal ──
 function openPhotoModal() {
-    document.getElementById('sidebarProfileDropdown').classList.remove('open');
-    document.getElementById('sidebarCaret').style.transform = '';
     document.getElementById('photoModal').classList.add('open');
     document.body.style.overflow = 'hidden';
 }

@@ -65,6 +65,25 @@ function _humanize($value) {
     return ucwords(str_replace(['_', '-'], ' ', strtolower($value)));
 }
 
+/**
+ * Maps a raw evaluation_tracker.eval_type value to the ?eval_type= tab
+ * admin_analytics.php actually understands (student/peer/schoolhead/ea/staff),
+ * so a notification click can deep-link straight into the right report tab.
+ * Kept in sync with the eval_type grouping in admin_analytics.php.
+ */
+function _analyticsTabForEvalType($evalType) {
+    $evalType = strtolower(trim((string)$evalType));
+    if (in_array($evalType, ['school_head', 'supervisor_to_teacher', 'supervisor_to_staff', 'upward_to_ea'], true)) {
+        return 'schoolhead';
+    }
+    if (in_array($evalType, ['peer', 'faculty_peer', 'staff_peer'], true)) {
+        return 'peer';
+    }
+    if ($evalType === 'ea') return 'ea';
+    if ($evalType === 'staff') return 'staff';
+    return 'student';
+}
+
 function _formatTargetType($row) {
     $role = trim((string)($row['target_role'] ?? ''));
     $designation = trim((string)($row['target_designation'] ?? ''));
@@ -180,6 +199,7 @@ if ($rclExists && $rclExists->num_rows > 0) {
         SELECT rcl.user_id, rcl.old_role, rcl.new_role,
                rcl.old_designation, rcl.new_designation,
                rcl.changed_at, u.full_name,
+               u.role AS current_role, u.account_status AS current_status,
                COALESCE(actor.full_name, u.full_name) AS actor_name
         FROM role_change_log rcl
         LEFT JOIN users u ON u.id = rcl.user_id
@@ -209,17 +229,22 @@ if ($rclExists && $rclExists->num_rows > 0) {
             }
 
             $feed[] = [
-                'id'      => 'rcl_' . $row['user_id'] . '_' . $ts,
-                'type'    => 'role_change',
-                'text'    => htmlspecialchars($text),
-                'meta'    => htmlspecialchars($source),
-                'actor'   => htmlspecialchars($actor),
-                'time'    => _timeAgo($ts),
-                'ts'      => $ts,
-                'color'   => '#f59e0b',
-                'icon'    => 'fa-user-pen',
-                'user'    => htmlspecialchars($person),
-                'new_role'=> htmlspecialchars($newLabel),
+                'id'          => 'rcl_' . $row['user_id'] . '_' . $ts,
+                'type'        => 'role_change',
+                'text'        => htmlspecialchars($text),
+                'meta'        => htmlspecialchars($source),
+                'actor'       => htmlspecialchars($actor),
+                'time'        => _timeAgo($ts),
+                'ts'          => $ts,
+                'color'       => '#f59e0b',
+                'icon'        => 'fa-user-pen',
+                'user'        => htmlspecialchars($person),
+                'new_role'    => htmlspecialchars($newLabel),
+                // Lets the dashboard link this notification to that account
+                // in Account Management (manage_privileged_accounts.php).
+                'account_user_id' => (int)$row['user_id'],
+                'account_role'     => strtolower((string)($row['current_role'] ?? '')),
+                'account_status'   => strtolower((string)($row['current_status'] ?? '')),
             ];
         }
     }
@@ -232,7 +257,7 @@ if (!in_array($levelFilter, $validLevels, true)) $levelFilter = '';
 
 $levelClause = $levelFilter ? " AND et.level = '" . $mysqli->real_escape_string($levelFilter) . "'" : "";
 $evSubQ = dashboard_query($mysqli, "
-    SELECT et.id, et.eval_bucket, et.form_type, et.eval_type, et.evaluation_context, et.peer_group, et.status, et.submitted_at, et.level,
+    SELECT et.id, et.target_user_id, et.eval_bucket, et.form_type, et.eval_type, et.evaluation_context, et.peer_group, et.status, et.submitted_at, et.level,
            evaluator.full_name AS evaluator_name,
            evaluator.role AS evaluator_role,
            target.full_name AS target_name,
@@ -255,22 +280,26 @@ if ($evSubQ) {
         $source = _formatEvaluationSource($row);
 
         $feed[] = [
-            'id'    => 'evt_' . $row['id'],
-            'type'  => 'audit',
-            'text'  => htmlspecialchars($evaluator . ' evaluated ' . $target),
-            'actor' => htmlspecialchars($evaluator),
-            'meta'  => htmlspecialchars($source),
-            'time'  => _timeAgo($ts),
-            'ts'    => $ts,
-            'color' => '#14b8a6',
-            'icon'  => 'fa-file-circle-check',
-            'level' => $row['level'],
+            'id'              => 'evt_' . $row['id'],
+            'type'            => 'audit',
+            'text'            => htmlspecialchars($evaluator . ' evaluated ' . $target),
+            'actor'           => htmlspecialchars($evaluator),
+            'meta'            => htmlspecialchars($source),
+            'time'            => _timeAgo($ts),
+            'ts'              => $ts,
+            'color'           => '#14b8a6',
+            'icon'            => 'fa-file-circle-check',
+            'level'           => $row['level'],
+            // Lets the dashboard link this notification straight to that
+            // person's Evaluation Report (admin_analytics.php?view=students).
+            'target_user_id'  => (int)$row['target_user_id'],
+            'analytics_tab'   => _analyticsTabForEvalType($row['eval_type']),
         ];
     }
 }
 
 /* ── 3. Synthetic from users → bell dropdown only, NOT the audit box ── */
-$q = dashboard_query($mysqli, "SELECT full_name, role, created_at FROM users ORDER BY created_at DESC LIMIT 5");
+$q = dashboard_query($mysqli, "SELECT id, full_name, role, account_status, created_at FROM users ORDER BY created_at DESC LIMIT 5");
 if ($q) {
     while ($row = $q->fetch_assoc()) {
         $ts = strtotime($row['created_at']);
@@ -283,6 +312,11 @@ if ($q) {
             'ts'    => $ts,
             'color' => '#22c55e',
             'icon'  => 'fa-user-plus',
+            // Lets the dashboard link this notification to that account
+            // in Account Management (manage_privileged_accounts.php).
+            'account_user_id' => (int)$row['id'],
+            'account_role'     => strtolower((string)($row['role'] ?? '')),
+            'account_status'   => strtolower((string)($row['account_status'] ?? '')),
         ];
     }
 }

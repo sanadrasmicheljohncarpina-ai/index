@@ -67,3 +67,36 @@ $navItems = [
         <a href="dean_logout.php"><i class="fa-solid fa-right-from-bracket"></i> Log Out</a>
     </div>
 </aside>
+<script>
+// ── Appearance toggle (Dark / Light) ──
+// Same pattern as the Faculty portal, and the same localStorage key
+// ('pbi_theme'), so a visitor's choice carries over between portals.
+// Included here (the single shared Dean sidebar) so it runs on every
+// Dean page without having to touch each dean_*.php file individually.
+function applyAppearance(mode) {
+    const normalized = mode === 'dark' ? 'dark' : 'light';
+    document.documentElement.classList.toggle('dark-theme', normalized === 'dark');
+    const value = document.getElementById('appearanceVal');
+    if (value) value.textContent = normalized === 'light' ? 'Light' : 'Dark';
+    const lightBtn = document.getElementById('appearanceLightBtn');
+    const darkBtn  = document.getElementById('appearanceDarkBtn');
+    if (lightBtn) lightBtn.classList.toggle('active', normalized === 'light');
+    if (darkBtn) darkBtn.classList.toggle('active', normalized === 'dark');
+}
+function setAppearance(mode) {
+    const normalized = mode === 'dark' ? 'dark' : 'light';
+    localStorage.setItem('pbi_theme', normalized);
+    applyAppearance(normalized);
+}
+function toggleAppearance(e) {
+    if (e) e.stopPropagation();
+    const current = localStorage.getItem('pbi_theme') === 'dark' ? 'dark' : 'light';
+    setAppearance(current === 'dark' ? 'light' : 'dark');
+}
+document.addEventListener('DOMContentLoaded', function() {
+    const savedTheme = localStorage.getItem('pbi_theme');
+    const theme = savedTheme === 'dark' ? 'dark' : 'light';
+    localStorage.setItem('pbi_theme', theme);
+    applyAppearance(theme);
+});
+</script>

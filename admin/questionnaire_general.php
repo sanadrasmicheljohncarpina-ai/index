@@ -353,11 +353,23 @@ $selectedPersonName = $selectedPerson['full_name'] ?? '';
 <title>Questionnaire — PBI</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
-:root{--bg:#f8fafc;--card:#fff;--line:#e2e8f0;--text:#0f172a;--muted:#64748b;--accent:#d99a2b;--blue:#2563eb;--green:#059669;--danger:#dc2626;--navy:#0a192f}
+:root{--bg:#FBFAF5;--card:#fff;--line:#e2e8f0;--text:#0f172a;--muted:#7A6F58;--accent:#d99a2b;--blue:#C9A227;--green:#059669;--danger:#dc2626;--navy:#5A430F}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif}.wrap{padding:24px 28px 40px;max-width:1400px;margin:auto}
 .header{display:flex;justify-content:space-between;gap:16px;align-items:flex-end;margin-bottom:18px}.title h1{margin:0;font-size:28px}.title p{margin:6px 0 0;color:var(--muted);font-size:13px}
-.tabs{display:flex;gap:6px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);padding:6px;border-radius:12px;box-shadow:0 4px 16px rgba(15,23,42,.05);margin-bottom:18px}.back-link{display:inline-flex;align-items:center;gap:7px;padding:9px 12px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;color:#334155;text-decoration:none;font-size:12px;font-weight:800}.back-link:hover{background:#f8fafc}.tab{display:flex;align-items:center;gap:9px;padding:10px 15px;border-radius:9px;color:var(--muted);text-decoration:none;font-weight:700;font-size:13px}.tab.active{background:var(--navy);color:#fff}.tab .count{font-size:11px;opacity:.8}.grid{display:grid;grid-template-columns:340px 1fr;gap:18px}.card{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 4px 16px rgba(15,23,42,.05)}.card h2{font-size:16px;margin:0}.cardhead{padding:16px 18px;border-bottom:1px solid var(--line)}.cardbody{padding:16px 18px}.person{display:flex;justify-content:space-between;gap:10px;padding:11px 10px;border-radius:10px;text-decoration:none;color:var(--text);border:1px solid transparent;margin-bottom:6px}.person:hover,.person.active{background:#f8fafc;border-color:#cbd5e1}.person-main{display:flex;align-items:center;gap:10px;min-width:0}.avatar{width:36px;height:36px;border-radius:50%;background:#eef2f7;display:flex;align-items:center;justify-content:center;overflow:hidden;color:#64748b}.avatar img{width:100%;height:100%;object-fit:cover}.person-name{font-weight:700;font-size:13px}.person-meta{font-size:11px;color:var(--muted);margin-top:2px}.badge{font-size:11px;font-weight:800;padding:4px 8px;border-radius:999px;background:#f1f5f9;color:#475569;white-space:nowrap}.badge.has{background:#ecfdf5;color:#047857}.empty{padding:30px 10px;text-align:center;color:var(--muted)}.empty i{font-size:28px;margin-bottom:10px;opacity:.35}.toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}.subtle{color:var(--muted);font-size:12px}.list{display:grid;gap:10px}.qrow{border:1px solid var(--line);border-radius:12px;padding:12px}.qtop{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.qtext{font-size:13.5px;line-height:1.45}.qcat{font-size:11px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:999px;padding:3px 8px;white-space:nowrap}.actions{display:flex;gap:6px}.btn{border:1px solid #cbd5e1;background:#fff;color:#334155;padding:8px 11px;border-radius:8px;text-decoration:none;font-size:12px;font-weight:700;cursor:pointer}.btn.primary{background:var(--accent);border-color:var(--accent);color:#0a192f}.btn.danger{border-color:#fecaca;color:#b91c1c;background:#fff}.btn.small{padding:6px 9px;font-size:11px}.form{display:grid;gap:8px;margin-top:12px}.manage-actions{display:grid;grid-template-columns:minmax(250px,.7fr) minmax(0,1.3fr);gap:12px;margin:14px 0 16px}.manage-action{border:1px solid var(--line);border-radius:12px;background:#f8fafc;padding:12px}.manage-action-title{font-size:12px;font-weight:800;color:#334155;margin-bottom:8px}.manage-action .form{margin-top:0}.manage-action .question-add-fields{display:grid;grid-template-columns:180px minmax(0,1fr) auto;gap:8px;align-items:start}.manage-action textarea.field{min-height:42px}.manage-action .question-add-fields .btn{height:42px;white-space:nowrap}@media(max-width:900px){.manage-actions{grid-template-columns:1fr}.manage-action .question-add-fields{grid-template-columns:1fr}.manage-action .question-add-fields .btn{width:100%}}.field,.select{width:100%;padding:10px 11px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:var(--text)}textarea.field{min-height:80px;resize:vertical}.catbar{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px}.chip{display:flex;align-items:center;gap:6px;border:1px solid #cbd5e1;border-radius:999px;padding:5px 9px;background:#fff;font-size:11px}.chip form{display:inline}.notice{padding:10px 12px;border-radius:10px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;font-size:12px;margin-bottom:12px}.success{background:#ecfdf5;border-color:#a7f3d0;color:#047857}.dangerbox{background:#fef2f2;border-color:#fecaca;color:#b91c1c}.questionnaire-landing{padding-top:8px}.landing-head{display:flex;justify-content:space-between;gap:20px;align-items:flex-end;margin-bottom:18px}.landing-kicker{font-size:11px;letter-spacing:.18em;font-weight:800;color:#64748b;margin-bottom:6px}.landing-head h2{margin:0;font-size:25px;letter-spacing:-.02em}.landing-head p{margin:7px 0 0;color:var(--muted);font-size:13px}.questionnaire-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.questionnaire-card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 24px rgba(15,23,42,.06);padding:22px 24px;min-height:180px;display:flex;flex-direction:column;justify-content:space-between;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}.questionnaire-card:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(15,23,42,.1);border-color:#cbd5e1}.questionnaire-card-top{display:flex;align-items:center;gap:15px}.questionnaire-icon{width:54px;height:54px;border-radius:50%;display:grid;place-items:center;background:#eef4ff;font-size:21px}.card-faculty .questionnaire-icon{color:#2563eb}.card-staff .questionnaire-icon{color:#7c3aed}.card-leadership .questionnaire-icon{color:#d97706}.card-ea .questionnaire-icon{color:#059669}.questionnaire-card h3{margin:0;font-size:20px}.questionnaire-card p{margin:6px 0 0;color:var(--muted);font-size:12.5px}.questionnaire-card-bottom{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-top:24px}.question-count{font-size:14px;color:#475569}.question-count strong{font-size:17px;color:#2563eb}.card-ea .question-count strong{color:#059669}.manage-card{display:inline-flex;align-items:center;gap:8px;text-decoration:none;font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;background:#eef4ff;color:#2563eb;padding:10px 14px;border-radius:9px}.card-ea .manage-card{background:#ecfdf5;color:#047857}.manage-card:hover{filter:brightness(.97)}@media(max-width:900px){.grid{grid-template-columns:1fr}.questionnaire-cards{grid-template-columns:1fr}.wrap{padding:18px}.tabs{overflow:auto;flex-wrap:nowrap}.tab{white-space:nowrap}}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);padding:6px;border-radius:12px;box-shadow:0 4px 16px rgba(15,23,42,.05);margin-bottom:18px}.back-link{display:inline-flex;align-items:center;gap:7px;padding:9px 12px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;color:#5B4B2A;text-decoration:none;font-size:12px;font-weight:800}.back-link:hover{background:#FBFAF5}.tab{display:flex;align-items:center;gap:9px;padding:10px 15px;border-radius:9px;color:var(--muted);text-decoration:none;font-weight:700;font-size:13px}.tab.active{background:var(--navy);color:#fff}.tab .count{font-size:11px;opacity:.8}.grid{display:grid;grid-template-columns:340px 1fr;gap:18px}.card{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 4px 16px rgba(15,23,42,.05)}.card h2{font-size:16px;margin:0}.cardhead{padding:16px 18px;border-bottom:1px solid var(--line)}.cardbody{padding:16px 18px}.person{display:flex;justify-content:space-between;gap:10px;padding:11px 10px;border-radius:10px;text-decoration:none;color:var(--text);border:1px solid transparent;margin-bottom:6px}.person:hover,.person.active{background:#FFFFFF;border-color:#cbd5e1}.person-main{display:flex;align-items:center;gap:10px;min-width:0}.avatar{width:40px;height:40px;border-radius:50%;background:#eef2f7;display:flex;align-items:center;justify-content:center;overflow:hidden;color:#94a3b8;border:1px solid #e2e8f0;flex-shrink:0}.avatar img{width:100%;height:100%;object-fit:cover;object-position:top center}.person-name{font-weight:700;font-size:13px}.person-meta{font-size:11px;color:var(--muted);margin-top:2px}.badge{font-size:11px;font-weight:800;padding:4px 8px;border-radius:999px;background:#f1f5f9;color:#6B5A34;white-space:nowrap}.badge.has{background:#ecfdf5;color:#047857}.empty{padding:30px 10px;text-align:center;color:var(--muted)}.empty i{font-size:28px;margin-bottom:10px;opacity:.35}.toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}.subtle{color:var(--muted);font-size:12px}.list{display:grid;gap:10px}.qrow{border:1px solid var(--line);border-radius:12px;padding:12px}.qtop{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.qtext{font-size:13.5px;line-height:1.45}.qcat{font-size:11px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:999px;padding:3px 8px;white-space:nowrap}.actions{display:flex;gap:6px}.btn{border:1px solid #cbd5e1;background:#fff;color:#5B4B2A;padding:8px 11px;border-radius:8px;text-decoration:none;font-size:12px;font-weight:700;cursor:pointer}.btn.primary{background:var(--accent);border-color:var(--accent);color:#4A3812}.btn.danger{border-color:#fecaca;color:#b91c1c;background:#fff}.btn.small{padding:6px 9px;font-size:11px}.form{display:grid;gap:8px;margin-top:12px}.manage-actions{display:grid;grid-template-columns:minmax(250px,.7fr) minmax(0,1.3fr);gap:12px;margin:14px 0 16px}.manage-action{border:1px solid var(--line);border-radius:12px;background:#FFFFFF;padding:12px}.manage-action-title{font-size:12px;font-weight:800;color:#5B4B2A;margin-bottom:8px}.manage-action .form{margin-top:0}.manage-action .question-add-fields{display:grid;grid-template-columns:180px minmax(0,1fr) auto;gap:8px;align-items:start}.manage-action textarea.field{min-height:42px}.manage-action .question-add-fields .btn{height:42px;white-space:nowrap}@media(max-width:900px){.manage-actions{grid-template-columns:1fr}.manage-action .question-add-fields{grid-template-columns:1fr}.manage-action .question-add-fields .btn{width:100%}}.field,.select{width:100%;padding:10px 11px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:var(--text)}textarea.field{min-height:80px;resize:vertical}.catbar{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px}.chip{display:flex;align-items:center;gap:6px;border:1px solid #cbd5e1;border-radius:999px;padding:5px 9px;background:#fff;font-size:11px}.chip form{display:inline}.notice{padding:10px 12px;border-radius:10px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;font-size:12px;margin-bottom:12px}.success{background:#ecfdf5;border-color:#a7f3d0;color:#047857}.dangerbox{background:#fef2f2;border-color:#fecaca;color:#b91c1c}.questionnaire-landing{padding-top:8px}.landing-head{display:flex;justify-content:space-between;gap:20px;align-items:flex-end;margin-bottom:18px}.landing-kicker{font-size:11px;letter-spacing:.18em;font-weight:800;color:#7A6F58;margin-bottom:6px}.landing-head h2{margin:0;font-size:25px;letter-spacing:-.02em}.landing-head p{margin:7px 0 0;color:var(--muted);font-size:13px}.questionnaire-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.questionnaire-card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 24px rgba(15,23,42,.06);padding:22px 24px;min-height:180px;display:flex;flex-direction:column;justify-content:space-between;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}.questionnaire-card:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(15,23,42,.1);border-color:#cbd5e1}.questionnaire-card-top{display:flex;align-items:center;gap:15px}.questionnaire-icon{width:54px;height:54px;border-radius:50%;display:grid;place-items:center;background:#eef4ff;font-size:21px}.card-faculty .questionnaire-icon{color:#C9A227}.card-staff .questionnaire-icon{color:#7c3aed}.card-leadership .questionnaire-icon{color:#d97706}.card-ea .questionnaire-icon{color:#059669}.questionnaire-card h3{margin:0;font-size:20px}.questionnaire-card p{margin:6px 0 0;color:var(--muted);font-size:12.5px}.questionnaire-card-bottom{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-top:24px}.question-count{font-size:14px;color:#6B5A34}.question-count strong{font-size:17px;color:#C9A227}.card-ea .question-count strong{color:#059669}.manage-card{display:inline-flex;align-items:center;gap:8px;text-decoration:none;font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;background:#eef4ff;color:#C9A227;padding:10px 14px;border-radius:9px}.card-ea .manage-card{background:#ecfdf5;color:#047857}.manage-card:hover{filter:brightness(.97)}@media(max-width:900px){.grid{grid-template-columns:1fr}.questionnaire-cards{grid-template-columns:1fr}.wrap{padding:18px}.tabs{overflow:auto;flex-wrap:nowrap}.tab{white-space:nowrap}}
+.filterbar{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px}.filter-pill{border:1px solid #cbd5e1;background:#fff;color:#6B5A34;padding:6px 12px;border-radius:999px;font-size:11px;font-weight:700;cursor:pointer}.filter-pill:hover{background:#FBFAF5}.filter-pill.active{background:var(--navy);border-color:var(--navy);color:#fff}
+.qxm-modal-backdrop{position:fixed;inset:0;background:rgba(10,25,47,.55);display:none;align-items:center;justify-content:center;z-index:1000;padding:20px}
+.qxm-modal-backdrop.open{display:flex}
+.qxm-modal{background:#fff;border-radius:14px;max-width:380px;width:100%;padding:22px 22px 18px;box-shadow:0 20px 60px rgba(15,23,42,.25);animation:qxm-pop .15s ease}
+@keyframes qxm-pop{from{transform:scale(.96);opacity:0}to{transform:scale(1);opacity:1}}
+.qxm-modal-icon{width:38px;height:38px;border-radius:50%;background:#fef2f2;color:var(--danger);display:flex;align-items:center;justify-content:center;font-size:15px;margin-bottom:12px}
+.qxm-modal h3{margin:0 0 8px;font-size:16px;color:var(--text)}
+.qxm-modal p{margin:0 0 20px;font-size:13px;color:var(--muted);line-height:1.5}
+.qxm-modal-actions{display:flex;justify-content:flex-end;gap:8px}
 </style>
+
+<link rel="stylesheet" href="admin_appearance.css">
+<script src="admin_appearance.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -450,7 +462,7 @@ $selectedPersonName = $selectedPerson['full_name'] ?? '';
                   <button class="btn small" type="submit">Rename</button>
                 </form>
               </details>
-              <form method="post" style="display:inline" onsubmit="return confirm('Delete this category? Questions will move to General.');">
+              <form method="post" style="display:inline" onsubmit="return qxmConfirm(this,'Delete this category?','Questions in it will move to General.');">
                 <input type="hidden" name="csrf_token" value="<?= qxm_e($csrf) ?>">
                 <input type="hidden" name="scope" value="faculty">
                 <input type="hidden" name="category_id" value="<?= (int)$cat['id'] ?>">
@@ -482,10 +494,18 @@ $selectedPersonName = $selectedPerson['full_name'] ?? '';
         </div>
         <div style="border-top:1px solid var(--line);margin:4px 0 0;padding-top:18px">
           <div class="toolbar"><div><strong><?= count($facultyQuestions) ?> questions</strong><div class="subtle">Shared across all applicable Faculty evaluations</div></div></div>
-          <div class="list">
+          <?php if ($facultyQuestions): ?>
+          <div class="filterbar" data-filter-target="faculty-question-list">
+            <button type="button" class="filter-pill active" data-filter="all">All</button>
+            <?php foreach ($facultyCategories as $cat): ?>
+              <button type="button" class="filter-pill" data-filter="<?= qxm_e($cat['category_name']) ?>"><?= qxm_e($cat['category_name']) ?></button>
+            <?php endforeach; ?>
+          </div>
+          <?php endif; ?>
+          <div class="list" id="faculty-question-list">
           <?php if (!$facultyQuestions): ?><div class="empty"><i class="fa-regular fa-clipboard"></i><div>No Faculty questions yet.</div></div><?php endif; ?>
           <?php foreach ($facultyQuestions as $q): ?>
-            <div class="qrow">
+            <div class="qrow" data-category="<?= qxm_e($q['category'] ?: 'General') ?>">
               <div class="qtop"><div class="qtext"><?= qxm_e($q['question_text']) ?></div><span class="qcat"><?= qxm_e($q['category'] ?: 'General') ?></span></div>
               <div class="actions" style="margin-top:9px">
                 <details><summary class="btn small" style="display:inline-block">Edit</summary>
@@ -496,7 +516,7 @@ $selectedPersonName = $selectedPerson['full_name'] ?? '';
                     <button class="btn primary" type="submit">Save</button>
                   </form>
                 </details>
-                <form method="post" onsubmit="return confirm('Remove this question from the active questionnaire?');">
+                <form method="post" onsubmit="return qxmConfirm(this,'Remove this question?','It will be taken out of the active Faculty questionnaire.');">
                   <input type="hidden" name="csrf_token" value="<?= qxm_e($csrf) ?>"><input type="hidden" name="scope" value="faculty"><input type="hidden" name="action" value="delete_question"><input type="hidden" name="question_id" value="<?= (int)$q['id'] ?>">
                   <button class="btn small danger" type="submit">Remove</button>
                 </form>
@@ -555,7 +575,7 @@ $selectedPersonName = $selectedPerson['full_name'] ?? '';
                       <button class="btn small" type="submit">Rename</button>
                     </form>
                   </details>
-                  <form method="post" style="display:inline" onsubmit="return confirm('Delete this category? Questions will move to General.');">
+                  <form method="post" style="display:inline" onsubmit="return qxmConfirm(this,'Delete this category?','Questions in it will move to General.');">
                     <input type="hidden" name="csrf_token" value="<?= qxm_e($csrf) ?>"><input type="hidden" name="scope" value="<?= qxm_e($scope) ?>"><input type="hidden" name="user_id" value="<?= (int)$selectedUser ?>"><input type="hidden" name="category_id" value="<?= (int)$cat['id'] ?>"><input type="hidden" name="action" value="delete_user_category">
                     <button class="btn small danger" type="submit">×</button>
                   </form>
@@ -584,10 +604,18 @@ $selectedPersonName = $selectedPerson['full_name'] ?? '';
             </div>
             <div style="border-top:1px solid var(--line);margin-top:4px;padding-top:16px">
               <div class="subtle" style="margin-bottom:10px"><strong><?= count($personQuestions) ?></strong> questions</div>
-              <div class="list">
+              <?php if ($personQuestions): ?>
+              <div class="filterbar" data-filter-target="person-question-list">
+                <button type="button" class="filter-pill active" data-filter="all">All</button>
+                <?php foreach($personCategories as $cat): ?>
+                  <button type="button" class="filter-pill" data-filter="<?= qxm_e($cat['category_name']) ?>"><?= qxm_e($cat['category_name']) ?></button>
+                <?php endforeach; ?>
+              </div>
+              <?php endif; ?>
+              <div class="list" id="person-question-list">
               <?php if (!$personQuestions): ?><div class="empty"><i class="fa-regular fa-clipboard"></i><div>No questions assigned yet.</div></div><?php endif; ?>
               <?php foreach($personQuestions as $q): ?>
-                <div class="qrow">
+                <div class="qrow" data-category="<?= qxm_e($q['category'] ?: 'General') ?>">
                   <div class="qtop"><div class="qtext"><?= qxm_e($q['question_text']) ?></div><span class="qcat"><?= qxm_e($q['category'] ?: 'General') ?></span></div>
                   <div class="actions" style="margin-top:9px">
                     <details><summary class="btn small" style="display:inline-block">Edit</summary>
@@ -598,7 +626,7 @@ $selectedPersonName = $selectedPerson['full_name'] ?? '';
                         <button class="btn primary" type="submit">Save</button>
                       </form>
                     </details>
-                    <form method="post" onsubmit="return confirm('Remove this question?');">
+                    <form method="post" onsubmit="return qxmConfirm(this,'Remove this question?','It will be taken out of this target\'s questionnaire.');">
                       <input type="hidden" name="csrf_token" value="<?= qxm_e($csrf) ?>"><input type="hidden" name="scope" value="<?= qxm_e($scope) ?>"><input type="hidden" name="user_id" value="<?= (int)$selectedUser ?>"><input type="hidden" name="action" value="delete_question"><input type="hidden" name="question_id" value="<?= (int)$q['id'] ?>">
                       <button class="btn small danger" type="submit">Remove</button>
                     </form>
@@ -612,5 +640,61 @@ $selectedPersonName = $selectedPerson['full_name'] ?? '';
     </div>
   <?php endif; ?>
 </div>
+
+<div class="qxm-modal-backdrop" id="qxm-modal-backdrop">
+  <div class="qxm-modal">
+    <div class="qxm-modal-icon"><i class="fa-solid fa-trash-can"></i></div>
+    <h3 id="qxm-modal-title">Remove this?</h3>
+    <p id="qxm-modal-text"></p>
+    <div class="qxm-modal-actions">
+      <button type="button" class="btn small" id="qxm-modal-cancel">Cancel</button>
+      <button type="button" class="btn small danger" id="qxm-modal-ok">Remove</button>
+    </div>
+  </div>
+</div>
+<script>
+var qxmPendingForm = null;
+function qxmConfirm(form, title, text) {
+  if (form.dataset.qxmConfirmed === '1') { form.dataset.qxmConfirmed = ''; return true; }
+  qxmPendingForm = form;
+  document.getElementById('qxm-modal-title').textContent = title || 'Remove this?';
+  document.getElementById('qxm-modal-text').textContent = text || '';
+  document.getElementById('qxm-modal-backdrop').classList.add('open');
+  return false;
+}
+document.getElementById('qxm-modal-ok').addEventListener('click', function () {
+  document.getElementById('qxm-modal-backdrop').classList.remove('open');
+  if (qxmPendingForm) {
+    qxmPendingForm.dataset.qxmConfirmed = '1';
+    if (qxmPendingForm.requestSubmit) qxmPendingForm.requestSubmit(); else qxmPendingForm.submit();
+    qxmPendingForm = null;
+  }
+});
+document.getElementById('qxm-modal-cancel').addEventListener('click', function () {
+  document.getElementById('qxm-modal-backdrop').classList.remove('open');
+  qxmPendingForm = null;
+});
+document.getElementById('qxm-modal-backdrop').addEventListener('click', function (e) {
+  if (e.target === this) { this.classList.remove('open'); qxmPendingForm = null; }
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') { document.getElementById('qxm-modal-backdrop').classList.remove('open'); qxmPendingForm = null; }
+});
+document.querySelectorAll('.filterbar').forEach(function (bar) {
+  var list = document.getElementById(bar.getAttribute('data-filter-target'));
+  if (!list) return;
+  bar.addEventListener('click', function (e) {
+    var btn = e.target.closest('.filter-pill');
+    if (!btn) return;
+    bar.querySelectorAll('.filter-pill').forEach(function (b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    var filter = btn.getAttribute('data-filter');
+    list.querySelectorAll('.qrow').forEach(function (row) {
+      var match = (filter === 'all' || row.getAttribute('data-category') === filter);
+      row.style.display = match ? '' : 'none';
+    });
+  });
+});
+</script>
 </body>
 </html>

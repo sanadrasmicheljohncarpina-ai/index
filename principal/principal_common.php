@@ -118,6 +118,48 @@ $schoolHeadSettings = get_school_head_settings($mysqli, 'principal');
 $settings           = sh_gate_apply($settings, 'principal');
 $schoolHeadSettings = sh_gate_apply($schoolHeadSettings, 'principal');
 
+/**
+ * Authoritative live evaluation-window check for the Principal portal.
+ *
+ * Follow Schedule (control_mode=schedule) uses the exact configured Manila
+ * opening/closing instants. Force Open / Force Closed remain hard overrides.
+ */
+function principal_schedule_is_open(array $settings): bool {
+    $mode = strtolower(trim((string)($settings['control_mode'] ?? 'schedule')));
+    if ($mode === 'open') return true;
+    if ($mode === 'closed') return false;
+
+    $startRaw = trim((string)($settings['eval_start'] ?? ''));
+    $endRaw   = trim((string)($settings['eval_end'] ?? ''));
+    if ($startRaw === '' || $endRaw === '') return false;
+
+    $tz = new DateTimeZone('Asia/Manila');
+    $parse = static function(string $raw) use ($tz): ?DateTimeImmutable {
+        foreach (['Y-m-d\TH:i', 'Y-m-d H:i:s', 'Y-m-d H:i'] as $fmt) {
+            $dt = DateTimeImmutable::createFromFormat($fmt, $raw, $tz);
+            if ($dt instanceof DateTimeImmutable && DateTimeImmutable::getLastErrors() === false) {
+                return $dt;
+            }
+        }
+        try {
+            return (new DateTimeImmutable($raw, $tz))->setTimezone($tz);
+        } catch (Throwable $e) {
+            return null;
+        }
+    };
+
+    $start = $parse($startRaw);
+    $end   = $parse($endRaw);
+    if (!$start || !$end || $end <= $start) return false;
+
+    $now = new DateTimeImmutable('now', $tz);
+    return $now >= $start && $now < $end;
+}
+
+$liveScheduledOpen = principal_schedule_is_open($settings);
+$schoolHeadSettings['school_head_is_open'] =
+    !empty($schoolHeadSettings['school_head_applicable']) && $liveScheduledOpen;
+
 $structureActive = !empty($schoolHeadSettings['school_head_applicable']);
 $period_id_int   = $schoolHeadSettings['period_id'] ?? 0;
 $hasPeriod       = $period_id_int > 0;
@@ -140,51 +182,36 @@ $period = $hasPeriod ? [
 ] : null;
 
 // ── SHARED SIDEBAR ─────────────────────────────────────────
-function render_principal_sidebar(string $active, array $me, string $scopeLabel, string $photo_src): void {
-    $links = [
-        'dashboard'   => ['principal_dashboard.php',          'fa-gauge',              'Dashboard'],
-        'evaluations' => ['principal_evaluations.php',        'fa-clipboard-list',     'My Evaluation'],
-        'tracker'     => ['principal_evaluation_tracker.php', 'fa-satellite-dish',     'Evaluation Tracker'],
-        'results'     => ['principal_results.php',            'fa-star-half-stroke',   'View Results'],
-        'reports'     => ['principal_reports.php',            'fa-chart-line',         'Evaluation Reports'],
-        'settings'    => ['principal_account_settings.php',  'fa-gear',               'Settings'],
-    ];
-    ?>
-    <aside class="sidebar">
-        <div class="sb-profile">
-            <img class="sb-photo" src="<?= htmlspecialchars($photo_src) ?>" alt="Profile"/>
-            <div class="sb-name"><?= htmlspecialchars($me['full_name'] ?? 'Principal') ?></div>
-            <div class="sb-role"><?= htmlspecialchars($me['designation'] ?? 'Principal') ?></div>
-            <div class="sb-scope"><?= htmlspecialchars($scopeLabel) ?></div>
-        </div>
-        <nav class="sb-nav" aria-label="Principal navigation">
-            <div class="sb-nav-section-label">MAIN</div>
-            <?php foreach ([
-                'dashboard', 'evaluations', 'tracker', 'results', 'reports'
-            ] as $key): ?>
-                <?php [$href, $icon, $label] = $links[$key]; ?>
-                <a href="<?= htmlspecialchars($href) ?>" class="<?= $key === $active ? 'active' : '' ?>">
-                    <i class="fa-solid <?= htmlspecialchars($icon) ?>"></i> <?= htmlspecialchars($label) ?>
-                </a>
-            <?php endforeach; ?>
+// render_principal_sidebar() now lives in principal_sidebar.php so the
+// Dashboard and Reports (which do not include this file) can use the very
+// same sidebar. Do not re-define it here.
+require_once __DIR__ . '/principal_sidebar.php';
 
-            <div class="sb-nav-section-label">ADMINISTRATION</div>
-            <?php [$href, $icon, $label] = $links['settings']; ?>
-            <a href="<?= htmlspecialchars($href) ?>" class="<?= $active === 'settings' ? 'active' : '' ?>">
-                <i class="fa-solid <?= htmlspecialchars($icon) ?>"></i> <?= htmlspecialchars($label) ?>
-            </a>
-
-            <div class="sb-nav-section-label">ACCOUNT</div>
-            <a href="../logout.php" class="sb-logout-link">
-                <i class="fa-solid fa-right-from-bracket"></i> Log Out
-            </a>
-        </nav>
-    </aside>
-    <?php
+// ── SHARED APPEARANCE ASSETS ───────────────────────────────
+if (!function_exists('principal_theme_assets')) {
+    function principal_theme_assets(): void {
+        static $done = false;
+        if ($done) return;
+        $done = true;
+        ?>
+<script>
+(function(){
+    try {
+        if (localStorage.getItem('pbi_theme') === 'dark') {
+            document.documentElement.classList.add('principal-theme-dark-pending');
+        }
+    } catch (e) {}
+})();
+</script>
+<link rel="stylesheet" href="includes/principal_theme.css?v=20260927.3"/>
+<script defer src="includes/principal_theme.js?v=20260927.3"></script>
+        <?php
+    }
 }
 
 // ── SHARED <style> BLOCK ────────────────────────────────────
 function render_principal_styles(): void {
+    principal_theme_assets();
     ?>
     <style>
     :root{--dark:#0A192F;--mid:#172A45;--inner:#0F1F3D;--amber:#d99a2b;--amber-h:#f0b84d;--amber-dark:#b8801f;--light:#E0E6F0;--muted:#A0B3C6;--radius:10px;--shadow:0 8px 32px rgba(0,0,0,0.45);--danger:#f05454;--good:#10B981;}

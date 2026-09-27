@@ -94,8 +94,6 @@ const SCHOOL_HEAD_CONTEXT   = 'school_head';
 
 $overallAvg = null;
 $responseCount = 0;
-$categoryBreakdown = [];
-$trend = [];
 $history = [];
 
 if ($hasPeriod) {
@@ -115,39 +113,6 @@ if ($hasPeriod) {
         WHERE et.eval_type=? AND et.evaluation_context=? AND et.status IN ('submitted','approved')
           AND et.target_user_id=? AND et.period_id=?
     ", "ssii", [SCHOOL_HEAD_EVAL_TYPE, SCHOOL_HEAD_CONTEXT, $deanId, $period_id_int]) ?? 0);
-
-    // ── CATEGORY BREAKDOWN ───────────────────────────────────────────
-    $categoryBreakdown = safe_rows($mysqli, "
-        SELECT uq.category, AVG(qa.answer_score) avg_score, COUNT(*) n
-        FROM questionnaire_answers qa
-        INNER JOIN user_questions uq ON uq.id = qa.user_question_id
-        INNER JOIN evaluation_tracker et ON et.id = qa.tracker_id
-        WHERE et.eval_type=? AND et.evaluation_context=? AND et.status IN ('submitted','approved')
-          AND et.target_user_id=? AND et.period_id=? AND qa.question_source='user'
-        GROUP BY uq.category
-        ORDER BY uq.category
-    ", "ssii", [SCHOOL_HEAD_EVAL_TYPE, SCHOOL_HEAD_CONTEXT, $deanId, $period_id_int]);
-    foreach ($categoryBreakdown as &$c) { $c['avg_score'] = round((float)$c['avg_score'], 2); }
-    unset($c);
-
-    // ── TREND (average rating per period, most recent periods) ──────
-    // Scoped to this dean across all periods, not just the active one.
-    // evaluation_periods' real columns are period_label/school_year/semester
-    // (confirmed via shared/system_settings_service.php) — not
-    // academic_term/academic_year, which don't exist on that table.
-    $trend = safe_rows($mysqli, "
-        SELECT ep.period_label, ep.semester AS academic_term, ep.school_year AS academic_year, AVG(qa.answer_score) avg_score
-        FROM evaluation_tracker et
-        INNER JOIN evaluation_periods ep ON ep.id = et.period_id
-        INNER JOIN questionnaire_answers qa ON qa.tracker_id = et.id
-        WHERE et.eval_type=? AND et.evaluation_context=? AND et.status IN ('submitted','approved')
-          AND et.target_user_id=?
-        GROUP BY et.period_id, ep.period_label, ep.semester, ep.school_year
-        ORDER BY ep.id ASC
-        LIMIT 12
-    ", "ssi", [SCHOOL_HEAD_EVAL_TYPE, SCHOOL_HEAD_CONTEXT, $deanId]);
-    foreach ($trend as &$t) { $t['avg_score'] = round((float)$t['avg_score'], 2); }
-    unset($t);
 
     // ── ANONYMOUS RESPONSE HISTORY ────────────────────────────────
     // Deliberately selects ONLY tracker id (for per-tracker avg + ordering),
@@ -283,37 +248,6 @@ include __DIR__ . '/includes/dean_sidebar.php';
     <div class="card-grid">
         <div class="stat-card"><i class="fa-solid fa-star"></i><div class="num"><?= $overallAvg !== null ? $overallAvg : '—' ?></div><div class="label">Overall Average</div></div>
         <div class="stat-card"><i class="fa-solid fa-comments"></i><div class="num"><?= $responseCount ?></div><div class="label">Responses Received</div></div>
-    </div>
-
-    <!-- CATEGORY BREAKDOWN -->
-    <div class="section">
-        <h2><i class="fa-solid fa-list-check"></i> Category Breakdown</h2>
-        <?php if (empty($categoryBreakdown)): ?>
-            <p class="empty-note">No category-level results yet this period.</p>
-        <?php else: ?>
-            <?php foreach ($categoryBreakdown as $c): ?>
-            <div class="cat-row">
-                <div class="cat-name"><?= htmlspecialchars($c['category']) ?></div>
-                <div class="bar-wrap"><div class="bar-fill" style="width:<?= min(100, ($c['avg_score'] / 5) * 100) ?>%"></div></div>
-                <div class="cat-score"><?= htmlspecialchars((string)$c['avg_score']) ?></div>
-            </div>
-            <?php endforeach; ?>
-        <?php endif; ?>
-    </div>
-
-    <!-- EVALUATION TREND -->
-    <div class="section">
-        <h2><i class="fa-solid fa-chart-line"></i> Evaluation Trend</h2>
-        <?php if (empty($trend)): ?>
-            <p class="empty-note">Not enough history yet to show a trend.</p>
-        <?php else: ?>
-            <?php foreach ($trend as $t): ?>
-            <div class="trend-row">
-                <span><?= htmlspecialchars(trim($t['academic_term'] . ' ' . $t['academic_year'])) ?></span>
-                <span class="val"><?= htmlspecialchars((string)$t['avg_score']) ?></span>
-            </div>
-            <?php endforeach; ?>
-        <?php endif; ?>
     </div>
 
     <!-- ANONYMOUS RESPONSES -->

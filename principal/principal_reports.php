@@ -1,8 +1,26 @@
 <?php
-// dean/principal Reports & Analytics — EA clone
+// Principal Reports & Analytics — same structure/theme as the Dean Reports page, scoped to Basic Education
+// (JHS/SHS student evaluators and JHS/SHS teachers for Peer-to-Peer).
 session_start();
 require_once 'db.php';
 require_once '../shared/EvaluationContextService.php';
+require_once '../shared/system_settings_service.php';
+require_once __DIR__ . '/principal_sidebar.php';
+
+if (!function_exists('principal_theme_assets')) {
+    function principal_theme_assets(): void {
+        static $done = false;
+        if ($done) return;
+        $done = true;
+        ?>
+<script>(function(){try{if(localStorage.getItem('pbi_theme') === 'dark'){document.documentElement.classList.add('principal-theme-dark-pending');}}catch(e){}})();</script>
+<link rel="stylesheet" href="includes/principal_theme.css?v=20260927.3"/>
+<script defer src="includes/principal_theme.js?v=20260927.3"></script>
+        <?php
+    }
+}
+   // the one shared Principal sidebar
+require_once __DIR__ . '/school_head_structure_gate.php';   // sh_gate_applicable_role()
 
 // ── AUTH GUARD ───────────────────────────────────────────────
 // Evaluation scores and archive/restore actions are sensitive —
@@ -11,6 +29,12 @@ if (empty($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', ['principa
     header("Location: principal_login.php");
     exit;
 }
+
+// ── CSRF TOKEN (archive / restore are POST-only) ─────────────────────────────
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+$csrfToken = $_SESSION['csrf_token'];
 
 // ── EXECUTIVE PROFILE (shared portal layout) ─────────────────
 $stmt = $mysqli->prepare("SELECT full_name, username, email, designation, photo, education_level FROM users WHERE id = ? LIMIT 1");
@@ -21,7 +45,8 @@ $stmt->close();
 $photo_src = !empty($me['photo']) ? '../image/' . $me['photo'] : '../image/pbi_logo';
 $principalScopeLabel = ($me['education_level'] ?? 'both') === 'junior_high' ? 'Junior High School' : (($me['education_level'] ?? 'both') === 'senior_high' ? 'Senior High School' : 'Junior High & Senior High');
 
-// ── ENSURE TABLES EXIST ───────────────────────────────────────
+// ── ENSURE TABLES EXIST (once per session) ───────────────────
+if (empty($_SESSION['principal_reports_schema_v1'])) {
 $mysqli->query("CREATE TABLE IF NOT EXISTS analytics_archive (
     id INT UNSIGNED NOT NULL AUTO_INCREMENT,
     target_user_id INT UNSIGNED NOT NULL,
@@ -45,6 +70,20 @@ if ($col2 && $col2->num_rows === 0) {
     $mysqli->query("ALTER TABLE evaluation_tracker ADD INDEX id_evaluator (evaluator_id)");
 }
 
+// Student evaluator school-level metadata — kept in sync with the EA analytics
+// model so the Principal can apply the same Student Evaluation logic, but only to
+// JHS/SHS evaluators for the Basic Education report.
+$elCol = $mysqli->query("SHOW COLUMNS FROM users LIKE 'education_level'");
+if ($elCol && $elCol->num_rows === 0) {
+    $mysqli->query("ALTER TABLE users ADD COLUMN education_level ENUM('basic_ed','higher_ed') NULL DEFAULT NULL AFTER role");
+    $mysqli->query("ALTER TABLE users ADD INDEX idx_education_level (education_level)");
+}
+$ylCol = $mysqli->query("SHOW COLUMNS FROM users LIKE 'year_level'");
+if ($ylCol && $ylCol->num_rows === 0) {
+    $mysqli->query("ALTER TABLE users ADD COLUMN year_level VARCHAR(30) NULL DEFAULT NULL AFTER education_level");
+    $mysqli->query("ALTER TABLE users ADD INDEX idx_year_level (year_level)");
+}
+
 // Evaluation context keeps separate questionnaires/analytics for the same
 // person when they can be evaluated as Teacher, Staff, or Multi-Role.
 $ctxCol = $mysqli->query("SHOW COLUMNS FROM evaluation_tracker LIKE 'evaluation_context'");
@@ -54,45 +93,21 @@ if ($ctxCol && $ctxCol->num_rows === 0) {
     $mysqli->query("UPDATE evaluation_tracker et JOIN users u ON u.id=et.target_user_id SET et.evaluation_context=CASE WHEN u.role IN ('principal','dean') THEN 'school_head' WHEN u.role='staff' THEN 'staff' WHEN u.role='teacher' THEN 'teacher' ELSE et.evaluation_context END WHERE et.evaluation_context='teacher'");
 }
 
-// Portal scope: Reports & Analytics matches the Admin/EA page's Student
-// Evaluation + Peer-to-Peer feature set (tabs, group pills, stat cards,
-// Top Performers / Areas for Improvement, Evaluators List drill-down,
-// archive/restore, print), but its dataset is restricted to the current
-// principal's own education division.
+$_SESSION['principal_reports_schema_v1'] = 1;
+}
+
+// Portal scope: Reports & Analytics matches the Dean Reports page, but its
+// dataset is restricted to Basic Education (JHS/SHS).
 //
-// ── CONFIDENTIALITY BOUNDARY (do not remove) ─────────────────────────
-// Admin's Reports & Analytics also covers a "School Head Evaluation"
-// direction (eval_type IN school_head/supervisor_to_teacher/
-// supervisor_to_staff/upward_to_ea) and lets Peer-to-Peer's target group
-// include Principal/Dean — i.e. it lets the Executive Assistant see WHO
-// (which teacher, staff, student, or EA) submitted a given evaluation OF
-// a Principal or Dean, via the "Evaluators List" drill-down.
-//
-// That drill-down is exactly what must never be reachable from a
-// Principal's own Reports & Analytics page: a Principal must never be
-// able to identify which of their own teachers/staff/EA rated them, or
-// see the individual submission behind that score. That is what keeps
-// upward evaluations honest. Those results belong solely in
-// principal_results.php, which the Principal can already view in
-// AGGREGATE (no per-evaluator identity), never here.
-//
-// Consequently this page intentionally:
-//   (a) only ever supports eval_type IN ('student','peer') — see the
-//       $activeEval whitelist below, which excludes 'schoolhead'/'ea'
-//       outright, even via a hand-crafted URL;
-//   (b) restricts $reportScopeSql's target roster to role IN
-//       ('teacher','staff','faculty') within the Principal's own grade
-//       scope — Principal/Dean/EA/superadmin can never appear as a
-//       target here, whether as a Peer-to-Peer target group (as Admin's
-//       page allows) or anywhere else;
-//   (c) explicitly re-asserts (a)+(b) as a hard, redundant filter in
-//       every roster query below (see EXCLUDE_LEADERSHIP_SQL) so a
-//       future edit to the scope logic can't silently reopen this;
-//   (d) re-checks the resolved target on every drill-down view
-//       (view=students, view=sheet) and refuses to render if it ever
-//       resolves to a Principal/Dean/EA account or to the logged-in
-//       user themselves — see the guard right after $target_id below.
-$reportScope = 'PRINCIPAL';
+// ── CONFIDENTIALITY BOUNDARY (do not remove) ─────────────────
+// A Principal must never be able to identify which of their own teachers/
+// staff/EA rated them, so this page:
+//   (a) only supports eval_type IN ('student','peer');
+//   (b) restricts the target roster to teacher/faculty/staff in the Principal's
+//       own scope -- Principal/Dean/EA/superadmin can never be a target;
+//   (c) re-asserts (a)+(b) below as a redundant hard filter on $reportScopeSql;
+//   (d) re-checks the target on every drill-down view (see the guard after
+//       $target_id).
 // Principal Reports is limited to Basic Education. Faculty/Teaching Staff are
 // included only when they have a JHS/SHS teaching scope; genuine Non-Teaching
 // Staff remain eligible even when they have no grade assignment. College-only
@@ -114,54 +129,47 @@ $reportScopeSql = "(
         OR NOT $principalAnyTeachingScopeSql
     ))
 )";
-// Hard, redundant exclusion — appended to $reportScopeSql everywhere it's
-// used below. Even if $reportScopeSql's own role list were ever loosened
-// by a future edit, this clause independently guarantees no Principal,
-// Dean, EA, or superadmin account — and never the logged-in Principal's
-// own account — can appear as a report target.
+// Grade filter options. Students' year_level is stored either as "Grade N" or
+// "Grade N - JHS/SHS", so each option matches both spellings.
+$principalGradeLevels = [];
+foreach ([7=>'JHS', 8=>'JHS', 9=>'JHS', 10=>'JHS', 11=>'SHS', 12=>'SHS'] as $g => $stage) {
+    $principalGradeLevels["Grade $g"] = ['label' => "Grade $g - $stage", 'values' => ["Grade $g", "Grade $g - $stage"]];
+}
 $myUserId = (int)$_SESSION['user_id'];
 $reportScopeSql = "($reportScopeSql) AND u.role NOT IN ('principal','dean','superadmin') AND u.id <> $myUserId";
-$reportStudentScopeSql = "education_level IN ('junior_high','senior_high','basic_education','jhs','shs')";
+$reportStudentScopeSql = "COALESCE(education_level,'') <> 'higher_ed' AND (education_level IN ('junior_high','senior_high','basic_education','basic_ed','jhs','shs') OR year_level IN ($principalHighSchoolLevelsSql))";
 
-// Principal Student Evaluation reports only use JHS/SHS student evaluators.
-$principalStudentLevelsSql = $principalHighSchoolLevelsSql;
-$principalStudentEvaluatorSql = "et.evaluator_id IN (
-    SELECT id FROM users
-    WHERE role='student'
-      AND is_active=1
-      AND (
-          education_level IN ('junior_high','senior_high','basic_education','jhs','shs')
-          OR year_level IN ($principalStudentLevelsSql)
-      )
-)";
-$principalStudentEvaluatorPlainSql = "evaluator_id IN (
-    SELECT id FROM users
-    WHERE role='student'
-      AND is_active=1
-      AND (
-          education_level IN ('junior_high','senior_high','basic_education','jhs','shs')
-          OR year_level IN ($principalStudentLevelsSql)
-      )
-)";
+// ── ARCHIVE / RESTORE (POST + CSRF only) ─────────────────────
+// State-changing actions must never run from a plain GET link, otherwise a
+// crafted URL/image tag could archive personnel for a logged-in Principal.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['archive_id']) || isset($_POST['restore_id']))) {
+    if (!hash_equals($csrfToken, (string)($_POST['csrf_token'] ?? ''))) {
+        http_response_code(403);
+        exit('Invalid or expired request. Please go back, refresh the page and try again.');
+    }
+    $postEval  = in_array($_POST['eval_type'] ?? '', ['student','peer'], true) ? $_POST['eval_type'] : 'student';
+    $postGroup = (string)($_POST['group'] ?? 'All');
+    $qs = "group=" . urlencode($postGroup) . "&eval_type=" . urlencode($postEval);
 
-// ── ARCHIVE / RESTORE ─────────────────────────────────────────
-if (isset($_GET['archive_id'])) {
-    $aid  = intval($_GET['archive_id']);
-    $scopeCheck = $mysqli->query("SELECT u.id FROM users u WHERE u.id=$aid AND $reportScopeSql LIMIT 1");
-    if (!$scopeCheck || !$scopeCheck->num_rows) { header("Location: ?group=".urlencode($_GET['group']??'All')."&eval_type=".urlencode($_GET['eval_type']??'student')); exit; }
-    $stmt = $mysqli->prepare("INSERT IGNORE INTO analytics_archive (target_user_id) VALUES (?)");
-    $stmt->bind_param("i", $aid); $stmt->execute(); $stmt->close();
-    $_SESSION['toast'] = "Personnel archived. Their data is kept and can be restored anytime.";
-    header("Location: principal_reports.php?group=".urlencode($_GET['group']??'All')."&eval_type=".urlencode($_GET['eval_type']??'student')); exit;
-}
-if (isset($_GET['restore_id'])) {
-    $rid  = intval($_GET['restore_id']);
+    if (isset($_POST['archive_id'])) {
+        $aid = intval($_POST['archive_id']);
+        $scopeCheck = $mysqli->query("SELECT u.id FROM users u WHERE u.id=$aid AND $reportScopeSql LIMIT 1");
+        if ($scopeCheck && $scopeCheck->num_rows) {
+            $stmt = $mysqli->prepare("INSERT IGNORE INTO analytics_archive (target_user_id) VALUES (?)");
+            $stmt->bind_param("i", $aid); $stmt->execute(); $stmt->close();
+            $_SESSION['toast'] = "Personnel archived. Their data is kept and can be restored anytime.";
+        }
+        header("Location: principal_reports.php?$qs"); exit;
+    }
+
+    $rid = intval($_POST['restore_id']);
     $scopeCheck = $mysqli->query("SELECT u.id FROM users u WHERE u.id=$rid AND $reportScopeSql LIMIT 1");
-    if (!$scopeCheck || !$scopeCheck->num_rows) { header("Location: ?view=archived&group=".urlencode($_GET['group']??'All')."&eval_type=".urlencode($_GET['eval_type']??'student')); exit; }
-    $stmt = $mysqli->prepare("DELETE FROM analytics_archive WHERE target_user_id=?");
-    $stmt->bind_param("i", $rid); $stmt->execute(); $stmt->close();
-    $_SESSION['toast'] = "Personnel restored to the main list.";
-    header("Location: principal_reports.php?group=".urlencode($_GET['group']??'All')."&eval_type=".urlencode($_GET['eval_type']??'student')."&view=archived"); exit;
+    if ($scopeCheck && $scopeCheck->num_rows) {
+        $stmt = $mysqli->prepare("DELETE FROM analytics_archive WHERE target_user_id=?");
+        $stmt->bind_param("i", $rid); $stmt->execute(); $stmt->close();
+        $_SESSION['toast'] = "Personnel restored to the main list.";
+    }
+    header("Location: principal_reports.php?$qs&view=archived"); exit;
 }
 
 $toast = $_SESSION['toast'] ?? ''; unset($_SESSION['toast']);
@@ -172,70 +180,115 @@ $toast = $_SESSION['toast'] ?? ''; unset($_SESSION['toast']);
 // Student Evaluation with the Multi-Role filter selected.
 $requestedEvalType = $_GET['eval_type'] ?? 'student';
 $legacyMultiRoleLink = ($requestedEvalType === 'multi_role');
-$activeEval = $legacyMultiRoleLink ? 'student' : $requestedEvalType;
-// Deliberately narrower than admin_analytics.php's whitelist
-// (['student','peer','schoolhead','ea','staff']). 'schoolhead' and 'ea'
-// are evaluations OF school leadership / the EA — never reportable here.
-// See the confidentiality boundary note above $reportScopeSql.
+// School Head Evaluation belongs to the EA analytics view, not the Principal portal.
+// Redirect any legacy/deep link to the normal Student Evaluation view instead of
+// allowing an unsupported school-head mode to be activated.
+$legacySchoolHeadLink = ($requestedEvalType === 'schoolhead' || $requestedEvalType === 'school_head');
+$activeEval = ($legacyMultiRoleLink || $legacySchoolHeadLink) ? 'student' : $requestedEvalType;
 if (!in_array($activeEval, ['student','peer'], true)) $activeEval = 'student';
 
 $groupFilter = $_GET['group'] ?? 'All';
-// Match the current Dean Reports structure: Student Evaluation uses only
-// All / Faculty / Staff. Teaching Staff is part of Faculty; Non-Teaching Staff
-// is part of Staff. Peer-to-Peer keeps its own All / Teacher / Staff grouping.
 $allowedGroups = $activeEval === 'student'
     ? ['All','Faculty','Staff']
-    : ['All','Faculty','Teacher','Staff'];
+    : ['All','Faculty','Teacher'];
 if (!in_array($groupFilter, $allowedGroups, true)) $groupFilter = 'All';
-$isMultiRole = false;
-$multiRoleSubFilter = 'All';
+$groupForOtherTabs = in_array($groupFilter, ['Faculty','Teacher','Staff'], true) ? $groupFilter : 'All';
+
+$settings = get_system_settings($mysqli);
+$period_id_int = (int)($settings['period_id'] ?? 0);
+$periodSql = $period_id_int > 0 ? "et.period_id=" . $period_id_int : "1=0";
+$periodPlainSql = $period_id_int > 0 ? "period_id=" . $period_id_int : "1=0";
 
 $sqlQuote = static function (string $value) use ($mysqli): string {
     return "'" . $mysqli->real_escape_string($value) . "'";
 };
 $studentTypeSql = $sqlQuote('student');
 $peerTypesSql = implode(',', array_map($sqlQuote, ['peer','faculty_peer','staff_peer']));
-$multiRoleContextSql = $sqlQuote('multi_role');
 $teacherContextSql = $sqlQuote('teacher');
 $staffContextSql = $sqlQuote('staff');
-$multiRoleQuestionTypeSql = $sqlQuote('Multi-Role');
 
-$multiRoleClauseSql = "et.eval_type=$studentTypeSql AND (
-        et.evaluation_context=$multiRoleContextSql
-        OR EXISTS (
-            SELECT 1
-            FROM questionnaire_answers qam
-            JOIN user_questions uqm ON uqm.id = qam.user_question_id
-            WHERE qam.tracker_id = et.id
-              AND uqm.target_type = $multiRoleQuestionTypeSql
-              AND uqm.eval_type = $studentTypeSql
-        )
-    )";
-$multiRoleClausePlainSql = "eval_type=$studentTypeSql AND (
-        evaluation_context=$multiRoleContextSql
-        OR EXISTS (
-            SELECT 1
-            FROM questionnaire_answers qam
-            JOIN user_questions uqm ON uqm.id = qam.user_question_id
-            WHERE qam.tracker_id = evaluation_tracker.id
-              AND uqm.target_type = $multiRoleQuestionTypeSql
-              AND uqm.eval_type = $studentTypeSql
-        )
-    )";
+// IMPORTANT: Principal Student Evaluation only receives JHS/SHS student
+// submissions. A student counts when the canonical education_level is a
+// basic-education value OR their year_level is one of the JHS/SHS grades;
+// anyone explicitly flagged higher_ed (College) never counts.
+$principalStudentEvaluatorSql = "et.evaluator_id IN (
+    SELECT id FROM users
+    WHERE role='student'
+      AND is_active=1
+      AND COALESCE(education_level,'') <> 'higher_ed'
+      AND (
+          education_level IN ('junior_high','senior_high','basic_education','basic_ed','jhs','shs')
+          OR year_level IN ($principalHighSchoolLevelsSql)
+      )
+)";
+$principalStudentEvaluatorPlainSql = "evaluator_id IN (
+    SELECT id FROM users
+    WHERE role='student'
+      AND is_active=1
+      AND COALESCE(education_level,'') <> 'higher_ed'
+      AND (
+          education_level IN ('junior_high','senior_high','basic_education','basic_ed','jhs','shs')
+          OR year_level IN ($principalHighSchoolLevelsSql)
+      )
+)";
 
-if ($isMultiRole) {
-    $evalTypeSql = $multiRoleClauseSql;
-    $evalTypePlainSql = $multiRoleClausePlainSql;
-} else {
-    $evalTypeSql = match ($activeEval) {
-        'peer' => "et.eval_type IN ($peerTypesSql)",
-        default => "et.eval_type=$studentTypeSql AND $principalStudentEvaluatorSql AND COALESCE(et.evaluation_context,'teacher') IN ($teacherContextSql,$staffContextSql)"
-    };
-    $evalTypePlainSql = match ($activeEval) {
-        'peer' => "eval_type IN ($peerTypesSql)",
-        default => "eval_type=$studentTypeSql AND $principalStudentEvaluatorPlainSql AND COALESCE(evaluation_context,'teacher') IN ($teacherContextSql,$staffContextSql)"
-    };
+// ── STUDENT EVALUATION PERIOD ────────────────────────────────
+// $settings['period_id'] is the ACTIVE period. While the Executive Assistant has
+// College active, that is the College period, but JHS/SHS students submit under
+// the Basic Education period. Requiring et.period_id = <College period> together
+// with "evaluator is a JHS/SHS student" can therefore never match, and the
+// Student Evaluation tab stays empty no matter how many students evaluated.
+//   * Basic Education is the active structure -> the active period, as before.
+//   * Otherwise (College active)              -> the period of the most recent
+//     JHS/SHS student submission (the active period is used if it has any).
+// Peer-to-Peer keeps using the active period ($periodSql) and is unchanged.
+$studentPeriodId = $period_id_int;
+$activeSchoolHead = function_exists('sh_gate_applicable_role') ? sh_gate_applicable_role($settings) : null;
+if ($activeSchoolHead !== 'principal') {
+    $activeHasStudentData = false;
+    if ($period_id_int > 0) {
+        $q = $mysqli->query("SELECT 1 FROM evaluation_tracker et
+            WHERE et.period_id=$period_id_int AND et.eval_type='student' AND $principalStudentEvaluatorSql LIMIT 1");
+        $activeHasStudentData = $q && $q->num_rows > 0;
+    }
+    if (!$activeHasStudentData) {
+        $q = $mysqli->query("SELECT et.period_id FROM evaluation_tracker et
+            WHERE et.eval_type='student' AND et.period_id IS NOT NULL AND $principalStudentEvaluatorSql
+            ORDER BY et.submitted_at DESC, et.id DESC LIMIT 1");
+        $latest = $q ? $q->fetch_assoc() : null;
+        if ($latest && (int)$latest['period_id'] > 0) $studentPeriodId = (int)$latest['period_id'];
+    }
 }
+$studentPeriodSql      = $studentPeriodId > 0 ? "et.period_id=" . $studentPeriodId : "1=0";
+$studentPeriodPlainSql = $studentPeriodId > 0 ? "period_id=" . $studentPeriodId : "1=0";
+
+// IMPORTANT: Principal Peer-to-Peer is JHS/SHS teachers only. Both sides of a
+// peer evaluation (the evaluator AND the person being evaluated) must be
+// teaching personnel with a JHS/SHS teaching scope (year level or teaching
+// assignment). A staff-role account with a JHS/SHS teaching scope is teaching
+// staff and counts; Principal, Dean, non-teaching Staff and College-only
+// teachers do not.
+$principalTeacherIdsSql = "SELECT ht.id FROM users ht
+    WHERE ht.role IN ('teacher','faculty','staff')
+      AND (
+          EXISTS (SELECT 1 FROM user_year_levels htyl WHERE htyl.user_id=ht.id AND htyl.year_level IN ($principalHighSchoolLevelsSql))
+          OR EXISTS (SELECT 1 FROM teaching_assignments htta WHERE htta.user_id=ht.id AND htta.year_level IN ($principalHighSchoolLevelsSql))
+      )";
+$peerEvalSql = "$periodSql AND et.eval_type IN ($peerTypesSql)
+    AND et.evaluator_id IN ($principalTeacherIdsSql)
+    AND et.target_user_id IN ($principalTeacherIdsSql)";
+$peerEvalPlainSql = "$periodPlainSql AND eval_type IN ($peerTypesSql)
+    AND evaluator_id IN ($principalTeacherIdsSql)
+    AND target_user_id IN ($principalTeacherIdsSql)";
+
+$evalTypeSql = match ($activeEval) {
+    'peer' => $peerEvalSql,
+    default => "$studentPeriodSql AND et.eval_type=$studentTypeSql AND $principalStudentEvaluatorSql AND COALESCE(et.evaluation_context,'teacher') IN ($teacherContextSql,$staffContextSql)"
+};
+$evalTypePlainSql = match ($activeEval) {
+    'peer' => $peerEvalPlainSql,
+    default => "$studentPeriodPlainSql AND eval_type=$studentTypeSql AND $principalStudentEvaluatorPlainSql AND COALESCE(evaluation_context,'teacher') IN ($teacherContextSql,$staffContextSql)"
+};
 
 // ── VIEWS ─────────────────────────────────────────────────────
 $view       = $_GET['view']       ?? 'list';
@@ -243,65 +296,75 @@ $target_id  = intval($_GET['target_id']  ?? 0);
 $student_id = intval($_GET['student_id'] ?? 0);  // evaluator for peer
 $tracker_id = intval($_GET['tracker_id'] ?? 0);
 
-// ── CONFIDENTIALITY GUARD (drill-down views) ───────────────────
-// view=students (the "Evaluators List") and view=sheet (a single
-// evaluator's individual submission) are exactly where an evaluator's
-// identity becomes visible. $reportScopeSql already keeps Principal/
-// Dean/EA/superadmin and the logged-in Principal themselves out of every
-// roster query, but a $target_id can still arrive as a raw query-string
-// value typed straight into the URL. Re-check it here, independently of
-// $reportScopeSql, before either drill-down view is allowed to render.
+// ── CONFIDENTIALITY GUARD (drill-down views) ─────────────────
+// view=students / view=sheet are where an evaluator's identity becomes
+// visible. $reportScopeSql already keeps Principal/Dean/EA/superadmin and the
+// logged-in Principal out of every roster query, but $target_id can arrive as
+// a raw query-string value, so re-check it independently before rendering.
 if ($target_id > 0 && in_array($view, ['students', 'sheet'], true)) {
-    $targetRoleCheck = $mysqli->query("SELECT role FROM users WHERE id=$target_id LIMIT 1")->fetch_assoc();
+    $tr = $mysqli->query("SELECT role FROM users WHERE id=$target_id LIMIT 1");
+    $targetRoleCheck = $tr ? ($tr->fetch_assoc() ?: []) : [];
     $targetRole = $targetRoleCheck['role'] ?? null;
     if ($target_id === $myUserId || in_array($targetRole, ['principal', 'dean', 'superadmin'], true)) {
-        // Never reveal *why* — just land back on the roster. Their own
-        // evaluation results (in aggregate, with no evaluator identity)
-        // live at principal_results.php, not here.
+        // Never reveal why -- just land back on the roster. Their own results
+        // (in aggregate, no evaluator identity) live at principal_results.php.
         header("Location: principal_reports.php?group=" . urlencode($_GET['group'] ?? 'All') . "&eval_type=" . urlencode($activeEval));
         exit;
     }
 }
 
 // ── HELPERS ───────────────────────────────────────────────────
-// ── PRINCIPAL STUDENT REPORT GROUPING ─────────────────────────
-// This mirrors the current Dean Reports rule:
-//   Faculty = Teacher/Faculty accounts + Teaching Staff with a teaching scope.
+// Resolve a target into the Student Evaluation groups used by this report:
+//   Faculty = Teacher/Faculty accounts + Teaching Staff with a JHS/SHS teaching scope.
 //   Staff   = genuine Non-Teaching Staff with no teaching/year-level scope.
-// The helper intentionally checks the same assignment sources used elsewhere
-// in the portal, rather than trusting a stale role/evaluation_context value.
-if (!function_exists('principal_resolve_student_group')) {
+// Results are memoised per user; callers that already selected the flag columns
+// (the roster query) skip the per-user round trip.
 function principal_resolve_student_group(array $p, mysqli $mysqli): ?string {
     global $principalHighSchoolLevelsSql;
+    static $memo = [];
     $rawRole = strtolower(trim((string)($p['role'] ?? '')));
     if ($rawRole === 'principal' || $rawRole === 'dean') return 'school_head';
     $uid = (int)($p['id'] ?? 0);
     if ($uid <= 0) return null;
+    if (array_key_exists($uid, $memo)) return $memo[$uid];
 
-    $stmt = $mysqli->prepare("SELECT u.id, u.role, u.sector,
-            EXISTS(SELECT 1 FROM teaching_assignments ta WHERE ta.user_id=u.id) AS has_teaching_assignment,
-            EXISTS(SELECT 1 FROM user_year_levels yl WHERE yl.user_id=u.id) AS has_year_level,
-            EXISTS(SELECT 1 FROM teaching_assignments tha WHERE tha.user_id=u.id AND tha.year_level IN ($principalHighSchoolLevelsSql)) AS has_hs_assignment,
-            EXISTS(SELECT 1 FROM user_year_levels hyl WHERE hyl.user_id=u.id AND hyl.year_level IN ($principalHighSchoolLevelsSql)) AS has_hs_year_level
-        FROM users u WHERE u.id=? LIMIT 1");
-    if (!$stmt) return null;
-    $stmt->bind_param('i', $uid);
-    $stmt->execute();
-    $u = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
+    $need = ['has_teaching_assignment','has_year_level','has_hs_assignment','has_hs_year_level','sector'];
+    $have = true;
+    foreach ($need as $k) { if (!array_key_exists($k, $p)) { $have = false; break; } }
+    if ($have) {
+        $u = $p;
+    } else {
+        $stmt = $mysqli->prepare("SELECT u.id, u.role, u.sector,
+                EXISTS(SELECT 1 FROM teaching_assignments ta WHERE ta.user_id=u.id) AS has_teaching_assignment,
+                EXISTS(SELECT 1 FROM user_year_levels yl WHERE yl.user_id=u.id) AS has_year_level,
+                EXISTS(SELECT 1 FROM teaching_assignments tha WHERE tha.user_id=u.id AND tha.year_level IN ($principalHighSchoolLevelsSql)) AS has_hs_assignment,
+                EXISTS(SELECT 1 FROM user_year_levels hyl WHERE hyl.user_id=u.id AND hyl.year_level IN ($principalHighSchoolLevelsSql)) AS has_hs_year_level
+            FROM users u WHERE u.id=? LIMIT 1");
+        if (!$stmt) return null;
+        $stmt->bind_param('i', $uid);
+        $stmt->execute();
+        $u = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+    }
     if (!$u) return null;
 
-    $isTeacherRole = in_array(strtolower((string)$u['role']), ['teacher','faculty'], true)
-        || strtolower((string)$u['sector']) === 'teacher';
+    $isTeacherRole = in_array(strtolower((string)($u['role'] ?? $rawRole)), ['teacher','faculty'], true)
+        || strtolower((string)($u['sector'] ?? '')) === 'teacher';
     $hasAnyTeaching = (int)$u['has_teaching_assignment'] === 1 || (int)$u['has_year_level'] === 1;
     $hasHighSchoolTeaching = (int)$u['has_hs_assignment'] === 1 || (int)$u['has_hs_year_level'] === 1;
 
-    if (($isTeacherRole || $hasAnyTeaching) && $hasHighSchoolTeaching) return 'teacher';
-
-    // Non-teaching staff: staff function with no teaching/year-level scope.
-    if (strtolower((string)$u['role']) === 'staff' && !$hasAnyTeaching) return 'staff';
-    return null;
+    if (($isTeacherRole || $hasAnyTeaching) && $hasHighSchoolTeaching) return $memo[$uid] = 'teacher';
+    if (strtolower((string)($u['role'] ?? $rawRole)) === 'staff' && !$hasAnyTeaching) return $memo[$uid] = 'staff';
+    return $memo[$uid] = null;
 }
+
+// Fetch one row without fatalling when a query fails (query() returns false).
+function db_row(mysqli $db, string $sql): array {
+    $r = $db->query($sql);
+    if (!$r) return [];
+    $row = $r->fetch_assoc();
+    $r->free();
+    return $row ?: [];
 }
 
 function scoreLabel($s) {
@@ -321,6 +384,17 @@ function scoreColor($s) {
     return '#f87171';
 }
 
+// Satisfaction wording used by the cumulative report (print / Generate Report).
+// Same score bands as scoreLabel(), different labels.
+function scoreSatisfactionLabel($s) {
+    if ($s === null) return '—';
+    if ($s >= 4.5)  return 'Very Satisfied';
+    if ($s >= 3.5)  return 'Satisfied';
+    if ($s >= 2.5)  return 'Neither Satisfied nor Dissatisfied';
+    if ($s >= 1.5)  return 'Dissatisfied';
+    return 'Very Dissatisfied';
+}
+
 // Eval type UI config
 $evalLabel      = $activeEval === 'peer' ? 'Peer-to-Peer Evaluation' : 'Student Evaluation';
 $evalColor      = $activeEval === 'peer' ? '#7C3AED' : '#3B82F6';
@@ -334,41 +408,15 @@ $evaluatorNounP = $activeEval === 'peer' ? 'colleagues' : 'students';
 // eval_type filters which set we show
 
 // ══════════════════════════════════════════════════════════════
-function render_exec_sidebar(string $active, array $me, string $photo_src, string $scope): void {
-    $links = [
-        'dashboard' => ['principal_dashboard.php','fa-gauge','Dashboard'],
-        'evaluation' => ['principal_evaluations.php','fa-clipboard-list','My Evaluation'],
-        'tracker' => ['principal_evaluation_tracker.php','fa-satellite-dish','Evaluation Tracker'],
-        'results' => ['principal_results.php','fa-star-half-stroke','View Results'],
-        'reports' => ['principal_reports.php','fa-chart-line','Evaluation Reports'],
-        'settings' => ['principal_account_settings.php','fa-gear','Settings'],
-    ];
-    ?>
-    <aside class="sidebar">
-        <div class="sb-profile">
-            <img class="sb-photo" src="<?= htmlspecialchars($photo_src) ?>" alt="Profile"/>
-            <div class="sb-name"><?= htmlspecialchars($me['full_name'] ?? 'Principal') ?></div>
-            <div class="sb-role"><?= htmlspecialchars($me['designation'] ?? 'Principal') ?></div>
-            <div class="sb-scope"><?= htmlspecialchars($scope) ?></div>
-        </div>
-        <nav class="sb-nav" aria-label="Principal navigation">
-            <div class="sb-nav-section-label">MAIN</div>
-            <?php foreach (['dashboard', 'evaluation', 'tracker', 'results', 'reports'] as $key): ?>
-                <?php [$href,$icon,$label] = $links[$key]; ?>
-                <a href="<?= htmlspecialchars($href) ?>" class="<?= $key === $active ? 'active' : '' ?>"><i class="fa-solid <?= htmlspecialchars($icon) ?>"></i> <?= htmlspecialchars($label) ?></a>
-            <?php endforeach; ?>
-
-            <div class="sb-nav-section-label">ADMINISTRATION</div>
-            <?php [$href,$icon,$label] = $links['settings']; ?>
-            <a href="<?= htmlspecialchars($href) ?>" class="<?= $active === 'settings' ? 'active' : '' ?>"><i class="fa-solid <?= htmlspecialchars($icon) ?>"></i> <?= htmlspecialchars($label) ?></a>
-
-            <div class="sb-nav-section-label">ACCOUNT</div>
-            <a href="../logout.php" class="sb-logout-link"><i class="fa-solid fa-right-from-bracket"></i> Log Out</a>
-        </nav>
-    </aside>
-    <?php
+function render_exec_sidebar(string $active, array $me, string $photo_src): void {
+    // Kept as a thin wrapper so the existing calls in this file keep working.
+    // The markup and styling come from principal_sidebar.php, identical to
+    // every other Principal page.
+    global $principalScopeLabel;
+    render_principal_sidebar($active, $me, (string)($principalScopeLabel ?? ''), $photo_src);
 }
 
+// ══════════════════════════════════════════════════════════════
 // SHARED CSS HEAD (used across all sub-views)
 // ══════════════════════════════════════════════════════════════
 function pageHead($title, $evalColor, $evalColorBg, $evalColorBorder) { ?>
@@ -377,9 +425,10 @@ function pageHead($title, $evalColor, $evalColorBg, $evalColorBorder) { ?>
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title><?= htmlspecialchars($title) ?> — PBI Reports &amp; Analytics</title>
+<title><?= htmlspecialchars($title) ?> — PBI Evaluation Reports</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<?php principal_theme_assets(); ?>
 <style>
 :root{
   --dark:#F8FAFC;--mid:#FFFFFF;--inner:#F1F5F9;--accent:#3B82F6;
@@ -502,121 +551,67 @@ a { color:inherit; }
 .eval-tab.multi-role > i{color:#D97706 !important;}
 
 </style>
-<style id="principal-white-portal-theme">
-:root{
-  --portal-accent:#d99a2b;
-  --portal-accent-h:#f0b84d;
-  --portal-accent-glow:rgba(217,154,43,.20);
-  --portal-accent-bg:rgba(217,154,43,.10);
+<style>
+:root{--portal-accent:#7C5FD9;--portal-accent-h:#9C85F0;--portal-accent-glow:rgba(124,95,217,.4);--portal-accent-bg:rgba(124,95,217,.15);}
+html{background:#0A192F !important;color-scheme:dark;}
+body{min-height:100vh;display:flex !important;padding:0 !important;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,.82)),url('../background.png') center center / cover no-repeat fixed !important;background-color:#0A192F !important;color:#E0E6F0 !important;font-family:'DM Sans',sans-serif !important;}
+.sidebar{width:250px;flex:0 0 250px;min-height:100vh;background:#0F1F33;border-right:1px solid #060E18;padding:28px 20px;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;z-index:20;}
+.sb-nav .sb-section-title{width:100%;padding:0 6px;margin:8px 0 3px;color:#C4B5FD;font-size:11px;font-weight:900;letter-spacing:1.5px;line-height:1.25;text-align:center;text-transform:uppercase;text-shadow:0 1px 8px rgba(167,139,250,.16)}.sb-nav .sb-section-title:first-child{margin-top:0}.sb-profile{text-align:center;margin-bottom:26px}.sb-photo{width:72px;height:72px;border-radius:50%;object-fit:cover;border:2.5px solid var(--portal-accent);box-shadow:0 0 18px var(--portal-accent-glow);margin:0 auto 10px;display:block}.sb-name{font-weight:700;font-size:15px;color:#fff}.sb-role{font-size:11px;color:var(--portal-accent-h);text-transform:uppercase;letter-spacing:.6px;margin-top:2px}.sb-scope{font-size:10px;color:#A0B3C6;margin-top:4px}.sb-nav{display:flex;flex-direction:column;gap:4px;margin-top:10px}.sb-nav a{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:8px;color:#A0B3C6;text-decoration:none;font-size:14px;font-weight:500}.sb-nav a:hover,.sb-nav a.active{background:var(--portal-accent-bg);color:#fff}.sb-nav a i{width:18px;text-align:center;color:var(--portal-accent-h)}.sb-logout{margin-top:auto}.sb-logout a{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:8px;color:#fca5a5;text-decoration:none;font-size:14px}
+.main{flex:1;min-width:0;padding:36px 44px !important;}
+.page-header{background:rgba(23,42,69,.85) !important;border:1px solid rgba(255,255,255,.08) !important;color:#E0E6F0 !important;box-shadow:0 8px 32px rgba(0,0,0,.45) !important}.page-header h1,.page-title,.section-title,.sheet-name,.target-name,.person-name,.standing-name{color:#fff !important}.page-header p,.page-sub,.standing-desig,.person-meta,.sum-label,.sum-sub,.pstat-lbl,.muted,.no-data{color:#A0B3C6 !important}
+.eval-switcher,.eval-banner,.group-tab,.desig-subtabs,.sum-card,.standing-panel,.person-row,.no-evaluated,.target-card,.eval-card,.comment-section,.avg-summary,.top-bar,.history-card,.section,.content-panel,.no-archived{background:rgba(23,42,69,.85) !important;border-color:rgba(255,255,255,.08) !important;box-shadow:0 8px 32px rgba(0,0,0,.24) !important;color:#E0E6F0 !important}
+.eval-tab{color:#A0B3C6 !important}.eval-tab:hover{color:#fff !important;background:rgba(255,255,255,.04) !important}.eval-tab.student.active,.eval-tab.multi-role.active,.eval-tab.peer.active{background:var(--portal-accent-bg) !important;color:var(--portal-accent-h) !important}.eval-tab.student.active::after,.eval-tab.multi-role.active::after,.eval-tab.peer.active::after{background:var(--portal-accent) !important}.tab-badge,.tab-count{background:rgba(255,255,255,.10) !important;color:#E0E6F0 !important}
+.group-tab.active-all,.group-tab.active-teacher,.group-tab.active-staff,.desig-subtab.active{background:var(--portal-accent-bg) !important;border-color:rgba(255,255,255,.16) !important;color:var(--portal-accent-h) !important}
+.sum-value,.person-name,.section-title,.standing-name,.sheet-name,.target-name{color:#fff !important}.person-link,.back-btn,.btn-archived-link{color:#E0E6F0 !important}.person-row:hover{border-color:rgba(255,255,255,.16) !important}.person-photo-ph,.standing-photo-ph{background:#0F1F3D !important;border-color:rgba(255,255,255,.10) !important;color:#A0B3C6 !important}
+.score-bar-bg,.avg-bar-bg,.eval-bar-bg{background:rgba(255,255,255,.08) !important}.btn-print{background:var(--portal-accent) !important}.btn-archived-link{background:rgba(23,42,69,.85) !important;border-color:rgba(255,255,255,.10) !important}.btn-archived-link:hover{color:#fff !important}.back-btn{background:rgba(23,42,69,.85) !important;border-color:rgba(255,255,255,.10) !important}.back-btn:hover{background:var(--portal-accent-bg) !important;color:#fff !important}
+input,select,textarea{background:#0F1F3D !important;color:#E0E6F0 !important;border-color:rgba(255,255,255,.12) !important}.comment-text{background:#0F1F3D !important;color:#E0E6F0 !important}.eval-banner-title{color:var(--portal-accent-h) !important}.eval-banner-desc{color:#A0B3C6 !important}
+/* FINAL LIGHT THEME OVERRIDE — reports matches Dean dashboard */
+html{background:#F8FAFC !important;color-scheme:light !important;}
+body{background:#F8FAFC !important;color:#172033 !important;font-family:'Inter',sans-serif !important;}
+.main{background:#F8FAFC !important;color:#172033 !important;}
+.page-header{background:#FFFFFF !important;border:1px solid #E2E8F0 !important;color:#172033 !important;box-shadow:0 2px 4px rgba(15,23,42,.04),0 6px 16px rgba(15,23,42,.05) !important;}
+.page-header h1,.page-title,.section-title,.sheet-name,.target-name,.person-name,.standing-name,.sum-value{color:#172033 !important;}
+.page-header p,.page-sub,.standing-desig,.person-meta,.sum-label,.sum-sub,.pstat-lbl,.muted,.no-data,.eval-banner-desc{color:#475569 !important;}
+.eval-switcher,.eval-banner,.group-tab,.desig-subtabs,.sum-card,.standing-panel,.person-row,.no-evaluated,.target-card,.eval-card,.comment-section,.avg-summary,.top-bar,.history-card,.section,.content-panel,.no-archived,.table-wrap,.create-panel,.period-card,.stat-card,.sector-card,.gl-card,.amber-card,.green-card,.red-card{
+  background:#FFFFFF !important;border-color:#E2E8F0 !important;box-shadow:0 2px 4px rgba(15,23,42,.04),0 6px 16px rgba(15,23,42,.05) !important;color:#172033 !important;
 }
-html{background:#fff !important;color-scheme:light !important;}
-body{
-  min-height:100vh;
-  display:flex !important;
-  padding:0 !important;
-  background:#fff !important;
-  background-image:none !important;
-  color:#172033 !important;
-  font-family:'DM Sans',sans-serif !important;
-}
-.sidebar{
-  width:250px;flex:0 0 250px;min-height:100vh;
-  background:#0A192F !important;
-  border-right:1px solid #172A45 !important;
-  padding:28px 20px;display:flex;flex-direction:column;
-  position:sticky;top:0;height:100vh;z-index:20;
-}
-.sb-profile{text-align:center;margin-bottom:26px}
-.sb-photo{width:72px;height:72px;border-radius:50%;object-fit:cover;border:2.5px solid var(--portal-accent);box-shadow:0 0 18px var(--portal-accent-glow);margin:0 auto 10px;display:block}
-.sb-name{font-weight:700;font-size:15px;color:#fff}
-.sb-role{font-size:11px;color:var(--portal-accent-h);text-transform:uppercase;letter-spacing:.6px;margin-top:2px}
-.sb-scope{font-size:10px;color:#A0B3C6;margin-top:4px}
-.sb-nav{display:flex;flex-direction:column;gap:4px;margin-top:10px}
-.sb-nav a{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:8px;color:#A0B3C6;text-decoration:none;font-size:14px;font-weight:500}
-.sb-nav a:hover,.sb-nav a.active{background:var(--portal-accent-bg);color:#fff}
-.sb-nav a i{width:18px;text-align:center;color:var(--portal-accent-h)}
-.sb-logout{margin-top:6px}
-.sb-logout a{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:8px;color:#fca5a5;text-decoration:none;font-size:14px}
-.main{flex:1;min-width:0;padding:36px 44px !important;background:#fff !important;color:#172033 !important}
-.page-header,
-.eval-switcher,.eval-banner,.group-tab,.group-tab-wrap,.group-tabs,.desig-subtabs,
-.sum-card,.standing-panel,.person-row,.no-evaluated,.target-card,.eval-card,
-.comment-section,.avg-summary,.top-bar,.history-card,.section,.content-panel,.no-archived,
-.card,.panel,.table-card,.content-card,.stat-card,.info-banner,.gl-card,.amber-card,
-.green-card,.red-card,.cat-section,.people-list,.evaluator-grid,.ra-table-card,
-.eval-q-card,.eval-table-wrap,.table-wrap{
-  background:#fff !important;
-  border-color:#E2E8F0 !important;
-  box-shadow:0 4px 18px rgba(15,23,42,.08) !important;
-  color:#172033 !important;
-}
-.page-header h1,.page-title,.section-title,.sheet-name,.target-name,.person-name,.standing-name,
-.sum-value,h1,h2,h3,h4,h5,h6{color:#0F172A !important}
-.page-header p,.page-sub,.sheet-desig,.target-desig,.standing-desig,.person-meta,
-.sum-label,.sum-sub,.pstat-lbl,.muted,.no-data,.hint,.helper,.description,.subtitle,
-.main p,.main small,.subtabs-label,.ra-pager-info{color:#64748B !important}
-.eval-switcher,.tabs,.level-tabs,.status-tabs,.group-tab-wrap,.group-tabs,.desig-subtabs,.faculty-subtabs{
-  background:#fff !important;border-color:#E2E8F0 !important;box-shadow:none !important;
-}
-.eval-tab,.tab,.level-tab,.status-tab,.group-tab,.desig-subtab,.faculty-subtab{color:#475569 !important;background:transparent !important}
-.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover,.group-tab:hover,.desig-subtab:hover,.faculty-subtab:hover{color:#172033 !important;background:#F8FAFC !important}
-.eval-tab.student.active{background:#EFF6FF !important;color:#2563EB !important}
-.eval-tab.peer.active{background:#F5F3FF !important;color:#7C3AED !important}
-.eval-tab.multi-role.active{background:#FFF7ED !important;color:#D97706 !important}
-.group-tab.active,.desig-subtab.active,.faculty-subtab.active{background:#FFF7ED !important;color:#B45309 !important;border-color:#FED7AA !important}
-.tab-badge,.tab-count{background:#F1F5F9 !important;color:#475569 !important}
-.eval-tab.student.active .tab-badge{background:#DBEAFE !important;color:#2563EB !important}
-.eval-tab.peer.active .tab-badge{background:#EDE9FE !important;color:#7C3AED !important}
-.eval-tab.multi-role.active .tab-badge{background:#FFEDD5 !important;color:#D97706 !important}
-.student-report-groups .faculty-subtabs{background:#F8FAFC !important;border:1px solid #E2E8F0 !important}
-.student-report-groups .faculty-subtab:hover{background:#FFF7ED !important;color:#92400E !important}
-.student-report-groups .faculty-subtab.active{background:#FFF7ED !important;border-color:#FED7AA !important;color:#B45309 !important}
-.student-report-groups .tab-count{background:#F1F5F9 !important}
-
-/* Report table and controls: no dark surfaces anywhere in the content area. */
-.ra-table-card{background:#fff !important;color:#172033 !important;border-color:#E2E8F0 !important}
-.ra-table-tools .ra-tool-btn,.ra-filter-clear,.ra-search,.ra-filter-row select,.ra-pager-btns button{
-  background:#fff !important;color:#334155 !important;border-color:#CBD5E1 !important;
-}
-.ra-filters-panel{background:#fff !important;color:#172033 !important;border-color:#E2E8F0 !important;box-shadow:0 10px 28px rgba(15,23,42,.12) !important}
-.ra-table-wrap{background:#fff !important}
-table.ra-table{background:#fff !important;color:#172033 !important}
-table.ra-table th{color:#64748B !important;border-color:#E2E8F0 !important;background:#F8FAFC !important}
-table.ra-table td{color:#172033 !important;border-color:#E2E8F0 !important;background:#fff !important}
-table.ra-table tbody tr:hover{background:#F8FAFC !important}
-.ra-name-text a{color:#172033 !important}
-.ra-tool-btn:hover,.ra-filter-clear:hover,.ra-pager-btns button:hover{background:#F8FAFC !important;color:#172033 !important}
-.ra-pager-btns button.active{background:#d99a2b !important;border-color:#d99a2b !important;color:#fff !important}
-.score-bar-bg,.eval-bar-bg,.avg-bar-bg,.bar-wrap{background:#E2E8F0 !important}
-.comment-text{background:#F8FAFC !important;color:#334155 !important;border-color:#E2E8F0 !important}
-
-/* Buttons and semantic accents remain light-theme compatible. */
-.btn-print,.btn-archive,.btn-restore,.btn-solid,.btn,.action-btn,.back-btn,.btn-archived-link{
-  background:rgba(217,154,43,.10) !important;
-  border-color:rgba(217,154,43,.30) !important;
-  color:#A16207 !important;
-}
-.btn-solid,.btn-primary{background:#d99a2b !important;color:#fff !important;border-color:#d99a2b !important}
-.btn-print:hover,.btn-archive:hover,.btn-restore:hover,.btn:hover,.action-btn:hover,.back-btn:hover,.btn-archived-link:hover{background:rgba(217,154,43,.16) !important;color:#92400E !important}
-input,select,textarea{background:#fff !important;color:#172033 !important;border-color:#CBD5E1 !important}
-input::placeholder,textarea::placeholder{color:#94A3B8 !important}
-.period-badge{background:rgba(217,154,43,.12) !important;border-color:rgba(217,154,43,.28) !important;color:#B45309 !important}
-.print-eval-summary{background:#fff !important;color:#172033 !important}
+.eval-tab{color:#475569 !important;}
+.eval-tab:hover{color:#172033 !important;background:#F4F7FB !important;}
+.eval-tab.student.active,.eval-tab.multi-role.active,.eval-tab.peer.active{background:#F5F3FF !important;color:#7C5FD9 !important;}
+.eval-tab.student.active::after,.eval-tab.multi-role.active::after,.eval-tab.peer.active::after{background:#7C5FD9 !important;}
+.tab-badge,.tab-count{background:#F1F5F9 !important;color:#475569 !important;}
+.group-tab.active-all,.group-tab.active-teacher,.group-tab.active-staff,.desig-subtab.active{background:#F5F3FF !important;border-color:#E2E8F0 !important;color:#7C5FD9 !important;}
+.sum-value,.person-name,.section-title,.standing-name,.sheet-name,.target-name{color:#172033 !important;}
+.person-link,.back-btn,.btn-archived-link{color:#334155 !important;}
+.person-row:hover{border-color:#CBD5E1 !important;}
+.person-photo-ph,.standing-photo-ph{background:#F1F5F9 !important;border-color:#E2E8F0 !important;color:#64748B !important;}
+.score-bar-bg,.avg-bar-bg,.eval-bar-bg{background:#E2E8F0 !important;}
+.btn-print{background:#7C5FD9 !important;color:#fff !important;}
+.btn-archived-link,.back-btn{background:#FFFFFF !important;border-color:#CBD5E1 !important;}
+.btn-archived-link:hover,.back-btn:hover{background:#F5F3FF !important;color:#7C5FD9 !important;}
+input,select,textarea{background:#FFFFFF !important;color:#172033 !important;border-color:#CBD5E1 !important;}
+.comment-text{background:#F8FAFC !important;color:#334155 !important;}
+.eval-banner-title{color:#7C5FD9 !important;}
+:::-webkit-scrollbar-track{background:#F8FAFC !important;}
+:::-webkit-scrollbar-thumb{background:#CBD5E1 !important;border:2px solid #F8FAFC !important;}
 
 @media(max-width:900px){body{display:block !important}.sidebar{position:relative;width:100%;height:auto;min-height:0}.main{padding:24px !important}}
-@media print{html,body,.main{background:#fff !important;color:#000 !important}}
 </style>
+
+
 <?php } // end pageHead
 
 // ══════════════════════════════════════════════════════════════
 // VIEW: EVALUATION SHEET
 // ══════════════════════════════════════════════════════════════
 if ($view === 'sheet' && $target_id && $tracker_id) {
-    $tgt = $mysqli->query("SELECT id,full_name,designation,photo,role FROM users u WHERE u.id=$target_id AND $reportScopeSql LIMIT 1")->fetch_assoc();
+    $tgt = db_row($mysqli, "SELECT id,full_name,designation,photo,role FROM users u WHERE u.id=$target_id AND $reportScopeSql LIMIT 1");
     if (!$tgt) { http_response_code(404); exit('Personnel not found in this report scope.'); }
-    $stu = $mysqli->query("SELECT id,full_name,photo FROM users WHERE id=$student_id LIMIT 1")->fetch_assoc();
-    $trk = $mysqli->query("SELECT * FROM evaluation_tracker et WHERE et.id=$tracker_id AND et.target_user_id=$target_id AND $evalTypeSql LIMIT 1")->fetch_assoc();
+    $trk = db_row($mysqli, "SELECT * FROM evaluation_tracker et WHERE et.id=$tracker_id AND et.target_user_id=$target_id AND $evalTypeSql LIMIT 1");
     if (!$trk) { http_response_code(404); exit('Evaluation not found in this report scope.'); }
+    // Identify the evaluator from the tracker row itself so a hand-edited
+    // ?student_id= can never show a name that doesn't match the evaluation.
+    $stu = db_row($mysqli, "SELECT id,full_name,photo FROM users WHERE id=" . (int)($trk['evaluator_id'] ?? 0) . " LIMIT 1");
 
     $answers = [];
     // Student Teacher/Multi-Role questionnaires come from evaluation_questions;
@@ -643,6 +638,138 @@ if ($view === 'sheet' && $target_id && $tracker_id) {
     $scores = array_filter(array_column($answers,'answer_score'), fn($s) => $s !== null);
     $avg    = count($scores) ? round(array_sum($scores)/count($scores),2) : null;
     $remark = $trk['remarks'] ?? '';
+
+    // "Generate Report" (Evaluators List) opens this sheet with &report=1 so the
+    // clean cumulative report layout is shown on screen, exactly as it prints.
+    $reportMode = (($_GET['report'] ?? '') === '1');
+
+    // ── CUMULATIVE REPORT DATA (print / Generate Report layout) ───────────
+    // The report is the cumulative result for this person under the current
+    // evaluation type: every submission is pooled, each question shows its
+    // average rating across all evaluators, and the overall rating is the
+    // average of those per-question ratings. It uses the same evaluator set as
+    // the Evaluators List (same period, JHS/SHS-only scope, year-level filter).
+    $cumYear = trim((string)($_GET['year_level'] ?? ''));
+    if (!isset($principalGradeLevels[$cumYear])) $cumYear = '';
+    $cumYearWhere = '';
+    if ($activeEval === 'student' && $cumYear !== '') {
+        $cumYearWhere = " AND TRIM(COALESCE(u.year_level,'')) IN (" . implode(',', array_map($sqlQuote, $principalGradeLevels[$cumYear]['values'])) . ")";
+    }
+    $cumTrackers = [];
+    $cq = $mysqli->query("
+        SELECT et.id AS tracker_id, et.submitted_at, et.remarks, u.role AS evaluator_role
+        FROM evaluation_tracker et
+        JOIN users u ON u.id = et.evaluator_id
+        WHERE et.target_user_id = $target_id AND $evalTypeSql $cumYearWhere
+        ORDER BY et.submitted_at DESC
+    ");
+    if ($cq) $cumTrackers = $cq->fetch_all(MYSQLI_ASSOC);
+    if (empty($cumTrackers) && $trk) {
+        // Safety net: never print an empty report for a valid sheet link.
+        $cumTrackers = [[
+            'tracker_id'     => (int)$trk['id'],
+            'submitted_at'   => $trk['submitted_at'],
+            'remarks'        => $trk['remarks'] ?? '',
+            'evaluator_role' => '',
+        ]];
+    }
+
+    $cumByCat = [];
+    $cumOverall = null;
+    if (!empty($cumTrackers)) {
+        $cumIds = implode(',', array_map('intval', array_column($cumTrackers, 'tracker_id')));
+        // Same two question sources / joins as the individual sheet above, so the
+        // cumulative numbers always agree with what "View" shows per evaluator.
+        $cqb = $mysqli->query("
+            SELECT category, q_id, question_text,
+                   COUNT(answer_score) AS total_responses,
+                   AVG(answer_score)   AS avg_score
+            FROM (
+                SELECT qa.question_id AS q_id, eq.question_text, eq.category, qa.answer_score
+                FROM questionnaire_answers qa
+                JOIN evaluation_questions eq ON eq.id = qa.question_id
+                WHERE qa.tracker_id IN ($cumIds) AND qa.question_source='evaluation'
+                UNION ALL
+                SELECT qa.user_question_id AS q_id, uq.question_text, uq.category, qa.answer_score
+                FROM questionnaire_answers qa
+                JOIN user_questions uq ON uq.id = qa.user_question_id
+                WHERE qa.tracker_id IN ($cumIds) AND qa.question_source='user'
+            ) cum_answers
+            WHERE answer_score IS NOT NULL
+            GROUP BY category, q_id, question_text
+            ORDER BY category, q_id
+        ");
+        if ($cqb) {
+            foreach ($cqb->fetch_all(MYSQLI_ASSOC) as $cRow) {
+                $cRow['avg_score'] = round((float)$cRow['avg_score'], 2);
+                $cumByCat[$cRow['category']][] = $cRow;
+            }
+        }
+        // Overall = flat average across every individual answer pooled together
+        // (same method the roster/Evaluated Personnel list uses: AVG(qa.answer_score)
+        // over all rows — see line ~1581). Previously this was the average of the
+        // rounded per-question averages instead, which only matches the roster
+        // figure when every question has the same number of responses — it
+        // silently drifts whenever a question is skipped by an evaluator or
+        // added/removed between evaluation cycles. Kept as its own direct query
+        // (not derived from $cumByCat's rounded per-question values) so it is
+        // exactly the same figure the roster shows.
+        $cumOverallRes = $mysqli->query("
+            SELECT AVG(answer_score) AS overall_avg
+            FROM (
+                SELECT qa.answer_score
+                FROM questionnaire_answers qa
+                WHERE qa.tracker_id IN ($cumIds) AND qa.question_source='evaluation' AND qa.answer_score IS NOT NULL
+                UNION ALL
+                SELECT qa.answer_score
+                FROM questionnaire_answers qa
+                WHERE qa.tracker_id IN ($cumIds) AND qa.question_source='user' AND qa.answer_score IS NOT NULL
+            ) cum_all_answers
+        ");
+        if ($cumOverallRes) {
+            $cumOverallRow = $cumOverallRes->fetch_assoc();
+            $cumOverall = $cumOverallRow && $cumOverallRow['overall_avg'] !== null
+                ? round((float)$cumOverallRow['overall_avg'], 2)
+                : null;
+        }
+    }
+
+    // Date(s) this person was evaluated.
+    $cumDates = array_filter(array_column($cumTrackers, 'submitted_at'));
+    if ($cumDates) {
+        $cumFrom = strtotime(min($cumDates));
+        $cumTo   = strtotime(max($cumDates));
+        $cumDateText = (date('Y-m-d', $cumFrom) === date('Y-m-d', $cumTo))
+            ? date('F d, Y', $cumTo)
+            : date('M d, Y', $cumFrom) . ' – ' . date('M d, Y', $cumTo);
+    } else {
+        $cumDateText = '—';
+    }
+
+    // Who evaluated, with counts — e.g. "4 Students" or "3 Faculty, 1 Staff".
+    $cumRoleLabels = ['student'=>'Students','teacher'=>'Faculty','faculty'=>'Faculty','staff'=>'Staff','dean'=>'Dean','principal'=>'Principal'];
+    $cumEvalCounts = [];
+    foreach ($cumTrackers as $ct) {
+        $r = strtolower(trim((string)($ct['evaluator_role'] ?? '')));
+        $lbl = $cumRoleLabels[$r] ?? ucfirst($evaluatorNounP);
+        $cumEvalCounts[$lbl] = ($cumEvalCounts[$lbl] ?? 0) + 1;
+    }
+    $cumEvalParts = [];
+    foreach ($cumEvalCounts as $lbl => $n) {
+        if ($n === 1 && $lbl === 'Students') $lbl = 'Student';
+        $cumEvalParts[] = $n . ' ' . $lbl;
+    }
+    $cumEvaluatedBy = implode(', ', $cumEvalParts);
+
+    // Comments from every evaluator, anonymous.
+    $cumRemarks = array_values(array_filter(
+        array_map(fn($t) => trim((string)($t['remarks'] ?? '')), $cumTrackers),
+        fn($r) => $r !== ''
+    ));
+
+    $cumRoleText = $tgt['role']==='principal' ? 'Principal'
+                 : ($tgt['role']==='dean' ? 'Dean'
+                 : (in_array($tgt['role'], ['teacher','faculty'], true) ? 'Faculty' : 'Staff'));
 
     $scaleItems  = [5=>'Always',4=>'Often',3=>'Sometimes',2=>'Rarely',1=>'Never'];
     $scaleColors = [5=>'#4ade80',4=>'#86efac',3=>'#facc15',2=>'#fb923c',1=>'#f87171'];
@@ -740,501 +867,19 @@ input::placeholder, textarea::placeholder { color:#94A3B8; }
 button, .btn { font-weight:700; }
 a { color:inherit; }
 </style>
-
-<style id="white-theme-override">
-:root{--dark:#ffffff;--mid:#ffffff;--inner:#f5f7fb;--light:#172033;--muted:#64748b;--shadow:0 4px 18px rgba(15,23,42,.08);}
-html,body{background:#F8FAFC!important;color:#172033!important;}
-body{background-image:none!important;}
-main,.main-content,.content,.page-content{background:#F8FAFC!important;color:#172033!important;}
-.sidebar{background:#0A192F!important;color:#E0E6F0!important;border-right:1px solid #172A45!important;}
-.sidebar *,.sidebar a{color:inherit;}
-.stat-card,.section,.period-strip,.filter-bar,.card,.panel,.table-wrap,.modal-content{background:#fff!important;color:#172033!important;border-color:#e2e8f0!important;box-shadow:var(--shadow)!important;}
-h1,h2,h3,h4,h5,h6,.section-title,.page-title{color:#0f172a!important;}
-p,span,label,td,th,small{color:inherit;}
-table{color:#172033!important;}
-table thead th{background:#f8fafc!important;color:#334155!important;border-color:#e2e8f0!important;}
-table tbody td{border-color:#e2e8f0!important;}
-input,select,textarea{background:#fff!important;color:#172033!important;border-color:#cbd5e1!important;}
-.search-box input[type=text],.search-box select,.form-group input,.filter-field select,.filter-field input[type=text]{background:#fff!important;color:#172033!important;}
-.btn-reset{color:#475569!important;border-color:#cbd5e1!important;}
-.notif-list li{background:#f8fafc!important;}
-</style>
-
-<style id="principal-subtle-feature-background">
-/* Subtle light backdrop for every Principal feature area. Feature cards remain white; sidebar stays navy. */
-html{background:#F8FAFC !important;}
-body{background:#F8FAFC !important;}
-.main, main.main, .main-content, .content, .page-content{background:#F8FAFC !important;}
-.page-header,.eval-switcher,.eval-banner,.group-tab-wrap,.group-tabs,.desig-subtabs,.faculty-subtabs,
-.card,.panel,.section,.table-card,.content-card,.stat-card,.info-banner,.gl-card,.amber-card,
-.green-card,.red-card,.ra-table-card,.table-wrap,.table-card-wrap,.content-panel,.history-card,
-target-card,.eval-card,.comment-section,.avg-summary,.standing-panel,.person-row,.no-evaluated,
-.no-archived,.evaluator-grid,.people-list,.cat-section,.period-strip,.filter-bar{background:#FFFFFF !important;}
-@media print{html,body,.main,main.main,.main-content,.content,.page-content{background:#fff !important;}}
-</style>
-
-<style id="principal-ea-style-feature-canvas-standalone">
-/* Match the EA System Logs feature: subtle light canvas with white content surfaces. */
-html{background:#F8FAFC !important;}
-body{background:#F8FAFC !important;background-image:none !important;}
-.main, main.main, .main-content, .content, .page-content{background:#F8FAFC !important;}
-/* Preserve clean white feature cards/panels. */
-.page-header,.card,.panel,.section,.table-card,.content-card,.stat-card,
-.period-strip,.filter-bar,.table-wrap,.table-card-wrap,.content-panel,
-.eval-banner,.info-banner,.history-card,.gl-card,.amber-card,.green-card,.red-card,
-.ra-table-card,.eval-card,.comment-section,.avg-summary,.standing-panel,
-.person-row,.target-card,.no-eval,.no-data,.no-evaluated,.no-archived,
-.evaluator-grid,.people-list,.cat-section,.eval-switcher,.tabs,.level-tabs,
-.status-tabs,.faculty-subtabs,.group-tabs,.group-tab-wrap,
-.desig-subtabs,.desig-subtab-wrap,.results-card,.result-card,.feature-card{
-    background:#FFFFFF !important;
-}
-/* Light inner surfaces, equivalent to the EA log table header treatment. */
-.main table thead th,.main .table-head,.main .table-header,.main .thead,
-.main .subtle-head{background:#F4F8FF !important;}
-@media print{
-  html,body,.main,main.main,.main-content,.content,.page-content{background:#fff !important;}
-}
-</style>
-
-
-<style id="principal-integrated-light-view">
-/* ================================================================
-   PRINCIPAL INTEGRATED LIGHT VIEW
-   Visual direction: same overall canvas treatment as the EA dashboard.
-   The content area is one continuous light surface; feature sections
-   remain white, but are flatter and more naturally integrated instead
-   of looking like isolated floating cards.
-   ================================================================ */
-html, body {
-  background: #F8FAFC !important;
-  color: #172033 !important;
-}
-body {
-  background-image: none !important;
-}
-
-/* Continuous page canvas */
-.main,
-main.main,
-.main-content,
-.content,
-.page-content {
-  background: #F8FAFC !important;
-  color: #172033 !important;
-  min-height: 100vh;
-}
-
-/* Keep the existing navy Principal sidebar exactly as-is */
-.sidebar {
-  background: #0A192F !important;
-}
-
-/* Page heading sits directly on the canvas — not in a floating card. */
-.main > .page-header,
-main.main > .page-header {
-  background: transparent !important;
-  border: 0 !important;
-  box-shadow: none !important;
-  border-radius: 0 !important;
-  padding: 0 !important;
-  margin: 0 0 22px !important;
-}
-
-.page-title,
-.page-header h1 {
-  color: #0F172A !important;
-}
-.page-sub,
-.page-header p {
-  color: #64748B !important;
-}
-
-/* Major feature sections: white, but visually grounded on the light canvas. */
-.period-strip,
-.structure-note,
-.stub-note,
-.section,
-.card-grid,
-.eval-switcher,
-.eval-banner,
-.group-tab-wrap,
-.group-tabs,
-.desig-subtabs,
-.faculty-subtabs,
-.filter-bar,
-.ra-table-card,
-.ra-filters-panel,
-.table-wrap,
-.table-card,
-.content-card,
-.summary-card,
-.standing-panel,
-.history-card,
-.people-list,
-.evaluator-grid,
-.no-archived,
-.info-grid,
-.sheet-header,
-.scale-bar,
-.q-table,
-.comment-section,
-.avg-summary {
-  border-color: #E2E8F0 !important;
-}
-
-.period-strip,
-.structure-note,
-.section,
-.sheet-header,
-.scale-bar,
-.comment-section,
-.avg-summary,
-.ra-table-card,
-.ra-filters-panel,
-.table-wrap,
-.table-card,
-.content-card,
-.summary-card,
-.standing-panel,
-.history-card,
-.people-list,
-.evaluator-grid,
-.no-archived,
-.info-grid {
-  background: #FFFFFF !important;
-  color: #172033 !important;
-  box-shadow: 0 2px 10px rgba(15,23,42,.055) !important;
-}
-
-/* Dashboard KPI/detail cards stay visible, but lose the heavy "floating" effect. */
-.card-grid {
-  background: transparent !important;
-  box-shadow: none !important;
-  border: 0 !important;
-  padding: 0 !important;
-}
-.stat-card,
-.stat-link .stat-card {
-  background: #FFFFFF !important;
-  border-color: #E2E8F0 !important;
-  box-shadow: 0 3px 12px rgba(15,23,42,.055) !important;
-}
-.stat-card:hover,
-.stat-link:hover .stat-card {
-  box-shadow: 0 5px 14px rgba(15,23,42,.075) !important;
-}
-
-/* Common tables/inner surfaces stay clean and readable. */
-table,
-.eval-table-wrap,
-.eval-q-card,
-.q-result,
-.received-item {
-  background: #FFFFFF !important;
-  color: #172033 !important;
-  border-color: #E2E8F0 !important;
-}
-
-table thead th,
-.eval-table th,
-.q-table thead tr,
-table.data th,
-.q-table th {
-  background: #F8FAFC !important;
-  color: #475569 !important;
-  border-color: #E2E8F0 !important;
-}
-
-table tbody td,
-.eval-table td,
-.q-table td,
-table.data td {
-  background: #FFFFFF !important;
-  color: #334155 !important;
-  border-color: #E2E8F0 !important;
-}
-
-table tbody tr:hover td,
-.eval-table tr:hover td,
-.q-table tr:hover td {
-  background: #F8FAFC !important;
-}
-
-/* Report feature area follows the same integrated page treatment. */
-.eval-tab,
-.tab,
-.level-tab,
-.status-tab,
-.group-tab,
-.desig-subtab,
-.faculty-subtab {
-  background: transparent !important;
-}
-
-/* Inner highlighted controls can still use soft tint, never dark navy. */
-.main .subtle-head,
-.main .table-head,
-.main .table-header,
-.main .thead {
-  background: #F4F8FF !important;
-}
-
-input,
-select,
-textarea,
-.search-box input[type=text],
-.search-box select,
-.form-group input,
-.filter-field select,
-.filter-field input[type=text],
-.ra-filter-row select,
-.ra-search,
-.eval-comment-box {
-  background: #FFFFFF !important;
-  color: #172033 !important;
-  border-color: #CBD5E1 !important;
-}
-
-/* Avoid accidental dark-mode remnants in common feature containers. */
-.main .modal,
-.main .modal-content,
-.main .dropdown,
-.main .menu,
-.main .popover,
-.main .panel {
-  background: #FFFFFF !important;
-  color: #172033 !important;
-  border-color: #E2E8F0 !important;
-}
-
-@media (max-width: 768px) {
-  .main,
-  main.main,
-  .main-content,
-  .content,
-  .page-content {
-    padding: 24px 18px !important;
-  }
-}
-
-@media print {
-  html, body, .main, main.main, .main-content, .content, .page-content {
-    background: #FFFFFF !important;
-  }
-  .main > .page-header,
-  main.main > .page-header {
-    box-shadow: none !important;
-  }
-}
-</style>
-
-
-
-<style id="principal-ea-logs-canvas-final">
-/* EA System Logs-like visual treatment:
-   white viewport + a subtle #F8FAFC feature canvas inset inside it. */
-html, body {
-  background: #FFFFFF !important;
-  background-image: none !important;
-  color: #172033 !important;
-}
-
-.main,
-main.main,
-.main-content,
-.content,
-.page-content {
-  position: relative !important;
-  isolation: isolate !important;
-  background: #FFFFFF !important;
-  color: #172033 !important;
-  min-height: 100vh;
-}
-
-/* The feature canvas does NOT cover the whole white page. */
-.main::before,
-main.main::before {
-  content: "";
-  position: absolute;
-  left: 16px;
-  right: 0;
-  top: 56px;
-  bottom: 0;
-  background: #F8FAFC !important;
-  border-radius: 16px 0 0 0;
-  pointer-events: none;
-  z-index: -1;
-}
-
-/* Preserve the existing navy Principal sidebar. */
-.sidebar {
-  background: #0A192F !important;
-}
-
-/* Keep feature surfaces white, with only a very light edge/shadow. */
-.main .page-header,
-.main .section,
-.main .card,
-.main .panel,
-.main .table-card,
-.main .content-card,
-.main .stat-card,
-.main .period-strip,
-.main .filter-bar,
-.main .table-wrap,
-.main .table-card-wrap,
-.main .content-panel,
-.main .eval-banner,
-.main .info-banner,
-.main .history-card,
-.main .gl-card,
-.main .amber-card,
-.main .green-card,
-.main .red-card,
-.main .ra-table-card,
-.main .eval-card,
-.main .comment-section,
-.main .avg-summary,
-.main .standing-panel,
-.main .person-row,
-.main .target-card,
-.main .no-eval,
-.main .no-data,
-.main .no-evaluated,
-.main .no-archived,
-.main .evaluator-grid,
-.main .people-list,
-.main .cat-section,
-.main .results-card,
-.main .result-card,
-.main .feature-card {
-  background: #FFFFFF !important;
-  color: #172033 !important;
-  border-color: #D9E4EF !important;
-  box-shadow: 0 1px 5px rgba(15,23,42,.035) !important;
-}
-
-.main table thead th,
-.main .table-head,
-.main .table-header,
-.main .thead,
-.main .subtle-head {
-  background: #F4F8FF !important;
-  color: #4B6580 !important;
-  border-color: #D9E4EF !important;
-}
-
-.main table tbody td {
-  background: #FFFFFF !important;
-  color: #172033 !important;
-  border-color: #D9E4EF !important;
-}
-
-.main table tbody tr:hover td,
-.main .person-row:hover,
-.main .standing-item:hover {
-  background: #F8FAFC !important;
-}
-
-.main input,
-.main select,
-.main textarea,
-.main .search-box input[type=text],
-.main .search-box select,
-.main .form-group input,
-.main .filter-field select,
-.main .filter-field input[type=text],
-.main .ra-filter-row select,
-.main .ra-search,
-.main .eval-comment-box {
-  background: #FFFFFF !important;
-  color: #172033 !important;
-  border-color: #CBD5E1 !important;
-}
-
-.main .modal,
-.main .modal-content,
-.main .dropdown,
-.main .menu,
-.main .popover,
-.main .panel {
-  background: #FFFFFF !important;
-  color: #172033 !important;
-  border-color: #D9E4EF !important;
-}
-
-@media (max-width: 768px) {
-  .main::before,
-  main.main::before {
-    left: 0;
-    top: 52px;
-    border-radius: 12px 0 0 0;
-  }
-}
-
-@media print {
-  html, body, .main, main.main, .main-content, .content, .page-content {
-    background: #FFFFFF !important;
-  }
-  .main::before,
-  main.main::before {
-    display: none !important;
-  }
-}
-</style>
-
-
-<style id="principal-workspace-sharper-final">
-/* Final Principal workspace composition: white outer page + sharper light workspace. */
-html{background:#FFFFFF!important;color-scheme:light!important;}
-body{background:#FFFFFF!important;background-image:none!important;color:#172033!important;}
-.sidebar{background:#0A192F!important;}
-.main,main.main{
-  position:relative!important;
-  background:#F3F6FA!important;
-  color:#172033!important;
-  border:1px solid #E5EAF0!important;
-  border-bottom:0!important;
-  border-radius:16px 16px 0 0!important;
-  box-shadow:none!important;
-}
-.main > .page-header,main.main > .page-header{
-  background:transparent!important;
-  border:0!important;
-  box-shadow:none!important;
-}
-.main .page-header,.main .section,.main .card,.main .panel,.main .table-card,.main .content-card,.main .stat-card,
-.main .period-strip,.main .filter-bar,.main .table-wrap,.main .table-card-wrap,.main .content-panel,
-.main .eval-banner,.main .info-banner,.main .history-card,.main .gl-card,.main .amber-card,.main .green-card,
-.main .red-card,.main .ra-table-card,.main .eval-card,.main .comment-section,.main .avg-summary,.main .standing-panel,
-.main .person-row,.main .target-card,.main .no-eval,.main .no-data,.main .no-evaluated,.main .no-archived,
-.main .evaluator-grid,.main .people-list,.main .cat-section,.main .results-card,.main .result-card,.main .feature-card{
-  background:#FFFFFF!important;
-  color:#172033!important;
-  border-color:#D9E4EF!important;
-  box-shadow:0 1px 5px rgba(15,23,42,.035)!important;
-}
-.main table thead th,.main .table-head,.main .table-header,.main .thead,.main .subtle-head{
-  background:#F4F8FF!important;color:#4B6580!important;border-color:#D9E4EF!important;
-}
-@media(max-width:768px){
-  .main,main.main{margin:12px 12px 0!important;padding:20px 18px 28px!important;border-radius:12px 12px 0 0!important;}
-}
-@media print{
-  html,body,.main,main.main{background:#FFFFFF!important;border-color:transparent!important;}
-}
-</style>
-</head><body>
-<?php render_exec_sidebar('reports', $me, $photo_src, $principalScopeLabel); ?>
+<link rel="stylesheet" href="includes/principal_light_theme.css"/>
+<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20260927.4" id="principal-dark-repairs"/>
+</head><body class="<?= $reportMode ? 'report-mode' : '' ?>">
+</div>
+<?php render_exec_sidebar('reports', $me, $photo_src); ?>
 <main class="main">
 
 
 <div class="person-actions no-print" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-    <a href="?view=students&target_id=<?= $target_id ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>" class="back-btn">
+    <a href="?view=students&target_id=<?= $target_id ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?><?= $cumYear !== '' ? '&year_level=' . urlencode($cumYear) : '' ?>" class="back-btn">
         <i class="fa-solid fa-arrow-left"></i> Back to <?= ucfirst($evaluatorNounP) ?> List
     </a>
-    <button class="btn-print no-print" onclick="window.print()"><i class="fa-solid fa-print"></i> Print / Save PDF</button>
+    <button class="btn-print no-print" onclick="window.print()"><i class="fa-solid fa-print"></i> Print</button>
 </div>
 
 <!-- Eval type chip -->
@@ -1242,6 +887,7 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
     <i class="fa-solid <?= $evalIcon ?>"></i> <?= $evalLabel ?>
 </div>
 
+<div class="individual-sheet">
 <!-- SHEET HEADER -->
 <div class="sheet-header">
     <?php if ($tgt['photo']): ?><img class="sheet-avatar" src="../image/<?= htmlspecialchars($tgt['photo']) ?>" alt=""/>
@@ -1351,433 +997,729 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
 </div>
 <?php endif; ?>
 
+</div><!-- /.individual-sheet -->
+
+<!-- CUMULATIVE REPORT — this is what prints / shows in "Generate Report".
+     Every question shows the average rating across ALL evaluators, with the
+     total (overall cumulative) score under the last question. -->
+<div class="cumulative-sheet">
+    <div class="cum-topbar">
+        <span class="cum-type"><?= htmlspecialchars($evalLabel) ?></span>
+        <span class="cum-by">Evaluated by: <strong><?= htmlspecialchars($cumEvaluatedBy) ?></strong></span>
+    </div>
+
+    <div class="sheet-header">
+        <?php if ($tgt['photo']): ?><img class="sheet-avatar" src="../image/<?= htmlspecialchars($tgt['photo']) ?>" alt=""/>
+        <?php else: ?><div class="sheet-avatar-ph"><i class="fa-solid fa-user"></i></div><?php endif; ?>
+        <div>
+            <div class="sheet-name"><?= htmlspecialchars($tgt['full_name']) ?></div>
+            <div class="sheet-desig"><?= htmlspecialchars($tgt['designation']) ?> · <?= $cumRoleText ?></div>
+        </div>
+        <div class="cum-date">
+            <div class="cum-date-label">Date Evaluated</div>
+            <div class="cum-date-val"><?= htmlspecialchars($cumDateText) ?></div>
+        </div>
+    </div>
+
+    <?php $cumNum = 1; foreach ($cumByCat as $cat => $cRows): ?>
+    <div class="cat-section">
+        <div class="cat-title"><i class="fa-solid fa-layer-group" style="font-size:10px"></i> <?= htmlspecialchars($cat) ?></div>
+        <table class="q-table">
+            <thead><tr>
+                <th style="width:40px">No.</th>
+                <th>Statement / Question</th>
+                <th class="rating-col" style="width:150px">Avg. Rating</th>
+            </tr></thead>
+            <tbody>
+            <?php foreach ($cRows as $cRow):
+                $cs = $cRow['avg_score']; ?>
+            <tr>
+                <td class="q-num"><?= $cumNum++ ?></td>
+                <td><?= htmlspecialchars($cRow['question_text']) ?></td>
+                <td class="rating-cell">
+                    <div class="rating-badge">
+                        <span class="rating-num"><?= number_format($cs, 2) ?></span>
+                        <span class="rating-lbl"><?= scoreSatisfactionLabel($cs) ?></span>
+                    </div>
+                </td>
+            </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php endforeach; ?>
+
+    <?php if (empty($cumByCat)): ?>
+    <div class="cum-empty">No answers found for this evaluation.</div>
+    <?php endif; ?>
+
+    <?php if ($cumOverall !== null): ?>
+    <!-- TOTAL SCORE: sits directly under the last question -->
+    <div class="cum-total">
+        <div class="cum-total-label">Total Score</div>
+        <div class="cum-total-result">
+            <div class="avg-score-big"><?= number_format($cumOverall, 2) ?></div>
+            <div class="avg-score-label"><?= scoreSatisfactionLabel($cumOverall) ?></div>
+            <div class="avg-out-of">Overall cumulative rating · out of 5.00</div>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <div class="comment-section">
+        <div class="comment-title"><i class="fa-solid fa-comment-dots"></i> Comments, Suggestions &amp; Areas for Improvement</div>
+        <?php if (!empty($cumRemarks)): foreach ($cumRemarks as $cr): ?>
+        <div class="cum-remark">"<?= nl2br(htmlspecialchars($cr)) ?>"</div>
+        <?php endforeach; else: ?>
+        <div class="no-comment">No comments or suggestions were provided.</div>
+        <?php endif; ?>
+    </div>
+</div><!-- /.cumulative-sheet -->
+
 </main>
 
-<style id="principal-white-theme-final">
+<style id="executive-original-theme">
 :root{
-  --dark:#ffffff!important;
-  --mid:#ffffff!important;
-  --inner:#f5f7fb!important;
-  --light:#172033!important;
-  --muted:#64748b!important;
-  --border:#e2e8f0!important;
-  --shadow:0 4px 18px rgba(15,23,42,.08)!important;
-  --page-bg:#ffffff!important;
-  --card-bg:#ffffff!important;
-  --card-border:#e2e8f0!important;
+ --dark:#0A192F;--mid:#172A45;--inner:#0F1F3D;
+ --violet:#7C5FD9;--violet-h:#9C85F0;--violet-dark:#5F45B8;
+ --light:#E0E6F0;--muted:#A0B3C6;--border:rgba(255,255,255,.08);
+ --accent:#7C5FD9;--accent-h:#9C85F0;--good:#10B981;--danger:#f05454;
+ --page-bg:#0A192F;--card-bg:rgba(23,42,69,.85);--card-border:rgba(255,255,255,.08);
 }
+html{background:var(--dark)!important;color-scheme:dark!important;}
+body{background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,.82)),url('../background.png') center center/cover no-repeat fixed!important;background-color:var(--dark)!important;color:var(--light)!important;}
+.main,.content,.page-content{color:var(--light)!important;}
+.page-title,.page-header h1,.section-title,.sheet-name,.target-name{color:#fff!important;}
+.page-sub,.sheet-desig,.target-desig,.muted,.hint,.helper,.description,p{color:var(--muted)!important;}
+/* Cards/panels */
+.card,.panel,.section,.table-card,.content-card,.stat-card,.sum-card,.standing-panel,.eval-card,.eval-banner,.info-banner,.history-card,.gl-card,.amber-card,.green-card,.red-card,.person-row,.target-card,.no-eval,.no-data,.no-evaluated,.comment-section,.avg-summary,.cat-section,.people-list,.evaluator-grid{
+ background:rgba(23,42,69,.85)!important;border-color:rgba(255,255,255,.08)!important;box-shadow:0 8px 32px rgba(0,0,0,.45)!important;color:var(--light)!important;
+}
+.table-wrap{background:transparent!important;color:var(--light)!important;}
+table.data th,table.data td,th,td{color:var(--light)!important;border-color:rgba(255,255,255,.08)!important;}
+.q-table{color:var(--light)!important;}
+.q-table th{color:var(--muted)!important;background:rgba(15,31,61,.65)!important;border-color:rgba(255,255,255,.08)!important;}
+.q-table td{color:var(--light)!important;border-color:rgba(255,255,255,.06)!important;}
+/* Tabs and filters */
+.eval-switcher,.tabs,.level-tabs,.status-tabs{background:rgba(23,42,69,.85)!important;border-color:rgba(255,255,255,.08)!important;box-shadow:none!important;}
+.eval-tab,.tab,.level-tab,.status-tab,.group-tab,.desig-subtab{color:var(--muted)!important;background:transparent!important;}
+.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover,.group-tab:hover,.desig-subtab:hover{color:#fff!important;background:rgba(124,95,217,.08)!important;}
+.eval-tab.student.active,.group-tab.active,.desig-subtab.active{background:rgba(124,95,217,.14)!important;color:var(--violet-h)!important;border-color:rgba(124,95,217,.35)!important;}
+.eval-tab.student.active::after{background:var(--violet)!important;}
+.eval-tab.peer.active{background:rgba(124,95,217,.14)!important;color:var(--violet-h)!important;}
+.eval-tab.peer.active::after{background:var(--violet)!important;}
+.tab-badge{background:rgba(255,255,255,.08)!important;color:var(--muted)!important;}
+.eval-tab.student.active .tab-badge,.eval-tab.peer.active .tab-badge{background:rgba(124,95,217,.18)!important;color:var(--violet-h)!important;}
+/* Buttons/links */
+.btn-print,.btn-print.no-print,.back-btn,.btn,.action-btn,.btn-archive,.btn-restore,.btn-solid,.btn-archived-link{background:rgba(124,95,217,.12)!important;border:1px solid rgba(124,95,217,.35)!important;color:var(--violet-h)!important;}
+.btn-print:hover,.back-btn:hover,.btn:hover,.action-btn:hover,.btn-archive:hover,.btn-restore:hover,.btn-solid:hover,.btn-archived-link:hover{background:rgba(124,95,217,.22)!important;color:#fff!important;}
+.btn-solid{background:var(--violet)!important;color:#fff!important;}
+/* accents */
+.eval-banner{background:rgba(124,95,217,.08)!important;border-color:rgba(124,95,217,.25)!important;}
+.eval-banner-title,.eval-banner-icon,.cat-title,.comment-title,.section h2 i,.section h2{color:var(--violet-h)!important;}
+.period-badge{background:rgba(124,95,217,.14)!important;border-color:rgba(124,95,217,.3)!important;color:var(--violet-h)!important;}
+.bar-fill,.avg-bar-fill{background:linear-gradient(90deg,var(--violet-dark),var(--violet-h))!important;}
+.score-bar-bg,.eval-bar-bg,.avg-bar-bg,.bar-wrap{background:rgba(255,255,255,.08)!important;}
+.standing-title.top,.standing-score,.pstat-val,.avg-score-big,.avg-score-label{color:#4ade80!important;}
+.standing-title.low{color:#f87171!important;}
+.person-row:hover,.standing-item:hover{border-color:rgba(124,95,217,.4)!important;background:rgba(124,95,217,.05)!important;}
+.comment-text{background:rgba(15,31,61,.7)!important;color:var(--light)!important;}
+.empty-note,.no-comment,.no-eval{color:var(--muted)!important;}
+label,th{color:var(--muted)!important;}
+input,select,textarea{background:#0F1F3D!important;color:var(--light)!important;border-color:rgba(255,255,255,.12)!important;}
+input::placeholder,textarea::placeholder{color:#7890a8!important;}
+</style>
+<style id="dean-sheet-light-final">
+/* Final light-theme correction for the individual evaluation sheet. */
 html{background:#F8FAFC!important;color-scheme:light!important;}
-body{background:#F8FAFC!important;background-image:none!important;color:#172033!important;}
-
-/* Keep the sidebar navy; all report content remains in the white theme. */
-.sidebar{background:#0A192F!important;color:#E0E6F0!important;border-right:1px solid #172A45!important;}
-.sidebar *{color:inherit;}
-.sidebar .sb-name{color:#fff!important;}
-.sidebar .sb-role,.sidebar .sb-nav a i{color:#f0b84d!important;}
-.sidebar .sb-scope,.sidebar .sb-nav a{color:#A0B3C6!important;}
-.sidebar .sb-nav a:hover,.sidebar .sb-nav a.active{background:rgba(217,154,43,.15)!important;color:#fff!important;}
-.sidebar .sb-logout a{color:#fca5a5!important;}
-
-/* Main content surfaces */
-main,.main,.main-content,.content,.page-content{background:#F8FAFC!important;color:#172033!important;}
-.stat-card,.section,.period-strip,.filter-bar,.card,.panel,.table-wrap,
-.content-card,.table-card,.summary-card,.sum-card,.standing-panel,.eval-card,
-.eval-banner,.info-banner,.history-card,.gl-card,.amber-card,.green-card,.red-card,
-.person-row,.target-card,.no-eval,.no-data,.no-evaluated,.comment-section,
-.avg-summary,.cat-section,.people-list,.evaluator-grid,.eval-q-card,.eval-table-wrap,
-.received-item,.q-result,.info-grid>div,.comment-modal,.ra-table-card,
-.eval-switcher,.tabs,.level-tabs,.status-tabs,.faculty-subtabs{
-  background:#fff!important;
-  color:#172033!important;
-  border-color:#e2e8f0!important;
-  box-shadow:var(--shadow)!important;
-}
-
-/* Headings and readable data text */
-.page-title,.page-header h1,.section-title,.sheet-name,.target-name,
-h1,h2,h3,h4,h5,h6,.section h2,.eval-modal-title,.modal-section-title,
-.stat-card .num,.tracker-item .big,.eval-q-text,.eval-qtext,.q-text,.info-value,
-.received-anon,.cat-name-modal,.cat-score-modal{color:#0f172a!important;}
-.page-sub,.sheet-desig,.target-desig,.muted,.hint,.helper,.filter-hint,.empty-note,
-.main p,.main label,.main td,.main li,.main small,.q-score,.q-no,.received-meta,
-.info-label,.loading-eval,.eval-rating-scale-note,.eval-read-score{color:#64748b!important;}
-table{color:#172033!important;}
-table thead th,table.data th,.q-table th{background:#f8fafc!important;color:#334155!important;border-color:#e2e8f0!important;}
-table tbody td,table.data td,.q-table td{color:#334155!important;border-color:#e2e8f0!important;}
-table tbody tr:hover,.person-row:hover,.standing-item:hover{background:#f8fafc!important;}
-
-/* Accent elements stay amber/semantic within the light theme. */
-.stat-card i,.section h2 i,.eval-q-category,.eval-category-heading,
-.eval-modal-title i,.period-item .v,.period-badge,.back-link,
-.stat-card .label,.period-item .k,.received-score,.score-big,.cat-score-modal,
-.bell-btn,.bell-head button,.bell-list li i,.eval-banner-title,.eval-banner-icon,
-.cat-title,.comment-title,.search-box button,.section h2 i{color:#d99a2b!important;}
-.period-badge{background:rgba(217,154,43,.12)!important;border-color:rgba(217,154,43,.28)!important;}
-.period-badge.closed{background:rgba(240,84,84,.10)!important;border-color:rgba(240,84,84,.28)!important;color:#dc2626!important;}
-.period-badge.gray{background:#f1f5f9!important;border-color:#cbd5e1!important;color:#64748b!important;}
-
-/* Forms */
-input,select,textarea,
-.search-box input[type=text],.search-box select,.form-group input,
-.filter-field select,.filter-field input[type=text],.ra-filter-row select,.ra-search,
-.eval-comment-box{
-  background:#fff!important;color:#172033!important;border-color:#cbd5e1!important;
-}
-input::placeholder,textarea::placeholder{color:#94a3b8!important;}
-input:focus,select:focus,textarea:focus{border-color:#d99a2b!important;box-shadow:0 0 0 3px rgba(217,154,43,.10)!important;outline:none!important;}
-
-/* Buttons / tabs */
-.report-btns button,.qa-btns a,.filter-btns a,a.btn,
-.btn,.action-btn,.back-btn,.btn-print,.btn-archive,.btn-restore,.btn-solid,
-.btn-archived-link,.ra-tool-btn,.page-btn{
-  background:rgba(217,154,43,.10)!important;
-  border-color:rgba(217,154,43,.30)!important;
-  color:#a16207!important;
-}
-.report-btns button:hover,.qa-btns a:hover,.filter-btns a:hover,a.btn:hover,
-.btn:hover,.action-btn:hover,.back-btn:hover,.btn-print:hover,.btn-archive:hover,
-.btn-restore:hover,.btn-archived-link:hover,.ra-tool-btn:hover,.page-btn:hover{
-  background:rgba(217,154,43,.16)!important;color:#92400e!important;
-}
-.btn-primary,.btn-solid{background:#d99a2b!important;color:#0A192F!important;border-color:#d99a2b!important;}
-.btn-primary:hover,.btn-solid:hover{background:#f0b84d!important;color:#0A192F!important;}
-.report-btns a.active,.filter-btns a.active,.group-tab.active,
-.eval-tab.student.active,.eval-tab.peer.active,.eval-tab.multi-role.active,
-.tab.active,.level-tab.active,.status-tab.active,.desig-subtab.active,
-.page-btn.active{background:rgba(217,154,43,.14)!important;color:#a16207!important;border-color:rgba(217,154,43,.35)!important;}
-.eval-tab,.tab,.level-tab,.status-tab,.group-tab,.desig-subtab{color:#64748b!important;background:transparent!important;}
-.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover,.group-tab:hover,.desig-subtab:hover{color:#334155!important;background:#f8fafc!important;}
-
-/* Evaluation questionnaire */
-.eval-q-card,.eval-table-wrap{background:#fff!important;}
-.eval-rating-opt{background:#f8fafc!important;color:#334155!important;border-color:#cbd5e1!important;}
-.eval-rating-opt:has(input:checked){background:rgba(217,154,43,.10)!important;color:#92400e!important;border-color:#d99a2b!important;}
-.eval-table th{background:#f8fafc!important;color:#64748b!important;border-color:#e2e8f0!important;}
-.eval-table td{border-color:#e2e8f0!important;color:#334155!important;}
-.eval-rating-cell label{background:#fff!important;color:#64748b!important;border-color:#cbd5e1!important;}
-.eval-rating-cell label:hover{background:rgba(217,154,43,.08)!important;border-color:#d99a2b!important;}
-.eval-rating-cell input:checked + label{background:#d99a2b!important;color:#fff!important;border-color:#d99a2b!important;}
-.eval-qno{color:#b8801f!important;}
-.eval-comment-box{color:#334155!important;}
-
-/* Status pills */
-.pill.good{background:rgba(16,185,129,.12)!important;color:#047857!important;}
-.pill.warn{background:rgba(217,154,43,.12)!important;color:#a16207!important;}
-.pill.bad{background:rgba(240,84,84,.10)!important;color:#b91c1c!important;}
-.alert.success{background:rgba(16,185,129,.10)!important;color:#047857!important;border-color:rgba(16,185,129,.25)!important;}
-.alert.error{background:rgba(240,84,84,.10)!important;color:#b91c1c!important;border-color:rgba(240,84,84,.25)!important;}
-
-/* Progress bars */
-.bar-wrap,.score-bar-bg,.eval-bar-bg,.avg-bar-bg,.cat-bar{background:#e2e8f0!important;}
-.bar-fill,.avg-bar-fill,.cat-bar>div{background:linear-gradient(90deg,#b8801f,#f0b84d)!important;}
-
-/* Notifications */
-.notif-list li,.bell-list li{background:#f8fafc!important;color:#334155!important;border-color:#e2e8f0!important;}
-.notif-list li.unseen,.bell-list li.unseen{background:rgba(217,154,43,.08)!important;}
-.bell-btn{background:#fff!important;border-color:#cbd5e1!important;color:#d99a2b!important;}
-.bell-btn:hover,.bell-btn[aria-expanded="true"]{background:rgba(217,154,43,.10)!important;border-color:rgba(217,154,43,.35)!important;}
-.bell-panel{background:#fff!important;border-color:#e2e8f0!important;box-shadow:0 18px 44px rgba(15,23,42,.16)!important;color:#172033!important;}
-.bell-head{border-color:#e2e8f0!important;}
-.bell-head h3{color:#0f172a!important;}
-.bell-list li{color:#334155!important;}
-.bell-count{border-color:#fff!important;}
-
-/* Reports / analytics data surfaces and modal */
-.standing-score,.pstat-val,.avg-score-big,.avg-score-label{color:#047857!important;}
-.standing-title.top{color:#047857!important;}
-.standing-title.low{color:#dc2626!important;}
-.comment-text{background:#f8fafc!important;color:#475569!important;border-color:#e2e8f0!important;}
-.info-grid>div,.q-result,.received-item{border-color:#e2e8f0!important;}
-.eval-modal-overlay{background:rgba(15,23,42,.55)!important;}
-.eval-modal{background:#fff!important;color:#172033!important;border-color:#e2e8f0!important;}
-.eval-modal-header{border-color:#e2e8f0!important;}
-.eval-modal-close{color:#64748b!important;}
-.star{color:#cbd5e1!important;}
-.star.filled{color:#facc15!important;}
-
-/* Account / settings / roster utilities */
-.profile-photo-lg{border-color:#d99a2b!important;}
-.avatar-sm{border-color:rgba(217,154,43,.45)!important;}
-.btn-reset{color:#475569!important;border-color:#cbd5e1!important;background:#fff!important;}
-.structure-note{background:rgba(217,154,43,.06)!important;border-color:rgba(217,154,43,.24)!important;}
-.structure-note p{color:#475569!important;}
-.structure-note p b{color:#0f172a!important;}
-
-@media(max-width:768px){
-  body{background:#fff!important;}
+body{background:#F8FAFC!important;color:#0F172A!important;}
+.main{background:#F8FAFC!important;color:#0F172A!important;}
+.detail-page{background:transparent!important;}
+.sheet-header,.scale-bar,.cat-section,.comment-section,.avg-summary{background:#FFFFFF!important;border-color:#CFE0F0!important;box-shadow:0 5px 18px rgba(28,64,92,.05)!important;color:#173956!important;}
+.sheet-name,.avg-score-big,.avg-score-label{color:#0F2944!important;}
+.sheet-desig,.eval-by-date,.avg-out-of,.no-comment{color:#647B8E!important;}
+.eval-by-label{color:#60778D!important;}
+.eval-by-name{color:#2B67DE!important;}
+.sheet-avatar-ph{background:#F1F5F9!important;border-color:#CFE0F0!important;color:#6C8195!important;}
+.eval-type-chip{background:#EFF6FF!important;border-color:#BFD7FF!important;color:#2B67DE!important;}
+.scale-bar{align-items:center;}
+.scale-bar > span{color:#647B8E!important;}
+.scale-item{color:#506A82!important;}
+.cat-title,.comment-title{background:#EFF6FF!important;color:#2B67DE!important;border-color:#CFE0F0!important;}
+.q-table{background:#FFFFFF!important;border-color:#CFE0F0!important;color:#173956!important;}
+.q-table thead tr{background:#F7FAFD!important;}
+.q-table th{background:#F7FAFD!important;color:#60778D!important;border-color:#D8E4EE!important;}
+.q-table td{background:#FFFFFF!important;color:#173956!important;border-color:#E0E9F1!important;}
+.q-table tr:hover td{background:#F7FAFD!important;}
+.q-table td.q-num{color:#70869A!important;}
+.rating-badge{background:#F8FBFE!important;border-color:#D8E4EE!important;}
+.comment-text{background:#F8FAFC!important;color:#334155!important;border-color:#DCE8F2!important;}
+.avg-bar-bg{background:#E2E8F0!important;}
+.avg-score-big,.avg-score-label{color:#10B981!important;}
+.avg-bar-label{color:#526B82!important;}
+.detail-actions .back-btn{background:#FFFFFF!important;color:#173956!important;border-color:#BCD0E5!important;}
+.detail-actions .btn-print{background:#2D66E1!important;color:#FFFFFF!important;}
+@media print{
+  body,.main{background:#fff!important;color:#000!important;}
+  .sheet-header,.scale-bar,.cat-section,.comment-section,.avg-summary,.q-table{box-shadow:none!important;}
 }
 </style>
+
+<!-- CUMULATIVE REPORT + PRINT LAYOUT. Kept at the very end of the document so
+     neither the dark/light theme blocks above nor dean_light_theme.css can
+     override it. Selectors are scoped to .cumulative-sheet. -->
+<style id="dean-cumulative-report">
+.cumulative-sheet{display:none;}
+body.report-mode .individual-sheet{display:none!important;}
+body.report-mode .cumulative-sheet{display:block!important;}
+body.report-mode .eval-type-chip{display:none!important;}
+
+html body .cumulative-sheet,
+html body .cumulative-sheet *{color:#000!important;}
+html body .cumulative-sheet{background:#fff!important;font-family:'Inter',sans-serif;}
+html body .cumulative-sheet .cum-topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;font-size:12px;margin:0 0 10px;padding:8px 14px;border:1px solid #ddd!important;background:#f5f5f5!important;border-radius:0!important;box-shadow:none!important;}
+html body .cumulative-sheet .cum-type{font-weight:700;text-transform:uppercase;letter-spacing:.8px;}
+html body .cumulative-sheet .sheet-header{display:flex;align-items:center;flex-wrap:wrap;gap:12px!important;padding:12px 16px!important;margin:0 0 10px!important;background:#fff!important;border:1px solid #ddd!important;border-radius:0!important;box-shadow:none!important;}
+html body .cumulative-sheet .sheet-avatar,
+html body .cumulative-sheet .sheet-avatar-ph{width:46px!important;height:46px!important;font-size:20px;}
+html body .cumulative-sheet .sheet-avatar-ph{background:#f1f5f9!important;}
+html body .cumulative-sheet .sheet-name{font-size:18px!important;font-family:'Rajdhani',sans-serif;font-weight:700;}
+html body .cumulative-sheet .sheet-desig{font-size:11px!important;}
+html body .cumulative-sheet .cum-date{margin-left:auto;text-align:right;}
+html body .cumulative-sheet .cum-date-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:2px;}
+html body .cumulative-sheet .cum-date-val{font-size:14px;font-weight:700;}
+
+html body .cumulative-sheet .cat-section{margin:0 0 12px!important;background:transparent!important;border:0!important;box-shadow:none!important;}
+html body .cumulative-sheet .cat-title{display:flex;align-items:center;gap:7px;margin:0 0 6px!important;padding:0 0 3px!important;background:none!important;border:0!important;border-bottom:1px solid #ddd!important;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;}
+html body .cumulative-sheet .q-table{width:100%;border-collapse:collapse;background:#fff!important;border:1px solid #ddd!important;border-radius:0!important;box-shadow:none!important;}
+html body .cumulative-sheet .q-table thead tr{background:#f5f5f5!important;}
+html body .cumulative-sheet .q-table th{padding:6px 10px!important;background:#f5f5f5!important;border:0!important;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;text-align:left;}
+html body .cumulative-sheet .q-table th.rating-col{text-align:center;}
+html body .cumulative-sheet .q-table td{padding:6px 10px!important;background:#fff!important;border:0!important;border-top:1px solid #eee!important;font-size:13px;line-height:1.25!important;vertical-align:middle!important;}
+html body .cumulative-sheet .q-table td.q-num{width:40px;font-weight:700;padding-top:6px!important;}
+html body .cumulative-sheet .q-table td.rating-cell{text-align:center;padding-top:6px!important;}
+html body .cumulative-sheet .q-table tr:hover td{background:#fff!important;}
+/* every rating badge is the same shape, whatever the label */
+html body .cumulative-sheet .rating-badge{display:inline-flex;flex-direction:column;justify-content:center;align-items:center;width:128px;height:38px;box-sizing:border-box;padding:2px 6px!important;gap:0!important;background:#fff!important;border:1px solid #ccc!important;border-radius:8px;}
+html body .cumulative-sheet .rating-num{font-size:14px!important;font-weight:700;line-height:1.1;}
+html body .cumulative-sheet .rating-lbl{font-size:8px!important;font-weight:600;text-transform:uppercase;letter-spacing:.5px;text-align:center;line-height:1.1;}
+
+/* Total Score: label left, overall result right under the rating column */
+html body .cumulative-sheet .cum-total{display:flex;justify-content:space-between;align-items:center;gap:14px;margin:0 0 12px;padding:12px 14px;background:#fff!important;border:1px solid #ddd!important;border-radius:0!important;box-shadow:none!important;}
+html body .cumulative-sheet .cum-total-label{font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:1px;}
+html body .cumulative-sheet .cum-total-result{text-align:right;margin-right:-2px;}
+html body .cumulative-sheet .avg-score-big{font-family:'Rajdhani',sans-serif;font-size:42px!important;font-weight:700;line-height:1;}
+html body .cumulative-sheet .avg-score-label{font-size:14px;font-weight:700;margin-top:4px;}
+html body .cumulative-sheet .avg-out-of{font-size:13px;margin-top:6px;}
+
+html body .cumulative-sheet .comment-section{margin:0 0 12px!important;padding:10px 14px!important;background:#fff!important;border:1px solid #ddd!important;border-radius:0!important;box-shadow:none!important;}
+html body .cumulative-sheet .comment-title{display:flex;align-items:center;gap:8px;margin:0 0 5px!important;padding:0!important;background:none!important;border:0!important;font-size:13px;font-weight:700;}
+html body .cumulative-sheet .cum-remark{font-size:13px;line-height:1.4;font-style:italic;margin-bottom:5px;}
+html body .cumulative-sheet .no-comment{font-size:13px;font-style:italic;}
+html body .cumulative-sheet .cum-empty{text-align:center;padding:24px;font-style:italic;border:1px solid #ddd;margin-bottom:12px;}
+
+/* Print: page margins + show only the cumulative report.
+   margin:0 on @page + real padding on body, instead of relying on @page
+   margins alone — some browsers' print dialogs (e.g. "Margins: None")
+   ignore @page margins entirely, printing content flush to the edge of
+   the paper. Padding on body can't be overridden that way, so this
+   guarantees a safe margin regardless of the browser's print-dialog
+   margin setting. */
+@page{margin:0!important;}
+@media print{
+  html,body{width:100%!important;height:auto!important;background:#fff!important;}
+  body{display:block!important;padding:16mm 14mm!important;margin:0!important;min-height:0!important;}
+  .sidebar,.sb-logout,.no-print{display:none!important;}
+  .main,main.main{margin:0!important;padding:0!important;min-height:0!important;background:#fff!important;border:0!important;border-radius:0!important;}
+  .individual-sheet{display:none!important;}
+  .cumulative-sheet{display:block!important;}
+  html body .cumulative-sheet .cum-topbar{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  /* long tables may continue on the next page, but never split a row or strand a title */
+  html body .cumulative-sheet .cat-section{break-inside:auto!important;page-break-inside:auto!important;}
+  html body .cumulative-sheet .cat-title{break-after:avoid;page-break-after:avoid;}
+  html body .cumulative-sheet .q-table thead{display:table-header-group;}
+  html body .cumulative-sheet .q-table tr{break-inside:avoid;page-break-inside:avoid;}
+  html body .cumulative-sheet .cum-total,
+  html body .cumulative-sheet .comment-section{break-inside:avoid;page-break-inside:avoid;}
+}
+</style>
+
+
+<style id="principal-reports-dashboard-theme-final">
+/* Principal Reports: match the Principal Dashboard's navy + amber/gold theme. */
+:root{
+  --portal-accent:#D99A2B !important;
+  --portal-accent-h:#F0B84D !important;
+  --portal-accent-glow:rgba(217,154,43,.40) !important;
+  --portal-accent-bg:rgba(217,154,43,.15) !important;
+  --accent:#D99A2B !important;
+  --accent-h:#F0B84D !important;
+  --violet:#D99A2B !important;
+  --violet-h:#F0B84D !important;
+  --violet-dark:#B8801F !important;
+  --gold:#D99A2B !important;
+  --gold-h:#F0B84D !important;
+}
+
+/* Keep the same navy sidebar used by the Principal Dashboard. */
+.sidebar{
+  background:#0A192F !important;
+  color:#E0E6F0 !important;
+  border-right:1px solid #172A45 !important;
+}
+.sidebar .sb-photo{
+  border-color:#D99A2B !important;
+  box-shadow:0 0 18px rgba(217,154,43,.40) !important;
+}
+.sidebar .sb-role,
+.sidebar .sb-nav a i,
+.sidebar .sb-nav .sb-section-title{
+  color:#F0B84D !important;
+}
+.sidebar .sb-nav a:hover,
+.sidebar .sb-nav a.active{
+  background:rgba(217,154,43,.15) !important;
+  color:#FFFFFF !important;
+}
+
+/* Main reports workspace stays the same light canvas as the dashboard. */
+html,body,.main,main.main{
+  background:#F8FAFC !important;
+  color:#172033 !important;
+}
+
+/* Shared amber/gold accent for report controls. */
+.eval-tab.student.active,
+.eval-tab.peer.active,
+.eval-tab.multi-role.active,
+.group-tab.active-all,
+.group-tab.active-teacher,
+.group-tab.active-staff,
+.desig-subtab.active,
+.eval-tab.student.active:hover,
+.eval-tab.peer.active:hover,
+.eval-tab.multi-role.active:hover{
+  background:rgba(217,154,43,.14) !important;
+  color:#A16207 !important;
+  border-color:rgba(217,154,43,.35) !important;
+}
+.eval-tab.student.active::after,
+.eval-tab.peer.active::after,
+.eval-tab.multi-role.active::after{
+  background:#D99A2B !important;
+}
+.eval-tab.student.active .tab-badge,
+.eval-tab.peer.active .tab-badge,
+.eval-tab.multi-role.active .tab-badge{
+  background:rgba(217,154,43,.15) !important;
+  color:#A16207 !important;
+}
+.eval-tab:hover,
+.group-tab:hover,
+.desig-subtab:hover{
+  color:#334155 !important;
+  background:#F8FAFC !important;
+}
+
+/* Amber replaces the previous purple/blue portal accent. */
+.eval-banner{
+  background:rgba(217,154,43,.07) !important;
+  border-color:rgba(217,154,43,.25) !important;
+}
+.eval-banner-title,
+.eval-banner-icon,
+.eval-banner i,
+.eval-type-chip,
+.cat-title,
+.comment-title,
+.section h2 i,
+.search-box button,
+.period-badge,
+.received-score,
+.score-big,
+.cat-score-modal{
+  color:#D99A2B !important;
+}
+.eval-type-chip{
+  background:rgba(217,154,43,.08) !important;
+  border-color:rgba(217,154,43,.25) !important;
+}
+.period-badge{
+  background:rgba(217,154,43,.12) !important;
+  border-color:rgba(217,154,43,.28) !important;
+  color:#A16207 !important;
+}
+
+/* Buttons, filters, navigation actions, and pagination use the dashboard accent. */
+.report-btns button,
+.qa-btns a,
+.filter-btns a,
+a.btn,
+.btn,
+.action-btn,
+.back-btn,
+.btn-print,
+.btn-archive,
+.btn-restore,
+.btn-solid,
+.btn-archived-link,
+.ra-tool-btn,
+.page-btn{
+  background:rgba(217,154,43,.10) !important;
+  border-color:rgba(217,154,43,.30) !important;
+  color:#A16207 !important;
+}
+.report-btns button:hover,
+.qa-btns a:hover,
+.filter-btns a:hover,
+a.btn:hover,
+.btn:hover,
+.action-btn:hover,
+.back-btn:hover,
+.btn-print:hover,
+.btn-archive:hover,
+.btn-restore:hover,
+.btn-archived-link:hover,
+.ra-tool-btn:hover,
+.page-btn:hover{
+  background:rgba(217,154,43,.16) !important;
+  color:#92400E !important;
+}
+.btn-primary,
+.btn-solid{
+  background:#D99A2B !important;
+  color:#0A192F !important;
+  border-color:#D99A2B !important;
+}
+.btn-primary:hover,
+.btn-solid:hover{
+  background:#F0B84D !important;
+  color:#0A192F !important;
+}
+.report-btns a.active,
+.filter-btns a.active,
+.group-tab.active,
+.page-btn.active{
+  background:rgba(217,154,43,.14) !important;
+  color:#A16207 !important;
+  border-color:rgba(217,154,43,.35) !important;
+}
+.btn-print{
+  background:#D99A2B !important;
+  color:#0A192F !important;
+  border-color:#D99A2B !important;
+}
+
+/* Focus state and progress bars follow the dashboard accent. */
+input:focus,
+select:focus,
+textarea:focus{
+  border-color:#D99A2B !important;
+  box-shadow:0 0 0 3px rgba(217,154,43,.10) !important;
+  outline:none !important;
+}
+.bar-fill,
+.avg-bar-fill{
+  background:linear-gradient(90deg,#B8801F,#F0B84D) !important;
+}
+
+/* Keep semantic status colors untouched. */
+.pill.good{background:rgba(16,185,129,.12)!important;color:#047857!important;}
+.pill.bad{background:rgba(240,84,84,.10)!important;color:#B91C1C!important;}
+
+/* Individual evaluation sheet: replace the remaining blue/purple theme remnants. */
+.sheet-header,
+.scale-bar,
+.cat-section,
+.comment-section,
+.avg-summary{
+  border-color:#CFE0F0 !important;
+}
+.eval-by-name,
+.detail-actions .btn-print{
+  color:#A16207 !important;
+}
+.eval-type-chip,
+.cat-title,
+.comment-title{
+  background:rgba(217,154,43,.08) !important;
+  border-color:rgba(217,154,43,.25) !important;
+}
+.detail-actions .btn-print{
+  background:#D99A2B !important;
+  color:#0A192F !important;
+  border-color:#D99A2B !important;
+}
+
+/* The cumulative print report remains black/white because its own rules are scoped. */
+</style>
+
 </body></html>
 <?php $mysqli->close(); exit; }
 
 // ══════════════════════════════════════════════════════════════
-// VIEW: EVALUATORS LIST (students who evaluated / peers who evaluated)
+// VIEW: TARGET EVALUATION DETAILS
+// Shows the selected person's evaluation summary and each received evaluation.
 // ══════════════════════════════════════════════════════════════
 if ($view === 'students' && $target_id) {
-    $tgt = $mysqli->query("SELECT id,full_name,designation,photo,role FROM users u WHERE u.id=$target_id AND $reportScopeSql LIMIT 1")->fetch_assoc();
+    $tgt = db_row($mysqli, "SELECT id,full_name,designation,photo,role FROM users u WHERE u.id=$target_id AND $reportScopeSql LIMIT 1");
     if (!$tgt) { http_response_code(404); exit('Personnel not found in this report scope.'); }
 
-    // For peer eval, evaluator_id in tracker = the peer who did the evaluating
+    // Keep the selected year level only for Student Evaluation.
+    $selectedYearLevel = trim((string)($_GET['year_level'] ?? ''));
+    $availableYearLevels = [];
+    if ($activeEval === 'student') {
+        // Always offer every JHS/SHS grade, Grade 7 through Grade 12, in order --
+        // not just the grades that happen to have evaluations for this person.
+        $availableYearLevels = $principalGradeLevels;
+        if ($selectedYearLevel !== '' && !isset($availableYearLevels[$selectedYearLevel])) {
+            $selectedYearLevel = '';
+        }
+    } else {
+        $selectedYearLevel = '';
+    }
+
+    $studentYearWhere = '';
+    if ($activeEval === 'student' && $selectedYearLevel !== '') {
+        $studentYearWhere = " AND TRIM(COALESCE(u.year_level,'')) IN (" . implode(',', array_map($sqlQuote, $availableYearLevels[$selectedYearLevel]['values'])) . ")";
+    }
+
     $evaluators = [];
     $eq = $mysqli->query("
-        SELECT et.id as tracker_id, et.submitted_at, et.remarks,
-               u.id as student_id, u.full_name, u.photo, u.role as evaluator_role, u.designation as evaluator_designation,
-               (SELECT yl.year_level FROM user_year_levels yl WHERE yl.user_id=u.id ORDER BY yl.id LIMIT 1) as year_level,
-               (SELECT AVG(qa.answer_score) FROM questionnaire_answers qa WHERE qa.tracker_id=et.id) as avg_score
-        FROM evaluation_tracker et
-        JOIN users u ON u.id = et.evaluator_id
-        WHERE et.target_user_id = $target_id AND $evalTypeSql
-        ORDER BY et.submitted_at DESC
+        SELECT et.id AS tracker_id,
+               et.submitted_at,
+               et.remarks,
+               u.id AS student_id,
+               u.full_name,
+               u.photo,
+               u.role AS evaluator_role,
+               " . ($activeEval === 'student' ? "u.year_level" : "NULL AS year_level") . ",
+               (SELECT AVG(qa.answer_score)
+                  FROM questionnaire_answers qa
+                 WHERE qa.tracker_id=et.id) AS avg_score
+          FROM evaluation_tracker et
+          JOIN users u ON u.id = et.evaluator_id
+         WHERE et.target_user_id = $target_id
+           AND $evalTypeSql
+           $studentYearWhere
+         ORDER BY et.submitted_at DESC
     ");
     if ($eq) $evaluators = $eq->fetch_all(MYSQLI_ASSOC);
 
-    $allScores  = array_filter(array_column($evaluators,'avg_score'), fn($s) => $s !== null);
-    $overallAvg = count($allScores) ? round(array_sum($allScores)/count($allScores),2) : null;
-    $yearLevels = array_values(array_unique(array_filter(array_column($evaluators,'year_level'))));
-    sort($yearLevels);
+    // Pooled average over every individual answer — the same figure the roster
+    // and the cumulative sheet use (was: mean of per-evaluator means, which
+    // drifts whenever evaluators answer a different number of questions).
+    $overallAvg = null;
+    if (!empty($evaluators)) {
+        $evTrackerIds = implode(',', array_map('intval', array_column($evaluators, 'tracker_id')));
+        $oa = db_row($mysqli, "SELECT AVG(answer_score) AS a FROM questionnaire_answers WHERE tracker_id IN ($evTrackerIds) AND answer_score IS NOT NULL");
+        if (isset($oa['a']) && $oa['a'] !== null) $overallAvg = round((float)$oa['a'], 2);
+    }
 
-    pageHead('Evaluators List', $evalColor, $evalColorBg, $evalColorBorder);
+    $scaleItems  = [5=>'Always',4=>'Often',3=>'Sometimes',2=>'Rarely',1=>'Never'];
+    pageHead('Evaluation Details', $evalColor, $evalColorBg, $evalColorBorder);
     ?>
 <style>
-.target-card{background:var(--mid);border:1px solid var(--border);border-radius:14px;padding:22px 26px;margin-bottom:24px;display:flex;align-items:center;gap:18px;flex-wrap:wrap;}
-.target-avatar{width:60px;height:60px;border-radius:50%;object-fit:cover;border:2px solid var(--ec);}
-.target-avatar-ph{width:60px;height:60px;border-radius:50%;background:var(--inner);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:24px;}
-.target-name{font-family:'Rajdhani',sans-serif;font-size:22px;font-weight:700;color:var(--light);}
-.target-desig{font-size:13px;color:var(--muted);}
-.target-stats{margin-left:auto;display:flex;gap:24px;flex-wrap:wrap;}
-.tstat{text-align:center;}
-.tstat-val{font-family:'Rajdhani',sans-serif;font-size:28px;font-weight:700;}
-.tstat-lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
-.section-title{font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;color:var(--light);margin-bottom:16px;display:flex;align-items:center;gap:10px;}
-.evaluator-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;}
-.eval-card{background:var(--mid);border:1px solid var(--border);border-radius:14px;padding:20px;cursor:pointer;transition:all .22s;text-decoration:none;display:block;}
-.eval-card:hover{border-color:var(--ec);transform:translateY(-2px);box-shadow:0 10px 24px rgba(15,23,42,.12);}
-.eval-card-top{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
-.eval-avatar{width:46px;height:46px;border-radius:50%;object-fit:cover;border:2px solid var(--border);}
-.eval-avatar-ph{width:46px;height:46px;border-radius:50%;background:var(--inner);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:18px;}
-.eval-name{font-size:14px;font-weight:700;color:var(--light);}
-.eval-date{font-size:11px;color:var(--muted);margin-top:2px;}
-.eval-score-row{display:flex;align-items:center;justify-content:space-between;}
-.eval-score{font-family:'Rajdhani',sans-serif;font-size:26px;font-weight:700;}
-.eval-score-lbl{font-size:12px;font-weight:600;margin-top:1px;}
-.eval-bar-bg{flex:1;height:6px;background:rgba(15,23,42,.12);border-radius:3px;overflow:hidden;margin:0 12px;}
-.eval-bar-fill{height:100%;border-radius:3px;}
-.view-eval-btn{margin-top:12px;width:100%;padding:9px;background:var(--ec-bg);border:1px solid var(--ec-bd);border-radius:8px;color:var(--ec);font-size:12px;font-weight:700;text-align:center;}
-.eval-remark{margin-top:10px;font-size:12px;color:var(--muted);font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.no-eval{text-align:center;padding:48px;background:var(--mid);border-radius:14px;border:1px solid var(--border);color:var(--muted);}
-.no-eval i{font-size:36px;opacity:.3;display:block;margin-bottom:12px;}
-/* Peer evaluator role badge */
-.evaluator-role-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:rgba(124,58,237,.12);color:#7C3AED;border:1px solid rgba(124,58,237,.25);margin-left:auto;}
-
-/* Score legend box (inside target-card) */
-.legend-card{min-width:210px;padding:14px 20px;border-radius:10px;}
-.legend-title{font-family:'Rajdhani',sans-serif;font-size:14px;font-weight:700;color:var(--light);margin-bottom:8px;}
-.legend-item{display:flex;align-items:center;justify-content:space-between;gap:18px;font-size:12px;padding:2px 0;}
-.legend-range{font-weight:700;}
-.legend-label{color:var(--muted);}
-
-/* Evaluation results table */
-.results-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:16px;}
-.year-filter{display:flex;align-items:center;gap:10px;}
-.year-filter label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);}
-.year-filter select{padding:9px 14px;border-radius:8px;border:1px solid var(--border);font-size:13px;font-weight:600;min-width:170px;}
-.results-table{width:100%;border-collapse:collapse;}
-.results-table th{padding:11px 16px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;text-align:left;border-bottom:1px solid var(--border);}
-.results-table td{padding:14px 16px;font-size:13px;border-bottom:1px solid var(--border);vertical-align:middle;}
-.results-table tbody tr:last-child td{border-bottom:none;}
-.results-table tbody tr:hover td{background:var(--ec-bg);}
-.rating-pill{display:inline-block;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;border:1px solid;}
-.role-cell{color:var(--muted);}
-.results-table .action-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;font-size:12px;font-weight:700;text-decoration:none;white-space:nowrap;}
-
-/* ── PRINT: hide evaluator cards entirely, show summary only ── */
+.detail-page{max-width:none;}
+.detail-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;}
+.detail-back{display:inline-flex;align-items:center;gap:8px;padding:9px 15px;border:1px solid #BCD0E5;border-radius:10px;background:#fff;color:#173956;text-decoration:none;font-size:12px;font-weight:800;}
+.detail-back:hover{background:#F4F8FC;border-color:#8FAFCB;}
+.detail-print{border:0;border-radius:12px;padding:12px 20px;background:#2D66E1;color:#fff;font:800 12px 'Inter',sans-serif;display:inline-flex;align-items:center;gap:8px;cursor:pointer;box-shadow:0 6px 16px rgba(45,102,225,.18);}
+.detail-print:hover{background:#2459C9;}
+.detail-eval-banner{display:flex;align-items:center;gap:14px;padding:14px 18px;border:1px solid #CFE0F0;border-radius:14px;background:#EFF6FF;margin-bottom:22px;}
+.detail-eval-icon{width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;background:#E0ECFF;border:1px solid #BFD7FF;color:#2B67DE;font-size:18px;flex:0 0 auto;}
+.detail-eval-title{font-size:17px;font-weight:800;color:#1558CF;line-height:1.15;}
+.detail-eval-sub{margin-top:3px;font-size:12px;color:#5C7590;}
+.detail-person-card{display:flex;align-items:center;gap:20px;padding:28px 30px;border:1px solid #CFE0F0;border-radius:16px;background:#fff;box-shadow:0 5px 18px rgba(28,64,92,.05);margin-bottom:30px;flex-wrap:wrap;}
+.detail-person-avatar{width:74px;height:74px;border-radius:50%;object-fit:cover;border:2px solid #2B67DE;flex:0 0 auto;}
+.detail-person-avatar.ph{display:flex;align-items:center;justify-content:center;background:#F1F5F9;color:#6C8195;font-size:26px;}
+.detail-person-meta{min-width:280px;flex:1;}
+.detail-person-name{font-family:'Rajdhani',sans-serif;font-size:28px;font-weight:800;line-height:1.05;color:#0F2944;}
+.detail-person-desig{margin-top:5px;font-size:13px;color:#5F7890;line-height:1.35;}
+.detail-stats{display:flex;align-items:flex-start;gap:42px;margin-left:auto;flex-wrap:wrap;}
+.detail-stat{text-align:center;min-width:104px;}
+.detail-stat-value{font-family:'Rajdhani',sans-serif;font-size:31px;font-weight:800;line-height:1;color:#2B67DE;}
+.detail-stat-value.score{color:#10B981;}
+.detail-stat-label{margin-top:5px;font-size:10px;color:#72879A;text-transform:uppercase;letter-spacing:.06em;}
+.detail-legend{width:250px;border:1px solid #CFE0F0;border-radius:13px;background:#F8FBFE;padding:15px 17px;}
+.detail-legend-title{font-size:13px;font-weight:800;color:#122E4A;margin-bottom:8px;}
+.detail-legend-row{display:flex;align-items:center;justify-content:space-between;font-size:11px;line-height:1.45;}
+.detail-legend-score{font-weight:800;min-width:82px;}
+.detail-legend-text{color:#647B90;}
+.detail-results-head{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:12px;}
+.detail-results-title{display:flex;align-items:center;gap:10px;}
+.detail-results-title i{color:#2B67DE;font-size:19px;}
+.detail-results-title h2{font-family:'Rajdhani',sans-serif;font-size:23px;font-weight:800;color:#122E4A;margin:0;}
+.detail-results-title span{font-size:11px;color:#70869A;}
+.detail-year-filter{display:flex;align-items:center;gap:10px;}
+.detail-year-filter label{font-size:10px;font-weight:800;color:#70869A;text-transform:uppercase;letter-spacing:.07em;}
+.detail-year-filter select{min-width:210px;height:42px;padding:0 14px;border:1px solid #BFD2E5;border-radius:10px;background:#fff;color:#102C47;font:700 12px 'Inter',sans-serif;outline:none;}
+.detail-results-panel{border:1px solid #CFE0F0;border-radius:16px;background:#fff;box-shadow:0 5px 18px rgba(28,64,92,.04);overflow:hidden;}
+.detail-results-table{width:100%;border-collapse:collapse;}
+.detail-results-table th{padding:12px 16px;background:#F7FAFD;color:#60778D!important;border-bottom:1px solid #D8E4EE;font-size:10px!important;font-weight:800!important;letter-spacing:.07em;text-align:left;white-space:nowrap;}
+.detail-results-table td{padding:17px 16px;border-bottom:1px solid #E0E9F1;color:#173956!important;font-size:13px!important;vertical-align:middle;}
+.detail-results-table tbody tr:hover td{background:#FAFCFE!important;}
+.detail-results-table tbody tr:last-child td{border-bottom:0;}
+.detail-no{width:56px;text-align:center;}
+.detail-evaluator{font-weight:700;color:#102C47!important;}
+.detail-role{color:#526D84!important;}
+.detail-avg{font-size:16px;font-weight:800;color:#10B981;}
+.detail-rating{display:inline-flex;align-items:center;padding:5px 11px;border-radius:999px;background:#E8F6F1;color:#10B981;font-size:11px;font-weight:800;}
+.detail-date{white-space:nowrap;color:#31516C!important;}
+.detail-view-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:8px 16px;border:1px solid #AFCBFF;border-radius:10px;background:#F1F6FF;color:#2363D4;text-decoration:none;font-size:11px;font-weight:800;}
+.detail-view-btn:hover{background:#E7F0FF;}
+.detail-report-btn{background:#2D66E1!important;border-color:#2D66E1!important;color:#fff!important;margin-right:6px;}
+.detail-report-btn:hover{background:#2459C9!important;}
+.detail-empty{text-align:center;padding:54px 22px;color:#70869A;}
+.detail-empty i{display:block;font-size:32px;margin-bottom:10px;color:#A4B5C5;}
+.detail-empty h3{font-family:'Rajdhani',sans-serif;font-size:19px;color:#163450;margin:0 0 4px;}
+.detail-empty p{font-size:12px;color:#71869A;margin:0;}
+@media(max-width:1000px){
+  .detail-stats{width:100%;margin-left:0;justify-content:flex-start;gap:26px;}
+  .detail-legend{margin-left:auto;}
+}
+@media(max-width:760px){
+  .detail-actions{align-items:stretch;flex-direction:column;}
+  .detail-print,.detail-back{justify-content:center;}
+  .detail-person-card{padding:22px;}
+  .detail-person-meta{min-width:220px;}
+  .detail-legend{width:100%;margin-left:0;}
+  .detail-results-head{align-items:flex-start;flex-direction:column;}
+  .detail-year-filter{width:100%;}
+  .detail-year-filter select{flex:1;min-width:0;}
+  .detail-results-panel{overflow-x:auto;}
+  .detail-results-table{min-width:820px;}
+}
 @media print{
-  .no-print{display:none!important;}
+  .no-print,.detail-actions,.detail-year-filter{display:none!important;}
   body{background:#fff!important;color:#000!important;padding:0;}
-  body *{color:#000!important;}
-  /* Hide every evaluator card/row — names, photos, dates, remarks */
-  .evaluator-grid,.table-card,.results-toolbar{display:none!important;}
-  /* Show the print-only anonymised summary block */
-  .print-eval-summary{display:block!important;}
-  .target-card{border:1px solid #ccc!important;border-radius:0!important;}
-  .section-title{color:#000!important;}
+  .detail-eval-banner,.detail-person-card,.detail-results-panel{box-shadow:none!important;}
+  .detail-results-table th,.detail-results-table td{color:#000!important;}
 }
-/* Hidden on screen, shown only when printing */
-.print-eval-summary{
-  display:none;
-  border:1px solid #ccc;
-  border-radius:8px;
-  padding:20px 24px;
-  margin-top:16px;
-  font-size:13px;
-  color:#333;
-  line-height:1.8;
-}
-.print-eval-summary h3{font-size:15px;font-weight:700;margin-bottom:10px;color:#000;}
-.print-eval-summary p{margin:0;}
-
-/* ── SHARP LIGHT ADMIN UI ── */
-html { background:#F8FAFC; }
-body {
-  color:#0F172A !important;
-  background:#F8FAFC !important;
-  -webkit-font-smoothing:antialiased;
-  text-rendering:optimizeLegibility;
-}
-h1,h2,h3,h4,h5,h6 { color:#0F172A; letter-spacing:-.01em; }
-p, .subtitle, .description, .helper, .muted, small { color:#475569; }
-label, th { color:#334155; font-weight:600; }
-td { color:#0F172A; }
-input, select, textarea {
-  color:#0F172A;
-  background:#FFFFFF;
-  border-color:#CBD5E1;
-}
-input::placeholder, textarea::placeholder { color:#94A3B8; }
-.card, .panel, .section, .table-card, .content-card {
-  border-color:#CBD5E1;
-  box-shadow:0 4px 14px rgba(15,23,42,.07);
-}
-button, .btn { font-weight:700; }
-a { color:inherit; }
 </style>
+<link rel="stylesheet" href="includes/principal_light_theme.css"/>
 </head><body>
-<?php render_exec_sidebar('reports', $me, $photo_src, $principalScopeLabel); ?>
-<main class="main">
+<?php render_exec_sidebar('reports', $me, $photo_src); ?>
+<main class="main detail-page">
 
-<div class="top-bar no-print">
-    <a href="?group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>" class="back-btn" style="margin-bottom:0;">
-        <i class="fa-solid fa-arrow-left"></i> Back to Analytics
-    </a>
-    <button class="btn-print" onclick="window.print()"><i class="fa-solid fa-print"></i> Print / Save PDF</button>
+<div class="detail-actions no-print">
+    <a href="?group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>" class="detail-back"><i class="fa-solid fa-arrow-left"></i> Back to Analytics</a>
 </div>
 
-<!-- eval type banner -->
-<div class="eval-banner" style="margin-bottom:18px;">
-    <div class="eval-banner-icon"><i class="fa-solid <?= $evalIcon ?>"></i></div>
+<div class="detail-eval-banner">
+    <div class="detail-eval-icon"><i class="fa-solid <?= $evalIcon ?>"></i></div>
     <div>
-        <div class="eval-banner-title"><?= $evalLabel ?></div>
-        <div class="eval-banner-desc"><?= $activeEval === 'peer' ? 'Evaluated by fellow teacher and staff' : 'Evaluated by students' ?></div>
+        <div class="detail-eval-title"><?= htmlspecialchars($evalLabel) ?></div>
+        <div class="detail-eval-sub"><?= $activeEval === 'peer' ? 'Evaluated by fellow JHS/SHS teachers.' : 'Evaluated by students using the Student Evaluation questionnaire.' ?></div>
     </div>
 </div>
 
-<div class="target-card">
-    <?php if ($tgt['photo']): ?><img class="target-avatar" src="../image/<?= htmlspecialchars($tgt['photo']) ?>" alt=""/>
-    <?php else: ?><div class="target-avatar-ph"><i class="fa-solid fa-user"></i></div><?php endif; ?>
-    <div>
-        <div class="target-name"><?= htmlspecialchars($tgt['full_name']) ?></div>
-        <div class="target-desig"><?= htmlspecialchars($tgt['designation']) ?> · <?= $tgt['role']==='teacher'?'teacher':'Staff' ?></div>
-    </div>
-    <div class="target-stats">
-        <div class="tstat">
-            <div class="tstat-val" style="color:var(--ec)"><?= count($evaluators) ?></div>
-            <div class="tstat-lbl">Evaluations</div>
-        </div>
-        <div class="tstat">
-            <div class="tstat-val" style="color:<?= scoreColor($overallAvg) ?>"><?= $overallAvg !== null ? number_format($overallAvg,2) : '—' ?></div>
-            <div class="tstat-lbl">Avg Score</div>
-        </div>
-        <div class="tstat">
-            <div class="tstat-val" style="color:<?= scoreColor($overallAvg) ?>;font-size:18px;padding-top:6px"><?= scoreLabel($overallAvg) ?></div>
-            <div class="tstat-lbl">Rating</div>
+<div class="detail-person-card">
+    <?php if ($tgt['photo']): ?><img class="detail-person-avatar" src="../image/<?= htmlspecialchars($tgt['photo']) ?>" alt=""/>
+    <?php else: ?><div class="detail-person-avatar ph"><i class="fa-solid fa-user"></i></div><?php endif; ?>
+    <div class="detail-person-meta">
+        <div class="detail-person-name"><?= htmlspecialchars($tgt['full_name']) ?></div>
+        <div class="detail-person-desig">
+            · <?= $tgt['role']==='teacher' || $tgt['role']==='faculty' ? 'Faculty' : 'Staff' ?><br>
+            <?= $activeEval === 'peer' ? 'Peer-to-Peer Evaluation' : ($selectedYearLevel !== '' ? htmlspecialchars($principalGradeLevels[$selectedYearLevel]['label']) : 'JHS &amp; SHS Students Only') ?>
         </div>
     </div>
-    <div class="legend-card gl-card no-print">
-        <div class="legend-title">Score Legend</div>
-        <div class="legend-item"><span class="legend-range" style="color:<?= scoreColor(5) ?>">4.50 - 5.00</span><span class="legend-label">Always</span></div>
-        <div class="legend-item"><span class="legend-range" style="color:<?= scoreColor(4) ?>">3.50 - 4.49</span><span class="legend-label">Often</span></div>
-        <div class="legend-item"><span class="legend-range" style="color:<?= scoreColor(3) ?>">2.50 - 3.49</span><span class="legend-label">Sometimes</span></div>
-        <div class="legend-item"><span class="legend-range" style="color:<?= scoreColor(2) ?>">1.50 - 2.49</span><span class="legend-label">Rarely</span></div>
-        <div class="legend-item"><span class="legend-range" style="color:<?= scoreColor(1) ?>">1.00 - 1.49</span><span class="legend-label">Never</span></div>
+    <div class="detail-stats">
+        <div class="detail-stat">
+            <div class="detail-stat-value"><?= count($evaluators) ?></div>
+            <div class="detail-stat-label">Total Evaluations</div>
+        </div>
+        <div class="detail-stat">
+            <div class="detail-stat-value score"><?= $overallAvg !== null ? number_format($overallAvg,2) . ' / 5.00' : '—' ?></div>
+            <div class="detail-stat-label">Overall Average Score</div>
+        </div>
+    </div>
+    <div class="detail-legend">
+        <div class="detail-legend-title">Score Legend</div>
+        <div class="detail-legend-row"><span class="detail-legend-score" style="color:#10B981">4.50 - 5.00</span><span class="detail-legend-text">Always</span></div>
+        <div class="detail-legend-row"><span class="detail-legend-score" style="color:#34C38F">3.50 - 4.49</span><span class="detail-legend-text">Often</span></div>
+        <div class="detail-legend-row"><span class="detail-legend-score" style="color:#EAB308">2.50 - 3.49</span><span class="detail-legend-text">Sometimes</span></div>
+        <div class="detail-legend-row"><span class="detail-legend-score" style="color:#F97316">1.50 - 2.49</span><span class="detail-legend-text">Rarely</span></div>
+        <div class="detail-legend-row"><span class="detail-legend-score" style="color:#EF4444">1.00 - 1.49</span><span class="detail-legend-text">Never</span></div>
     </div>
 </div>
 
-<div class="results-toolbar no-print">
-    <div class="section-title" style="margin-bottom:0;">
-        <i class="fa-solid fa-list-check" style="color:var(--accent)"></i>
-        Evaluation Results
-        <span style="font-size:13px;font-weight:400;color:var(--muted)">(<?= count($evaluators) ?>)</span>
+<div class="detail-results-head">
+    <div class="detail-results-title">
+        <i class="fa-solid fa-list-check"></i>
+        <h2>Evaluation Results</h2>
+        <span>(<?= count($evaluators) ?>)</span>
     </div>
-    <?php if ($activeEval === 'student' && $yearLevels): ?>
-    <div class="year-filter">
-        <label>Year Level</label>
-        <select id="yearLevelFilter" onchange="filterYearLevel(this.value)">
-            <option value="all">All Year Levels</option>
-            <?php foreach ($yearLevels as $yl): ?>
-            <option value="<?= htmlspecialchars($yl) ?>"><?= htmlspecialchars($yl) ?></option>
+    <?php if ($activeEval === 'student' && !empty($availableYearLevels)): ?>
+    <form method="get" class="detail-year-filter no-print">
+        <input type="hidden" name="view" value="students"/>
+        <input type="hidden" name="target_id" value="<?= $target_id ?>"/>
+        <input type="hidden" name="group" value="<?= htmlspecialchars($groupFilter) ?>"/>
+        <input type="hidden" name="eval_type" value="<?= htmlspecialchars($activeEval) ?>"/>
+        <label for="detailYearLevel">Grade Level</label>
+        <select id="detailYearLevel" name="year_level" onchange="this.form.submit()">
+            <option value="">All Grade Levels</option>
+            <?php foreach ($availableYearLevels as $ylKey => $yl): ?>
+                <option value="<?= htmlspecialchars($ylKey) ?>" <?= $selectedYearLevel===$ylKey?'selected':'' ?>><?= htmlspecialchars($yl['label']) ?></option>
             <?php endforeach; ?>
         </select>
-    </div>
+    </form>
     <?php endif; ?>
 </div>
 
+<div class="detail-results-panel">
 <?php if (empty($evaluators)): ?>
-<div class="no-eval">
-    <i class="fa-solid fa-users-slash"></i>
-    <p>No <?= $evaluatorNounP ?> have evaluated this person yet.</p>
-</div>
+    <div class="detail-empty">
+        <i class="fa-solid fa-clipboard-question"></i>
+        <h3>No Evaluation Results</h3>
+        <p>No <?= $evaluatorNounP ?> have evaluated this person for the selected report scope.</p>
+    </div>
 <?php else: ?>
-
-<!-- Screen: evaluation results table -->
-<div class="table-card" style="overflow-x:auto;">
-<table class="data results-table">
-    <thead><tr>
-        <th>No.</th>
-        <th>Evaluator</th>
-        <th>Role</th>
-        <th>Average Score</th>
-        <th>Rating</th>
-        <th>Date Evaluated</th>
-        <th class="no-print">Actions</th>
-    </tr></thead>
-    <tbody id="resultsBody">
-    <?php foreach ($evaluators as $i => $ev):
-        $sc = $ev['avg_score'] !== null ? round($ev['avg_score'],2) : null;
-        $scolor = scoreColor($sc);
-        $roleLabel = $activeEval === 'peer'
-            ? ($ev['evaluator_designation'] ?: ucfirst($ev['evaluator_role'] ?? 'Staff'))
-            : 'Student';
-    ?>
-    <tr data-year="<?= htmlspecialchars($ev['year_level'] ?? '') ?>">
-        <td><?= $i + 1 ?></td>
-        <td><?= htmlspecialchars($ev['full_name']) ?></td>
-        <td class="role-cell"><?= htmlspecialchars($roleLabel) ?></td>
-        <td style="color:<?= $scolor ?>;font-weight:700;"><?= $sc !== null ? number_format($sc,2) : '—' ?></td>
-        <td><span class="rating-pill" style="color:<?= $scolor ?>;background:<?= $scolor ?>1A;border-color:<?= $scolor ?>4D;"><?= scoreLabel($sc) ?></span></td>
-        <td><?= date('M d, Y', strtotime($ev['submitted_at'])) ?></td>
-        <td class="no-print">
-            <a class="action-btn" href="?view=sheet&target_id=<?= $target_id ?>&student_id=<?= $ev['student_id'] ?>&tracker_id=<?= $ev['tracker_id'] ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>">
-                <i class="fa-solid fa-eye"></i> View
-            </a>
-        </td>
-    </tr>
-    <?php endforeach; ?>
-    </tbody>
-</table>
-</div>
-
-<script>
-function filterYearLevel(val) {
-    document.querySelectorAll('#resultsBody tr').forEach(row => {
-        row.style.display = (val === 'all' || row.dataset.year === val) ? '' : 'none';
-    });
-}
-</script>
-
-<!-- Print-only: anonymised summary, no names or photos -->
-<div class="print-eval-summary">
-    <h3>Evaluation Summary — <?= htmlspecialchars($tgt['full_name']) ?></h3>
-    <p><strong>Total evaluations received:</strong> <?= count($evaluators) ?></p>
-    <p><strong>Overall average score:</strong> <?= $overallAvg !== null ? number_format($overallAvg,2).' / 5.00 ('.scoreLabel($overallAvg).')' : '—' ?></p>
-    <p><strong>Evaluation type:</strong> <?= $evalLabel ?></p>
-    <p style="margin-top:12px;font-size:11px;color:#888;font-style:italic;">
-        Individual <?= $evaluatorNoun ?> identities are not shown in this report to protect their privacy and encourage honest feedback.
-    </p>
-</div>
-
+    <div style="overflow-x:auto;">
+    <table class="detail-results-table">
+        <thead><tr>
+            <th class="detail-no">NO.</th>
+            <th>EVALUATOR</th>
+            <th>ROLE</th>
+            <th>AVERAGE SCORE</th>
+            <th>RATING</th>
+            <th>DATE EVALUATED</th>
+            <th>ACTIONS</th>
+        </tr></thead>
+        <tbody>
+        <?php foreach ($evaluators as $i => $ev):
+            $sc = $ev['avg_score'] !== null ? round((float)$ev['avg_score'],2) : null;
+            $roleLabel = $activeEval === 'peer'
+                ? 'Faculty / Peer'
+                : 'Student';
+            $dateEval = !empty($ev['submitted_at']) ? date('M d, Y', strtotime($ev['submitted_at'])) : '—';
+        ?>
+        <tr>
+            <td class="detail-no"><?= $i + 1 ?></td>
+            <td class="detail-evaluator"><?= htmlspecialchars($ev['full_name']) ?></td>
+            <td class="detail-role"><?= htmlspecialchars($roleLabel) ?></td>
+            <td><span class="detail-avg" style="color:<?= scoreColor($sc) ?>"><?= $sc !== null ? number_format($sc,2) : '—' ?></span></td>
+            <td><span class="detail-rating" style="color:<?= scoreColor($sc) ?>;background:<?= scoreColor($sc) ?>18;"><?= htmlspecialchars(scoreLabel($sc)) ?></span></td>
+            <td class="detail-date"><?= htmlspecialchars($dateEval) ?></td>
+            <td>
+                <?php $sheetQs = '?view=sheet&target_id=' . $target_id . '&student_id=' . (int)$ev['student_id'] . '&tracker_id=' . (int)$ev['tracker_id']
+                    . '&group=' . urlencode($groupFilter) . '&eval_type=' . $activeEval
+                    . ($selectedYearLevel !== '' ? '&year_level=' . urlencode($selectedYearLevel) : ''); ?>
+                <a class="detail-view-btn detail-report-btn" href="<?= $sheetQs ?>&report=1">
+                    <i class="fa-solid fa-file-lines"></i> Generate Report
+                </a>
+                <a class="detail-view-btn" href="<?= $sheetQs ?>">
+                    <i class="fa-solid fa-eye"></i> View
+                </a>
+            </td>
+        </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+    </div>
 <?php endif; ?>
-</main>
+</div>
 
+</main>
 </body></html>
 <?php $mysqli->close(); exit; }
 
@@ -1785,10 +1727,15 @@ function filterYearLevel(val) {
 // VIEW: ARCHIVED PERSONNEL
 // ══════════════════════════════════════════════════════════════
 if ($view === 'archived') {
-    $whereRoleArc = "u.role IN ('teacher','staff','faculty')";
+    $whereRoleArc = match ($groupFilter) {
+        'Teacher' => "u.role='teacher'",
+        'Staff' => "u.role='staff'",
+        'MultiRoleTeacher','MultiRoleStaff','MultiRole' => "u.role IN ('teacher','staff','faculty')",
+        default => "u.role IN ('teacher','staff','faculty')"
+    };
     $archived = [];
     $res = $mysqli->query("
-        SELECT u.id,u.full_name,u.designation,u.photo,u.role,aa.archived_at,
+        SELECT u.id,u.full_name,u.designation,u.photo,u.role,u.secondary_role,u.source,u.account_status,aa.archived_at,
                COUNT(DISTINCT et.id) AS total_responses,
                AVG(qa.answer_score)  AS avg_score
         FROM analytics_archive aa
@@ -1799,17 +1746,6 @@ if ($view === 'archived') {
         GROUP BY u.id ORDER BY aa.archived_at DESC
     ");
     if ($res) $archived = $res->fetch_all(MYSQLI_ASSOC);
-    if ($activeEval === 'student') {
-        foreach ($archived as &$archivedPerson) {
-            $archivedPerson['student_resolved_group'] = principal_resolve_student_group($archivedPerson, $mysqli) ?? '';
-        }
-        unset($archivedPerson);
-        if ($groupFilter === 'Faculty') {
-            $archived = array_values(array_filter($archived, fn(array $p) => ($p['student_resolved_group'] ?? '') === 'teacher'));
-        } elseif ($groupFilter === 'Staff') {
-            $archived = array_values(array_filter($archived, fn(array $p) => ($p['student_resolved_group'] ?? '') === 'staff'));
-        }
-    }
 
     pageHead('Archived Personnel', $evalColor, $evalColorBg, $evalColorBorder);
     ?>
@@ -1855,7 +1791,7 @@ button, .btn { font-weight:700; }
 a { color:inherit; }
 </style>
 </head><body>
-<?php render_exec_sidebar('reports', $me, $photo_src, $principalScopeLabel); ?>
+<?php render_exec_sidebar('reports', $me, $photo_src); ?>
 <main class="main">
 
 <?php if ($toast): ?><div class="toast"><i class="fa-solid fa-circle-check"></i><?= htmlspecialchars($toast) ?></div><?php endif; ?>
@@ -1877,15 +1813,19 @@ a { color:inherit; }
             <div class="person-name"><?= htmlspecialchars($p['full_name']) ?></div>
             <div class="person-meta">
                 <span class="archived-badge"><i class="fa-solid fa-box-archive"></i> Archived <?= date('M d, Y', strtotime($p['archived_at'])) ?></span>
-                <span><?= $activeEval==='student' ? (($p['student_resolved_group'] ?? '')==='teacher' ? 'Faculty' : 'Staff') : ($p['role']==='teacher'?'Faculty':'Staff') ?> · <?= htmlspecialchars($p['designation']) ?></span>
+                <span><?= $p['role']==='teacher'?'Teacher':'Staff' ?> · <?= htmlspecialchars((string)($p['designation'] ?? '')) ?></span>
                 <span><?= $p['total_responses'] ?> evaluation<?= $p['total_responses']!=1?'s':'' ?></span>
                 <?php if ($avg !== null): ?><span style="color:<?= scoreColor($avg) ?>;font-weight:700;"><?= number_format($avg,2) ?> avg</span><?php endif; ?>
             </div>
         </div>
-        <a class="btn-restore" href="?restore_id=<?= $p['id'] ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>"
-           onclick="return confirm('Restore <?= htmlspecialchars(addslashes($p['full_name'])) ?> to the analytics list?')">
-            <i class="fa-solid fa-rotate-left"></i> Restore
-        </a>
+        <form method="post" action="principal_reports.php" style="margin:0"
+              onsubmit="return confirm(<?= htmlspecialchars(json_encode('Restore ' . $p['full_name'] . ' to the analytics list?', JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') ?>)">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>"/>
+            <input type="hidden" name="restore_id" value="<?= (int)$p['id'] ?>"/>
+            <input type="hidden" name="group" value="<?= htmlspecialchars($groupFilter) ?>"/>
+            <input type="hidden" name="eval_type" value="<?= htmlspecialchars($activeEval) ?>"/>
+            <button type="submit" class="btn-restore" style="font-family:inherit"><i class="fa-solid fa-rotate-left"></i> Restore</button>
+        </form>
     </div>
 </div>
 <?php endforeach; ?>
@@ -1894,62 +1834,142 @@ a { color:inherit; }
 <?php $mysqli->close(); ?>
 </main>
 
+<style id="executive-original-theme-2">
+:root{
+ --dark:#0A192F;--mid:#172A45;--inner:#0F1F3D;
+ --violet:#7C5FD9;--violet-h:#9C85F0;--violet-dark:#5F45B8;
+ --light:#E0E6F0;--muted:#A0B3C6;--border:rgba(255,255,255,.08);
+ --accent:#7C5FD9;--accent-h:#9C85F0;--good:#10B981;--danger:#f05454;
+ --page-bg:#0A192F;--card-bg:rgba(23,42,69,.85);--card-border:rgba(255,255,255,.08);
+}
+html{background:var(--dark)!important;color-scheme:dark!important;}
+body{background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,.82)),url('../background.png') center center/cover no-repeat fixed!important;background-color:var(--dark)!important;color:var(--light)!important;}
+.main,.content,.page-content{color:var(--light)!important;}
+.page-title,.page-header h1,.section-title,.sheet-name,.target-name{color:#fff!important;}
+.page-sub,.sheet-desig,.target-desig,.muted,.hint,.helper,.description,p{color:var(--muted)!important;}
+/* Cards/panels */
+.card,.panel,.section,.table-card,.content-card,.stat-card,.sum-card,.standing-panel,.eval-card,.eval-banner,.info-banner,.history-card,.gl-card,.amber-card,.green-card,.red-card,.person-row,.target-card,.no-eval,.no-data,.no-evaluated,.comment-section,.avg-summary,.cat-section,.people-list,.evaluator-grid{
+ background:rgba(23,42,69,.85)!important;border-color:rgba(255,255,255,.08)!important;box-shadow:0 8px 32px rgba(0,0,0,.45)!important;color:var(--light)!important;
+}
+.table-wrap{background:transparent!important;color:var(--light)!important;}
+table.data th,table.data td,th,td{color:var(--light)!important;border-color:rgba(255,255,255,.08)!important;}
+.q-table{color:var(--light)!important;}
+.q-table th{color:var(--muted)!important;background:rgba(15,31,61,.65)!important;border-color:rgba(255,255,255,.08)!important;}
+.q-table td{color:var(--light)!important;border-color:rgba(255,255,255,.06)!important;}
+/* Tabs and filters */
+.eval-switcher,.tabs,.level-tabs,.status-tabs{background:rgba(23,42,69,.85)!important;border-color:rgba(255,255,255,.08)!important;box-shadow:none!important;}
+.eval-tab,.tab,.level-tab,.status-tab,.group-tab,.desig-subtab{color:var(--muted)!important;background:transparent!important;}
+.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover,.group-tab:hover,.desig-subtab:hover{color:#fff!important;background:rgba(124,95,217,.08)!important;}
+.eval-tab.student.active,.group-tab.active,.desig-subtab.active{background:rgba(124,95,217,.14)!important;color:var(--violet-h)!important;border-color:rgba(124,95,217,.35)!important;}
+.eval-tab.student.active::after{background:var(--violet)!important;}
+.eval-tab.peer.active{background:rgba(124,95,217,.14)!important;color:var(--violet-h)!important;}
+.eval-tab.peer.active::after{background:var(--violet)!important;}
+.tab-badge{background:rgba(255,255,255,.08)!important;color:var(--muted)!important;}
+.eval-tab.student.active .tab-badge,.eval-tab.peer.active .tab-badge{background:rgba(124,95,217,.18)!important;color:var(--violet-h)!important;}
+/* Buttons/links */
+.btn-print,.btn-print.no-print,.back-btn,.btn,.action-btn,.btn-archive,.btn-restore,.btn-solid,.btn-archived-link{background:rgba(124,95,217,.12)!important;border:1px solid rgba(124,95,217,.35)!important;color:var(--violet-h)!important;}
+.btn-print:hover,.back-btn:hover,.btn:hover,.action-btn:hover,.btn-archive:hover,.btn-restore:hover,.btn-solid:hover,.btn-archived-link:hover{background:rgba(124,95,217,.22)!important;color:#fff!important;}
+.btn-solid{background:var(--violet)!important;color:#fff!important;}
+/* accents */
+.eval-banner{background:rgba(124,95,217,.08)!important;border-color:rgba(124,95,217,.25)!important;}
+.eval-banner-title,.eval-banner-icon,.cat-title,.comment-title,.section h2 i,.section h2{color:var(--violet-h)!important;}
+.period-badge{background:rgba(124,95,217,.14)!important;border-color:rgba(124,95,217,.3)!important;color:var(--violet-h)!important;}
+.bar-fill,.avg-bar-fill{background:linear-gradient(90deg,var(--violet-dark),var(--violet-h))!important;}
+.score-bar-bg,.eval-bar-bg,.avg-bar-bg,.bar-wrap{background:rgba(255,255,255,.08)!important;}
+.standing-title.top,.standing-score,.pstat-val,.avg-score-big,.avg-score-label{color:#4ade80!important;}
+.standing-title.low{color:#f87171!important;}
+.person-row:hover,.standing-item:hover{border-color:rgba(124,95,217,.4)!important;background:rgba(124,95,217,.05)!important;}
+.comment-text{background:rgba(15,31,61,.7)!important;color:var(--light)!important;}
+.empty-note,.no-comment,.no-eval{color:var(--muted)!important;}
+label,th{color:var(--muted)!important;}
+input,select,textarea{background:#0F1F3D!important;color:var(--light)!important;border-color:rgba(255,255,255,.12)!important;}
+input::placeholder,textarea::placeholder{color:#7890a8!important;}
+</style>
+
 </body></html>
 <?php exit; }
 
 // ══════════════════════════════════════════════════════════════
 // VIEW: MAIN LIST
 // ══════════════════════════════════════════════════════════════
-$whereRole = "u.role IN ('teacher','staff','faculty')";
+$whereRole = match ($activeEval) {
+    // The Student Evaluation report must use the person's actual personnel
+    // classification, not the tracker row's default evaluation_context.
+    // A Staff account can be a Teaching Staff member and therefore belongs
+    // under Faculty; a true Non-Teaching Staff account belongs under Staff.
+    'student' => "u.role IN ('teacher','staff','faculty')",
+    // Peer targets are restricted to JHS/SHS teachers by $peerEvalSql itself.
+    'peer'    => "u.role IN ('teacher','faculty','staff')",
+    default   => "u.role IN ('teacher','staff')"
+};
 
 $people = [];
-$res = $mysqli->query("
+$res = $mysqli->query(" 
     SELECT u.id, u.full_name, u.designation, u.photo, u.role, u.secondary_role, u.source, u.account_status,
            aa.archived_at,
            COUNT(DISTINCT et.id) AS total_responses,
+           MAX(et.submitted_at) AS last_evaluated,
            AVG(qa.answer_score)  AS avg_score,
-           MAX(et.submitted_at)  AS last_evaluated
+           SUM(qa.answer_score)  AS score_sum,
+           COUNT(qa.answer_score) AS score_cnt
     FROM users u
     JOIN evaluation_tracker et ON et.target_user_id=u.id AND $evalTypeSql
     LEFT JOIN questionnaire_answers qa ON qa.tracker_id=et.id
     LEFT JOIN analytics_archive aa ON aa.target_user_id=u.id
     WHERE $whereRole AND u.is_active=1 AND $reportScopeSql
-      AND (aa.id IS NULL)
+      AND aa.id IS NULL
     GROUP BY u.id
     ORDER BY avg_score DESC, u.full_name ASC
 ");
 if ($res) $people = $res->fetch_all(MYSQLI_ASSOC);
 
-// Match the Dean Reports classification: teaching Staff is Faculty, while
-// genuine Non-Teaching Staff is Staff. Filter the Student Evaluation tabs by
-// this resolved function instead of users.role or tracker context alone.
-foreach ($people as &$person) {
-    $person['student_resolved_group'] = principal_resolve_student_group($person, $mysqli) ?? '';
-}
-unset($person);
+// ── Canonical Student Evaluation grouping ────────────────────────────────
+// IMPORTANT: do NOT infer the Faculty/Staff tab from evaluation_tracker's
+// eval_bucket/evaluation_context. Legacy Student Evaluation tracker rows can
+// carry the default "teacher" context even when the target is a true
+// Non-Teaching Staff member. The report tabs instead use the same personnel
+// classification rule as the questionnaire roster:
+//   • Faculty  = Teacher/Faculty personnel OR Teaching Staff (staff account
+//                with teaching function/assignment/year-level scope)
+//   • Staff    = Non-Teaching Staff only (staff account with no teaching
+//                function/assignment/year-level scope)
+// This also means a teaching Staff account such as Amelia appears only under
+// Faculty, while genuine Non-Teaching Staff accounts appear only under Staff.
 if ($activeEval === 'student') {
-    if ($groupFilter === 'Faculty') {
-        $people = array_values(array_filter($people, fn(array $p) => strtolower(trim((string)$p['student_resolved_group'])) === 'teacher'));
-    } elseif ($groupFilter === 'Staff') {
-        $people = array_values(array_filter($people, fn(array $p) => strtolower(trim((string)$p['student_resolved_group'])) === 'staff'));
+    foreach ($people as &$person) {
+        $person['student_resolved_group'] = principal_resolve_student_group($person, $mysqli) ?? '';
     }
+    unset($person);
+
+    $people = array_values(array_filter($people, function (array $p) use ($groupFilter) {
+        $resolved = strtolower(trim((string)($p['student_resolved_group'] ?? '')));
+        $rawRole  = strtolower(trim((string)($p['role'] ?? '')));
+        if ($groupFilter === 'Faculty') return $resolved === 'teacher';
+        if ($groupFilter === 'Staff') return $resolved === 'staff';
+        return true;
+    }));
 }
 
 $top4 = array_slice($people, 0, 4);
 $low4 = array_slice(array_reverse($people), 0, 4);
 
 $totalResponses = array_sum(array_column($people,'total_responses'));
-$scores         = array_filter(array_column($people,'avg_score'), fn($s) => $s !== null);
-$overallAvg     = count($scores) ? round(array_sum($scores)/count($scores),2) : null;
+$poolCnt        = array_sum(array_column($people,'score_cnt'));
+$overallAvg     = $poolCnt > 0 ? round(array_sum(array_column($people,'score_sum')) / $poolCnt, 2) : null;
 
-$totalStudents = $mysqli->query("SELECT COUNT(*) as c FROM users us WHERE us.role='student' AND us.is_active=1 AND $reportStudentScopeSql")->fetch_assoc()['c'] ?? 0;
+$totalStudents = db_row($mysqli, "SELECT COUNT(*) AS c FROM users WHERE role='student' AND is_active=1 AND $reportStudentScopeSql")['c'] ?? 0;
 $facCount = 0;
 $staffCount = 0;
 $totalFacStaff = 0;
 
 // Use the same resolved grouping as the main report list so the tab badges
-// exactly match the personnel shown in each tab.
-$studentRosterQ = $mysqli->query("SELECT id, role, sector, secondary_role, designation, source, account_status, is_active
+// exactly match the personnel shown in each tab. Non-teaching staff are
+// included even without a grade scope; Principal/Dean never appear here.
+$studentRosterQ = $mysqli->query("SELECT id, full_name, designation, photo, role, secondary_role, sector, source,
+           EXISTS(SELECT 1 FROM teaching_assignments ta WHERE ta.user_id=u.id) AS has_teaching_assignment,
+           EXISTS(SELECT 1 FROM user_year_levels yl WHERE yl.user_id=u.id) AS has_year_level,
+           EXISTS(SELECT 1 FROM teaching_assignments tha WHERE tha.user_id=u.id AND tha.year_level IN ($principalHighSchoolLevelsSql)) AS has_hs_assignment,
+           EXISTS(SELECT 1 FROM user_year_levels hyl WHERE hyl.user_id=u.id AND hyl.year_level IN ($principalHighSchoolLevelsSql)) AS has_hs_year_level
     FROM users u
     WHERE u.is_active=1
       AND u.account_status='approved'
@@ -1965,16 +1985,29 @@ if ($studentRosterQ) {
 }
 $totalFacStaff = $facCount + $staffCount;
 
-$archivedCount = $mysqli->query("SELECT COUNT(*) as c FROM analytics_archive aa JOIN users u ON u.id=aa.target_user_id WHERE $reportScopeSql")->fetch_assoc()['c'] ?? 0;
-$studentEvalCount = $mysqli->query("SELECT COUNT(DISTINCT et.id) as c
+if ($groupFilter === 'Teacher' || $groupFilter === 'Staff') {
+    $totalFacStaff = $groupFilter === 'Teacher' ? $facCount : $staffCount;
+}
+
+$archivedCount = db_row($mysqli, "SELECT COUNT(*) as c FROM analytics_archive aa JOIN users u ON u.id=aa.target_user_id WHERE $reportScopeSql")['c'] ?? 0;
+$studentEvalCount = db_row($mysqli, "SELECT COUNT(DISTINCT et.id) as c
     FROM evaluation_tracker et
     JOIN users u ON u.id=et.target_user_id
     WHERE et.eval_type='student'
       AND $principalStudentEvaluatorSql
       AND COALESCE(et.evaluation_context,'teacher') IN ('teacher','staff')
-      AND $reportScopeSql")->fetch_assoc()['c'] ?? 0;
+      AND $studentPeriodSql
+      AND $reportScopeSql")['c'] ?? 0;
 $multiRoleEvalCount = 0;
-$peerEvalCount = $mysqli->query("SELECT COUNT(DISTINCT et.id) as c FROM evaluation_tracker et JOIN users u ON u.id=et.target_user_id WHERE et.eval_type IN ('peer','faculty_peer','staff_peer') AND $reportScopeSql")->fetch_assoc()['c'] ?? 0;
+$peerEvalCount = db_row($mysqli, "SELECT COUNT(DISTINCT et.id) AS c FROM evaluation_tracker et WHERE $peerEvalSql")['c'] ?? 0;
+$peerTeacherCount = db_row($mysqli, "SELECT COUNT(*) AS c FROM users u
+    WHERE u.is_active=1 AND u.account_status='approved'
+      AND u.id IN ($principalTeacherIdsSql)
+      AND $reportScopeSql")['c'] ?? 0;
+
+$staffDesigCounts = [];
+$sdq = $mysqli->query("SELECT designation, COUNT(*) as c FROM users u WHERE u.role='staff' AND u.is_active=1 AND $reportScopeSql GROUP BY designation ORDER BY designation");
+if ($sdq) while ($r = $sdq->fetch_assoc()) $staffDesigCounts[$r['designation']] = $r['c'];
 
 pageHead('Reports & Analytics', $evalColor, $evalColorBg, $evalColorBorder);
 ?>
@@ -1994,7 +2027,15 @@ pageHead('Reports & Analytics', $evalColor, $evalColorBg, $evalColorBorder);
 .group-tab:hover{color:var(--light);}
 .group-tab.active-all{background:rgba(59,130,246,.2);border-color:rgba(59,130,246,.5);color:#3B82F6;}
 .group-tab.active-teacher{background:rgba(13,148,136,.2);border-color:rgba(13,148,136,.5);color:#0D9488;}
-.group-tab.active-staff{background:rgba(217,119,6,.2);border-color:rgba(217,119,6,.5);color:#F59E0B;}
+.group-tab.active-staff{background:rgba(217,119,6,.2);border-color:rgba(217,119,6,.5);color:#F59E0B;}.group-tab.active-faculty,.group-tab.active-multi-role{background:rgba(124,95,217,.14);border-color:rgba(124,95,217,.35);color:var(--violet-h);}
+.group-tab.faculty-tab > i,.group-tab.multi-role-tab > i{color:var(--violet-h);}
+.faculty-subtabs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:-6px 0 20px;padding:8px 10px;background:rgba(23,42,69,.55);border:1px solid var(--border);border-radius:12px;width:max-content;max-width:100%;}
+.subtabs-label{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.7px;margin:0 4px 0 2px;}
+.faculty-subtab{display:flex;align-items:center;gap:7px;padding:8px 16px;border-radius:10px;border:1px solid transparent;color:var(--muted);text-decoration:none;font-size:13px;font-weight:700;transition:all .2s;}
+.faculty-subtab:hover{color:#fff;background:rgba(124,95,217,.08);}
+.faculty-subtab.active{background:rgba(124,95,217,.14);border-color:rgba(124,95,217,.35);color:var(--violet-h);}
+.faculty-subtab i{color:var(--violet-h);}
+
 .tab-count{background:rgba(255,255,255,.12);border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700;}
 .desig-subtabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px;padding:12px 16px;background:rgba(217,119,6,.06);border:1px solid rgba(217,119,6,.15);border-radius:10px;}
 .desig-subtab{padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;background:rgba(255,255,255,.06);border:1px solid var(--border);color:var(--muted);cursor:pointer;text-decoration:none;transition:all .2s;}
@@ -2085,669 +2126,464 @@ input::placeholder, textarea::placeholder { color:#94A3B8; }
 }
 button, .btn { font-weight:700; }
 a { color:inherit; }
-
-/* ── Student Evaluation nested Faculty / Multi-Role filters ──
-   Principal theme preserved: gold/amber portal accent. */
-.group-tabs{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;}
-.group-tab{display:flex;align-items:center;gap:9px;padding:11px 20px;border-radius:10px;border:1px solid var(--border);background:var(--mid);color:var(--muted);text-decoration:none;font-size:13px;font-weight:700;transition:all .2s;}
-.group-tab:hover{color:#fff;background:rgba(255,255,255,.05);}
-.group-tab.active-all,.group-tab.active-faculty,.group-tab.active-staff{background:var(--portal-accent-bg);border-color:rgba(217,154,43,.45);color:var(--portal-accent-h);}
-.group-tab > i{font-size:14px;}
-.group-tab:not(.active-all):not(.active-faculty):not(.active-multi-role) > i{color:var(--portal-accent-h);}
-
-/* Each top icon keeps its own accent color while the active tab uses the Principal theme. */
-.group-tab.active-all > i,.group-tab.all-tab > i{color:#2563EB !important;}
-.group-tab.faculty-tab > i{color:#0D9488 !important;}
-.tab-count{background:rgba(255,255,255,.12);border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700;color:inherit;}
-
-.faculty-subtabs{display:none;}
-.subtabs-label{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.7px;margin:0 4px 0 2px;}
-.faculty-subtab{display:flex;align-items:center;gap:7px;padding:8px 16px;border-radius:10px;border:1px solid transparent;color:var(--muted);text-decoration:none;font-size:13px;font-weight:700;transition:all .2s;}
-.faculty-subtab:hover{color:#fff;background:var(--portal-accent-bg);}
-.faculty-subtab.active{background:var(--portal-accent-bg);border-color:rgba(217,154,43,.4);color:var(--portal-accent-h);}
-.faculty-subtab i{color:var(--portal-accent-h);}
-.faculty-subtab:nth-of-type(1) i{color:#2563EB !important;}
-.faculty-subtab:nth-of-type(2) i{color:#7C3AED !important;}
-.multi-role-subtabs .faculty-subtab:nth-of-type(1) i{color:#0D9488 !important;}
-.multi-role-subtabs .faculty-subtab:nth-of-type(2) i{color:#2563EB !important;}
-.multi-role-subtabs .faculty-subtab:nth-of-type(3) i{color:#7C3AED !important;}
 </style>
 </head><body>
-<?php render_exec_sidebar('reports', $me, $photo_src, $principalScopeLabel); ?>
+<?php render_exec_sidebar('reports', $me, $photo_src); ?>
 <main class="main">
 
 
 <?php if ($toast): ?><div class="toast"><i class="fa-solid fa-circle-check"></i><?= htmlspecialchars($toast) ?></div><?php endif; ?>
 
-<!-- ── EVAL TYPE SWITCHER ── -->
-<?php $groupForOtherTabs = in_array($groupFilter, ['Faculty','Teacher','Staff'], true) ? $groupFilter : 'All'; ?>
-<div class="eval-switcher">
-    <a href="?group=<?= urlencode($groupFilter) ?>&eval_type=student" class="eval-tab student <?= $activeEval==='student'?'active':'' ?>">
-        <i class="fa-solid fa-graduation-cap"></i> Student Evaluation
-        <span class="tab-badge"><?= $studentEvalCount ?></span>
-    </a>
-    <div class="eval-divider"></div>
-    <a href="?group=<?= urlencode($groupForOtherTabs) ?>&eval_type=peer" class="eval-tab peer <?= $activeEval==='peer'?'active':'' ?>">
-        <i class="fa-solid fa-people-arrows"></i> Peer-to-Peer
-        <span class="tab-badge"><?= $peerEvalCount ?></span>
-    </a>
-</div>
+<!-- ── REPORTS REDESIGN ── -->
+<div class="reports-redesign">
 
-<div class="page-header">
-    <div>
-        <h1>Evaluation Reports <span style="font-size:18px;color:var(--ec);font-family:'Inter',sans-serif;font-weight:400;margin-left:6px;">— <?= $evalLabel ?></span></h1>
-        <p>Only showing personnel who have been evaluated<?= $activeEval==='peer'?' by colleagues':' by students' ?></p>
+    <!-- Top-level report types: keep the current two data sets only. -->
+    <div class="reports-top-switcher">
+        <a href="?group=<?= urlencode($groupFilter) ?>&eval_type=student" class="reports-top-tab student <?= $activeEval==='student'?'active':'' ?>">
+            <i class="fa-solid fa-graduation-cap"></i>
+            <span>Student Evaluation</span>
+            <span class="reports-top-badge"><?= $studentEvalCount + $multiRoleEvalCount ?></span>
+        </a>
+        <div class="reports-top-divider"></div>
+        <a href="?group=<?= urlencode($groupForOtherTabs) ?>&eval_type=peer" class="reports-top-tab peer <?= $activeEval==='peer'?'active':'' ?>">
+            <i class="fa-solid fa-people-arrows"></i>
+            <span>Peer-to-Peer</span>
+            <span class="reports-top-badge"><?= $peerEvalCount ?></span>
+        </a>
     </div>
-    <div class="header-actions">
-        <a href="?view=archived&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>" class="btn-archived-link"><i class="fa-solid fa-box-archive"></i> Archived<?php if ($archivedCount > 0): ?><span class="archived-count-badge"><?= $archivedCount ?></span><?php endif; ?></a>
-        <button class="btn-print" onclick="window.print()"><i class="fa-solid fa-print"></i> Print / Save PDF</button>
-    </div>
-</div>
 
-
-<?php if ($activeEval === 'student'): ?>
-<div class="student-report-groups">
-<div class="group-tabs">
-    <a href="?group=All&eval_type=student" class="group-tab <?= $groupFilter==='All'?'active-all':'' ?>"><i class="fa-solid fa-users"></i> All <span class="tab-count"><?= $totalFacStaff ?></span></a>
-    <a href="?group=Faculty&eval_type=student" class="group-tab faculty-tab <?= $groupFilter==='Faculty'?'active-faculty':'' ?>"><i class="fa-solid fa-building-columns"></i> Faculty <span class="tab-count"><?= $facCount ?></span></a>
-    <a href="?group=Staff&eval_type=student" class="group-tab staff-tab <?= $groupFilter==='Staff'?'active-staff':'' ?>"><i class="fa-solid fa-briefcase"></i> Staff <span class="tab-count"><?= $staffCount ?></span></a>
-</div>
-</div>
-<?php else: ?>
-<div class="peer-report-groups">
-<div class="group-tabs">
-    <a href="?group=All&eval_type=peer" class="group-tab <?= $groupFilter==='All'?'active-all':'' ?>"><i class="fa-solid fa-users"></i> All <span class="tab-count"><?= $facCount+$staffCount ?></span></a>
-    <a href="?group=Teacher&eval_type=peer" class="group-tab <?= $groupFilter==='Teacher'?'active-teacher':'' ?>"><i class="fa-solid fa-chalkboard-user"></i> Teacher <span class="tab-count"><?= $facCount ?></span></a>
-    <a href="?group=Staff&eval_type=peer" class="group-tab <?= $groupFilter==='Staff'?'active-staff':'' ?>"><i class="fa-solid fa-briefcase"></i> Staff <span class="tab-count"><?= $staffCount ?></span></a>
-</div>
-</div>
-<?php endif; ?>
-
-<!-- PEOPLE TABLE ── layout ported from the Admin/EA Evaluation Report
-     (Export/Search/Filters toolbar + sortable table + pagination), restyled
-     in the Principal portal's white / amber palette rather than
-     the Principal's white theme applied by the page-level report styling above. Confidentiality:
-     $people is still built exclusively from the hardened $reportScopeSql, so
-     this table can never list a Principal/Dean/EA/superadmin row or the
-     logged-in Principal themselves. -->
-<style>
-.ra-table-card{background:var(--mid);border:1px solid var(--border);border-radius:14px;padding:22px 24px;}
-.ra-table-head{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:16px;}
-.ra-table-head .section-title{margin-bottom:0;}
-.ra-table-tools{display:flex;align-items:center;gap:10px;}
-.ra-tool-btn{padding:9px 14px;border-radius:8px;border:1px solid var(--border);background:var(--inner);color:var(--light);font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:7px;white-space:nowrap;}
-.ra-tool-btn:hover{border-color:var(--ec);color:var(--ec);}
-.ra-filters-wrap{position:relative;}
-.ra-filters-panel{display:none;position:absolute;right:0;top:calc(100% + 6px);background:var(--mid);border:1px solid var(--border);border-radius:10px;padding:14px;min-width:220px;box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:20;}
-.ra-filters-panel.open{display:block;}
-.ra-filter-row{display:flex;flex-direction:column;gap:4px;margin-bottom:12px;}
-.ra-filter-row label{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);}
-.ra-filter-row select{padding:7px 10px;border-radius:7px;border:1px solid var(--border);background:var(--inner);color:var(--light);font-size:13px;}
-.ra-filter-clear{width:100%;padding:7px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;}
-.ra-filter-clear:hover{color:var(--ec);border-color:var(--ec);}
-.ra-search-wrap{position:relative;}
-.ra-search-wrap i{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;}
-.ra-search{padding:9px 12px 9px 32px;border-radius:8px;border:1px solid var(--border);font-size:13px;background:var(--inner);color:var(--light);min-width:220px;}
-.ra-table-wrap{overflow-x:auto;}
-table.ra-table{width:100%;border-collapse:collapse;font-size:13px;}
-table.ra-table th{text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap;}
-table.ra-table td{padding:12px;border-bottom:1px solid var(--border);vertical-align:middle;}
-table.ra-table thead tr{background:transparent !important;}
-table.ra-table tbody tr:hover{background:var(--inner) !important;}
-.ra-name-cell{display:flex;align-items:center;gap:10px;}
-.ra-photo{width:34px;height:34px;border-radius:50%;object-fit:cover;border:1px solid var(--border);flex-shrink:0;}
-.ra-photo-ph{width:34px;height:34px;border-radius:50%;background:var(--inner);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px;flex-shrink:0;}
-.ra-name-text a{font-weight:700;color:var(--light);text-decoration:none;}
-.ra-name-text a:hover{color:var(--ec);}
-.ra-role-badge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;display:inline-flex;align-items:center;gap:5px;}
-.ra-score{font-weight:700;}
-.ra-view-btn{padding:6px 14px;border-radius:7px;border:1px solid var(--portal-accent,var(--border));background:var(--portal-accent-bg,transparent);color:var(--portal-accent-h,inherit);font-size:12px;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:6px;}
-.ra-view-btn:hover{opacity:.85;}
-.ra-icon-btn{padding:6px 10px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
-.ra-icon-btn:hover{border-color:#f87171;color:#f87171;}
-.ra-actions-cell{display:flex;gap:8px;white-space:nowrap;}
-.ra-pager{display:flex;align-items:center;justify-content:space-between;margin-top:16px;flex-wrap:wrap;gap:10px;}
-.ra-pager-info{font-size:12px;color:var(--muted);}
-.ra-pager-btns{display:flex;gap:6px;}
-.ra-pager-btns button{width:30px;height:30px;border-radius:7px;border:1px solid var(--border);background:var(--inner);color:var(--light);font-size:12px;font-weight:700;cursor:pointer;}
-.ra-pager-btns button.active{background:var(--portal-accent,var(--ec));border-color:var(--portal-accent,var(--ec));color:#fff;}
-.ra-pager-btns button:disabled{opacity:.4;cursor:not-allowed;}
-@media print{.no-print{display:none!important;}}
-</style>
-
-<div class="ra-table-card">
-    <div class="ra-table-head">
-        <div class="section-title">
-            <i class="fa-solid fa-list-check" style="color:var(--accent)"></i>
-            <?= $activeEval==='student' ? 'Users Being Evaluated' : 'Evaluated Personnel' ?>
-            <span style="font-size:13px;font-weight:400;color:var(--muted)">(<?= count($people) ?> evaluated)</span>
+    <div class="reports-toolbar">
+        <div class="reports-toolbar-spacer" aria-hidden="true"></div>
+        <div class="reports-toolbar-actions">
+            <a href="?view=archived&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>" class="reports-archive-link">
+                <i class="fa-solid fa-box-archive"></i> Archived<?php if ($archivedCount > 0): ?><span class="reports-archive-count"><?= $archivedCount ?></span><?php endif; ?>
+            </a>
         </div>
-        <?php if (!empty($people)): ?>
-        <div class="ra-table-tools no-print">
-            <button class="ra-tool-btn" onclick="raExportCsv()"><i class="fa-solid fa-download"></i> Export</button>
-            <div class="ra-search-wrap">
-                <i class="fa-solid fa-magnifying-glass"></i>
-                <input type="text" id="raSearch" class="ra-search" placeholder="Search name, designation..." oninput="raFilterTable()">
-            </div>
-            <div class="ra-filters-wrap">
-                <button class="ra-tool-btn" id="raFiltersToggle" onclick="raToggleFilters()"><i class="fa-solid fa-filter"></i> Filters</button>
-                <div class="ra-filters-panel" id="raFiltersPanel">
-                    <div class="ra-filter-row">
-                        <label>Min score</label>
-                        <select id="raMinScore" onchange="raFilterTable()">
-                            <option value="0">Any</option>
-                            <option value="4.5">4.50 (Excellent)</option>
-                            <option value="3.5">3.50 (Very Good)</option>
-                            <option value="2.5">2.50 (Good)</option>
-                        </select>
-                    </div>
-                    <div class="ra-filter-row">
-                        <label>Role</label>
-                        <select id="raRoleFilter" onchange="raFilterTable()">
-                            <option value="all">All</option>
-                            <?php if ($activeEval === 'student'): ?>
-                                <option value="faculty">Faculty</option>
-                                <option value="staff">Staff</option>
-                            <?php else: ?>
-                                <option value="teacher">Teacher</option>
-                                <option value="staff">Staff</option>
-                            <?php endif; ?>
-                        </select>
-                    </div>
-                    <button class="ra-filter-clear" onclick="raClearFilters()">Clear filters</button>
-                </div>
-            </div>
-        </div>
-        <?php endif; ?>
     </div>
 
-    <?php if (empty($people)): ?>
-    <div class="no-evaluated">
-        <i class="fa-solid fa-hourglass-half"></i>
-        <p>No <?= $activeEval==='peer'?'peer-to-peer':'student' ?> evaluations have been submitted yet.<br>
-        <small style="font-size:12px;opacity:.6">Personnel will appear here once <?= $evaluatorNounP ?> have evaluated them.</small></p>
+    <?php if ($activeEval === 'student'): ?>
+    <div class="reports-filter-tabs">
+        <a href="?group=All&eval_type=student" class="reports-filter-tab <?= $groupFilter==='All'?'active':'' ?>">
+            <i class="fa-solid fa-users"></i><span>All</span><b><?= $totalFacStaff ?></b>
+        </a>
+        <a href="?group=Faculty&eval_type=student" class="reports-filter-tab <?= $groupFilter==='Faculty'?'active':'' ?>">
+            <i class="fa-solid fa-chalkboard-user"></i><span>Faculty</span><b><?= $facCount ?></b>
+        </a>
+        <a href="?group=Staff&eval_type=student" class="reports-filter-tab <?= $groupFilter==='Staff'?'active':'' ?>">
+            <i class="fa-solid fa-briefcase"></i><span>Staff</span><b><?= $staffCount ?></b>
+        </a>
     </div>
     <?php else: ?>
-    <div class="ra-table-wrap">
-    <table class="ra-table" id="raTable">
-        <thead>
-            <tr>
-                <th>No.</th>
-                <th>Name</th>
-                <th>Designation</th>
-                <th>Role</th>
-                <th>Overall Avg. Score</th>
-                <th>Last Evaluated</th>
-                <th class="no-print">Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-        <?php $rowNum = 0; foreach ($people as $p):
-            $rowNum++;
-            $avg        = $p['avg_score'] !== null ? round($p['avg_score'],2) : null;
-            $color      = scoreColor($avg);
-            $isArchived = !empty($p['archived_at']);
-            if ($activeEval === 'student') {
-                $resolvedGroup = strtolower(trim((string)($p['student_resolved_group'] ?? '')));
-                $roleKey = $resolvedGroup === 'teacher' ? 'faculty' : 'staff';
-                $roleLabel = $resolvedGroup === 'teacher' ? 'Faculty' : 'Staff';
-                $roleIcon = $resolvedGroup === 'teacher' ? 'fa-chalkboard-user' : 'fa-briefcase';
-                $roleBadgeStyle = $resolvedGroup === 'teacher'
-                    ? 'background:rgba(13,148,136,.18);color:#0D9488;border:1px solid rgba(13,148,136,.3);'
-                    : 'background:rgba(124,58,237,.15);color:#A78BFA;border:1px solid rgba(124,58,237,.3);';
-            } else {
-                $rawRole = strtolower(trim((string)($p['role'] ?? '')));
-                $isFac = in_array($rawRole, ['teacher','faculty'], true);
-                $roleKey = $isFac ? 'teacher' : 'staff';
-                $roleLabel = $isFac ? 'Faculty' : 'Staff';
-                $roleIcon = $isFac ? 'fa-chalkboard-user' : 'fa-briefcase';
-                $roleBadgeStyle = $isFac
-                    ? 'background:rgba(13,148,136,.18);color:#0D9488;border:1px solid rgba(13,148,136,.3);'
-                    : 'background:rgba(124,58,237,.15);color:#A78BFA;border:1px solid rgba(124,58,237,.3);';
-            }
-        ?>
-            <tr data-search="<?= htmlspecialchars(strtolower($p['full_name'].' '.$p['designation'])) ?>" data-desig="<?= htmlspecialchars($p['designation']) ?>" data-score="<?= $avg !== null ? $avg : '' ?>" data-role="<?= $roleKey ?>">
-                <td><?= $rowNum ?></td>
-                <td>
-                    <div class="ra-name-cell">
-                        <?php if($p['photo']): ?><img class="ra-photo" src="../image/<?= htmlspecialchars($p['photo']) ?>" alt=""/>
-                        <?php else: ?><div class="ra-photo-ph"><i class="fa-solid fa-user"></i></div><?php endif; ?>
-                        <div class="ra-name-text">
-                            <a href="?view=students&target_id=<?= $p['id'] ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>"><?= htmlspecialchars($p['full_name']) ?></a>
-                            <?php if ($isArchived): ?>
-                            <div><span style="font-size:11px;color:var(--muted);"><i class="fa-solid fa-box-archive"></i> Archived</span></div>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                </td>
-                <td><?= htmlspecialchars($p['designation']) ?></td>
-                <td><span class="ra-role-badge" style="<?= $roleBadgeStyle ?>"><i class="fa-solid <?= $roleIcon ?>"></i> <?= $roleLabel ?></span></td>
-                <td class="ra-score" style="color:<?= $color ?>"><?= $avg !== null ? number_format($avg,2) : '—' ?></td>
-                <td><?= !empty($p['last_evaluated']) ? date('M d, Y', strtotime($p['last_evaluated'])) : '—' ?></td>
-                <td>
-                    <div class="ra-actions-cell no-print">
-                        <a class="ra-view-btn" href="?view=students&target_id=<?= $p['id'] ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>"><i class="fa-solid fa-eye"></i> View</a>
-                        <?php if ($isArchived): ?>
-                        <a class="ra-icon-btn" href="?restore_id=<?= $p['id'] ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>&view=archived"><i class="fa-solid fa-rotate-left"></i> Restore</a>
-                        <?php else: ?>
-                        <button class="ra-icon-btn" onclick="archivePerson(<?= $p['id'] ?>,'<?= htmlspecialchars(addslashes($p['full_name'])) ?>')"><i class="fa-solid fa-box-archive"></i> Archive</button>
-                        <?php endif; ?>
-                    </div>
-                </td>
-            </tr>
-        <?php endforeach; ?>
-        </tbody>
-    </table>
+    <div class="reports-filter-tabs">
+        <a href="?group=All&eval_type=peer" class="reports-filter-tab active">
+            <i class="fa-solid fa-chalkboard-user"></i><span>JHS/SHS Teachers</span><b><?= $peerTeacherCount ?></b>
+        </a>
     </div>
-    <div class="ra-pager no-print">
-        <div class="ra-pager-info" id="raPagerInfo"></div>
-        <div class="ra-pager-btns" id="raPagerBtns"></div>
-    </div>
+    <div class="reports-peer-note"><i class="fa-solid fa-circle-info"></i><span><strong>Peer-to-Peer Evaluations</strong> — results submitted by fellow JHS/SHS teachers.</span></div>
     <?php endif; ?>
+
+    <!-- Main data panel styled after the supplied reference layout. -->
+    <section class="reports-data-panel">
+        <div class="reports-data-head">
+            <div class="reports-data-title">
+                <i class="fa-solid fa-list-check"></i>
+                <h2>Users Being Evaluated</h2>
+                <span>(<?= count($people) ?> evaluated)</span>
+                <span class="reports-live-status" id="reportsLiveStatus"><span class="reports-live-dot"></span> Live</span>
+            </div>
+            <div class="reports-data-actions">
+                <button type="button" class="reports-action-btn reports-export-btn" onclick="exportReportsTable()"><i class="fa-solid fa-download"></i> Export</button>
+                <div class="reports-search-box">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input id="reportsSearch" type="search" placeholder="Search name, designation..." autocomplete="off" aria-label="Search evaluated users">
+                </div>
+                <button type="button" class="reports-action-btn reports-filters-btn" onclick="toggleReportsFilters()"><i class="fa-solid fa-filter"></i> Filters</button>
+            </div>
+        </div>
+
+        <div class="reports-active-filter-note" id="reportsFilterNote" hidden>
+            <span>Use the tabs above to narrow the current report.</span>
+            <button type="button" onclick="clearReportsSearch()"><i class="fa-solid fa-xmark"></i> Clear search</button>
+        </div>
+
+        <?php if (empty($people)): ?>
+        <div class="reports-empty-state">
+            <i class="fa-solid fa-hourglass-half"></i>
+            <h3>No <?= $activeEval==='peer'?'peer-to-peer':'student' ?> evaluations yet</h3>
+            <p>Personnel will appear here once <?= $evaluatorNounP ?> have evaluated them.</p>
+        </div>
+        <?php else: ?>
+        <div class="reports-table-wrap">
+            <table class="reports-table" id="reportsTable">
+                <thead>
+                    <tr>
+                        <th class="col-no">NO.</th>
+                        <th>NAME</th>
+                        <th>DESIGNATION</th>
+                        <th>ROLE</th>
+                        <th>OVERALL AVG. SCORE</th>
+                        <th>LAST EVALUATED</th>
+                        <th class="col-actions">ACTIONS</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($people as $i => $p):
+                    $avg = $p['avg_score'] !== null ? round((float)$p['avg_score'], 2) : null;
+                    $rawRole = strtolower(trim((string)($p['role'] ?? '')));
+                    if ($activeEval === 'student') {
+                        $resolvedGroup = strtolower(trim((string)($p['student_resolved_group'] ?? '')));
+                        if ($resolvedGroup === 'teacher') {
+                            $roleLabel = 'Faculty';
+                        } elseif ($resolvedGroup === 'staff') {
+                            $roleLabel = 'Staff';
+                        } else {
+                            $roleLabel = ucfirst($rawRole);
+                        }
+                    } else {
+                        $roleLabel = in_array($rawRole, ['teacher','faculty'], true) ? 'Faculty' : 'Staff';
+                    }
+                    $isFac = $roleLabel === 'Faculty';
+                    $lastEval = !empty($p['last_evaluated']) ? date('M d, Y', strtotime($p['last_evaluated'])) : '—';
+                    $searchText = trim(($p['full_name'] ?? '') . ' ' . ($p['designation'] ?? '') . ' ' . $roleLabel);
+                ?>
+                    <tr class="reports-person-row" data-search="<?= htmlspecialchars(strtolower($searchText)) ?>" data-desig="<?= htmlspecialchars((string)($p['designation'] ?? '')) ?>">
+                        <td class="col-no"><?= $i + 1 ?></td>
+                        <td>
+                            <a class="reports-person-link" href="?view=students&target_id=<?= $p['id'] ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>">
+                                <?php if($p['photo']): ?><img class="reports-person-photo" src="../image/<?= htmlspecialchars($p['photo']) ?>" alt=""/><?php else: ?><span class="reports-person-photo placeholder"><i class="fa-solid fa-user"></i></span><?php endif; ?>
+                                <span class="reports-person-name"><?= htmlspecialchars($p['full_name']) ?></span>
+                            </a>
+                        </td>
+                        <td class="reports-designation-cell"><?= !empty($p['designation']) ? htmlspecialchars((string)($p['designation'] ?? '')) : '—' ?></td>
+                        <td><span class="reports-role-badge <?= $isFac ? 'faculty' : (in_array($roleLabel, ['Dean','Principal'], true) ? strtolower($roleLabel) : 'staff') ?>"><i class="fa-solid <?= $roleLabel === 'Dean' ? 'fa-graduation-cap' : ($roleLabel === 'Principal' ? 'fa-user-tie' : ($isFac ? 'fa-chalkboard-user' : 'fa-briefcase')) ?>"></i><?= htmlspecialchars($roleLabel) ?></span></td>
+                        <td><span class="reports-score <?= $avg !== null && $avg >= 4.5 ? 'high' : ($avg !== null && $avg >= 3.5 ? 'mid' : 'low') ?>"><?= $avg !== null ? number_format($avg,2) : '—' ?></span></td>
+                        <td class="reports-date"><?= htmlspecialchars($lastEval) ?></td>
+                        <td class="col-actions">
+                            <div class="reports-row-actions">
+                                <a class="reports-view-btn" href="?view=students&target_id=<?= $p['id'] ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>"><i class="fa-solid fa-eye"></i> View</a>
+                                <button type="button" class="reports-archive-btn" onclick="archivePerson(<?= (int)$p['id'] ?>, <?= htmlspecialchars(json_encode((string)$p['full_name'], JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') ?>)"><i class="fa-solid fa-box-archive"></i> Archive</button>
+                            </div>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <div class="reports-no-search" id="reportsNoSearch" hidden>
+            <i class="fa-solid fa-magnifying-glass"></i> No evaluated users match your search.
+        </div>
+        <?php endif; ?>
+    </section>
 </div>
 
-<script>
-(function(){
-    const pageSize = 10;
-    let currentPage = 1;
-    const table = document.getElementById('raTable');
-    if (!table) return;
-    const allRows = Array.from(table.querySelectorAll('tbody tr'));
-
-    function visibleRows() {
-        return allRows.filter(r => r.dataset.matched !== 'false');
-    }
-
-    function render() {
-        const vis = visibleRows();
-        const totalPages = Math.max(1, Math.ceil(vis.length / pageSize));
-        if (currentPage > totalPages) currentPage = totalPages;
-        allRows.forEach(r => r.style.display = 'none');
-        const start = (currentPage - 1) * pageSize;
-        vis.slice(start, start + pageSize).forEach(r => r.style.display = '');
-
-        const info = document.getElementById('raPagerInfo');
-        if (vis.length === 0) {
-            info.textContent = 'No matching entries';
-        } else {
-            info.textContent = `Showing ${start + 1} to ${Math.min(start + pageSize, vis.length)} of ${vis.length} entries`;
-        }
-
-        const btnsWrap = document.getElementById('raPagerBtns');
-        btnsWrap.innerHTML = '';
-        const prev = document.createElement('button');
-        prev.innerHTML = '<i class="fa-solid fa-chevron-left"></i>';
-        prev.disabled = currentPage === 1;
-        prev.onclick = () => { currentPage--; render(); };
-        btnsWrap.appendChild(prev);
-        for (let i = 1; i <= totalPages; i++) {
-            const b = document.createElement('button');
-            b.textContent = i;
-            if (i === currentPage) b.classList.add('active');
-            b.onclick = () => { currentPage = i; render(); };
-            btnsWrap.appendChild(b);
-        }
-        const next = document.createElement('button');
-        next.innerHTML = '<i class="fa-solid fa-chevron-right"></i>';
-        next.disabled = currentPage === totalPages;
-        next.onclick = () => { currentPage++; render(); };
-        btnsWrap.appendChild(next);
-    }
-
-    window.raFilterTable = function() {
-        const q = document.getElementById('raSearch').value.trim().toLowerCase();
-        const minScore = parseFloat(document.getElementById('raMinScore').value) || 0;
-        const roleVal = document.getElementById('raRoleFilter').value;
-        allRows.forEach(r => {
-            const matchesSearch = !q || r.dataset.search.includes(q);
-            const rowScore = parseFloat(r.dataset.score);
-            const matchesScore = minScore === 0 || (!isNaN(rowScore) && rowScore >= minScore);
-            const matchesRole = roleVal === 'all' || r.dataset.role === roleVal;
-            r.dataset.matched = (matchesSearch && matchesScore && matchesRole) ? 'true' : 'false';
-        });
-        currentPage = 1;
-        render();
-    };
-
-    window.raToggleFilters = function() {
-        document.getElementById('raFiltersPanel').classList.toggle('open');
-    };
-
-    window.raClearFilters = function() {
-        document.getElementById('raMinScore').value = '0';
-        document.getElementById('raRoleFilter').value = 'all';
-        raFilterTable();
-    };
-
-    document.addEventListener('click', function(e) {
-        const wrap = document.querySelector('.ra-filters-wrap');
-        if (wrap && !wrap.contains(e.target)) {
-            const panel = document.getElementById('raFiltersPanel');
-            if (panel) panel.classList.remove('open');
-        }
-    });
-
-    window.raExportCsv = function() {
-        const rows = [['No.','Name','Designation','Role','Overall Avg. Score','Last Evaluated']];
-        visibleRows().forEach((r, i) => {
-            const cells = r.querySelectorAll('td');
-            rows.push([i+1, cells[1].innerText.trim().split('\n')[0], cells[2].innerText.trim(), cells[3].innerText.trim(), cells[4].innerText.trim(), cells[5].innerText.trim()]);
-        });
-        const csv = rows.map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = 'evaluated_personnel.csv';
-        link.click();
-    };
-
-    allRows.forEach(r => r.dataset.matched = 'true');
-    render();
-})();
-
-function archivePerson(id, name) {
-    if (confirm(`Archive "${name}"? They'll be hidden from this list but their evaluation data is kept and can be restored anytime.`)) {
-        window.location.href = `?archive_id=${id}&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>`;
-    }
+<style>
+/* ── Reference-style Reports layout: visual-only redesign, current data preserved ── */
+.reports-redesign{display:flex;flex-direction:column;gap:0;margin-top:-2px;}
+.reports-top-switcher{display:flex;align-items:center;justify-content:flex-start;gap:9px;width:max-content;max-width:100%;margin:0 0 0 0;border:0;border-radius:0;background:transparent;overflow:visible;box-shadow:none;}
+.reports-top-tab{display:inline-flex;flex:0 0 auto;min-width:0;align-items:center;justify-content:center;gap:9px;min-height:47px;padding:0 22px;border:1px solid #CFE0F0;border-radius:13px;color:#56708A;text-decoration:none;font-size:14px;font-weight:700;letter-spacing:.01em;transition:.18s;background:#fff;position:relative;white-space:nowrap;box-shadow:0 1px 3px rgba(27,67,106,.03);}
+.reports-top-tab.student{color:#2764D4;}
+.reports-top-tab i{font-size:14px;}
+.reports-top-tab.active{background:#E9F2FF;color:#2161CF;border-color:#7CB0FF;box-shadow:0 2px 7px rgba(45,102,225,.08);}
+.reports-top-tab.peer.active{background:#EEE9FF;color:#6547BE;border-color:#D4C7FF;box-shadow:0 2px 7px rgba(101,71,190,.08);}
+.reports-top-tab:hover{background:#F7FAFD;color:#274B6C;}
+.reports-top-badge{min-width:23px;padding:4px 7px;border-radius:999px;background:#ECF2F7;color:#58718B;font-size:10px;text-align:center;line-height:1;}
+.reports-top-tab.student.active .reports-top-badge{background:#D4E5FF;color:#2161CF;}
+.reports-top-tab.peer.active .reports-top-badge{background:#E6DFFF;color:#6547BE;}
+.reports-top-divider{display:none;}
+.reports-toolbar{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;padding:34px 0 22px;min-height:102px;}
+.reports-toolbar-spacer{flex:1;min-height:1px;}
+.reports-toolbar-actions{display:flex;align-items:center;gap:10px;}
+.reports-print-btn{border:0;border-radius:13px;padding:12px 20px;background:#2D66E1;color:#fff;font:700 13px 'Inter',sans-serif;display:inline-flex;align-items:center;gap:8px;cursor:pointer;box-shadow:0 6px 16px rgba(45,102,225,.18);}
+.reports-print-btn:hover{background:#2459C9;}
+.reports-archive-link{display:inline-flex;align-items:center;gap:7px;padding:11px 15px;border:1px solid #BCD0E5;border-radius:11px;background:#fff;color:#38546E;text-decoration:none;font-size:12px;font-weight:700;}
+.reports-archive-link:hover{background:#F6F9FC;border-color:#8FAFCB;color:#173957;}
+.reports-archive-count{padding:2px 7px;border-radius:999px;background:#EDF2F7;color:#64748B;font-size:10px;}
+.reports-filter-tabs{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:12px;}
+.reports-filter-tab{display:inline-flex;align-items:center;gap:9px;min-height:47px;padding:0 22px;border:1px solid #CFE0F0;border-radius:13px;background:#fff;color:#56708A;text-decoration:none;font-size:14px;font-weight:700;box-shadow:0 1px 3px rgba(27,67,106,.03);}
+.reports-filter-tab:hover{background:#F7FAFD;color:#274B6C;}
+.reports-filter-tab.active{background:#E9F2FF;border-color:#7CB0FF;color:#2161CF;box-shadow:0 2px 7px rgba(45,102,225,.08);}
+.reports-filter-tab i{color:inherit;}
+.reports-filter-tab b{font-size:10px;min-width:23px;text-align:center;padding:4px 6px;border-radius:999px;background:#ECF2F7;color:#58718B;}
+.reports-filter-tab.active b{background:#D4E5FF;color:#2161CF;}
+.reports-sub-filters,.reports-designation-filters{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:14px;padding:10px 12px;border:1px solid #D6E4F0;border-radius:12px;background:#F8FBFE;}
+.reports-sub-label{font-size:10px;font-weight:800;letter-spacing:.08em;color:#71859A;margin-right:2px;}
+.reports-sub-tab,.reports-designation-pill{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border:1px solid transparent;border-radius:9px;color:#617A91;text-decoration:none;font-size:12px;font-weight:700;}
+.reports-sub-tab:hover,.reports-designation-pill:hover{background:#EEF5FB;color:#244969;}
+.reports-sub-tab.active,.reports-designation-pill.active{background:#EEE9FF;border-color:#D4C7FF;color:#6547BE;}
+.reports-sub-tab b,.reports-designation-pill b{font-size:10px;padding:2px 6px;border-radius:999px;background:#EDF2F7;color:#64748B;}
+.reports-peer-note{display:flex;align-items:center;gap:9px;margin:1px 0 14px;padding:10px 13px;border:1px solid #E5DAFF;border-radius:10px;background:#FAF8FF;color:#6C6380;font-size:11px;}
+.reports-peer-note i{color:#7C5FD9;}
+.reports-peer-note strong{color:#6641BB;}
+.reports-data-panel{border:1px solid #CFE0F0;border-radius:15px;background:#fff;box-shadow:0 6px 18px rgba(28,64,92,.06);overflow:hidden;}
+.reports-data-head{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:22px 28px 18px;}
+.reports-data-title{display:flex;align-items:center;gap:11px;min-width:0;}
+.reports-data-title i{color:#2B67DE;font-size:18px;}
+.reports-data-title h2{font-family:'Rajdhani',sans-serif;font-size:23px;font-weight:700;color:#122E4A;margin:0;}
+.reports-data-title span{color:#637B92;font-size:11px;white-space:nowrap;}
+.reports-data-actions{display:flex;align-items:center;gap:10px;}
+.reports-action-btn{height:41px;padding:0 15px;border:1px solid #C6D8E8;border-radius:10px;background:#fff;color:#27445F;font:700 12px 'Inter',sans-serif;display:inline-flex;align-items:center;gap:7px;cursor:pointer;}
+.reports-action-btn:hover{background:#F5F9FD;border-color:#9DB9D2;}
+.reports-filters-btn{padding:0 16px;}
+.reports-search-box{display:flex;align-items:center;gap:8px;width:275px;height:41px;padding:0 12px;border:1px solid #B9CFE3;border-radius:10px;background:#fff;}
+.reports-search-box i{color:#6A8299;font-size:13px;}
+.reports-search-box input{width:100%;border:0!important;outline:0!important;background:transparent!important;padding:0!important;box-shadow:none!important;color:#173956!important;font-size:12px!important;}
+.reports-search-box input::placeholder{color:#91A4B6!important;}
+.reports-active-filter-note{margin:0 28px 12px;padding:9px 12px;border-radius:9px;background:#F8FBFE;border:1px solid #DCE8F2;color:#617B92;font-size:11px;}
+.reports-active-filter-note button{float:right;border:0;background:none;color:#5C45B5;font-size:11px;font-weight:700;cursor:pointer;}
+.reports-table-wrap{overflow-x:auto;}
+.reports-table{width:100%;border-collapse:collapse;min-width:1020px;}
+.reports-table th{padding:12px 16px;background:#F7FAFD;color:#60778D!important;border-top:1px solid #DDE8F1;border-bottom:1px solid #D8E4EE;font-size:10px!important;font-weight:800!important;letter-spacing:.07em;text-align:left;white-space:nowrap;}
+.reports-table td{padding:16px;border-bottom:1px solid #E0E9F1;color:#173956!important;font-size:13px!important;vertical-align:middle;}
+.reports-table tbody tr:hover td{background:#F9FBFD!important;}
+.reports-table .col-no{width:58px;text-align:center;}
+.reports-table .col-actions{width:225px;}
+.reports-person-link{display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit;min-width:240px;}
+.reports-person-photo{width:42px;height:42px;border-radius:50%;object-fit:cover;border:1px solid #C9D8E6;flex:0 0 auto;}
+.reports-person-photo.placeholder{display:inline-flex;align-items:center;justify-content:center;background:#F2F6F9;color:#6E8294;font-size:15px;}
+.reports-person-name{font-size:13px;font-weight:800;color:#0F2944;line-height:1.2;}
+.reports-designation-cell{max-width:310px;line-height:1.35;color:#21435F!important;}
+.reports-role-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;font-size:11px;font-weight:800;white-space:nowrap;border:1px solid;}
+.reports-role-badge.faculty{background:#EFF5FF;border-color:#A9C9FF;color:#2563D8;}
+.reports-role-badge.staff{background:#F3ECFF;border-color:#D0B8FF;color:#733DD0;}
+.reports-role-badge.dean{background:#F0EBFF;border-color:#D8C8FF;color:#7450C9;}
+.reports-role-badge.principal{background:#FFF4E3;border-color:#F1C98B;color:#B96A00;}
+.reports-score{font-size:15px;font-weight:800;}
+.reports-score.high{color:#08A06A;}
+.reports-score.mid{color:#B06B00;}
+.reports-score.low{color:#CF3D3D;}
+.reports-date{color:#2E4B64!important;white-space:nowrap;}
+.reports-row-actions{display:flex;align-items:center;gap:7px;}
+.reports-view-btn,.reports-archive-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:72px;padding:8px 11px;border-radius:9px;text-decoration:none;font-size:11px;font-weight:800;cursor:pointer;font-family:'Inter',sans-serif;}
+.reports-view-btn{background:#F1F6FF;border:1px solid #B5D0FF;color:#2363D4;}
+.reports-view-btn:hover{background:#E6F0FF;}
+.reports-archive-btn{background:#fff;border:1px solid #C7D7E5;color:#687E92;}
+.reports-archive-btn:hover{background:#F7FAFC;color:#314E68;border-color:#AABFD2;}
+.reports-empty-state{text-align:center;padding:64px 24px;color:#6B8195;}
+.reports-empty-state i{display:block;font-size:34px;margin-bottom:13px;color:#9CB0C1;}
+.reports-empty-state h3{font-family:'Rajdhani',sans-serif;font-size:20px;color:#163450;margin-bottom:5px;}
+.reports-empty-state p{font-size:12px;color:#71869A;}
+.reports-no-search{text-align:center;padding:26px;color:#71869A;font-size:12px;}
+.reports-redesign [hidden]{display:none!important;}
+.reports-live-status{display:inline-flex;align-items:center;gap:5px;margin-left:3px;padding:4px 8px;border-radius:999px;background:#ECFDF5;border:1px solid #BBE7D2;color:#0F8A61;font-size:10px;font-weight:800;white-space:nowrap;}
+.reports-live-dot{width:6px;height:6px;border-radius:50%;background:#10B981;box-shadow:0 0 0 0 rgba(16,185,129,.45);animation:reportsLivePulse 2s infinite;}
+.reports-live-status.stale{background:#F8FAFC;border-color:#D6E0EA;color:#71869A;}
+.reports-live-status.stale .reports-live-dot{background:#94A3B8;box-shadow:none;animation:none;}
+@keyframes reportsLivePulse{0%{box-shadow:0 0 0 0 rgba(16,185,129,.4);}70%{box-shadow:0 0 0 6px rgba(16,185,129,0);}100%{box-shadow:0 0 0 0 rgba(16,185,129,0);}}
+@media (max-width:900px){
+  .reports-toolbar{align-items:flex-start;flex-direction:column;padding-bottom:16px;}
+  .reports-toolbar-actions{width:100%;justify-content:flex-end;}
+  .reports-data-head{align-items:flex-start;flex-direction:column;}
+  .reports-data-actions{width:100%;flex-wrap:wrap;}
+  .reports-search-box{flex:1;min-width:210px;}
 }
+@media (max-width:640px){
+  .reports-top-switcher{width:100%;max-width:none;flex-wrap:wrap;}
+  .reports-top-tab{flex:0 0 auto;min-height:44px;padding:0 14px;font-size:12px;gap:7px;}
+  .reports-toolbar-actions{justify-content:stretch;}
+  .reports-archive-link,.reports-print-btn{flex:1;justify-content:center;}
+  .reports-data-head{padding:18px 16px;}
+  .reports-search-box{order:3;width:100%;flex-basis:100%;}
+  .reports-action-btn{flex:1;justify-content:center;}
+}
+@media print{
+  .reports-toolbar-actions,.reports-data-actions,.reports-row-actions,.reports-sub-filters,.reports-designation-filters{display:none!important;}
+  .reports-redesign{margin:0;}
+  .reports-top-switcher{box-shadow:none;}
+  .reports-data-panel{box-shadow:none;border-color:#CBD5E1;}
+}
+</style>
+
+<script>
+function filterByDesig(desig, evt) {
+    if (evt) evt.preventDefault();
+    document.querySelectorAll('.reports-designation-pill').forEach(t => t.classList.remove('active'));
+    if (evt && evt.target) {
+        const pill = evt.target.closest('.reports-designation-pill');
+        if (pill) pill.classList.add('active');
+    }
+    document.querySelectorAll('#reportsTable tbody .reports-person-row').forEach(row => {
+        row.style.display = (desig === 'all' || row.dataset.desig === desig) ? '' : 'none';
+    });
+}
+function toggleReportsFilters() {
+    const designation = document.getElementById('designationFilters');
+    const note = document.getElementById('reportsFilterNote');
+    if (designation) {
+        designation.hidden = !designation.hidden;
+        if (!designation.hidden) designation.scrollIntoView({behavior:'smooth', block:'nearest'});
+        if (note) note.hidden = true;
+        return;
+    }
+    if (note) note.hidden = !note.hidden;
+}
+function clearReportsSearch() {
+    const input = document.getElementById('reportsSearch');
+    if (input) { input.value = ''; input.dispatchEvent(new Event('input')); input.focus(); }
+}
+function exportReportsTable() {
+    const rows = Array.from(document.querySelectorAll('#reportsTable tbody .reports-person-row')).filter(r => r.style.display !== 'none');
+    if (!rows.length) return;
+    const csv = [['No.','Name','Designation','Role','Overall Avg. Score','Last Evaluated']];
+    rows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        const name = row.querySelector('.reports-person-name')?.textContent.trim() || '';
+        const designation = row.querySelector('.reports-designation-cell')?.textContent.trim() || '';
+        const role = row.querySelector('.reports-role-badge')?.textContent.trim() || '';
+        const score = row.querySelector('.reports-score')?.textContent.trim() || '';
+        const last = row.querySelector('.reports-date')?.textContent.trim() || '';
+        csv.push([cells[0].textContent.trim(), name, designation, role, score, last]);
+    });
+    const blob = new Blob([csv.map(r => r.map(v => '"' + String(v).replace(/"/g,'""') + '"').join(',')).join('\n')], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'principal-report-<?= $activeEval ?>.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+}
+document.addEventListener('DOMContentLoaded', () => {
+    const input = document.getElementById('reportsSearch');
+    const noSearch = document.getElementById('reportsNoSearch');
+    if (!input) return;
+    input.addEventListener('input', () => {
+        const q = input.value.trim().toLowerCase();
+        let visible = 0;
+        document.querySelectorAll('#reportsTable tbody .reports-person-row').forEach(row => {
+            const match = !q || row.dataset.search.includes(q);
+            row.style.display = match ? '' : 'none';
+            if (match) visible++;
+        });
+        if (noSearch) noSearch.hidden = visible !== 0 || !q;
+        const note = document.getElementById('reportsFilterNote');
+        if (note) note.hidden = !q;
+    });
+});
+function archivePerson(id, name) {
+    if (!confirm(`Archive "${name}"? They'll be hidden from this list but their evaluation data is kept and can be restored anytime.`)) return;
+    const f = document.createElement('form');
+    f.method = 'post';
+    f.action = 'principal_reports.php';
+    const fields = {
+        archive_id: id,
+        group: <?= json_encode($groupFilter) ?>,
+        eval_type: <?= json_encode($activeEval) ?>,
+        csrf_token: <?= json_encode($csrfToken) ?>
+    };
+    Object.keys(fields).forEach(function(k){
+        const i = document.createElement('input');
+        i.type = 'hidden'; i.name = k; i.value = fields[k];
+        f.appendChild(i);
+    });
+    document.body.appendChild(f);
+    f.submit();
+}
+
+// ── LIVE REPORT UPDATES ────────────────────────────────────────────────
+// Reports reads the same evaluation_tracker records used by the tracker/results
+// pages. Polling the lightweight endpoint makes newly submitted evaluations
+// appear without requiring the Principal to manually reload the report.
+(function(){
+    const status = document.getElementById('reportsLiveStatus');
+    const search = document.getElementById('reportsSearch');
+    const storageKey = 'pbiPrincipalReportsSearch';
+    if (search) {
+        const saved = sessionStorage.getItem(storageKey);
+        if (saved && !search.value) {
+            search.value = saved;
+            search.dispatchEvent(new Event('input'));
+        }
+        search.addEventListener('input', function(){ sessionStorage.setItem(storageKey, search.value); });
+    }
+    if (status) status.title = 'Live — checks for new evaluations every 30 seconds';
+    const base = 'principal_reports_live_api.php?eval_type=<?= urlencode($activeEval) ?>&group=<?= urlencode($groupFilter) ?>';
+    let lastSignature = null;
+    let busy = false;
+    function pollReports(){
+        if (busy || document.hidden) return;
+        busy = true;
+        fetch(base, {credentials:'same-origin', cache:'no-store'})
+            .then(function(r){ if(!r.ok) throw new Error('status'); return r.json(); })
+            .then(function(data){
+                if (status) status.classList.remove('stale');
+                const sig = data && data.signature ? data.signature : '';
+                if (lastSignature === null) {
+                    lastSignature = sig;
+                    return;
+                }
+                if (sig && sig !== lastSignature) {
+                    if (status) {
+                        status.classList.add('updating');
+                        status.title = 'New evaluation/report data detected — refreshing…';
+                        status.innerHTML = '<span class=\"reports-live-dot\"></span> Updating…';
+                    }
+                    setTimeout(function(){ window.location.reload(); }, 450);
+                }
+            })
+            .catch(function(){ if (status) status.classList.add('stale'); })
+            .finally(function(){ busy = false; });
+    }
+    pollReports();
+    setInterval(pollReports, 30000);
+    document.addEventListener('visibilitychange', function(){ if (!document.hidden) pollReports(); });
+})();
 </script>
 <?php $mysqli->close(); ?>
 
-<style id="principal-reports-final-white-theme">
-/* Final white theme for Principal Reports content. Keep the sidebar navy. */
-html{background:#F8FAFC!important;color-scheme:light!important;}
-body{background:#fff!important;color:#172033!important;}
-.main{background:#fff!important;color:#172033!important;}
-.main > *{color:#172033;}
-
-/* Page headers and report containers */
-.page-header,
-.eval-switcher,
-.eval-banner,
-.group-tab-wrap,
-.group-tabs,
-.desig-subtabs,
-.sum-card,
-.standing-panel,
-.person-row,
-.no-evaluated,
-.target-card,
-.eval-card,
-.comment-section,
-.avg-summary,
-.top-bar,
-.history-card,
-.section,
-.content-panel,
-.no-archived,
-.table-wrap,
-.card,
-.panel,
-.stat-card,
-.table-card,
-.content-card,
-.info-banner,
-.gl-card,
-.amber-card,
-.green-card,
-.red-card,
-.cat-section,
-.people-list,
-.evaluator-grid{
-    background:#fff!important;
-    color:#172033!important;
-    border-color:#e2e8f0!important;
-    box-shadow:0 4px 18px rgba(15,23,42,.08)!important;
+<style id="executive-original-theme-3">
+:root{
+ --dark:#0A192F;--mid:#172A45;--inner:#0F1F3D;
+ --violet:#7C5FD9;--violet-h:#9C85F0;--violet-dark:#5F45B8;
+ --light:#E0E6F0;--muted:#A0B3C6;--border:rgba(255,255,255,.08);
+ --accent:#7C5FD9;--accent-h:#9C85F0;--good:#10B981;--danger:#f05454;
+ --page-bg:#0A192F;--card-bg:rgba(23,42,69,.85);--card-border:rgba(255,255,255,.08);
 }
-
-.page-header h1,
-.page-title,
-.section-title,
-.sheet-name,
-.target-name,
-.person-name,
-.standing-name,
-.sum-value,
-.main h1,.main h2,.main h3,.main h4,.main h5,.main h6{
-    color:#0f172a!important;
+html{background:var(--dark)!important;color-scheme:dark!important;}
+body{background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,.82)),url('../background.png') center center/cover no-repeat fixed!important;background-color:var(--dark)!important;color:var(--light)!important;}
+.main,.content,.page-content{color:var(--light)!important;}
+.page-title,.page-header h1,.section-title,.sheet-name,.target-name{color:#fff!important;}
+.page-sub,.sheet-desig,.target-desig,.muted,.hint,.helper,.description,p{color:var(--muted)!important;}
+/* Cards/panels */
+.card,.panel,.section,.table-card,.content-card,.stat-card,.sum-card,.standing-panel,.eval-card,.eval-banner,.info-banner,.history-card,.gl-card,.amber-card,.green-card,.red-card,.person-row,.target-card,.no-eval,.no-data,.no-evaluated,.comment-section,.avg-summary,.cat-section,.people-list,.evaluator-grid{
+ background:rgba(23,42,69,.85)!important;border-color:rgba(255,255,255,.08)!important;box-shadow:0 8px 32px rgba(0,0,0,.45)!important;color:var(--light)!important;
 }
-.page-header p,
-.page-sub,
-.sheet-desig,
-.target-desig,
-.standing-desig,
-.person-meta,
-.sum-label,
-.sum-sub,
-.pstat-lbl,
-.muted,
-.no-data,
-.hint,
-.helper,
-.description,
-.subtitle,
-.main p,
-.main small{
-    color:#475569!important;
-}
-
-/* Tabs / filters */
-.eval-switcher,.tabs,.level-tabs,.status-tabs{background:#fff!important;border-color:#e2e8f0!important;box-shadow:none!important;}
-.eval-tab,.tab,.level-tab,.status-tab,.group-tab,.desig-subtab{color:#475569!important;background:transparent!important;}
-.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover,.group-tab:hover,.desig-subtab:hover{color:#172033!important;background:#f8fafc!important;}
-.eval-tab.student.active{background:#eff6ff!important;color:#2563eb!important;}
-.eval-tab.peer.active{background:#f5f3ff!important;color:#7c3aed!important;}
-.eval-tab.multi-role.active{background:#fff7ed!important;color:#d97706!important;}
-.group-tab.active,.desig-subtab.active{background:#fff7ed!important;color:#b45309!important;border-color:#fed7aa!important;}
-.tab-badge,.tab-count{background:#f1f5f9!important;color:#475569!important;}
-.eval-tab.student.active .tab-badge{background:#dbeafe!important;color:#2563eb!important;}
-.eval-tab.peer.active .tab-badge{background:#ede9fe!important;color:#7c3aed!important;}
-.eval-tab.multi-role.active .tab-badge{background:#ffedd5!important;color:#d97706!important;}
-
-/* Tables and report data */
-table,.q-table{background:#fff!important;color:#172033!important;}
-table thead th,.q-table th,th{background:#f8fafc!important;color:#334155!important;border-color:#e2e8f0!important;}
-table tbody td,.q-table td,td{background:#fff!important;color:#172033!important;border-color:#e2e8f0!important;}
-tbody tr:hover td,.q-table tr:hover td{background:#f8fafc!important;}
-
-/* Inputs */
-input,select,textarea,
-.search-box input[type=text],.search-box select,
-.form-group input,.filter-field select,.filter-field input[type=text]{
-    background:#fff!important;
-    color:#172033!important;
-    border-color:#cbd5e1!important;
-}
-input::placeholder,textarea::placeholder{color:#94a3b8!important;}
-
-/* Buttons / links */
-.btn-archived-link,.back-btn,.btn-cancel,.btn-icon,.btn-back{background:#fff!important;color:#475569!important;border-color:#cbd5e1!important;}
-.btn-archived-link:hover,.back-btn:hover,.btn-cancel:hover,.btn-icon:hover,.btn-back:hover{background:#f8fafc!important;color:#172033!important;}
-
-/* Bars, comments, empty states */
-.score-bar-bg,.eval-bar-bg,.avg-bar-bg,.bar-wrap{background:#e2e8f0!important;}
-.comment-text{background:#f8fafc!important;color:#334155!important;border-color:#e2e8f0!important;}
-.empty-note,.no-comment,.no-eval,.empty-state,.empty-cta{color:#64748b!important;}
-
-/* Keep sidebar in the established navy theme */
-.sidebar{background:#0a192f!important;color:#e0e6f0!important;border-right:1px solid #172a45!important;box-shadow:none!important;}
-.sb-name{color:#fff!important;}
-.sb-role{color:#f0b84d!important;}
-.sb-scope,.sb-nav a{color:#a0b3c6!important;}
-.sb-nav a:hover,.sb-nav a.active{background:#172a45!important;color:#fff!important;}
-.sb-nav a i{color:#f0b84d!important;}
-
-/* Print remains clean and white */
-@media print{
-    html,body,.main{background:#fff!important;color:#000!important;}
-}
+.table-wrap{background:transparent!important;color:var(--light)!important;}
+table.data th,table.data td,th,td{color:var(--light)!important;border-color:rgba(255,255,255,.08)!important;}
+.q-table{color:var(--light)!important;}
+.q-table th{color:var(--muted)!important;background:rgba(15,31,61,.65)!important;border-color:rgba(255,255,255,.08)!important;}
+.q-table td{color:var(--light)!important;border-color:rgba(255,255,255,.06)!important;}
+/* Tabs and filters */
+.eval-switcher,.tabs,.level-tabs,.status-tabs{background:rgba(23,42,69,.85)!important;border-color:rgba(255,255,255,.08)!important;box-shadow:none!important;}
+.eval-tab,.tab,.level-tab,.status-tab,.group-tab,.desig-subtab{color:var(--muted)!important;background:transparent!important;}
+.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover,.group-tab:hover,.desig-subtab:hover{color:#fff!important;background:rgba(124,95,217,.08)!important;}
+.eval-tab.student.active,.group-tab.active,.desig-subtab.active{background:rgba(124,95,217,.14)!important;color:var(--violet-h)!important;border-color:rgba(124,95,217,.35)!important;}
+.eval-tab.student.active::after{background:var(--violet)!important;}
+.eval-tab.peer.active{background:rgba(124,95,217,.14)!important;color:var(--violet-h)!important;}
+.eval-tab.peer.active::after{background:var(--violet)!important;}
+.tab-badge{background:rgba(255,255,255,.08)!important;color:var(--muted)!important;}
+.eval-tab.student.active .tab-badge,.eval-tab.peer.active .tab-badge{background:rgba(124,95,217,.18)!important;color:var(--violet-h)!important;}
+/* Buttons/links */
+.btn-print,.btn-print.no-print,.back-btn,.btn,.action-btn,.btn-archive,.btn-restore,.btn-solid,.btn-archived-link{background:rgba(124,95,217,.12)!important;border:1px solid rgba(124,95,217,.35)!important;color:var(--violet-h)!important;}
+.btn-print:hover,.back-btn:hover,.btn:hover,.action-btn:hover,.btn-archive:hover,.btn-restore:hover,.btn-solid:hover,.btn-archived-link:hover{background:rgba(124,95,217,.22)!important;color:#fff!important;}
+.btn-solid{background:var(--violet)!important;color:#fff!important;}
+/* accents */
+.eval-banner{background:rgba(124,95,217,.08)!important;border-color:rgba(124,95,217,.25)!important;}
+.eval-banner-title,.eval-banner-icon,.cat-title,.comment-title,.section h2 i,.section h2{color:var(--violet-h)!important;}
+.period-badge{background:rgba(124,95,217,.14)!important;border-color:rgba(124,95,217,.3)!important;color:var(--violet-h)!important;}
+.bar-fill,.avg-bar-fill{background:linear-gradient(90deg,var(--violet-dark),var(--violet-h))!important;}
+.score-bar-bg,.eval-bar-bg,.avg-bar-bg,.bar-wrap{background:rgba(255,255,255,.08)!important;}
+.standing-title.top,.standing-score,.pstat-val,.avg-score-big,.avg-score-label{color:#4ade80!important;}
+.standing-title.low{color:#f87171!important;}
+.person-row:hover,.standing-item:hover{border-color:rgba(124,95,217,.4)!important;background:rgba(124,95,217,.05)!important;}
+.comment-text{background:rgba(15,31,61,.7)!important;color:var(--light)!important;}
+.empty-note,.no-comment,.no-eval{color:var(--muted)!important;}
+label,th{color:var(--muted)!important;}
+input,select,textarea{background:#0F1F3D!important;color:var(--light)!important;border-color:rgba(255,255,255,.12)!important;}
+input::placeholder,textarea::placeholder{color:#7890a8!important;}
 </style>
 
-<style id="principal-f8fafc-workspace-final">
-/* Principal workspace canvas: integrated light background matching the EA view. */
-html, body {
-  background: #F8FAFC !important;
-  background-image: none !important;
-  color: #172033 !important;
-}
-main, main.main, .main, .main-content, .content, .page-content {
-  background: #F8FAFC !important;
-  color: #172033 !important;
-}
-.sidebar { background: #0A192F !important; }
-@media print {
-  html, body, main, main.main, .main, .main-content, .content, .page-content {
-    background: #fff !important;
-  }
-}
-</style>
-
-<style id="principal-sidebar-placement-and-spacing-final">
-/* Corrected principal navigation placement: main pages first, settings in administration, logout in account. */
-.sidebar .sb-nav{display:flex!important;flex-direction:column!important;gap:5px!important;margin-top:10px!important;width:100%!important;}
-.sidebar .sb-nav-section-label{width:auto!important;margin:5px 12px 1px!important;padding:0 2px!important;color:#C7D2FE!important;font-size:11px!important;font-weight:900!important;letter-spacing:1.6px!important;line-height:1.25!important;text-align:center!important;text-shadow:0 1px 8px rgba(129,140,248,.16)!important;text-transform:uppercase!important;}
-.sidebar .sb-nav-section-label:first-child{margin-top:0!important;}
-.sidebar .sb-nav a{box-sizing:border-box!important;width:100%!important;min-height:42px!important;margin:0!important;padding:5px 14px!important;display:flex!important;align-items:center!important;gap:10px!important;border-radius:8px!important;font-size:14px!important;font-weight:500!important;}
-.sidebar .sb-nav a i{width:18px!important;flex:0 0 18px!important;text-align:center!important;}
-.sidebar .sb-nav .sb-logout-link{color:#fca5a5!important;}
-.sidebar .sb-nav .sb-logout-link:hover{background:rgba(240,84,84,.12)!important;color:#fecaca!important;}
-</style>
 </body>
+<link rel="stylesheet" href="includes/principal_light_theme.css" id="principal-light-theme-final"/>
 </html>
 
-<style id="principal-ea-exact-workspace-canvas">
-/*
-  Principal workspace shell — matches the EA feature/iframe composition:
-  white outer viewport + an inset #F8FAFC workspace canvas.
-  The canvas is the feature surface; white cards remain white.
-*/
-html{
-  background:#FFFFFF !important;
-  color-scheme:light !important;
-}
-body{
-  background:#FFFFFF !important;
-  background-image:none !important;
-  color:#172033 !important;
-}
-
-/* Leave the navy Principal sidebar unchanged. */
-.sidebar{
-  background:#0A192F !important;
-  color:#E0E6F0 !important;
-}
-
-/* The feature workspace is inset, like the EA iframe inside its white page. */
-.main,
-main.main{
-  position:relative !important;
-  flex:1 1 auto !important;
-  width:auto !important;
-  max-width:none !important;
-  min-height:calc(100vh - 20px) !important;
-  margin:20px 20px 0 20px !important;
-  padding:24px 34px 34px !important;
-  background:#F8FAFC !important;
-  color:#172033 !important;
-  border-radius:16px 16px 0 0 !important;
-  box-shadow:none !important;
-  isolation:auto !important;
-  overflow:visible !important;
-}
-
-/* Disable the earlier pseudo-canvas implementation; the main itself is now
-   the correctly inset workspace surface. */
-.main::before,
-main.main::before{
-  display:none !important;
-  content:none !important;
-}
-
-/* Page headings live on the same light workspace surface, as on the EA
-   feature pages rendered inside their iframe. */
-.main > .page-header,
-main.main > .page-header{
-  background:transparent !important;
-  border:0 !important;
-  box-shadow:none !important;
-}
-
-/* White feature surfaces remain clearly distinct from the #F8FAFC canvas. */
-.main .page-header:has(.page-title),
-.main .section,
-.main .card,
-.main .panel,
-.main .table-card,
-.main .content-card,
-.main .stat-card,
-.main .period-strip,
-.main .filter-bar,
-.main .table-wrap,
-.main .table-card-wrap,
-.main .content-panel,
-.main .eval-banner,
-.main .info-banner,
-.main .history-card,
-.main .gl-card,
-.main .amber-card,
-.main .green-card,
-.main .red-card,
-.main .ra-table-card,
-.main .eval-card,
-.main .comment-section,
-.main .avg-summary,
-.main .standing-panel,
-.main .person-row,
-.main .target-card,
-.main .no-eval,
-.main .no-data,
-.main .no-evaluated,
-.main .no-archived,
-.main .evaluator-grid,
-.main .people-list,
-.main .cat-section,
-.main .results-card,
-.main .result-card,
-.main .feature-card{
-  background:#FFFFFF !important;
-  color:#172033 !important;
-  border-color:#D9E4EF !important;
-  box-shadow:0 1px 5px rgba(15,23,42,.035) !important;
-}
-
-/* Soft inner tint, matching the EA logs table header / page surfaces. */
-.main table thead th,
-.main .table-head,
-.main .table-header,
-.main .thead,
-.main .subtle-head{
-  background:#F4F8FF !important;
-  color:#4B6580 !important;
-  border-color:#D9E4EF !important;
-}
-
-/* Responsive: retain the inset composition without squeezing narrow screens. */
-@media (max-width:768px){
-  .main,
-  main.main{
-    margin:12px 12px 0 12px !important;
-    padding:20px 18px 28px !important;
-    min-height:calc(100vh - 12px) !important;
-    border-radius:12px 12px 0 0 !important;
-  }
-}
-
-@media print{
-  html,body{
-    background:#FFFFFF !important;
-  }
-  .main,
-  main.main{
-    margin:0 !important;
-    padding:20px !important;
-    min-height:0 !important;
-    background:#FFFFFF !important;
-    border-radius:0 !important;
-  }
-}
-</style>

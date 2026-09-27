@@ -19,7 +19,7 @@ if (!in_array($defaultTab, $allowedTabs, true)) $defaultTab = 'system';
   try{
     var d=localStorage.getItem('pbiDensity')||'compact';
     var m=localStorage.getItem('pbiReduceMotion')==='1';
-    var a=localStorage.getItem('pbiAccent')||'#2f6ee2';
+    var a=localStorage.getItem('pbiAccent')||'#C9A227';
     var t=localStorage.getItem('pbiTheme')||'light';
     var resolved = t==='system' ? (window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light') : t;
     var html=document.documentElement;
@@ -40,7 +40,7 @@ if (!in_array($defaultTab, $allowedTabs, true)) $defaultTab = 'system';
 <link rel="stylesheet" href="admin_ui_theme.css">
 <link rel="stylesheet" href="admin_compact_ui.css">
 <style>
-:root{--accent:#2f6ee2;--accent-soft:#eaf2ff;--bg:#f4f8ff;--text:#10243f;--muted:#66809c;--panel-bg:#fff;--panel-border:#dce8f5;--input-bg:#f9fbff;--input-border:#d4e2f2}
+:root{--accent:#C9A227;--accent-soft:#eaf2ff;--bg:#FBF9F2;--text:#2B2416;--muted:#66809c;--panel-bg:#fff;--panel-border:#dce8f5;--input-bg:#f9fbff;--input-border:#d4e2f2}
 html[data-theme="dark"]{--bg:#0b1626;--text:#e7eef8;--muted:#8ba0bd;--panel-bg:#121f33;--panel-border:#22344d;--input-bg:#16243a;--input-border:#25374f;--accent-soft:color-mix(in srgb, var(--accent) 22%, #121f33)}
 *{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--text)}
 .settings-shell{padding:22px 24px 34px;max-width:1240px;margin:auto}
@@ -51,16 +51,16 @@ html[data-theme="dark"]{--bg:#0b1626;--text:#e7eef8;--muted:#8ba0bd;--panel-bg:#
 .side{background:var(--panel-bg);border:1px solid var(--panel-border);border-radius:13px;padding:4px;box-shadow:0 4px 18px rgba(32,73,120,.07);display:flex;gap:3px;margin-bottom:15px;overflow-x:auto;-webkit-overflow-scrolling:touch}
 .side button{flex:0 0 auto;border:0;background:transparent;text-align:left;padding:8px 12px;border-radius:8px;color:var(--muted);font:600 12px Inter;cursor:pointer;display:flex;gap:8px;align-items:center;white-space:nowrap}.side button:hover{background:var(--bg);color:var(--accent)}.side button.active{background:var(--accent-soft);color:var(--accent)}.side i{width:16px;text-align:center}
 .side-actions{margin-left:auto;display:flex;align-items:center;gap:10px}
-.side button.side-save-btn{flex:0 0 auto;border:0;border-radius:8px;padding:8px 14px;font:700 12px Inter!important;cursor:pointer;background:#3B6FE0!important;color:#FFFFFF!important;white-space:nowrap;text-align:center}
-.side button.side-save-btn:hover{background:#4C7CEA!important;color:#FFFFFF!important}
+.side button.side-save-btn{flex:0 0 auto;border:0;border-radius:8px;padding:8px 14px;font:700 12px Inter!important;cursor:pointer;background:#C9A227!important;color:#FFFFFF!important;white-space:nowrap;text-align:center}
+.side button.side-save-btn:hover{background:#9C7A12!important;color:#FFFFFF!important}
 .unsaved-banner{position:fixed;top:0;left:0;right:0;z-index:9999;display:flex;align-items:center;justify-content:center;gap:14px;padding:12px 20px;background:#FFF3D6;border-bottom:2px solid #F0B429;color:#7A5A0A;font:700 12.5px Inter;box-shadow:0 6px 16px rgba(122,90,10,.15);transform:translateY(-100%);opacity:0;transition:transform .22s ease,opacity .22s ease;pointer-events:none}
 .unsaved-banner.show{transform:translateY(0);opacity:1;pointer-events:auto}
 .unsaved-banner i{color:#D97706}
-.unsaved-banner button{border:0;border-radius:8px;padding:6px 13px;font:700 11.5px Inter;cursor:pointer;background:#3B6FE0;color:#fff}
-.unsaved-banner button:hover{background:#4C7CEA}
+.unsaved-banner button{border:0;border-radius:8px;padding:6px 13px;font:700 11.5px Inter;cursor:pointer;background:#C9A227;color:#fff}
+.unsaved-banner button:hover{background:#9C7A12}
 .panel{min-width:0}.panel-card{background:var(--panel-bg);border:1px solid var(--panel-border);border-radius:13px;box-shadow:0 4px 18px rgba(32,73,120,.07);overflow:hidden}.section-panel{display:block}
 .panel-bar{padding:15px 17px;border-bottom:1px solid var(--panel-border);display:flex;align-items:center;justify-content:space-between;gap:10px}.panel-bar h2{margin:0;font-size:16px}.panel-bar p{margin:3px 0 0;color:var(--muted);font-size:11.5px}.panel-note{font-size:10.5px;color:var(--muted)}
-.frame{width:100%;height:min(760px,calc(100vh - 205px));min-height:560px;border:0;display:block;background:var(--panel-bg);overflow:auto;overscroll-behavior:contain;}.appearance{padding:18px}.appearance-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.appearance-card{border:1px solid var(--panel-border);border-radius:11px;padding:15px}.appearance-card h3{margin:0 0 4px;font-size:13px}.appearance-card p{margin:0 0 12px;color:var(--muted);font-size:11px;line-height:1.45}.choice-row{display:flex;gap:7px;flex-wrap:wrap}.choice{border:1px solid var(--input-border);background:var(--input-bg);padding:8px 10px;border-radius:8px;font:600 11px Inter;color:var(--muted);cursor:pointer}.choice.active{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}.setting-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-top:1px solid var(--panel-border)}.setting-row:first-child{border-top:0}.switch{position:relative;width:36px;height:20px;display:inline-block}.switch input{display:none}.track{position:absolute;inset:0;background:#cbd8e7;border-radius:99px;cursor:pointer}.track:after{content:'';position:absolute;width:14px;height:14px;top:3px;left:3px;border-radius:50%;background:#fff;transition:.18s}.switch input:checked+.track{background:var(--accent)}.switch input:checked+.track:after{left:19px}.toast{position:fixed;right:22px;bottom:22px;background:#10243f;color:#fff;padding:10px 13px;border-radius:9px;font-size:11px;opacity:0;transform:translateY(8px);pointer-events:none;transition:.2s}.toast.show{opacity:1;transform:none}
+.frame{width:100%;height:min(760px,calc(100vh - 205px));min-height:560px;border:0;display:block;background:var(--panel-bg);overflow:auto;overscroll-behavior:contain;}.appearance{padding:18px}.appearance-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.appearance-card{border:1px solid var(--panel-border);border-radius:11px;padding:15px}.appearance-card h3{margin:0 0 4px;font-size:13px}.appearance-card p{margin:0 0 12px;color:var(--muted);font-size:11px;line-height:1.45}.choice-row{display:flex;gap:7px;flex-wrap:wrap}.choice{border:1px solid var(--input-border);background:var(--input-bg);padding:8px 10px;border-radius:8px;font:600 11px Inter;color:var(--muted);cursor:pointer}.choice.active{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}.setting-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-top:1px solid var(--panel-border)}.setting-row:first-child{border-top:0}.switch{position:relative;width:36px;height:20px;display:inline-block}.switch input{display:none}.track{position:absolute;inset:0;background:#cbd8e7;border-radius:99px;cursor:pointer}.track:after{content:'';position:absolute;width:14px;height:14px;top:3px;left:3px;border-radius:50%;background:#fff;transition:.18s}.switch input:checked+.track{background:var(--accent)}.switch input:checked+.track:after{left:19px}.toast{position:fixed;right:22px;bottom:22px;background:#2B2416;color:#fff;padding:10px 13px;border-radius:9px;font-size:11px;opacity:0;transform:translateY(8px);pointer-events:none;transition:.2s}.toast.show{opacity:1;transform:none}
 .swatch-row{display:flex;gap:9px;flex-wrap:wrap}
 .swatch{width:26px;height:26px;border-radius:50%;border:0;cursor:pointer;background:var(--sw);box-shadow:0 0 0 1px var(--input-border);position:relative;padding:0}
 .swatch.active{box-shadow:0 0 0 2px var(--panel-bg),0 0 0 4px var(--sw)}
@@ -99,6 +99,9 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
 .feature-compact ::-webkit-scrollbar-button { display: block !important; width: 10px !important; height: 10px !important; background-color: transparent !important; }
 
 </style>
+
+<link rel="stylesheet" href="admin_appearance.css">
+<script src="admin_appearance.js"></script>
 </head>
 <body>
 <div class="unsaved-banner" id="unsavedBanner">
@@ -112,7 +115,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
   </div>
   <div class="layout">
     <aside class="side" aria-label="Settings sections">
-      <button class="tab-btn" data-tab="system"><i class="fa-solid fa-sliders" style="color:#3B82F6"></i><span>System &amp; Period</span></button>
+      <button class="tab-btn" data-tab="system"><i class="fa-solid fa-sliders" style="color:#C9A227"></i><span>System &amp; Period</span></button>
       <button class="tab-btn" data-tab="archive"><i class="fa-solid fa-box-archive" style="color:#F59E0B"></i><span>System Archive</span></button>
       <button class="tab-btn" data-tab="appearance"><i class="fa-solid fa-palette" style="color:#EC4899"></i><span>Appearance</span></button>
       <div class="side-actions" id="sideActions" style="display:none">
@@ -143,7 +146,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
             <div class="appearance-card">
               <h3>Accent Color</h3><p>Sets the highlight color used for active tabs, buttons, and toggles.</p>
               <div class="swatch-row" id="accentChoices">
-                <button class="swatch" data-accent="#2f6ee2" style="--sw:#2f6ee2" title="Blue" aria-label="Blue"></button>
+                <button class="swatch" data-accent="#C9A227" style="--sw:#C9A227" title="Blue" aria-label="Blue"></button>
                 <button class="swatch" data-accent="#1f9d63" style="--sw:#1f9d63" title="Green" aria-label="Green"></button>
                 <button class="swatch" data-accent="#8b5cf6" style="--sw:#8b5cf6" title="Purple" aria-label="Purple"></button>
                 <button class="swatch" data-accent="#e2792f" style="--sw:#e2792f" title="Amber" aria-label="Amber"></button>
@@ -195,14 +198,14 @@ document.querySelectorAll('iframe.frame').forEach(f=>{
   f.addEventListener('load',()=>prepareFrame(f));
   prepareFrame(f);
 });
-buttons.forEach(b=>b.addEventListener('click',()=>{
+buttons.forEach(b=>b.addEventListener('click',async ()=>{
   const current=buttons.find(x=>x.classList.contains('active'));
   const leavingSystemTab = current && current.dataset.tab==='system' && b.dataset.tab!=='system';
   if(leavingSystemTab){
     const frame=document.querySelector('#section-system iframe.frame');
     const dirty = frame && frame.contentWindow && typeof frame.contentWindow.isSystemSettingsDirty==='function' && frame.contentWindow.isSystemSettingsDirty();
     if(dirty){
-      if(!confirm('You have unsaved changes in System & Period Settings. Are you sure you want to leave without saving?')){
+      if(!(await PBI.confirm('You have unsaved changes in System & Period Settings. Are you sure you want to leave without saving?', {okLabel:'Leave without saving'}))){
         return;
       }
       // They chose to leave anyway -- surface the reminder banner now that
@@ -217,7 +220,7 @@ setTab(initialTab);
 const toast=document.getElementById('toast'); let timer; function saved(msg){clearTimeout(timer);toast.textContent=msg||'Preference saved';toast.classList.add('show');timer=setTimeout(()=>toast.classList.remove('show'),1400)}
 
 // ---- Appearance ----
-const APPEARANCE_DEFAULTS={density:'compact',motion:false,accent:'#2f6ee2',theme:'light'};
+const APPEARANCE_DEFAULTS={density:'compact',motion:false,accent:'#C9A227',theme:'light'};
 function readAppearance(){
   return {
     density: localStorage.getItem('pbiDensity')||APPEARANCE_DEFAULTS.density,
@@ -257,4 +260,5 @@ document.getElementById('resetAppearance').addEventListener('click',()=>{
   saved('Appearance reset to defaults');
 });
 </script>
+<script src="admin_ajax.php"></script>
 </body></html>

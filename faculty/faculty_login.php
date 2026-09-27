@@ -8,45 +8,87 @@ $success = $_SESSION['reg_success'] ?? '';
 unset($_SESSION['reg_success']);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $username = trim($_POST['username'] ?? '');
-    $password = $_POST['password']      ?? '';
+    $username = trim((string)($_POST['username'] ?? ''));
+    $password = (string)($_POST['password'] ?? '');
 
-    if (empty($username) || empty($password)) {
-        $error = "Please enter your username and password.";
+    if ($username === '' || $password === '') {
+        $error = 'Please enter your username and password.';
     } else {
+        // Accept only the username registered in the users table.
+        // The login field is NOT matched against full name or email.
         $stmt = $mysqli->prepare(
-            "SELECT id, full_name, password_hash, role, designation, account_status
- FROM users WHERE username = ? AND role IN ('teacher','staff') AND is_active = 1 LIMIT 1"
+            "SELECT id, full_name, password_hash, role, designation, account_status, is_active
+             FROM users
+             WHERE username = ? AND role = 'teacher' AND is_active = 1
+             LIMIT 1"
         );
-        $stmt->bind_param("s", $username);
-        $stmt->execute();
-        $user = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
 
-        if ($user && password_verify($password, $user['password_hash']) && $user['account_status'] !== 'approved') {
-            $error = $user['account_status'] === 'pending'
-                ? "Your account is awaiting admin approval. You'll be able to log in once it's approved."
-                : "Your account has been blocked. Please contact the administrator.";
-        } elseif ($user && password_verify($password, $user['password_hash'])) {
-            session_regenerate_id(true);
-            $_SESSION['user_id']              = $user['id'];
-            $_SESSION['full_name']            = $user['full_name'];
-            $_SESSION['role']                 = $user['role'];
-            $_SESSION['designation']          = $user['designation'];
-            $_SESSION['must_change_password'] = $user['must_change_password'];
-            $mysqli->close();
-            if ($user['must_change_password']) {
-                header("Location: ../admin/force_password_change.php");
-            } else {
-                $dest = $user['role'] === 'staff' ? 'staff_dashboard.php' : 'faculty_dashboard.php';
-                header("Location: $dest");
-            }
-            exit;
+        if (!$stmt) {
+            $error = 'Unable to process login right now. Please try again.';
         } else {
-            $error = "Incorrect username or password. Please try again.";
+            $stmt->bind_param('s', $username);
+            if (!$stmt->execute()) {
+                $error = 'Unable to process login right now. Please try again.';
+                $stmt->close();
+            } else {
+                $user = $stmt->get_result()->fetch_assoc();
+                $stmt->close();
+
+                if (!$user) {
+                    $error = 'Incorrect username or password. Please try again.';
+                } elseif ($user['account_status'] !== 'approved') {
+                    $error = $user['account_status'] === 'pending'
+                        ? 'Your account is awaiting admin approval. You will be able to log in once it is approved.'
+                        : 'Your account has been blocked. Please contact the administrator.';
+                } elseif (!password_verify($password, $user['password_hash'])) {
+                    $error = 'Incorrect username or password. Please try again.';
+                } else {
+                    // Keep compatibility with installations that do/don't have
+                    // the optional must_change_password column.
+                    $mustChangePassword = false;
+                    $columnCheck = $mysqli->query("SHOW COLUMNS FROM users LIKE 'must_change_password'");
+                    if ($columnCheck) {
+                        $mustChangePassword = $columnCheck->num_rows > 0;
+                        $columnCheck->free();
+                    }
+
+                    if ($mustChangePassword) {
+                        $mcStmt = $mysqli->prepare("SELECT must_change_password FROM users WHERE id = ? LIMIT 1");
+                        if ($mcStmt) {
+                            $mcStmt->bind_param('i', $user['id']);
+                            if ($mcStmt->execute()) {
+                                $mcRow = $mcStmt->get_result()->fetch_assoc();
+                                $mustChangePassword = !empty($mcRow['must_change_password']);
+                            }
+                            $mcStmt->close();
+                        }
+                    } else {
+                        $mustChangePassword = false;
+                    }
+
+                    session_regenerate_id(true);
+                    $_SESSION['user_id']              = (int)$user['id'];
+                    $_SESSION['full_name']            = $user['full_name'];
+                    $_SESSION['role']                 = $user['role'];
+                    $_SESSION['designation']          = $user['designation'];
+                    $_SESSION['must_change_password'] = $mustChangePassword;
+
+                    $mysqli->close();
+
+                    if ($mustChangePassword) {
+                        header('Location: ../admin/force_password_change.php');
+                    } else {
+                        header('Location: faculty_dashboard.php');
+                    }
+                    exit;
+                }
+            }
         }
     }
-    if ($mysqli->ping()) $mysqli->close();
+
+    if ($mysqli->ping()) {
+        $mysqli->close();
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -58,33 +100,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <style>
-:root{--dark-blue:#0A192F;--blue-mid:#172A45;--teal:#0D9488;--teal-hover:#14B8A6;--light:#E0E6F0;--muted:#A0B3C6;--radius:10px;--shadow:0 8px 32px rgba(0,0,0,0.45);}
+:root{--dark-blue:#0A192F;--blue-mid:#172A45;--teal:#2563EB;--teal-hover:#1D4ED8;--light:#E0E6F0;--muted:#A0B3C6;--radius:10px;--shadow:0 8px 32px rgba(0,0,0,0.45);}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-body{min-height:100vh;background:#0A192F;font-family:'DM Sans',sans-serif;color:var(--light);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;}
-.bg-grid{display:block;position:fixed;inset:0;z-index:0;background-image:repeating-linear-gradient(45deg,rgba(13,148,136,.08) 0px,rgba(13,148,136,.08) 1px,transparent 1px,transparent 26px),repeating-linear-gradient(-45deg,rgba(13,148,136,.05) 0px,rgba(13,148,136,.05) 1px,transparent 1px,transparent 26px);}
-.hex-deco{position:fixed;z-index:0;pointer-events:none;opacity:.5;}
-.hex-1{top:-60px;right:-60px;}
-.hex-2{bottom:-70px;left:-70px;}
-.login-card{position:relative;z-index:10;background:rgba(23,42,69,.82);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.09);border-radius:18px;padding:48px 44px 40px;width:100%;max-width:440px;box-shadow:var(--shadow);animation:cardIn .7s cubic-bezier(.22,1,.36,1) both;}
+body{min-height:100vh;background:radial-gradient(circle at 50% 42%,rgba(255,255,255,.028),transparent 34%),radial-gradient(circle at 88% 82%,rgba(43,108,176,.11),transparent 30%),radial-gradient(circle at 8% 12%,rgba(37,99,235,.08),transparent 26%),#08182d;font-family:'DM Sans',sans-serif;color:var(--light);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;}
+.bg-grid{display:block;position:fixed;inset:0;z-index:0;background-image:radial-gradient(circle at 50% 45%,rgba(37,99,235,.045),transparent 38%),repeating-linear-gradient(45deg,rgba(37,99,235,.055) 0px,rgba(37,99,235,.055) 1px,transparent 1px,transparent 26px),repeating-linear-gradient(-45deg,rgba(37,99,235,.035) 0px,rgba(37,99,235,.035) 1px,transparent 1px,transparent 26px);}
+.hex-deco{position:fixed;z-index:0;pointer-events:none;opacity:.46;filter:drop-shadow(0 0 10px rgba(37,99,235,.05));}
+.hex-1{top:-60px;left:-60px;}
+.hex-2{bottom:-70px;right:-70px;}
+.login-card{position:relative;z-index:10;background:rgba(23,42,69,.82);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.09);border-radius:18px;padding:48px 44px 40px;width:100%;max-width:440px;box-shadow:var(--shadow),0 0 0 1px rgba(37,99,235,.10),0 0 34px rgba(37,99,235,.055);animation:cardIn .7s cubic-bezier(.22,1,.36,1) both;}
 @keyframes cardIn{from{opacity:0;transform:translateY(32px) scale(.97)}to{opacity:1;transform:none}}
 .card-header{text-align:center;margin-bottom:28px;}
-.logo-ring{width:72px;height:72px;border-radius:50%;display:block;object-fit:cover;border:2.5px solid var(--teal);box-shadow:0 0 22px rgba(13,148,136,.45);margin:0 auto 16px;}
+.logo-ring{width:72px;height:72px;border-radius:50%;display:block;object-fit:cover;border:2.5px solid var(--teal);box-shadow:0 0 14px rgba(245,158,11,.16),0 0 26px rgba(37,99,235,.34),0 0 42px rgba(37,99,235,.10);margin:0 auto 16px;}
 .card-title{font-family:'Rajdhani',sans-serif;font-size:26px;font-weight:700;letter-spacing:2px;color:#fff;text-transform:uppercase;}
 .card-subtitle{font-size:12px;color:var(--muted);letter-spacing:1.2px;text-transform:uppercase;margin-top:4px;}
-.divider{height:1px;background:linear-gradient(90deg,transparent,rgba(13,148,136,.45),transparent);margin-bottom:24px;}
+.divider{height:1px;background:linear-gradient(90deg,transparent,rgba(37,99,235,.45),transparent);margin-bottom:24px;}
 .form-group{margin-bottom:18px;}
 .form-label{display:block;font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:7px;}
 .input-wrap{position:relative;}
 .f-icon{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:14px;pointer-events:none;}
 .form-input{width:100%;padding:12px 14px 12px 40px;background:rgba(10,25,47,.7);border:1px solid rgba(255,255,255,.1);border-radius:var(--radius);color:var(--light);font-size:14px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .25s,box-shadow .25s;}
 .form-input::placeholder{color:rgba(160,179,198,.45);}
-.form-input:focus{border-color:var(--teal);box-shadow:0 0 0 3px rgba(13,148,136,.2);}
+.form-input:focus{border-color:var(--teal);box-shadow:0 0 0 3px rgba(37,99,235,.18),0 0 16px rgba(37,99,235,.11);}
 .toggle-pw{position:absolute;right:13px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0;}
 .alert{border-radius:8px;padding:11px 14px;font-size:13px;margin-bottom:18px;display:flex;align-items:center;gap:8px;}
 .alert-error{background:rgba(240,84,84,.12);border:1px solid rgba(240,84,84,.35);color:#ff8a8a;}
 .alert-success{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.28);color:#86efac;}
-.btn-login{width:100%;padding:13px;background:var(--teal);border:none;border-radius:var(--radius);color:#fff;font-size:15px;font-weight:600;font-family:'DM Sans',sans-serif;cursor:pointer;transition:background .2s,transform .15s;box-shadow:0 4px 16px rgba(13,148,136,.4);display:flex;align-items:center;justify-content:center;gap:8px;}
-.btn-login:hover{background:var(--teal-hover);transform:translateY(-1px);}
+.btn-login{width:100%;padding:13px;background:var(--teal);border:none;border-radius:var(--radius);color:#fff;font-size:15px;font-weight:600;font-family:'DM Sans',sans-serif;cursor:pointer;transition:background .2s,transform .15s;box-shadow:0 6px 18px rgba(37,99,235,.34),0 0 22px rgba(37,99,235,.18);display:flex;align-items:center;justify-content:center;gap:8px;}
+.btn-login:hover{background:var(--teal-hover);transform:translateY(-1px);box-shadow:0 9px 24px rgba(37,99,235,.42),0 0 30px rgba(37,99,235,.22);}
 .card-footer{text-align:center;margin-top:22px;font-size:12px;color:var(--muted);border-top:1px solid rgba(255,255,255,.06);padding-top:18px;}
 .card-footer a{color:var(--teal-hover);text-decoration:none;font-weight:600;}
 .card-footer a:hover{text-decoration:underline;}
@@ -92,13 +134,13 @@ body{min-height:100vh;background:#0A192F;font-family:'DM Sans',sans-serif;color:
 </head>
 <body>
 <div class="bg-grid"></div>
-<svg class="hex-deco hex-1" width="260" height="260" viewBox="0 0 260 260"><polygon points="130,10 240,70 240,190 130,250 20,190 20,70" fill="none" stroke="#0D9488" stroke-width="1"/><polygon points="130,50 200,90 200,170 130,210 60,170 60,90" fill="none" stroke="#0D9488" stroke-width="1"/></svg>
+<svg class="hex-deco hex-1" width="260" height="260" viewBox="0 0 260 260"><polygon points="130,10 240,70 240,190 130,250 20,190 20,70" fill="none" stroke="#2563EB" stroke-width="1"/><polygon points="130,50 200,90 200,170 130,210 60,170 60,90" fill="none" stroke="#2563EB" stroke-width="1"/></svg>
 <svg class="hex-deco hex-2" width="300" height="300" viewBox="0 0 300 300"><polygon points="150,10 280,80 280,220 150,290 20,220 20,80" fill="none" stroke="#2B6CB0" stroke-width="1"/><polygon points="150,60 220,100 220,200 150,240 80,200 80,100" fill="none" stroke="#2B6CB0" stroke-width="1"/></svg>
 
 <div class="login-card">
     <div class="card-header">
         <img class="logo-ring" src="../image/pbi_logo" alt="PBI Logo"/>
-        <div class="card-title">Teacher &amp; Staff Portal</div>
+        <div class="card-title">Faculty Portal</div>
         <div class="card-subtitle">Pandan Bay Institute Inc.</div>
     </div>
     <div class="divider"></div>

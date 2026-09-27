@@ -225,7 +225,6 @@ $rosterByTab = [
 $activeRoster = $rosterByTab[$tab];
 
 $deptFilter = trim($_GET['dept'] ?? 'all');
-$search = trim($_GET['q'] ?? '');
 $filteredRoster = $activeRoster;
 
 $departmentOptions = [];
@@ -239,21 +238,13 @@ sort($departmentOptions);
 if ($deptFilter !== 'all' && $deptFilter !== '') {
     $filteredRoster = array_values(array_filter($filteredRoster, fn($r) => (string)($r['department'] ?? '') === $deptFilter));
 }
-if ($search !== '') {
-    $needle = mb_strtolower($search);
-    $filteredRoster = array_values(array_filter($filteredRoster, function($r) use ($needle) {
-        $hay = mb_strtolower(($r['full_name'] ?? '') . ' ' . ($r['department'] ?? '') . ' ' . ($r['designation'] ?? ''));
-        return str_contains($hay, $needle);
-    }));
-}
-
 if (($_GET['export'] ?? '') === 'csv') {
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="dean_' . $tab . '_export_' . date('Ymd_His') . '.csv"');
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['Full Name','Department/Office','Position','Role','Questions','Evaluation Status','Last Evaluation Date']);
+    fputcsv($out, ['Full Name','Designation','Role','Questions','Evaluation Status','Last Evaluation Date']);
     foreach ($filteredRoster as $r) {
-        fputcsv($out, [$r['full_name'], $r['department'] ?? '', $r['designation'] ?? '', $r['role_label'], (int)($r['question_count'] ?? 0), $r['evaluation_status'], $r['last_evaluation_date'] ?? '']);
+        fputcsv($out, [$r['full_name'], $r['designation'] ?? '', $r['role_label'], (int)($r['question_count'] ?? 0), $r['evaluation_status'], $r['last_evaluation_date'] ?? '']);
     }
     fclose($out);
     $mysqli->close();
@@ -344,9 +335,6 @@ body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,
 .filter-field label{font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
 .filter-field select{background:var(--inner);border:1px solid rgba(255,255,255,.12);color:var(--light);padding:9px 12px;border-radius:8px;font-size:13px;min-width:190px;}
 .filter-hint{font-size:10.5px;color:var(--muted);margin-top:2px;}
-.search-wrap{flex:1;min-width:220px;position:relative;}
-.search-wrap input{width:100%;background:var(--inner);border:1px solid rgba(255,255,255,.12);color:var(--light);padding:9px 36px 9px 12px;border-radius:8px;font-size:13px;}
-.search-wrap i{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;}
 
 .table-wrap{background:rgba(23,42,69,.85);border:1px solid rgba(255,255,255,.08);border-radius:14px;overflow-x:auto;overflow-y:hidden;box-shadow:var(--shadow);}
 table{width:100%;border-collapse:collapse;}
@@ -360,6 +348,7 @@ tbody td{padding:13px 16px;font-size:13.5px;vertical-align:middle;}
 .person-photo{width:36px;height:36px;border-radius:50%;object-fit:cover;background:var(--inner);flex-shrink:0;}
 .person-name{font-weight:600;color:#fff;}
 .muted-cell{color:var(--muted);font-size:12.5px;}
+.designation-cell{min-width:220px;max-width:360px;}
 .role-pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700;background:rgba(255,255,255,.08);color:var(--light);}
 
 .status-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;}
@@ -378,11 +367,7 @@ tbody td{padding:13px 16px;font-size:13.5px;vertical-align:middle;}
 .eval-action-primary:hover{background:rgba(124,95,217,.24);}
 .eval-action-secondary{background:rgba(124,95,217,.14);border:1px solid rgba(124,95,217,.35);color:var(--violet-h);padding:9px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:7px;margin-left:6px;opacity:.75;transition:background .2s,opacity .2s;}
 .eval-action-secondary:hover{opacity:1;background:rgba(124,95,217,.24);}
-/* Keep Evaluate + View on one line, matching the Principal roster. Without
-   this, a long wrapped Department/Office value in an earlier column (e.g.
-   a multi-line office title) steals width in the table's auto layout and
-   pushes the last column narrow enough that the two buttons break onto
-   separate rows. */
+/* Keep Evaluate + View on one line. */
 .actions-cell{white-space:nowrap;}
 thead th:last-child{min-width:210px;}
 
@@ -455,9 +440,9 @@ include __DIR__ . '/includes/dean_sidebar.php';
         <?php endforeach; ?>
     </div>
 
+    <?php if (!empty($departmentOptions)): ?>
     <form class="filter-bar" method="get">
         <input type="hidden" name="tab" value="<?= htmlspecialchars($tab) ?>"/>
-        <?php if (!empty($departmentOptions)): ?>
         <div class="filter-field">
             <label for="deptSelect">Department</label>
             <select id="deptSelect" name="dept" onchange="this.form.submit()">
@@ -467,29 +452,23 @@ include __DIR__ . '/includes/dean_sidebar.php';
                 <?php endforeach; ?>
             </select>
         </div>
-        <?php endif; ?>
-        <div class="search-wrap">
-            <label style="font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:6px;">Search</label>
-            <input type="text" name="q" value="<?= htmlspecialchars($search) ?>" placeholder="Search by name, department, position..."/>
-            <i class="fa-solid fa-magnifying-glass"></i>
-        </div>
     </form>
+    <?php endif; ?>
 
     <div class="table-wrap">
     <table>
         <thead><tr>
-            <th>Profile</th><th>Full Name</th><th>Department / Office</th><th>Position</th><th>Role</th><th>Questions</th><th>Evaluation Status</th><th>Last Evaluation Date</th><th>Actions</th>
+            <th>Profile</th><th>Full Name</th><th>Designation</th><th>Role</th><th>Questions</th><th>Evaluation Status</th><th>Last Evaluation Date</th><th>Actions</th>
         </tr></thead>
         <tbody>
-        <?php $colspan = 9; ?>
+        <?php $colspan = 8; ?>
         <?php if (empty($pageRoster)): ?>
         <tr><td colspan="<?= $colspan ?>"><div class="empty-state"><i class="fa-solid fa-user-slash"></i><p>No <?= strtolower($tabLabels[$tab]) ?> match the current filters.</p></div></td></tr>
         <?php else: foreach ($pageRoster as $p): ?>
         <tr>
             <td><img class="person-photo" src="<?= !empty($p['photo']) ? htmlspecialchars('../image/' . $p['photo']) : '../image/pbi_logo' ?>" alt=""/></td>
             <td><span class="person-name"><?= htmlspecialchars($p['full_name']) ?></span></td>
-            <td class="muted-cell"><?= htmlspecialchars($p['department'] ?: '—') ?></td>
-            <td class="muted-cell"><?= htmlspecialchars($p['designation'] ?: $p['role_label']) ?></td>
+            <td class="muted-cell designation-cell"><?= htmlspecialchars($p['designation'] ?: '—') ?></td>
             <td><span class="role-pill"><?= htmlspecialchars($p['role_label']) ?></span></td>
             <td><span class="role-pill"><?= (int)($p['question_count'] ?? 0) ?></span></td>
             <td>

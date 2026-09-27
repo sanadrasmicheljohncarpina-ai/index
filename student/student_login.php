@@ -31,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $stmt = $mysqli->prepare(
             "SELECT id, full_name, password_hash, role, department, year_level, account_status
-             FROM users WHERE username = ? AND role = 'student' AND is_active = 1 LIMIT 1"
+             FROM users WHERE BINARY username = BINARY ? AND role = 'student' AND is_active = 1 LIMIT 1"
         );
         $stmt->bind_param("s", $username);
         $stmt->execute();

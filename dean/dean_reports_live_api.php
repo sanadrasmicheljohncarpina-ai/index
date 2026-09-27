@@ -13,6 +13,9 @@ if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'dean') {
     echo json_encode(['error' => 'unauthenticated']);
     exit;
 }
+// Release the session lock right away so this poll never blocks the Dean's
+// other requests (session files are locked for the whole request otherwise).
+session_write_close();
 
 $settings = get_system_settings($mysqli);
 $periodId = (int)($settings['period_id'] ?? 0);
@@ -20,6 +23,8 @@ $activeEval = $_GET['eval_type'] ?? 'student';
 if (!in_array($activeEval, ['student','peer'], true)) $activeEval = 'student';
 $group = $_GET['group'] ?? 'All';
 if ($activeEval === 'student' && $group === 'Principal') $group = 'All';
+// Peer-to-Peer is College teachers only and has no Faculty/Staff split.
+if ($activeEval === 'peer') $group = 'All';
 
 $collegeLevels = "'1st Year College','2nd Year College','3rd Year College','4th Year College'";
 $evaluatorClause = "et.evaluator_id IN (
@@ -74,7 +79,7 @@ switch ($group) {
     default:
         $whereRole = $activeEval === 'student'
             ? "u.role IN ('teacher','staff','faculty','dean')"
-            : "u.role IN ('teacher','staff','faculty')";
+            : "u.role IN ('teacher','staff','faculty')"; // peer targets are further limited to College teachers below
         break;
 }
 
@@ -91,7 +96,15 @@ if ($periodId <= 0) {
 }
 
 if ($activeEval === 'peer') {
-    $evalClause = "et.eval_type IN ('peer','faculty_peer','staff_peer')";
+    // Must stay identical to $peerEvalSql in dean_reports.php: both the evaluator
+    // and the evaluated person are College teachers.
+    $collegeTeacherIds = "SELECT ct.id FROM users ct
+        WHERE ct.role IN ('teacher','faculty','staff')
+          AND EXISTS (SELECT 1 FROM user_year_levels ctyl
+                      WHERE ctyl.user_id=ct.id AND ctyl.year_level IN ($collegeLevels))";
+    $evalClause = "et.eval_type IN ('peer','faculty_peer','staff_peer')
+        AND et.evaluator_id IN ($collegeTeacherIds)
+        AND et.target_user_id IN ($collegeTeacherIds)";
 } else {
     $evalClause = "et.eval_type='student' AND $evaluatorClause AND (
         COALESCE(et.evaluation_context,'teacher') IN ('teacher','staff')
