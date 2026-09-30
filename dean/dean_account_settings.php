@@ -225,7 +225,7 @@ $active = 'settings';
 $sidebarScope = 'Higher Education Division';
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dean-internal-scroll-page">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -249,10 +249,83 @@ body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,
 @media(max-width:900px){.sidebar{width:220px}.main{padding:28px 24px}.form-grid,.info-grid{grid-template-columns:1fr}}@media(max-width:650px){body{display:block}.sidebar{width:100%;min-height:auto;padding:18px}.sb-nav{display:grid;grid-template-columns:repeat(2,1fr)}.sb-logout{margin-top:12px}.main{padding:24px 16px}.profile-card{align-items:flex-start;flex-direction:column}.form-grid,.info-grid{grid-template-columns:1fr}}
 </style>
 <link rel="stylesheet" href="includes/dean_light_theme.css"/>
+
+<style>
+/* Keep the Dean sidebar fixed and scroll this feature workspace internally. */
+html.dean-internal-scroll-page,
+html.dean-internal-scroll-page body {
+  overflow: hidden !important;
+  height: 100% !important;
+}
+
+main.main.dean-internal-scroll {
+  height: calc(100vh - 20px) !important;
+  max-height: calc(100vh - 20px) !important;
+  min-height: 0 !important;
+  overflow-y: scroll !important;
+  overflow-x: hidden !important;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #AEBAC8 #EEF2F6;
+}
+
+main.main.dean-internal-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+main.main.dean-internal-scroll::-webkit-scrollbar-track {
+  background: #EEF2F6;
+  border-radius: 10px;
+}
+
+main.main.dean-internal-scroll::-webkit-scrollbar-thumb {
+  background: #AEBAC8;
+  border: 2px solid #EEF2F6;
+  border-radius: 10px;
+}
+
+main.main.dean-internal-scroll::-webkit-scrollbar-thumb:hover {
+  background: #8F9CAB;
+}
+
+html.dark-theme main.main.dean-internal-scroll {
+  scrollbar-color: #2A4468 #0F1F3D;
+}
+
+html.dark-theme main.main.dean-internal-scroll::-webkit-scrollbar-track {
+  background: #0F1F3D;
+}
+
+html.dark-theme main.main.dean-internal-scroll::-webkit-scrollbar-thumb {
+  background: #2A4468;
+  border-color: #0F1F3D;
+}
+
+html.dark-theme main.main.dean-internal-scroll::-webkit-scrollbar-thumb:hover {
+  background: #385A86;
+}
+
+@media (max-width: 768px) {
+  html.dean-internal-scroll-page,
+  html.dean-internal-scroll-page body {
+    overflow: auto !important;
+    height: auto !important;
+  }
+
+  main.main.dean-internal-scroll {
+    height: auto !important;
+    max-height: none !important;
+    min-height: calc(100vh - 12px) !important;
+    overflow: visible !important;
+    scrollbar-gutter: auto;
+  }
+}
+</style>
 </head>
 <body>
 <?php $photo_src = $photoUrl; include __DIR__ . '/includes/dean_sidebar.php'; ?>
-<main class="main">
+<main class="main dean-internal-scroll">
     <div class="page-header">
         <div class="page-title">Account Settings</div>
         <div class="page-sub">Manage your Dean profile, photo, and login credentials.</div>

@@ -1,13 +1,9 @@
 <?php
 // admin/ea_evaluation.php
-// EA Evaluation roster. Rebuilt to match the roster -> evaluate pattern
-// used everywhere else evaluations happen in this system (see
-// dean/dean_evaluation.php + dean/dean_evaluate.php, and
-// principal/principal_evaluations.php + principal/principal_evaluate.php):
-// a stat/tab/table roster here, a separate server-rendered form on
-// ea_evaluate.php. Eligibility is unchanged from before — the EA can only
-// evaluate the active Principal, the active Dean, and Staff members who
-// have no year-level/teaching assignment.
+// Executive Assistant "My Evaluations" landing page.
+// The page follows the same group-selection structure used by the faculty
+// evaluation view: choose an evaluation group first, then select a person.
+// Eligibility and completion logic remain server-side and unchanged.
 session_set_cookie_params([
     'lifetime' => 0, 'path' => '/', 'domain' => '',
     'secure' => false, 'httponly' => true, 'samesite' => 'Lax',
@@ -16,23 +12,18 @@ session_start();
 require_once 'db.php';
 require_once dirname(__DIR__) . '/shared/system_settings_service.php';
 
-
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
-// EA currently maps to the system's privileged/superadmin account.
-// Keep executive_assistant here for forward compatibility.
 if (!isset($_SESSION['user_id']) ||
-    !in_array($_SESSION['role'] ?? '', ['admin','superadmin','executive_assistant'], true)) {
+    !in_array($_SESSION['role'] ?? '', ['admin', 'superadmin', 'executive_assistant'], true)) {
     header('Location: admin_login.php');
     exit;
 }
 
-// Apply the schedule before reading evaluation_periods.is_active.
 ss_sync_from_database($mysqli);
+$ea_id = (int) $_SESSION['user_id'];
 
-$ea_id = (int)$_SESSION['user_id'];
-
-// Ensure EA can be stored even on older installations where eval_type was an ENUM.
+// Keep this page safe on older installations that may still use a legacy ENUM.
 try {
     $mysqli->query("ALTER TABLE evaluation_tracker MODIFY eval_type VARCHAR(30) NOT NULL DEFAULT 'student'");
 } catch (Throwable $ignore) {}
@@ -43,7 +34,6 @@ foreach ([
     "ALTER TABLE evaluation_tracker ADD COLUMN period_id INT UNSIGNED NULL",
     "ALTER TABLE evaluation_tracker ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'submitted'",
 ] as $ddl) {
-    // Ignore duplicate-column errors so the page remains safe on existing databases.
     try { $mysqli->query($ddl); } catch (Throwable $ignore) {}
 }
 
@@ -54,30 +44,30 @@ $period = $mysqli->query("
     ORDER BY id DESC
     LIMIT 1
 ")->fetch_assoc();
-$period_id = (int)($period['id'] ?? 0);
-$is_open = $period_id > 0; // display only: OPEN while an evaluation period is active
+$period_id = (int) ($period['id'] ?? 0);
+$is_open = $period_id > 0;
+$periodName = trim((string) ($period['period_label'] ?? ''));
 
-// ── ELIGIBLE TARGETS (unchanged) ──────────────────────────────────────
-// Principal + Dean are single-user role targets. Staff = primary Staff
-// users with no year-level/teaching assignment. This is
-// the exact same eligibility ea_evaluate.php re-checks before accepting
-// a submission, so nobody can be evaluated here who isn't allowed.
-$heads = ['Principal'=>[], 'Dean'=>[]];
+// ── ELIGIBLE TARGETS ──────────────────────────────────────────────────
+// EA may evaluate the active Principal, active Dean, and Staff members
+// without teaching/year-level assignments.
+$heads = ['Principal' => [], 'Dean' => []];
 $headStmt = $mysqli->prepare("
     SELECT id, full_name, designation, photo, role
     FROM users
-    WHERE role IN ('principal','dean')
+    WHERE role IN ('principal', 'dean')
       AND is_active=1
       AND account_status='approved'
     ORDER BY full_name
 ");
 $headStmt->execute();
-foreach ($headStmt->get_result()->fetch_all(MYSQLI_ASSOC) as $u) {
-    $heads[$u['role'] === 'principal' ? 'Principal' : 'Dean'][] = $u;
+foreach ($headStmt->get_result()->fetch_all(MYSQLI_ASSOC) as $user) {
+    $bucket = $user['role'] === 'principal' ? 'Principal' : 'Dean';
+    $heads[$bucket][] = $user;
 }
 $headStmt->close();
 
-$ntsStmt = $mysqli->prepare("
+$staffStmt = $mysqli->prepare("
     SELECT u.id, u.full_name, u.designation, u.photo, u.role
     FROM users u
     WHERE u.role='staff'
@@ -87,66 +77,78 @@ $ntsStmt = $mysqli->prepare("
       AND NOT EXISTS (SELECT 1 FROM user_year_levels yl WHERE yl.user_id=u.id)
     ORDER BY u.full_name
 ");
-$ntsStmt->execute();
-$nonTeaching = $ntsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$ntsStmt->close();
+$staffStmt->execute();
+$staff = $staffStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$staffStmt->close();
 
 $categories = [
     'Principal' => $heads['Principal'],
-    'Dean' => $heads['Dean'],
-    'Staff' => $nonTeaching,
+    'Dean'      => $heads['Dean'],
+    'Staff'     => $staff,
 ];
-$tabIcons = ['Principal'=>'fa-user-tie','Dean'=>'fa-graduation-cap','Staff'=>'fa-users-gear'];
 
-$selectedType = $_GET['type'] ?? 'Principal';
-if (!array_key_exists($selectedType, $categories)) $selectedType = 'Principal';
+$groupMeta = [
+    'Principal' => [
+        'icon' => 'fa-user-tie',
+        'class' => 'group-principal',
+        'description' => 'Evaluate the Principal assigned to your evaluation scope.',
+    ],
+    'Dean' => [
+        'icon' => 'fa-graduation-cap',
+        'class' => 'group-dean',
+        'description' => 'Evaluate the Dean responsible for your evaluation scope.',
+    ],
+    'Staff' => [
+        'icon' => 'fa-briefcase',
+        'class' => 'group-staff',
+        'description' => 'Evaluate eligible staff members assigned to your scope.',
+    ],
+];
 
-// Completion state is scoped by eval_type so EA submissions never collide
-// with Student, Peer, or School Head evaluations.
+$selectedType = $_GET['type'] ?? '';
+if (!array_key_exists($selectedType, $categories)) {
+    $selectedType = '';
+}
+
+// Completion state is scoped to EA evaluations for the active period.
 $done = [];
 if ($period_id) {
     $doneStmt = $mysqli->prepare("
         SELECT target_user_id
         FROM evaluation_tracker
-        WHERE evaluator_id=? AND period_id=? AND eval_type='ea' AND status='submitted'
+        WHERE evaluator_id=?
+          AND period_id=?
+          AND eval_type='ea'
+          AND status='submitted'
     ");
     $doneStmt->bind_param('ii', $ea_id, $period_id);
     $doneStmt->execute();
-    $done = array_flip(array_map('intval', array_column($doneStmt->get_result()->fetch_all(MYSQLI_ASSOC), 'target_user_id')));
+    $rows = $doneStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $done = array_flip(array_map('intval', array_column($rows, 'target_user_id')));
     $doneStmt->close();
 }
 
-$total = 0; $completed = 0;
-foreach ($categories as $group) foreach ($group as $p) { $total++; if (isset($done[(int)$p['id']])) $completed++; }
-
+$total = 0;
+$completed = 0;
+foreach ($categories as $group) {
+    foreach ($group as $person) {
+        $total++;
+        if (isset($done[(int) $person['id']])) {
+            $completed++;
+        }
+    }
+}
+$pending = max(0, $total - $completed);
 $justSubmitted = isset($_GET['submitted']);
 $mysqli->close();
 
-// ── HEADER TEXT — built from live data so it never goes stale ─────────
-// Heading + subtitle follow the current period and the current progress.
-$pending    = max(0, $total - $completed);
-$periodName = trim((string)($period['period_label'] ?? ''));
-$groupBits  = [];
-foreach ($categories as $label => $group) {
-    if (count($group)) $groupBits[] = count($group) . ' ' . $label;
+function e($value) {
+    return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 }
-$rosterText = $groupBits ? implode(' · ', $groupBits) : '';
 
-if ($period_id === 0) {
-    $pageTitle = 'No Active Evaluation Period';
-    $pageSub   = 'Evaluations will appear here once an evaluation period is opened.';
-} elseif ($total === 0) {
-    $pageTitle = 'Nothing to Evaluate Yet';
-    $pageSub   = 'No one is currently assigned to you for ' . $periodName . '.';
-} elseif ($pending === 0) {
-    $pageTitle = 'All Evaluations Completed';
-    $pageSub   = 'You have submitted all ' . $total . ' evaluation' . ($total === 1 ? '' : 's') . ' for ' . $periodName . '.';
-} else {
-    $pageTitle = $completed === 0 ? 'Start Evaluating' : 'Your Evaluation';
-    $pageSub   = $pending . ' of ' . $total . ' evaluation' . ($total === 1 ? '' : 's') . ' still to complete for ' . $periodName
-               . ($rosterText !== '' ? ' — ' . $rosterText . '.' : '.');
+function personPhoto(?string $photo): string {
+    return !empty($photo) ? '../image/' . e($photo) : '';
 }
-function e($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 ?>
 <!doctype html>
 <html lang="en">
@@ -155,198 +157,313 @@ function e($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>My Evaluations — PBI</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-:root{
-  --page-bg:#F8FAFC;--card-bg:#FFFFFF;--inner:#F4F8FF;--card-border:#B9CDE5;
-  --text-dark:#0B1F3A;--text-dim:#67819E;
-  --radius:10px;--card-shadow:0 1px 2px rgba(30,82,144,.05),0 4px 12px rgba(30,82,144,.06);
-  --accent:#2563EB;--accent-bg:rgba(37,99,235,.08);--accent-border:rgba(37,99,235,.16);--hover:#2563EB;
-  --amber:#C77A08;--amber-bg:rgba(217,119,6,.08);--amber-border:rgba(217,119,6,.24);
-  --success:#0F9F6E;--success-bg:rgba(5,150,105,.1);--success-border:rgba(5,150,105,.25);
-  --danger:#D6455D;--danger-bg:rgba(220,38,38,.08);--danger-border:rgba(220,38,38,.22);
-}
-*{box-sizing:border-box} body{margin:0;background:var(--page-bg);color:var(--text-dark);font-family:'Inter',Segoe UI,Arial,sans-serif}
-.wrap{max-width:1320px;margin:auto;padding:34px}
-.back-link{display:inline-flex;align-items:center;gap:8px;color:var(--text-dim);text-decoration:none;font-size:13px;margin-bottom:20px}
-.back-link:hover{color:var(--text-dark)}
-.page-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px;flex-wrap:wrap;gap:14px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;padding:22px 26px;box-shadow:var(--card-shadow)}
-.page-header h1{margin:0;font-family:'Rajdhani',sans-serif;font-size:28px;font-weight:700;color:var(--text-dark)}.page-header p{color:var(--text-dim);margin:6px 0 0;font-size:13px}
-.period-badge{background:var(--accent-bg);border:1px solid var(--accent-border);color:var(--accent);padding:8px 16px;border-radius:20px;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:8px;white-space:nowrap}
-.period-badge.closed{background:var(--danger-bg);border-color:var(--danger-border);color:var(--danger)}
-
-.alert{border-radius:10px;padding:13px 16px;font-size:13.5px;margin-bottom:18px;display:flex;align-items:center;gap:8px}
-.alert-success{background:var(--success-bg);border:1px solid var(--success-border);color:var(--success)}
-
-.card-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px}
-.stat-card{background:var(--card-bg);border:1px solid var(--card-border);border-top:4px solid var(--accent);border-radius:14px;padding:18px 20px;box-shadow:var(--card-shadow)}
-.stat-card i{color:var(--accent);font-size:18px;margin-bottom:8px;display:block}
-.stat-card .num{font-size:26px;font-weight:800;color:var(--text-dark)}
-.stat-card .label{font-size:12px;color:var(--text-dim);margin-top:4px}
-
-.eval-tabs{display:flex;gap:4px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius);padding:4px;margin-bottom:22px;width:fit-content;flex-wrap:wrap;box-shadow:var(--card-shadow)}
-.eval-tab{padding:10px 20px;border-radius:7px;font-size:13.5px;font-weight:700;color:var(--text-dim);text-decoration:none;display:flex;align-items:center;gap:8px}
-.eval-tab.active{background:var(--accent);color:#fff}
-.eval-tab:not(.active):hover{background:var(--inner);color:var(--text-dark)}
-.eval-tab .badge{background:rgba(30,82,144,.13);border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700}
-.eval-tab.active .badge{background:rgba(255,255,255,.28)}
-
-.table-wrap{background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;overflow:hidden;box-shadow:var(--card-shadow)}
-table{width:100%;border-collapse:collapse}
-thead tr{background:var(--inner)}
-thead th{padding:13px 18px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);text-align:left;white-space:nowrap;border-bottom:1px solid var(--card-border)}
-tbody tr{border-bottom:1px solid var(--card-border)}
-tbody tr:last-child{border-bottom:none}
-tbody tr:hover{background:var(--page-bg)}
-tbody td{padding:14px 18px;font-size:13.5px;vertical-align:middle}
-.person-cell{display:flex;align-items:center;gap:11px}
-.person-photo{width:38px;height:38px;border-radius:50%;object-fit:cover;background:var(--inner);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--text-dim)}
-.person-name{font-weight:700;color:var(--text-dark)}
-.muted-cell{color:var(--text-dim);font-size:12.5px}
-.status-pill{display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:20px;font-size:11px;font-weight:800}
-.status-pill.done{background:var(--success-bg);color:var(--success)}
-.status-pill.pending{background:var(--amber-bg);color:var(--amber)}
-.btn-eval{background:var(--accent);border:none;color:#fff;padding:8px 15px;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
-.btn-eval:hover{background:var(--hover)}
-.btn-view{background:transparent;border:1px solid var(--card-border);color:var(--text-dim);padding:8px 15px;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;margin-left:6px}
-.btn-view:hover{color:var(--text-dark);border-color:#91A6BE}
-.empty-state{text-align:center;padding:56px 20px;color:var(--text-dim)}
-.empty-state i{font-size:36px;margin-bottom:14px;display:block;opacity:.3}
-@media(max-width:900px){.card-grid{grid-template-columns:1fr}.wrap{padding:20px}}
-</style>
-    <link rel="stylesheet" href="admin_ui_theme.css">
-    <link rel="stylesheet" href="admin_compact_ui.css">
-<style id="pbi-feature-scrollbar">
-
-/* PBI FEATURE SCROLLBAR — consistent with the compact page scrollbar */
-html, body {
-  scrollbar-width: thin !important;
-  scrollbar-color: #888 transparent !important;
-}
-html::-webkit-scrollbar, body::-webkit-scrollbar,
-.feature-compact ::-webkit-scrollbar {
-  width: 10px !important;
-  height: 10px !important;
-}
-html::-webkit-scrollbar-track, body::-webkit-scrollbar-track,
-.feature-compact ::-webkit-scrollbar-track {
-  background: transparent !important;
-}
-html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb,
-.feature-compact ::-webkit-scrollbar-thumb {
-  background: #888 !important;
-  border-radius: 999px !important;
-  border: 2px solid transparent !important;
-  background-clip: padding-box !important;
-}
-html::-webkit-scrollbar-thumb:hover, body::-webkit-scrollbar-thumb:hover,
-.feature-compact ::-webkit-scrollbar-thumb:hover {
-  background: #777 !important;
-  background-clip: padding-box !important;
-}
-html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
-.feature-compact ::-webkit-scrollbar-button {
-  display: block !important;
-  width: 10px !important;
-  height: 10px !important;
-  background-color: transparent !important;
-}
-/* Small native-looking arrow hints on classic scrollbars */
-html::-webkit-scrollbar-button:single-button:vertical:decrement,
-body::-webkit-scrollbar-button:single-button:vertical:decrement,
-.feature-compact ::-webkit-scrollbar-button:single-button:vertical:decrement {
-  background:
-    linear-gradient(135deg, transparent 50%, #777 50%) 3px 5px/5px 5px no-repeat !important;
-}
-html::-webkit-scrollbar-button:single-button:vertical:increment,
-body::-webkit-scrollbar-button:single-button:vertical:increment,
-.feature-compact ::-webkit-scrollbar-button:single-button:vertical:increment {
-  background:
-    linear-gradient(315deg, transparent 50%, #777 50%) 3px 0/5px 5px no-repeat !important;
-}
-html::-webkit-scrollbar-button:single-button:horizontal:decrement,
-body::-webkit-scrollbar-button:single-button:horizontal:decrement,
-.feature-compact ::-webkit-scrollbar-button:single-button:horizontal:decrement {
-  background:
-    linear-gradient(45deg, transparent 50%, #777 50%) 5px 3px/5px 5px no-repeat !important;
-}
-html::-webkit-scrollbar-button:single-button:horizontal:increment,
-body::-webkit-scrollbar-button:single-button:horizontal:increment,
-.feature-compact ::-webkit-scrollbar-button:single-button:horizontal:increment {
-  background:
-    linear-gradient(225deg, transparent 50%, #777 50%) 0 3px/5px 5px no-repeat !important;
-}
-
-</style>
-
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="admin_appearance.css">
 <script src="admin_appearance.js"></script>
+<style>
+:root{
+  /* Light mode defaults. These tokens intentionally follow the shared
+     PBI Admin appearance engine instead of hard-locking this page to dark. */
+  --ea-page-bg:var(--bg,#f4f8ff);
+  --ea-panel:var(--panel-bg,#ffffff);
+  --ea-panel-soft:#f8fbff;
+  --ea-panel-deep:#eef4fb;
+  --ea-line:var(--panel-border,#dce8f5);
+  --ea-text:var(--text,#10243f);
+  --ea-muted:var(--muted,#66809c);
+  --ea-muted-2:#7e93ab;
+  --ea-card:#ffffff;
+  --ea-card-border:#d7e3ef;
+  --ea-card-hover:#f4f8ff;
+  --ea-card-selected:#edf5ff;
+  --ea-icon-neutral:#edf4fd;
+  --ea-photo-bg:#f2f6fb;
+  --ea-photo-border:#c9d9ea;
+  --ea-shadow:0 8px 24px rgba(30,82,144,.08);
+  --ea-shadow-hover:0 10px 24px rgba(30,82,144,.12);
+  --ea-info:#58718c;
+  --blue:#2F6EE2;
+  --blue-soft:rgba(59,130,246,.10);
+  --blue-border:rgba(59,130,246,.35);
+  --green:#22C55E;
+  --green-soft:rgba(34,197,94,.10);
+  --green-border:rgba(34,197,94,.26);
+  --gold:#F59E0B;
+  --gold-soft:rgba(245,158,11,.10);
+  --gold-border:rgba(245,158,11,.28);
+}
+
+/* Dark mode — preserve the established dark visual palette. */
+html[data-theme="dark"]{
+  --ea-page-bg:#07192D;
+  --ea-panel:#132844;
+  --ea-panel-soft:#142A47;
+  --ea-panel-deep:#10233D;
+  --ea-line:#213A5C;
+  --ea-text:#F5F7FB;
+  --ea-muted:#9CB0CA;
+  --ea-muted-2:#8298B4;
+  --ea-card:#10233E;
+  --ea-card-border:#223A5B;
+  --ea-card-hover:#142C4B;
+  --ea-card-selected:#142C4B;
+  --ea-icon-neutral:#18304E;
+  --ea-photo-bg:#18304E;
+  --ea-photo-border:#2B476A;
+  --ea-shadow:0 12px 32px rgba(0,0,0,.15);
+  --ea-shadow-hover:0 10px 24px rgba(0,0,0,.18);
+  --ea-info:#8FA7C6;
+}
+
+*{box-sizing:border-box}
+html,body{
+  margin:0;
+  min-height:100%;
+  background:var(--ea-page-bg);
+  color:var(--ea-text);
+  font-family:'Inter',Segoe UI,Arial,sans-serif;
+}
+body{overflow-x:hidden}
+a{color:inherit}
+.wrap{max-width:1390px;margin:0 auto;padding:28px 30px 34px}
+
+/* Main evaluation panel — intentionally mirrors the faculty evaluation card. */
+.evaluation-panel{
+  background:var(--ea-panel);
+  border:1px solid var(--ea-line);
+  border-radius:14px;
+  padding:24px 28px 22px;
+  box-shadow:var(--ea-shadow);
+}
+.panel-title{display:flex;align-items:center;gap:11px;margin:0 0 14px;font-family:'Rajdhani',sans-serif;font-size:26px;font-weight:700;letter-spacing:.1px;color:var(--ea-text)}
+.panel-title i{color:var(--blue);font-size:18px}
+.panel-copy{margin:0 0 20px;color:var(--ea-info);font-size:13.5px;line-height:1.6}
+.step-title{display:flex;align-items:center;gap:8px;margin:0 0 10px;color:var(--ea-muted);font-size:11.5px;font-weight:800;letter-spacing:.7px;text-transform:uppercase}
+.step-title i{color:var(--ea-muted);font-size:12px}
+
+.group-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.group-card{
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  min-height:188px;
+  padding:22px 18px;
+  text-decoration:none;
+  background:var(--ea-card);
+  border:1px solid var(--ea-card-border);
+  border-radius:14px;
+  transition:transform .16s ease,border-color .16s ease,background .16s ease,box-shadow .16s ease;
+  overflow:hidden;
+}
+.group-card::after{content:'';position:absolute;inset:auto 0 0;height:3px;background:transparent;transition:background .16s ease}
+.group-card:hover{transform:translateY(-2px);background:var(--ea-card-hover);border-color:#8fb5e2;box-shadow:var(--ea-shadow-hover)}
+.group-card.selected{background:var(--ea-card-selected);border-color:#9fc5f5;box-shadow:0 8px 20px rgba(30,82,144,.10)}
+.group-icon{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:25px;margin-bottom:15px}
+.group-card h3{margin:0;color:var(--ea-text);font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;letter-spacing:.1px}
+.group-count{margin-top:3px;color:var(--ea-muted);font-size:13.5px}
+.group-description{max-width:310px;margin:10px 0 0;text-align:center;color:var(--ea-muted-2);font-size:11.5px;line-height:1.45}
+.group-principal .group-icon{background:var(--blue-soft);color:#3D8BFF}
+.group-principal::after{background:#3B82F6}
+.group-dean .group-icon{background:var(--gold-soft);color:#F59E0B}
+.group-dean::after{background:#F59E0B}
+.group-staff .group-icon{background:var(--green-soft);color:#22C55E}
+.group-staff::after{background:#22C55E}
+.group-card.selected.group-principal{border-color:var(--blue-border)}
+.group-card.selected.group-dean{border-color:var(--gold-border)}
+.group-card.selected.group-staff{border-color:var(--green-border)}
+
+.info-note{
+  display:flex;
+  align-items:flex-start;
+  gap:8px;
+  margin-top:18px;
+  color:var(--ea-info);
+  font-size:12px;
+  line-height:1.5;
+}
+.info-note i{color:var(--ea-info);margin-top:1px;flex-shrink:0}
+
+.alert{display:flex;align-items:center;gap:9px;margin:14px 0 0;padding:11px 13px;border-radius:9px;font-size:12.5px}
+.alert-success{color:#087f5b;background:rgba(16,185,129,.10);border:1px solid rgba(52,211,153,.24)}
+.alert-info{color:#245b9d;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.20)}
+html[data-theme="dark"] .alert-success{color:#A7F3D0;background:rgba(16,185,129,.11);border-color:rgba(52,211,153,.22)}
+html[data-theme="dark"] .alert-info{color:#A8C7EF;background:rgba(59,130,246,.10);border-color:rgba(59,130,246,.22)}
+
+/* Step 2 appears only after a group is selected. */
+.roster-panel{
+  margin-top:20px;
+  background:var(--ea-panel);
+  border:1px solid var(--ea-line);
+  border-radius:14px;
+  overflow:hidden;
+  box-shadow:var(--ea-shadow);
+}
+.roster-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 22px;border-bottom:1px solid var(--ea-line);background:var(--ea-panel-soft)}
+.roster-heading{display:flex;align-items:center;gap:11px}
+.roster-heading .roster-icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--ea-icon-neutral);color:#2F6EE2;font-size:15px}
+.roster-heading h2{margin:0;font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;color:var(--ea-text)}
+.roster-heading p{margin:2px 0 0;color:var(--ea-muted-2);font-size:11.5px}
+.roster-step{color:var(--ea-muted);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;white-space:nowrap}
+.person-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:18px;background:var(--ea-panel)}
+.person-card{
+  display:flex;align-items:center;gap:13px;
+  background:var(--ea-card);
+  border:1px solid var(--ea-card-border);
+  border-radius:11px;
+  padding:13px 14px;
+}
+.person-photo{width:44px;height:44px;border-radius:50%;object-fit:cover;background:var(--ea-photo-bg);border:1px solid var(--ea-photo-border);display:flex;align-items:center;justify-content:center;color:var(--ea-muted);flex-shrink:0;overflow:hidden}
+.person-photo img{width:100%;height:100%;object-fit:cover;display:block}
+.person-info{min-width:0;flex:1}
+.person-name{font-size:13.5px;font-weight:800;color:var(--ea-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.person-meta{margin-top:3px;color:var(--ea-muted);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.status-pill{display:inline-flex;align-items:center;gap:5px;margin-top:7px;padding:4px 9px;border-radius:999px;font-size:10px;font-weight:800}
+.status-pill.done{background:rgba(52,211,153,.12);color:#11805f;border:1px solid rgba(52,211,153,.18)}
+.status-pill.pending{background:rgba(245,158,11,.12);color:#a66000;border:1px solid rgba(245,158,11,.18)}
+html[data-theme="dark"] .status-pill.done{color:#6EE7B7}
+html[data-theme="dark"] .status-pill.pending{color:#F8C465}
+.person-action{flex-shrink:0}
+.btn-action{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 13px;border-radius:8px;text-decoration:none;font-size:11.5px;font-weight:800;border:1px solid transparent}
+.btn-action.evaluate{background:#2563EB;color:#fff;border-color:#3B82F6}
+.btn-action.evaluate:hover{background:#1D4ED8}
+.btn-action.view{background:transparent;color:var(--ea-muted);border-color:#9fb4ca}
+.btn-action.view:hover{background:var(--ea-card-hover);color:var(--ea-text)}
+html[data-theme="dark"] .btn-action.view{color:#B1C1D4;border-color:#34506F}
+html[data-theme="dark"] .btn-action.view:hover{background:#172E4C;color:#fff}
+.roster-empty{text-align:center;padding:44px 20px;color:var(--ea-muted-2);font-size:12.5px}
+.roster-empty i{display:block;margin-bottom:10px;font-size:26px;opacity:.45}
+
+.compact-summary{display:flex;align-items:center;gap:18px;padding:13px 18px;border-top:1px solid var(--ea-line);background:var(--ea-panel-soft);color:var(--ea-muted);font-size:11.5px}
+.compact-summary strong{color:var(--ea-text)}
+
+/* Keep the light palette readable even though the shared dark-surface observer
+   adds classes only while dark mode is active. */
+html[data-theme="dark"] .group-card:hover,
+html[data-theme="dark"] .group-card.selected{border-color:#31557D}
+html[data-theme="dark"] .roster-heading .roster-icon{background:#1D3A60;color:#78AFFF}
+html[data-theme="dark"] .person-photo{background:#18304E;border-color:#2B476A;color:#91A7C3}
+html[data-theme="dark"] .btn-action.view{background:transparent}
+
+@media(max-width:900px){
+  .wrap{padding:18px}
+  .evaluation-panel{padding:20px}
+  .group-grid{grid-template-columns:1fr}
+  .group-card{min-height:160px}
+  .person-grid{grid-template-columns:1fr}
+}
+@media(max-width:560px){
+  .wrap{padding:12px}
+  .evaluation-panel{padding:16px}
+  .panel-title{font-size:23px}
+  .group-card{min-height:150px}
+  .roster-head{align-items:flex-start;flex-direction:column}
+  .roster-step{margin-left:49px}
+  .person-card{align-items:flex-start;flex-wrap:wrap}
+  .person-action{width:100%}
+  .person-action .btn-action{width:100%}
+}
+</style>
 </head>
 <body class="feature-compact">
 <main class="wrap">
+  <section class="evaluation-panel">
+    <h1 class="panel-title"><i class="fa-solid fa-clipboard-check"></i> Evaluation</h1>
+    <p class="panel-copy">Choose who you want to evaluate. The Executive Assistant can evaluate the Principal, Dean, or eligible Staff members.</p>
 
-<a class="back-link" href="admin_dashboard.php" onclick="if(window.parent&&window.parent!==window&&window.parent.showPage){window.parent.showPage('dashboard',window.parent.document.getElementById('link-dashboard'));return false;}"><i class="fa-solid fa-arrow-left"></i> Back to Dashboard</a>
+    <div class="step-title"><i class="fa-solid fa-bolt"></i> Step 1: Select Evaluation Group</div>
 
-<div class="page-header">
-  <div>
-    <h1><?= e($pageTitle) ?></h1>
-    <p><?= e($pageSub) ?></p>
-  </div>
-  <span class="period-badge <?= $is_open ? '' : 'closed' ?>">
-    <i class="fa-solid fa-calendar-check"></i>
-    <?= $is_open ? e($periodName) . ' — OPEN' : 'No active evaluation period' ?>
-  </span>
-</div>
+    <div class="group-grid">
+      <?php foreach ($categories as $type => $people):
+          $meta = $groupMeta[$type];
+          $isSelected = $selectedType === $type;
+          $count = count($people);
+      ?>
+        <a class="group-card <?= e($meta['class']) ?> <?= $isSelected ? 'selected' : '' ?>" href="?type=<?= urlencode($type) ?>" aria-label="Select <?= e($type) ?>">
+          <div class="group-icon"><i class="fa-solid <?= e($meta['icon']) ?>"></i></div>
+          <h3><?= e($type) ?></h3>
+          <div class="group-count"><?= $count ?> <?= $count === 1 ? 'member' : 'members' ?></div>
+          <p class="group-description"><?= e($meta['description']) ?></p>
+        </a>
+      <?php endforeach; ?>
+    </div>
 
-<?php if ($justSubmitted): ?>
-<div class="alert alert-success"><i class="fa-solid fa-circle-check"></i> Evaluation submitted successfully.</div>
-<?php endif; ?>
+    <div class="info-note">
+      <i class="fa-solid fa-circle-info"></i>
+      <span>Only active and eligible personnel are shown. Staff listed here are non-teaching staff without teaching or year-level assignments.</span>
+    </div>
 
-<div class="card-grid">
-  <div class="stat-card"><i class="fa-solid fa-list-check"></i><div class="num"><?= $total ?></div><div class="label">Required evaluations</div></div>
-  <div class="stat-card"><i class="fa-solid fa-circle-check"></i><div class="num"><?= $completed ?></div><div class="label">Completed</div></div>
-  <div class="stat-card"><i class="fa-solid fa-hourglass-half"></i><div class="num"><?= max(0,$total-$completed) ?></div><div class="label">Pending</div></div>
-</div>
-
-<div class="eval-tabs">
-<?php foreach ($categories as $type => $people): ?>
-  <a class="eval-tab <?= $selectedType===$type?'active':'' ?>" href="?type=<?= urlencode($type) ?>">
-    <i class="fa-solid <?= $tabIcons[$type] ?>"></i> <?= e($type) ?> <span class="badge"><?= count($people) ?></span>
-  </a>
-<?php endforeach; ?>
-</div>
-
-<div class="table-wrap">
-<table>
-<thead><tr><th>Profile</th><th>Full Name</th><th>Designation</th><th>Evaluation Status</th><th>Actions</th></tr></thead>
-<tbody>
-<?php if (!$categories[$selectedType]): ?>
-<tr><td colspan="5"><div class="empty-state"><i class="fa-solid fa-user-slash"></i><p>No eligible <?= e($selectedType) ?> personnel found.</p></div></td></tr>
-<?php else: foreach ($categories[$selectedType] as $p): $pid = (int)$p['id']; $isDone = isset($done[$pid]); ?>
-<tr>
-  <td><?php if (!empty($p['photo'])): ?><img class="person-photo" src="../image/<?= e($p['photo']) ?>" alt=""><?php else: ?><div class="person-photo"><i class="fa-solid fa-user"></i></div><?php endif; ?></td>
-  <td><span class="person-name"><?= e($p['full_name']) ?></span></td>
-  <td class="muted-cell"><?= e($p['designation'] ?: $selectedType) ?></td>
-  <td>
-    <span class="status-pill <?= $isDone ? 'done' : 'pending' ?>">
-      <?php if ($isDone): ?><i class="fa-solid fa-check" style="font-size:9px;"></i> Completed
-      <?php else: ?><i class="fa-solid fa-hourglass-half" style="font-size:9px;"></i> Pending
-      <?php endif; ?>
-    </span>
-  </td>
-  <td>
-    <?php if ($isDone): ?>
-      <a class="btn-view" href="ea_evaluate.php?type=<?= urlencode($selectedType) ?>&user_id=<?= $pid ?>"><i class="fa-solid fa-eye"></i> View</a>
-    <?php else: ?>
-      <a class="btn-eval" href="ea_evaluate.php?type=<?= urlencode($selectedType) ?>&user_id=<?= $pid ?>"><i class="fa-solid fa-pen"></i> Evaluate</a>
+    <?php if ($justSubmitted): ?>
+      <div class="alert alert-success"><i class="fa-solid fa-circle-check"></i> Evaluation submitted successfully.</div>
     <?php endif; ?>
-  </td>
-</tr>
-<?php endforeach; endif; ?>
-</tbody>
-</table>
-</div>
+  </section>
 
+  <?php if ($selectedType !== ''):
+      $people = $categories[$selectedType];
+      $selectedMeta = $groupMeta[$selectedType];
+      $groupCompleted = 0;
+      foreach ($people as $person) {
+          if (isset($done[(int) $person['id']])) $groupCompleted++;
+      }
+  ?>
+    <section class="roster-panel">
+      <div class="roster-head">
+        <div class="roster-heading">
+          <div class="roster-icon"><i class="fa-solid <?= e($selectedMeta['icon']) ?>"></i></div>
+          <div>
+            <h2><?= e($selectedType) ?></h2>
+            <p>Select a person to start or review your evaluation.</p>
+          </div>
+        </div>
+        <div class="roster-step">Step 2: Select Personnel</div>
+      </div>
+
+      <?php if (!$people): ?>
+        <div class="roster-empty">
+          <i class="fa-solid fa-user-slash"></i>
+          No eligible <?= e($selectedType) ?> personnel are currently available.
+        </div>
+      <?php else: ?>
+        <div class="person-grid">
+          <?php foreach ($people as $person):
+              $pid = (int) $person['id'];
+              $isDone = isset($done[$pid]);
+          ?>
+            <article class="person-card">
+              <?php if (!empty($person['photo'])): ?>
+                <div class="person-photo"><img src="<?= personPhoto($person['photo']) ?>" alt=""></div>
+              <?php else: ?>
+                <div class="person-photo"><i class="fa-solid fa-user"></i></div>
+              <?php endif; ?>
+
+              <div class="person-info">
+                <div class="person-name" title="<?= e($person['full_name']) ?>"><?= e($person['full_name']) ?></div>
+                <div class="person-meta"><?= e($person['designation'] ?: $selectedType) ?></div>
+                <span class="status-pill <?= $isDone ? 'done' : 'pending' ?>">
+                  <i class="fa-solid <?= $isDone ? 'fa-check' : 'fa-hourglass-half' ?>"></i>
+                  <?= $isDone ? 'Completed' : 'Pending' ?>
+                </span>
+              </div>
+
+              <div class="person-action">
+                <a class="btn-action <?= $isDone ? 'view' : 'evaluate' ?>" href="ea_evaluate.php?type=<?= urlencode($selectedType) ?>&user_id=<?= $pid ?>">
+                  <i class="fa-solid <?= $isDone ? 'fa-eye' : 'fa-pen' ?>"></i>
+                  <?= $isDone ? 'View' : 'Evaluate' ?>
+                </a>
+              </div>
+            </article>
+          <?php endforeach; ?>
+        </div>
+        <div class="compact-summary">
+          <span><strong><?= count($people) ?></strong> <?= count($people) === 1 ? 'member' : 'members' ?></span>
+          <span><strong><?= $groupCompleted ?></strong> completed</span>
+          <span><strong><?= max(0, count($people) - $groupCompleted) ?></strong> pending</span>
+          <?php if ($periodName !== ''): ?><span style="margin-left:auto"><i class="fa-regular fa-calendar"></i> <?= e($periodName) ?></span><?php endif; ?>
+        </div>
+      <?php endif; ?>
+    </section>
+  <?php endif; ?>
 </main>
 </body>
 </html>

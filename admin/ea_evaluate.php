@@ -108,6 +108,7 @@ $is_open = true; // EA Evaluation is always available.
 
 // ── QUESTIONS: centralized EA target bank ───────────────────────────
 $qTargetType = $type;
+$qEvalType = 'general';
 $qStmt = $mysqli->prepare("
     SELECT id, category, question_text, 0 AS sort_order
     FROM user_questions
@@ -321,6 +322,36 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
 
 <link rel="stylesheet" href="admin_appearance.css">
 <script src="admin_appearance.js"></script>
+<style id="dean-structure">
+/* Dean evaluate layout applied to the EA form */
+.wrap{max-width:1200px}
+.back-link{background:none;border:0;padding:0;border-radius:0;color:var(--purple);font-weight:600;margin-bottom:26px}
+.back-link:hover{background:none;text-decoration:underline}
+.eval-meta{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;margin:0 4px 26px}
+.eval-meta span{display:block;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.eval-meta strong{font-size:17px;font-weight:700;color:var(--text)}
+.person-card{padding:22px 26px;gap:20px;margin-bottom:30px}
+.person-photo{width:76px;height:76px}
+.person-name{font-size:22px}
+.person-meta{font-size:13.5px;margin-top:4px}
+.cat-heading{border-bottom:0;padding-bottom:0;margin:30px 0 12px;font-size:12px}
+.cat-heading i{display:none}
+.q-block{border-radius:16px}
+.eval-table th:first-child{padding-left:20px}
+.eval-table td:first-child{padding-left:20px}
+.q-num{color:var(--purple)}
+.req{color:#DC2626;margin-left:4px;font-weight:700}
+.rating-static{display:flex;justify-content:center}
+.rating-static span{width:38px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:7px;border:1px solid var(--line);background:var(--inner);color:var(--muted);font-size:13px;font-weight:800;opacity:.55}
+.rating-static span.on{background:var(--purple);border-color:var(--purple);color:#fff;opacity:1}
+/* Scrollbar: dark rounded thumb with up/down arrow buttons, like the Dean page */
+html, body{scrollbar-width:auto !important;scrollbar-color:#4B5563 transparent !important}
+html::-webkit-scrollbar, body::-webkit-scrollbar{width:14px !important;height:14px !important}
+html::-webkit-scrollbar-track, body::-webkit-scrollbar-track{background:transparent !important}
+html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb{background:#4B5563 !important;border-radius:999px !important;border:3px solid transparent !important;background-clip:padding-box !important}
+html::-webkit-scrollbar-thumb:hover, body::-webkit-scrollbar-thumb:hover{background:#1F2937 !important;background-clip:padding-box !important}
+html::-webkit-scrollbar-button, body::-webkit-scrollbar-button{display:block !important;height:14px !important;width:14px !important;background-color:transparent !important}
+</style>
 </head>
 <body class="feature-compact">
 <header class="top">
@@ -330,12 +361,16 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
 <main class="wrap">
 <a class="back-link" href="ea_evaluation.php?type=<?= urlencode($type) ?>"><i class="fa-solid fa-arrow-left"></i> Back to EA Evaluation</a>
 
+<div class="eval-meta">
+  <div><span>Evaluation period</span><strong><?= e($period['period_label'] ?? 'No active period') ?></strong></div>
+  <div><span>Current state</span><strong><?= $existingTracker ? 'Submitted' : ($period_id ? 'Open' : 'No active period') ?></strong></div>
+</div>
+
 <div class="person-card">
   <?php if ($tPhoto): ?><img class="person-photo" src="<?= e($tPhoto) ?>" alt=""><?php else: ?><div class="person-photo"><i class="fa-solid fa-user"></i></div><?php endif; ?>
   <div>
     <div class="person-name"><?= e($target['full_name']) ?></div>
     <div class="person-meta"><?= e($target['designation'] ?: $type) ?></div>
-    <span class="badge"><?= e($type) ?></span>
   </div>
 </div>
 
@@ -370,7 +405,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
                 <tr>
                     <td><div class="q-text"><span class="q-num"><?= $qn ?>.</span><?= e($a['question_text']) ?></div></td>
                     <?php for ($n=5; $n>=1; $n--): ?>
-                    <td class="score-cell"><?= $n === $score ? '✓' : '—' ?></td>
+                    <td><div class="rating-static"><span class="<?= $n === $score ? 'on' : '' ?>"><?= $n ?></span></div></td>
                     <?php endfor; ?>
                 </tr>
             <?php endforeach; ?>
@@ -399,7 +434,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
                 <tbody>
                 <?php foreach ($qs as $q): $qn++; ?>
                     <tr>
-                        <td><div class="q-text"><span class="q-num"><?= $qn ?>.</span><?= e($q['question_text']) ?></div></td>
+                        <td><div class="q-text"><span class="q-num"><?= $qn ?>.</span><?= e($q['question_text']) ?><span class="req" title="Required">*</span></div></td>
                         <?php for ($n = 5; $n >= 1; $n--): ?>
                         <td>
                             <div class="rating-opt">
@@ -452,13 +487,13 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
         return rows.filter(row => row.querySelector('input[type="radio"]'));
     }
 
-    function updateProgress(){
+    function updateProgress(mark){
         const qRows = getQuestionRows();
         let answered = 0;
         const missing = [];
         qRows.forEach((row, idx) => {
             const checked = row.querySelector('input[type="radio"]:checked');
-            row.classList.toggle('question-missing', !checked);
+            row.classList.toggle('question-missing', !!mark && !checked);
             if (checked) answered++;
             else missing.push(idx + 1);
         });
@@ -469,13 +504,13 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
 
     form.querySelectorAll('input[type="radio"]').forEach(input => {
         input.addEventListener('change', () => {
-            const state = updateProgress();
+            const state = updateProgress(errorBox && !errorBox.hidden);
             if (state.missing.length === 0 && errorBox) errorBox.hidden = true;
         });
     });
 
     form.addEventListener('submit', function(e){
-        const state = updateProgress();
+        const state = updateProgress(true);
         if (state.missing.length === 0) {
             if (errorBox) errorBox.hidden = true;
             if (submitBtn) {
@@ -500,7 +535,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
         }
     });
 
-    updateProgress();
+    updateProgress(false);
 })();
 </script>
 </body>

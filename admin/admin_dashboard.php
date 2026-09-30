@@ -85,9 +85,23 @@ $workspaceSubtitle = $isExecutiveAssistant
     ? 'Employee Performance Evaluation Management System.'
     : 'Manage evaluation operations, personnel, and reporting.';
 
+// Keep dashboard submission metrics scoped to the period selected in System
+// Settings. This is the same period synchronization used by evaluation forms.
+$dashboardSettings = get_system_settings($mysqli);
+$dashboardPeriodId = (int)($dashboardSettings['period_id'] ?? 0);
+
 // Live counts
-$totalUsers  = 0; $activeEvals = 0;
+$totalUsers  = 0; $activeEvals = 0; $periodSubmittedEvaluationCount = 0;
 $eq = $mysqli->query("SELECT COUNT(*) as c FROM evaluation_tracker"); if ($eq) $activeEvals = (int)$eq->fetch_assoc()['c'];
+if ($dashboardPeriodId > 0) {
+    $periodSubmittedStmt = $mysqli->prepare("SELECT COUNT(*) AS c FROM evaluation_tracker WHERE period_id=? AND status IN ('submitted','approved','archived')");
+    if ($periodSubmittedStmt) {
+        $periodSubmittedStmt->bind_param('i', $dashboardPeriodId);
+        $periodSubmittedStmt->execute();
+        $periodSubmittedEvaluationCount = (int)($periodSubmittedStmt->get_result()->fetch_assoc()['c'] ?? 0);
+        $periodSubmittedStmt->close();
+    }
+}
 
 // Sector breakdown (Teacher / Staff / Student) — only counts ACTIVE accounts.
 // Self-registration has been removed; the system admin now creates every account
@@ -105,20 +119,24 @@ $facultyCount = $teacherCount + $staffCount;
 // "Total Users" only counts Faculty + Staff + Students (excludes admin/superadmin/registrar accounts)
 $totalUsers = $facultyCount + $studentCount;
 
-// Submission progress for the current evaluation period.
-// Scoped to submissions made BY currently active students only — otherwise
-// submissions left behind by since-deactivated/removed students (or by
-// non-student evaluators) could inflate the count past the current student
-// total and push the percentage over 100%.
+// Student participation for the current period: count each currently active
+// student once if they submitted at least one evaluation during this period.
+// This measures participation, not completion of every eligible target.
 $submittedCount = 0;
-$subq = $mysqli->query(
-    "SELECT COUNT(DISTINCT et.evaluator_id) as c
-     FROM evaluation_tracker et
-     INNER JOIN users u ON u.id = et.evaluator_id
-     WHERE et.status='submitted' AND u.role='student' AND u.is_active=1"
-);
-if ($subq) $submittedCount = (int)$subq->fetch_assoc()['c'];
-// Belt-and-suspenders: never let the count/percentage exceed the student total.
+if ($dashboardPeriodId > 0) {
+    $subStmt = $mysqli->prepare(
+        "SELECT COUNT(DISTINCT et.evaluator_id) AS c
+         FROM evaluation_tracker et
+         INNER JOIN users u ON u.id = et.evaluator_id
+         WHERE et.period_id=? AND et.status='submitted' AND u.role='student' AND u.is_active=1"
+    );
+    if ($subStmt) {
+        $subStmt->bind_param('i', $dashboardPeriodId);
+        $subStmt->execute();
+        $submittedCount = (int)($subStmt->get_result()->fetch_assoc()['c'] ?? 0);
+        $subStmt->close();
+    }
+}
 $submittedCount   = min($submittedCount, $studentCount);
 $submissionPct    = $studentCount > 0 ? min(100, round(($submittedCount / $studentCount) * 100)) : 0;
 $pendingEvalCount = max(0, $studentCount - $submittedCount);
@@ -2257,8 +2275,6 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { display:none !important; widt
                         <p class="pbi-system-subtitle">Here's what's happening with the evaluation system today.</p>
                     </div>
                     <div class="pbi-dashboard-meta">
-                        <span class="pbi-meta-period"><i class="fa-regular fa-calendar"></i> <?= htmlspecialchars($sys['acad_year']) ?> · <?= htmlspecialchars($sys['acad_term']) ?></span>
-                        <span class="pbi-meta-updated"><i class="fa-solid fa-rotate"></i> Updated <?= htmlspecialchars(date('M j, Y')) ?></span>
                         <div class="dashboard-notification-control">
                             <div class="notif-wrap" id="notifWrap">
                                 <button class="notif-btn" id="notifBtn" onclick="toggleNotifDropdown(event)" title="Notifications" aria-label="Notifications">
@@ -2282,16 +2298,16 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { display:none !important; widt
                 </div>
                 <div class="pbi-stat-card stat-skyblue">
                     <div class="pbi-stat-icon-circle"><i class="fa-solid fa-graduation-cap"></i></div>
-                    <div class="pbi-stat-label">Students Enrolled</div>
+                    <div class="pbi-stat-label">Active Students</div>
                     <div class="pbi-stat-value" id="cnt-students"><?= number_format($studentCount) ?></div>
-                    <div class="pbi-stat-sub">Enrolled this period</div>
+                    <div class="pbi-stat-sub">Active student accounts</div>
                     <div class="pbi-stat-trend flat" id="trend-students"><i class="fa-solid fa-minus"></i> No change yet</div>
                 </div>
                 <div class="pbi-stat-card stat-violet">
                     <div class="pbi-stat-icon-circle"><i class="fa-solid fa-clipboard-check"></i></div>
                     <div class="pbi-stat-label">Evaluations Submitted</div>
-                    <div class="pbi-stat-value" id="cnt-evals"><?= number_format($activeEvals) ?></div>
-                    <div class="pbi-stat-sub">Submissions this period</div>
+                    <div class="pbi-stat-value" id="cnt-evals"><?= number_format($periodSubmittedEvaluationCount) ?></div>
+                    <div class="pbi-stat-sub">Submissions in the current period</div>
                     <div class="pbi-stat-trend flat" id="trend-evals"><i class="fa-solid fa-minus"></i> No change yet</div>
                 </div>
                 <div class="pbi-stat-card stat-gold pbi-completion-card">
@@ -2299,8 +2315,8 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { display:none !important; widt
                         <div class="pbi-completion-ring-inner" id="completion-ring-pct"><?= $submissionPct ?>%</div>
                     </div>
                     <div class="pbi-completion-text">
-                        <div class="pbi-stat-label">Completion Rate</div>
-                        <div class="pbi-stat-sub" id="completion-note"><?= $submittedCount ?> of <?= $studentCount ?> completed</div>
+                        <div class="pbi-stat-label">Student Participation</div>
+                        <div class="pbi-stat-sub" id="completion-note"><?= $submittedCount ?> of <?= $studentCount ?> active students submitted</div>
                     </div>
                 </div>
             </div>
@@ -2308,7 +2324,7 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { display:none !important; widt
             <!-- ── EVALUATION PERIOD ── -->
             <div class="pbi-period-box">
                 <div class="pbi-period-block">
-                    <div class="pbi-period-label">Current Evaluation Period
+                    <div class="pbi-period-label">Current Status
                         <span class="pbi-period-badge <?= $evalStatus['cls'] === 'open' ? 'green' : ($evalStatus['cls'] === 'closed' ? 'red' : ($evalStatus['cls'] === 'amber' ? 'yellow' : 'gray')) ?>">
                             <i class="fa-solid fa-circle" style="font-size:6px;"></i> <?= htmlspecialchars($evalStatus['label']) ?>
                         </span>
@@ -2325,21 +2341,21 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { display:none !important; widt
 
                 <div class="pbi-period-tiles">
                     <div class="pbi-period-tile tile-progress">
-                        <div class="pbi-period-tile-label">Submission Progress</div>
+                        <div class="pbi-period-tile-label">Student Participation</div>
                         <div class="pbi-period-tile-value" id="progress-pct"><?= $submissionPct ?>%</div>
                         <div class="pbi-progress-track" style="margin-top:8px;"><div class="pbi-progress-fill" id="progress-fill" style="width:<?= min(100,$submissionPct) ?>%;"></div></div>
-                        <div class="pbi-period-tile-sub" id="progress-note"><?= $submittedCount ?> of <?= $studentCount ?> students</div>
+                        <div class="pbi-period-tile-sub" id="progress-note"><?= $submittedCount ?> of <?= $studentCount ?> active students submitted</div>
                     </div>
                     <div class="pbi-period-tile tile-submitted">
-                        <div class="pbi-period-tile-label">Submitted</div>
+                        <div class="pbi-period-tile-label">Students Submitted</div>
                         <div class="pbi-period-tile-value green" id="cnt-submitted-tile"><?= number_format($submittedCount) ?></div>
                     </div>
                     <div class="pbi-period-tile tile-pending">
-                        <div class="pbi-period-tile-label">Pending</div>
+                        <div class="pbi-period-tile-label">No Submission Yet</div>
                         <div class="pbi-period-tile-value gold" id="cnt-pending-tile"><?= number_format($pendingEvalCount) ?></div>
                     </div>
                     <div class="pbi-period-tile tile-total">
-                        <div class="pbi-period-tile-label">Total Students</div>
+                        <div class="pbi-period-tile-label">Active Students</div>
                         <div class="pbi-period-tile-value" id="cnt-student"><?= number_format($studentCount) ?></div>
                     </div>
                 </div>
@@ -2386,7 +2402,7 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { display:none !important; widt
                     <?php if ($pendingEvalCount > 0): ?>
                     <div class="pbi-attention-item is-clickable" onclick="showPage('tracker', document.getElementById('link-tracker'))">
                         <i class="fa-solid fa-triangle-exclamation dot warn"></i>
-                        <span><?= number_format($pendingEvalCount) ?> student<?= $pendingEvalCount===1?'':'s' ?> have not yet submitted their evaluations.</span>
+                        <span><?= number_format($pendingEvalCount) ?> active student<?= $pendingEvalCount===1?'':'s' ?> have not submitted an evaluation this period.</span>
                         <i class="fa-solid fa-chevron-right chev"></i>
                     </div>
                     <?php endif; ?>
@@ -2796,7 +2812,13 @@ function renderCounts(counts){
         const fill=document.getElementById('progress-fill'),pct=document.getElementById('progress-pct'),note=document.getElementById('progress-note');
         if(fill)fill.style.width=Math.min(100,counts.submission_pct)+'%';
         if(pct)pct.textContent=counts.submission_pct+'%';
-        if(note&&counts.submitted!==undefined&&counts.students!==undefined)note.textContent=counts.submitted+' of '+counts.students+' students submitted';
+        if(note&&counts.submitted!==undefined&&counts.students!==undefined)note.textContent=counts.submitted+' of '+counts.students+' active students submitted';
+        const completionNote=document.getElementById('completion-note');
+        if(completionNote&&counts.submitted!==undefined&&counts.students!==undefined)completionNote.textContent=counts.submitted+' of '+counts.students+' active students submitted';
+        const submittedTile=document.getElementById('cnt-submitted-tile');
+        if(submittedTile&&counts.submitted!==undefined)submittedTile.textContent=counts.submitted;
+        const pendingTile=document.getElementById('cnt-pending-tile');
+        if(pendingTile&&counts.pending_students!==undefined)pendingTile.textContent=counts.pending_students;
     }
     if(counts.trend_total!==undefined)renderTrend('trend-total',counts.trend_total);
     if(counts.trend_faculty!==undefined)renderTrend('trend-faculty',counts.trend_faculty);

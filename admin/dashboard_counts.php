@@ -162,19 +162,45 @@ $counts = [
     'students' => 0,
     'evals'    => 0,
     'evals_submitted' => 0,
+    'submitted' => 0,
+    'pending_students' => 0,
+    'submission_pct' => 0,
 ];
 
+$activePeriodId = 0;
+$periodResult = dashboard_query($mysqli, "SELECT id FROM evaluation_periods WHERE is_active=1 ORDER BY id DESC LIMIT 1");
+if ($periodResult) $activePeriodId = (int)($periodResult->fetch_assoc()['id'] ?? 0);
+
 $rows = [
-    ['teacher',  "SELECT COUNT(*) AS c FROM users WHERE role='teacher'"],
-    ['staff',    "SELECT COUNT(*) AS c FROM users WHERE role='staff'"],
-    ['students', "SELECT COUNT(*) AS c FROM users WHERE role='student'"],
-    ['evals',    "SELECT COUNT(*) AS c FROM evaluation_tracker"],
-    ['evals_submitted', "SELECT COUNT(*) AS c FROM evaluation_tracker WHERE status IN ('submitted','approved','archived')"],
+    ['teacher',  "SELECT COUNT(*) AS c FROM users WHERE role='teacher' AND is_active=1"],
+    ['staff',    "SELECT COUNT(*) AS c FROM users WHERE role='staff' AND is_active=1"],
+    ['students', "SELECT COUNT(*) AS c FROM users WHERE role='student' AND is_active=1"],
 ];
 foreach ($rows as [$key, $sql]) {
     $r = dashboard_query($mysqli, $sql);
     if ($r) $counts[$key] = (int)($r->fetch_assoc()['c'] ?? 0);
 }
+
+if ($activePeriodId > 0) {
+    $stmt = $mysqli->prepare("SELECT COUNT(*) AS c FROM evaluation_tracker WHERE period_id=? AND status IN ('submitted','approved','archived')");
+    if ($stmt) {
+        $stmt->bind_param('i', $activePeriodId);
+        if ($stmt->execute()) $counts['evals'] = $counts['evals_submitted'] = (int)($stmt->get_result()->fetch_assoc()['c'] ?? 0);
+        $stmt->close();
+    }
+
+    $stmt = $mysqli->prepare("SELECT COUNT(DISTINCT et.evaluator_id) AS c FROM evaluation_tracker et INNER JOIN users u ON u.id=et.evaluator_id WHERE et.period_id=? AND et.status='submitted' AND u.role='student' AND u.is_active=1");
+    if ($stmt) {
+        $stmt->bind_param('i', $activePeriodId);
+        if ($stmt->execute()) $counts['submitted'] = (int)($stmt->get_result()->fetch_assoc()['c'] ?? 0);
+        $stmt->close();
+    }
+}
+$counts['submitted'] = min($counts['submitted'], $counts['students']);
+$counts['pending_students'] = max(0, $counts['students'] - $counts['submitted']);
+$counts['submission_pct'] = $counts['students'] > 0
+    ? (int)round(($counts['submitted'] / $counts['students']) * 100)
+    : 0;
 $counts['total']         = $counts['teacher'] + $counts['staff'] + $counts['students'];
 $counts['faculty_staff'] = $counts['teacher'] + $counts['staff']; // for the "Teacher" card
 

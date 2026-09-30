@@ -20,7 +20,10 @@ $stmt=$mysqli->prepare("
  LEFT JOIN evaluation_periods ep ON ep.id=et.period_id
  INNER JOIN users u ON u.id=et.target_user_id
  WHERE et.id=? AND et.target_user_id=?
-   AND et.eval_type='student' AND et.evaluation_context='school_head'
+   AND (
+        (et.eval_type='student' AND et.evaluation_context='school_head')
+        OR et.eval_type='ea'
+   )
    AND et.status IN ('submitted','approved')
  LIMIT 1
 ");

@@ -19,11 +19,10 @@ if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'dean') {
 }
 
 // ── dean_results.php (Phase 2, new page) ────────────────────────────
-// The Dean's OWN evaluation results — feedback the Dean received from
-// Teachers (or whichever evaluator groups the evaluation policy defines
-// as evaluating the Dean). This is a read-only "how am I doing" view,
-// not an evaluation tool. Staff do not evaluate the Dean, so there is
-// no Staff-results section here (per spec §6).
+// The Dean's OWN evaluation results — feedback received from the
+// evaluator groups currently authorized to evaluate the Dean (including
+// the Executive Assistant's EA evaluation flow). This is a read-only
+// "how am I doing" view, not an evaluation tool.
 //
 // ── CONFIDENTIALITY — NON-NEGOTIABLE ────────────────────────────────
 // The Dean must NEVER be able to identify which Teacher submitted which
@@ -82,9 +81,10 @@ const HIGHER_ED_LABEL = 'Higher Education';
 // NOTE ON eval_type/evaluation_context (confirmed against student_dashboard.php
 // and admin/questionnaire.php, not assumed):
 // Students evaluate the active Dean via the normal Student Evaluation flow —
-// eval_type='student', evaluation_context='school_head' — same tracker row
-// shape as Student→Teacher, just a different evaluation_context and a
-// target_user_id that points at the Dean's own account. The question set is
+// eval_type='student', evaluation_context='school_head'. The Executive
+// Assistant evaluation flow writes eval_type='ea'. Both tracker shapes use
+// target_user_id to point at the Dean's own account, so this page accepts
+// either authorized source without exposing evaluator identity. The question set is
 // per-person (Principal/Dean are "per_user_targets" in questionnaire.php), so
 // answers join through user_questions via questionnaire_answers.user_question_id,
 // with question_source='user' — the same source admin_analytics.php's sheet
@@ -102,7 +102,11 @@ if ($hasPeriod) {
         SELECT AVG(qa.answer_score) v
         FROM evaluation_tracker et
         INNER JOIN questionnaire_answers qa ON qa.tracker_id = et.id
-        WHERE et.eval_type=? AND et.evaluation_context=? AND et.status IN ('submitted','approved')
+        WHERE (
+              (et.eval_type=? AND et.evaluation_context=?)
+              OR et.eval_type='ea'
+          )
+          AND et.status IN ('submitted','approved')
           AND et.target_user_id=? AND et.period_id=?
     ", "ssii", [SCHOOL_HEAD_EVAL_TYPE, SCHOOL_HEAD_CONTEXT, $deanId, $period_id_int]);
     $overallAvg = $overallAvgRaw !== null ? round((float)$overallAvgRaw, 2) : null;
@@ -110,7 +114,11 @@ if ($hasPeriod) {
     $responseCount = (int)(safe_scalar($mysqli, "
         SELECT COUNT(DISTINCT et.id) c
         FROM evaluation_tracker et
-        WHERE et.eval_type=? AND et.evaluation_context=? AND et.status IN ('submitted','approved')
+        WHERE (
+              (et.eval_type=? AND et.evaluation_context=?)
+              OR et.eval_type='ea'
+          )
+          AND et.status IN ('submitted','approved')
           AND et.target_user_id=? AND et.period_id=?
     ", "ssii", [SCHOOL_HEAD_EVAL_TYPE, SCHOOL_HEAD_CONTEXT, $deanId, $period_id_int]) ?? 0);
 
@@ -123,7 +131,11 @@ if ($hasPeriod) {
                (SELECT AVG(qa2.answer_score) FROM questionnaire_answers qa2 WHERE qa2.tracker_id = et.id) AS score
         FROM evaluation_tracker et
         LEFT JOIN evaluation_periods ep ON ep.id = et.period_id
-        WHERE et.eval_type=? AND et.evaluation_context=? AND et.status IN ('submitted','approved')
+        WHERE (
+              (et.eval_type=? AND et.evaluation_context=?)
+              OR et.eval_type='ea'
+          )
+          AND et.status IN ('submitted','approved')
           AND et.target_user_id=? AND et.period_id=?
         ORDER BY et.submitted_at ASC
     ", "ssii", [SCHOOL_HEAD_EVAL_TYPE, SCHOOL_HEAD_CONTEXT, $deanId, $period_id_int]);
@@ -145,7 +157,7 @@ if ($hasPeriod) {
 $mysqli->close();
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dean-internal-scroll-page">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -216,6 +228,79 @@ body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,
 @media(max-width:768px){body{flex-direction:column;}.sidebar{width:100%;min-height:auto;}.cat-name{width:120px;}}
 </style>
 <link rel="stylesheet" href="includes/dean_light_theme.css"/>
+
+<style>
+/* Keep the Dean sidebar fixed and scroll this feature workspace internally. */
+html.dean-internal-scroll-page,
+html.dean-internal-scroll-page body {
+  overflow: hidden !important;
+  height: 100% !important;
+}
+
+main.main.dean-internal-scroll {
+  height: calc(100vh - 20px) !important;
+  max-height: calc(100vh - 20px) !important;
+  min-height: 0 !important;
+  overflow-y: scroll !important;
+  overflow-x: hidden !important;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #AEBAC8 #EEF2F6;
+}
+
+main.main.dean-internal-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+main.main.dean-internal-scroll::-webkit-scrollbar-track {
+  background: #EEF2F6;
+  border-radius: 10px;
+}
+
+main.main.dean-internal-scroll::-webkit-scrollbar-thumb {
+  background: #AEBAC8;
+  border: 2px solid #EEF2F6;
+  border-radius: 10px;
+}
+
+main.main.dean-internal-scroll::-webkit-scrollbar-thumb:hover {
+  background: #8F9CAB;
+}
+
+html.dark-theme main.main.dean-internal-scroll {
+  scrollbar-color: #2A4468 #0F1F3D;
+}
+
+html.dark-theme main.main.dean-internal-scroll::-webkit-scrollbar-track {
+  background: #0F1F3D;
+}
+
+html.dark-theme main.main.dean-internal-scroll::-webkit-scrollbar-thumb {
+  background: #2A4468;
+  border-color: #0F1F3D;
+}
+
+html.dark-theme main.main.dean-internal-scroll::-webkit-scrollbar-thumb:hover {
+  background: #385A86;
+}
+
+@media (max-width: 768px) {
+  html.dean-internal-scroll-page,
+  html.dean-internal-scroll-page body {
+    overflow: auto !important;
+    height: auto !important;
+  }
+
+  main.main.dean-internal-scroll {
+    height: auto !important;
+    max-height: none !important;
+    min-height: calc(100vh - 12px) !important;
+    overflow: visible !important;
+    scrollbar-gutter: auto;
+  }
+}
+</style>
 </head>
 <body>
 
@@ -225,10 +310,10 @@ $sidebarScope = HIGHER_ED_LABEL . ' Division';
 include __DIR__ . '/includes/dean_sidebar.php';
 ?>
 
-<main class="main">
+<main class="main dean-internal-scroll">
     <div class="page-header">
         <div class="page-title">View Results</div>
-        <div class="page-sub">Your evaluation results, as submitted by Teachers this period.</div>
+        <div class="page-sub">Your evaluation results from authorized evaluators this period.</div>
     </div>
 
     <div class="confidentiality-note">
@@ -272,7 +357,7 @@ include __DIR__ . '/includes/dean_sidebar.php';
         <?php endif; ?>
     </div>
 
-    <!-- FACULTY-STYLE EVALUATIONS RECEIVED -->
+    <!-- EVALUATIONS RECEIVED FROM AUTHORIZED EVALUATORS -->
     <div class="section">
         <h2><i class="fa-solid fa-clock-rotate-left"></i> Evaluations Received</h2>
         <button type="button" class="view-evals-btn" id="deanViewEvalsBtn" onclick="toggleDeanEvals()">

@@ -330,7 +330,7 @@ $tPhoto = !empty($target['photo']) ? '../image/' . $target['photo'] : '../image/
 $mysqli->close();
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="eval-scroll-lock">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -417,6 +417,59 @@ body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,
 
 </style>
 <link rel="stylesheet" href="includes/dean_light_theme.css"/>
+<style>
+/* Evaluation page: keep the sidebar fixed and scroll the feature workspace internally. */
+html.eval-scroll-lock,
+html.eval-scroll-lock body {
+  overflow: hidden !important;
+}
+
+main.main.evaluation-workspace {
+  height: calc(100vh - 20px) !important;
+  max-height: calc(100vh - 20px) !important;
+  min-height: 0 !important;
+  overflow-y: scroll !important;
+  overflow-x: hidden !important;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #AEBAC8 #EEF2F6;
+}
+
+main.main.evaluation-workspace::-webkit-scrollbar {
+  width: 10px;
+}
+
+main.main.evaluation-workspace::-webkit-scrollbar-track {
+  background: #EEF2F6;
+  border-radius: 10px;
+}
+
+main.main.evaluation-workspace::-webkit-scrollbar-thumb {
+  background: #AEBAC8;
+  border: 2px solid #EEF2F6;
+  border-radius: 10px;
+}
+
+main.main.evaluation-workspace::-webkit-scrollbar-thumb:hover {
+  background: #8F9CAB;
+}
+
+@media (max-width: 768px) {
+  html.eval-scroll-lock,
+  html.eval-scroll-lock body {
+    overflow: auto !important;
+  }
+
+  main.main.evaluation-workspace {
+    height: auto !important;
+    max-height: none !important;
+    min-height: calc(100vh - 12px) !important;
+    overflow: visible !important;
+    scrollbar-gutter: auto;
+  }
+}
+</style>
 </head>
 <body>
 
@@ -426,7 +479,7 @@ $sidebarScope = HIGHER_ED_LABEL . ' Division';
 include __DIR__ . '/includes/dean_sidebar.php';
 ?>
 
-<main class="main">
+<main class="main evaluation-workspace">
     <a href="dean_evaluation.php?tab=<?= urlencode($tab) ?>" class="back-link"><i class="fa-solid fa-arrow-left"></i> Back to Evaluation</a>
 
     <div class="schedule-strip" style="display:grid;grid-template-columns:1fr 1fr 140px;gap:12px;margin:14px 0 18px;padding:14px 16px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(255,255,255,.035);">

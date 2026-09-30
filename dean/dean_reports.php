@@ -1125,41 +1125,127 @@ label,th{color:var(--muted)!important;}
 input,select,textarea{background:#0F1F3D!important;color:var(--light)!important;border-color:rgba(255,255,255,.12)!important;}
 input::placeholder,textarea::placeholder{color:#7890a8!important;}
 </style>
-<style id="dean-sheet-light-final">
-/* Final light-theme correction for the individual evaluation sheet.
-   IMPORTANT: scoped to light mode so it cannot paint report sheets white
-   while the Dean portal is in dark mode. */
-html{background:#F8FAFC!important;color-scheme:light!important;}
-body{background:#F8FAFC!important;color:#0F172A!important;}
-.main{background:#F8FAFC!important;color:#0F172A!important;}
-.detail-page{background:transparent!important;}
-.sheet-header,.scale-bar,.cat-section,.comment-section,.avg-summary{background:#FFFFFF!important;border-color:#CFE0F0!important;box-shadow:0 5px 18px rgba(28,64,92,.05)!important;color:#173956!important;}
-.sheet-name,.avg-score-big,.avg-score-label{color:#0F2944!important;}
-.sheet-desig,.eval-by-date,.avg-out-of,.no-comment{color:#647B8E!important;}
-.eval-by-label{color:#60778D!important;}
-.eval-by-name{color:#2B67DE!important;}
-.sheet-avatar-ph{background:#F1F5F9!important;border-color:#CFE0F0!important;color:#6C8195!important;}
-.eval-type-chip{background:#EFF6FF!important;border-color:#BFD7FF!important;color:#2B67DE!important;}
-.scale-bar{align-items:center;}
-.scale-bar > span{color:#647B8E!important;}
-.scale-item{color:#506A82!important;}
-.cat-title,.comment-title{background:#EFF6FF!important;color:#2B67DE!important;border-color:#CFE0F0!important;}
-.q-table{background:#FFFFFF!important;border-color:#CFE0F0!important;color:#173956!important;}
-.q-table thead tr{background:#F7FAFD!important;}
-.q-table th{background:#F7FAFD!important;color:#60778D!important;border-color:#D8E4EE!important;}
-.q-table td{background:#FFFFFF!important;color:#173956!important;border-color:#E0E9F1!important;}
-.q-table tr:hover td{background:#F7FAFD!important;}
-.q-table td.q-num{color:#70869A!important;}
-.rating-badge{background:#F8FBFE!important;border-color:#D8E4EE!important;}
-.comment-text{background:#F8FAFC!important;color:#334155!important;border-color:#DCE8F2!important;}
-.avg-bar-bg{background:#E2E8F0!important;}
-.avg-score-big,.avg-score-label{color:#10B981!important;}
-.avg-bar-label{color:#526B82!important;}
-.detail-actions .back-btn{background:#FFFFFF!important;color:#173956!important;border-color:#BCD0E5!important;}
-.detail-actions .btn-print{background:#2D66E1!important;color:#FFFFFF!important;}
-@media print{
-  body,.main{background:#fff!important;color:#000!important;}
-  .sheet-header,.scale-bar,.cat-section,.comment-section,.avg-summary,.q-table{box-shadow:none!important;}
+<style id="dean-sheet-dark-final">
+/* Final dark theme for the individual evaluation sheet.  The Dean portal
+   uses the navy/violet workspace, so the report sheet follows that theme
+   instead of reverting to the older white report design. */
+html, body {
+  background:#0A192F !important;
+  color:#E0E6F0 !important;
+  color-scheme:dark !important;
+}
+.main {
+  background:transparent !important;
+  color:#E0E6F0 !important;
+}
+.individual-sheet,
+.sheet-header,
+.scale-bar,
+.cat-section,
+.comment-section,
+.avg-summary {
+  background:rgba(23,42,69,.85) !important;
+  border-color:rgba(255,255,255,.08) !important;
+  box-shadow:0 8px 32px rgba(0,0,0,.28) !important;
+  color:#E0E6F0 !important;
+}
+.sheet-header {
+  border-radius:14px !important;
+}
+.sheet-name,
+.avg-score-big,
+.avg-score-label {
+  color:#fff !important;
+}
+.sheet-desig,
+.eval-by-date,
+.avg-out-of,
+.no-comment,
+.scale-item,
+.scale-bar > span,
+.eval-by-label,
+.avg-bar-label {
+  color:#A0B3C6 !important;
+}
+.eval-by-name { color:#C4B5FD !important; }
+.sheet-avatar-ph {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.10) !important;
+  color:#A0B3C6 !important;
+}
+.eval-type-chip {
+  background:rgba(124,95,217,.14) !important;
+  border-color:rgba(124,95,217,.35) !important;
+  color:#C4B5FD !important;
+}
+.scale-bar { align-items:center; }
+.scale-dot { box-shadow:0 2px 8px rgba(0,0,0,.18); }
+.cat-title,
+.comment-title {
+  color:#C4B5FD !important;
+  border-color:rgba(124,95,217,.30) !important;
+}
+.q-table {
+  background:#172A45 !important;
+  border-color:rgba(255,255,255,.08) !important;
+  color:#E0E6F0 !important;
+}
+.q-table thead tr,
+.q-table thead th {
+  background:#0F1F3D !important;
+}
+.q-table th {
+  color:#A0B3C6 !important;
+  border-color:rgba(255,255,255,.08) !important;
+}
+.q-table td {
+  background:#172A45 !important;
+  color:#E0E6F0 !important;
+  border-color:rgba(255,255,255,.06) !important;
+}
+.q-table tr:hover td {
+  background:rgba(124,95,217,.07) !important;
+}
+.q-table td.q-num { color:#8EA5BB !important; }
+.rating-badge {
+  background:#0F1F3D !important;
+  border-radius:8px !important;
+}
+.comment-text {
+  background:#0F1F3D !important;
+  color:#E0E6F0 !important;
+  border-color:rgba(255,255,255,.08) !important;
+}
+.avg-bar-bg {
+  background:rgba(255,255,255,.08) !important;
+}
+.avg-bar-val { color:#E0E6F0 !important; }
+.detail-actions .back-btn,
+.back-btn {
+  background:#0F1F3D !important;
+  color:#E0E6F0 !important;
+  border-color:rgba(255,255,255,.14) !important;
+}
+.detail-actions .back-btn:hover,
+.back-btn:hover {
+  background:rgba(124,95,217,.22) !important;
+  color:#fff !important;
+}
+.btn-print,
+.detail-actions .btn-print {
+  background:#7C5FD9 !important;
+  color:#fff !important;
+}
+.btn-print:hover { opacity:.9; }
+.individual-sheet > div[style*="No answers found"] {
+  background:#172A45 !important;
+  color:#A0B3C6 !important;
+  border-color:rgba(255,255,255,.08) !important;
+}
+@media print {
+  html, body, .main { background:#fff !important; color:#000 !important; }
+  .sheet-header,.scale-bar,.cat-section,.comment-section,.avg-summary,.q-table { box-shadow:none !important; }
+  .q-table td,.q-table th { color:#000 !important; }
 }
 </style>
 
@@ -1590,6 +1676,87 @@ html.dark-theme ::-webkit-scrollbar-thumb {
 }
 </style>
 
+<style id="dean-report-page-dark-v5">
+/* Whole report page is dark on screen: html, body, the .main workspace and every
+   surface/gap around and inside the evaluation sheet. No dependency on the
+   html.dark-theme class. Print output is untouched (screen only). */
+@media screen {
+  html:has(body.report-mode),
+  html body.report-mode {
+    background:#0A192F !important;
+    color:#E0E6F0 !important;
+    color-scheme:dark !important;
+  }
+  html body.report-mode {
+    background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,.82)),url('../background.png') center center/cover no-repeat fixed !important;
+    background-color:#0A192F !important;
+  }
+  html body.report-mode .main {
+    background:#0A192F !important;
+    color:#E0E6F0 !important;
+    border-color:rgba(255,255,255,.08) !important;
+  }
+  html body.report-mode .cumulative-sheet,
+  html body.report-mode .individual-sheet {
+    background:#0A192F !important;
+    box-shadow:none !important;
+    border-color:rgba(255,255,255,.08) !important;
+  }
+  html body.report-mode .cumulative-sheet *,
+  html body.report-mode .individual-sheet * { color:#E0E6F0 !important; }
+  html body.report-mode .cumulative-sheet .cum-topbar,
+  html body.report-mode .cumulative-sheet .cum-topbar * { background:#0F1F3D !important; }
+  html body.report-mode .cumulative-sheet .sheet-header,
+  html body.report-mode .cumulative-sheet .cum-total,
+  html body.report-mode .cumulative-sheet .comment-section,
+  html body.report-mode .cumulative-sheet .cum-empty,
+  html body.report-mode .cumulative-sheet .q-table,
+  html body.report-mode .cumulative-sheet .q-table tbody,
+  html body.report-mode .cumulative-sheet .q-table tr,
+  html body.report-mode .cumulative-sheet .q-table td {
+    background:#172A45 !important;
+    border-color:rgba(255,255,255,.08) !important;
+    box-shadow:none !important;
+  }
+  html body.report-mode .cumulative-sheet .cat-section,
+  html body.report-mode .cumulative-sheet .cat-title {
+    background:transparent !important;
+    box-shadow:none !important;
+  }
+  html body.report-mode .cumulative-sheet .cat-title,
+  html body.report-mode .cumulative-sheet .cat-title *,
+  html body.report-mode .cumulative-sheet .cum-total-label,
+  html body.report-mode .cumulative-sheet .comment-title { color:#C4B5FD !important; }
+  html body.report-mode .cumulative-sheet .cat-title { border-bottom-color:rgba(255,255,255,.12) !important; }
+  html body.report-mode .cumulative-sheet .q-table thead,
+  html body.report-mode .cumulative-sheet .q-table thead tr,
+  html body.report-mode .cumulative-sheet .q-table th {
+    background:#0F1F3D !important;
+    color:#A0B3C6 !important;
+    border-color:rgba(255,255,255,.10) !important;
+  }
+  html body.report-mode .cumulative-sheet .q-table tr:hover td { background:#1D3350 !important; }
+  html body.report-mode .cumulative-sheet .rating-badge {
+    background:#0F1F3D !important;
+    border-color:rgba(255,255,255,.12) !important;
+  }
+  html body.report-mode .cumulative-sheet .sheet-desig,
+  html body.report-mode .cumulative-sheet .cum-by,
+  html body.report-mode .cumulative-sheet .cum-by *,
+  html body.report-mode .cumulative-sheet .cum-date-label,
+  html body.report-mode .cumulative-sheet .cum-remark,
+  html body.report-mode .cumulative-sheet .no-comment,
+  html body.report-mode .cumulative-sheet .avg-out-of,
+  html body.report-mode .cumulative-sheet .rating-lbl,
+  html body.report-mode .cumulative-sheet .q-num { color:#A0B3C6 !important; }
+  html body.report-mode .cumulative-sheet .avg-score-big,
+  html body.report-mode .cumulative-sheet .avg-score-label { color:#4ADE80 !important; }
+  html body.report-mode .cumulative-sheet .sheet-avatar-ph {
+    background:#0F1F3D !important;
+    border-color:rgba(255,255,255,.12) !important;
+  }
+}
+</style>
 </body></html>
 <?php $mysqli->close(); exit; }
 

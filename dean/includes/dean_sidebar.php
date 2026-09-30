@@ -75,7 +75,7 @@ $navItems = [
     </nav>
 
     <div class="sidebar-footer">
-        <a href="dean_logout.php" class="btn-logout-side" onclick="return confirm('Log out of your dean session?')">
+        <a href="dean_logout.php" class="btn-logout-side" onclick="return deanLogoutPrompt(event)">
             <i class="fa-solid fa-power-off"></i><span>Log Out</span>
         </a>
     </div>
@@ -108,5 +108,50 @@ $navItems = [
         localStorage.setItem('pbi_theme', theme);
         applyAppearance(theme);
     });
+    </script>
+
+    <style>
+    #deanLogoutModal{position:fixed;inset:0;z-index:100000;display:none;align-items:center;justify-content:center;background:rgba(3,10,22,.65);backdrop-filter:blur(3px);}
+    #deanLogoutModal.open{display:flex;}
+    #deanLogoutModal .dlm-box{width:min(380px,90vw);background:#172A45;color:#E0E6F0;border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.55);font-family:inherit;}
+    #deanLogoutModal .dlm-title{font-size:18px;font-weight:700;color:#fff;margin:0 0 6px;}
+    #deanLogoutModal .dlm-text{font-size:14px;color:#A0B3C6;margin:0 0 20px;}
+    #deanLogoutModal .dlm-actions{display:flex;justify-content:flex-end;gap:10px;}
+    #deanLogoutModal button{font-family:inherit;font-size:14px;font-weight:600;padding:9px 18px;border-radius:10px;cursor:pointer;border:1px solid rgba(255,255,255,.12);}
+    #deanLogoutModal .dlm-cancel{background:transparent;color:#E0E6F0;}
+    #deanLogoutModal .dlm-cancel:hover{background:rgba(255,255,255,.06);}
+    #deanLogoutModal .dlm-ok{background:#7C5FD9;border-color:#7C5FD9;color:#fff;}
+    #deanLogoutModal .dlm-ok:hover{background:#9C85F0;}
+    </style>
+    <div id="deanLogoutModal" role="dialog" aria-modal="true" aria-labelledby="dlmTitle">
+        <div class="dlm-box">
+            <h3 class="dlm-title" id="dlmTitle">Log out</h3>
+            <p class="dlm-text">Log out of your dean session?</p>
+            <div class="dlm-actions">
+                <button type="button" class="dlm-cancel" id="dlmCancel">Cancel</button>
+                <button type="button" class="dlm-ok" id="dlmOk">Log Out</button>
+            </div>
+        </div>
+    </div>
+    <script>
+    // Custom logout confirmation (replaces the browser's native confirm(), which
+    // always shows a "localhost says" header that cannot be removed).
+    function deanLogoutPrompt(e) {
+        if (e) e.preventDefault();
+        var m = document.getElementById('deanLogoutModal');
+        var link = document.querySelector('.btn-logout-side');
+        var href = link ? link.getAttribute('href') : 'dean_logout.php';
+        if (!m) { window.location.href = href; return false; }
+        m.classList.add('open');
+        var close = function(){ m.classList.remove('open'); };
+        document.getElementById('dlmCancel').onclick = close;
+        document.getElementById('dlmOk').onclick = function(){ window.location.href = href; };
+        m.onclick = function(ev){ if (ev.target === m) close(); };
+        document.addEventListener('keydown', function esc(ev){
+            if (ev.key === 'Escape') { close(); document.removeEventListener('keydown', esc); }
+        });
+        document.getElementById('dlmCancel').focus();
+        return false;
+    }
     </script>
 </aside>

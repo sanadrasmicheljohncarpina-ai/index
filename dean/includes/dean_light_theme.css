@@ -2000,3 +2000,57 @@ html.dark-theme main.main .subtle-head {
     color: #000000 !important;
   }
 }
+
+/* -------------------------------------------------------------------------
+   DARK THEME FINAL OVERRIDE
+   The shared light-theme stylesheet is intentionally loaded last on some
+   Dean pages. When the portal is in dark mode, keep the entire report canvas
+   dark instead of leaving a light strip/background around the report sheet.
+   ------------------------------------------------------------------------- */
+@media screen {
+  html.dark-theme,
+  html.dark-theme body {
+    background:#0A192F !important;
+    background-color:#0A192F !important;
+    background-image:none !important;
+    color:#E0E6F0 !important;
+    color-scheme:dark !important;
+  }
+
+  html.dark-theme .main,
+  html.dark-theme main.main,
+  html.dark-theme .content,
+  html.dark-theme .page-content {
+    background:#0F1F3D !important;
+    background-color:#0F1F3D !important;
+    color:#E0E6F0 !important;
+  }
+
+  /* Direct evaluation/detail sheet: no white canvas around the header. */
+  html.dark-theme .individual-sheet {
+    background:#172A45 !important;
+    color:#E0E6F0 !important;
+    border-color:rgba(255,255,255,.08) !important;
+  }
+
+  html.dark-theme .individual-sheet .sheet-header,
+  html.dark-theme .individual-sheet .scale-bar,
+  html.dark-theme .individual-sheet .cat-section,
+  html.dark-theme .individual-sheet .comment-section,
+  html.dark-theme .individual-sheet .avg-summary {
+    background:#172A45 !important;
+    color:#E0E6F0 !important;
+    border-color:rgba(255,255,255,.08) !important;
+  }
+}
+
+@media print {
+  html.dark-theme,
+  html.dark-theme body,
+  html.dark-theme .main,
+  html.dark-theme main.main {
+    background:#fff !important;
+    background-color:#fff !important;
+    color:#000 !important;
+  }
+}

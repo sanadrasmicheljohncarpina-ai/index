@@ -572,7 +572,7 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible{
         <div class="form-group full">
           <label class="form-label" for="full_name">Full Name <span class="req">*</span></label>
           <div class="input-wrap">
-            <input class="form-input" type="text" id="full_name" name="full_name" placeholder="Last Name, First Name M.I." required autocomplete="name" value="<?= htmlspecialchars($_POST['full_name'] ?? '') ?>"/>
+            <input class="form-input" type="text" id="full_name" name="full_name" placeholder="First Name M.I. Last Name" required autocomplete="name" value="<?= htmlspecialchars($_POST['full_name'] ?? '') ?>"/>
             <i class="fa-solid fa-id-card f-icon"></i>
           </div>
         </div>
