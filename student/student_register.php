@@ -163,10 +163,17 @@
 	.college-only{display:none;}
 	@media(max-width:540px){.reg-card{padding:20px 14px 18px;}.form-grid{grid-template-columns:1fr;}.form-grid .full{grid-column:1;}}
 
-	.sq-section{margin-top:16px;padding:14px 14px 4px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(10,25,47,.34);}
-	.sq-head{display:flex;align-items:center;gap:8px;font-family:'Rajdhani',sans-serif;font-size:15px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#fff;}
+	.sq-section{margin-top:16px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(10,25,47,.34);overflow:hidden;}
+	.sq-head{list-style:none;display:flex;align-items:center;gap:8px;width:100%;padding:14px;cursor:pointer;font-family:'Rajdhani',sans-serif;font-size:15px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#fff;user-select:none;}
+	.sq-head::-webkit-details-marker{display:none;}
+	.sq-head::after{content:'\f078';font-family:'Font Awesome 6 Free';font-weight:900;color:var(--muted);font-size:11px;margin-left:auto;transition:transform .2s ease;}
+	.sq-section[open] .sq-head::after{transform:rotate(180deg);}
 	.sq-head i{color:var(--gold-hover);font-size:13px;}
-	.sq-note{font-size:11px;line-height:1.5;color:var(--muted);margin:5px 0 12px;}
+	.sq-head-text{display:flex;flex-direction:column;gap:2px;min-width:0;}
+	.sq-head-title{color:#fff;}
+	.sq-head-subtitle{font-family:'DM Sans',sans-serif;font-size:10.5px;font-weight:500;letter-spacing:.15px;text-transform:none;color:var(--muted);line-height:1.35;}
+	.sq-content{padding:0 14px 4px;}
+	.sq-note{font-size:11px;line-height:1.5;color:var(--muted);margin:0 0 12px;}
 	.sq-item{margin-bottom:12px;display:flex;flex-direction:column;gap:6px;}
 	.sq-item select.form-input{padding-left:12px;padding-right:32px;}
 	.sq-item .form-input{padding-left:12px;}
@@ -179,6 +186,7 @@
 	.btn-register{font-size:15px;}
 	.card-footer{font-size:12.5px;}
 	.sq-head{font-size:17px;}
+	.sq-head-subtitle{font-size:11px;}
 	.sq-note{font-size:12.5px;line-height:1.6;}
 	.sq-item .form-input{font-size:14.5px;min-height:46px;}
 	.sq-chosen{font-size:13px;line-height:1.5;color:var(--light);padding:0 2px;}
@@ -268,7 +276,7 @@
 							   placeholder="Min. 8 characters" autocomplete="new-password" required/>
 						<i class="fa-solid fa-lock f-icon"></i>
 						<button type="button" class="toggle-pw" onclick="togglePw('pw1','e1')">
-							<i class="fa-solid fa-eye" id="e1"></i>
+							<i class="fa-solid fa-eye-slash" id="e1"></i>
 						</button>
 					</div>
 				</div>
@@ -280,14 +288,21 @@
 							   placeholder="Re-enter password" autocomplete="new-password" required/>
 						<i class="fa-solid fa-lock f-icon"></i>
 						<button type="button" class="toggle-pw" onclick="togglePw('pw2','e2')">
-							<i class="fa-solid fa-eye" id="e2"></i>
+							<i class="fa-solid fa-eye-slash" id="e2"></i>
 						</button>
 					</div>
 				</div>
 			</div>
 
-			<div class="sq-section">
-				<div class="sq-head"><i class="fa-solid fa-shield-halved"></i> Security Questions</div>
+			<details class="sq-section" id="securityQuestions"<?= ($error && isset($_POST['sq_question'])) ? ' open' : '' ?>>
+				<summary class="sq-head">
+					<i class="fa-solid fa-shield-halved"></i>
+					<span class="sq-head-text">
+						<span class="sq-head-title">Security Questions</span>
+						<span class="sq-head-subtitle">Required for password recovery · Choose 3 questions</span>
+					</span>
+				</summary>
+				<div class="sq-content">
 				<p class="sq-note">Choose 3 different questions only you can answer. If you forget your password, you will need to answer all three, so use short answers you will type the same way every time (for example, just a name). Answers are stored encrypted and are not case-sensitive.</p>
 				<div class="sq-item">
 					<div class="input-wrap select-arr">
@@ -322,7 +337,8 @@
 					<input class="form-input" type="text" name="sq_answer[3]" id="sq_a3" maxlength="100"
 						   placeholder="Your answer" autocomplete="off" required/>
 				</div>
-			</div>
+				</div>
+			</details>
 
 			<div class="alert alert-error client-error" id="clientError" role="alert">
 				<i class="fa-solid fa-circle-exclamation" style="flex-shrink:0;margin-top:1px"></i>
@@ -401,12 +417,18 @@
 	function togglePw(id, ic) {
 		const e = document.getElementById(id), i = document.getElementById(ic);
 		e.type = e.type === 'password' ? 'text' : 'password';
-		i.className = e.type === 'password' ? 'fa-solid fa-eye' : 'fa-solid fa-eye-slash';
+		i.className = e.type === 'password' ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye';
 	}
 	setDept(<?= json_encode($_POST['department'] ?? '') ?>);
 	const regForm = document.getElementById('regForm');
 	const regSubmitBtn = document.getElementById('regSubmitBtn');
 	const clientError = document.getElementById('clientError');
+	const securityQuestions = document.getElementById('securityQuestions');
+	if (regForm && securityQuestions) {
+		regForm.addEventListener('invalid', (e) => {
+			if (e.target.closest('.sq-section')) securityQuestions.open = true;
+		}, true);
+	}
 	if (regForm && regSubmitBtn) {
 		regForm.addEventListener('submit', (e) => {
 			const msg = validateRegistration();

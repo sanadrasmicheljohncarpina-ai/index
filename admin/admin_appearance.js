@@ -8,20 +8,13 @@
    ============================================================ */
 (function () {
   var KEYS = { density: 'pbiDensity', motion: 'pbiReduceMotion', accent: 'pbiAccent', theme: 'pbiTheme' };
-  var DEFAULTS = { density: 'compact', motion: false, accent: '#C9A227', theme: 'light' };
-  var LEGACY_ACCENTS = {
-    '#2563EB': '#C9A227', '#2563eb': '#C9A227', '#1D4ED8': '#9C7A12', '#1d4ed8': '#9C7A12',
-    '#0F9F6E': '#C9A227', '#0f9f6e': '#C9A227', '#4968C8': '#C9A227', '#5E81AC': '#C9A227'
-  };
+  var DEFAULTS = { density: 'compact', motion: false, accent: '#2f6ee2', theme: 'light' };
 
   function read() {
     return {
       density: localStorage.getItem(KEYS.density) || DEFAULTS.density,
       motion: localStorage.getItem(KEYS.motion) === '1',
-      accent: (function () {
-        var saved = localStorage.getItem(KEYS.accent) || DEFAULTS.accent;
-        return LEGACY_ACCENTS[saved] || saved;
-      })(),
+      accent: localStorage.getItem(KEYS.accent) || DEFAULTS.accent,
       theme: localStorage.getItem(KEYS.theme) || DEFAULTS.theme,
     };
   }
@@ -86,6 +79,8 @@
   }
   function scan(root){
     if (!dark() || !root) return;
+    /* Generate-Report pages are intentionally white print documents. */
+    if (document.body && document.body.classList.contains('report-mode')) return;
     var nodes=[];
     if (root.nodeType===1) nodes.push(root);
     try { root.querySelectorAll('*').forEach(function(el){ nodes.push(el); }); } catch(e){}

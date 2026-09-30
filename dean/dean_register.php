@@ -598,7 +598,7 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible{
           <div class="input-wrap">
             <input class="form-input" type="password" id="password" name="password" placeholder="Minimum 8 characters" required minlength="8" autocomplete="new-password" oninput="checkStrength(this.value); checkMatch();"/>
             <i class="fa-solid fa-lock f-icon"></i>
-            <button type="button" class="toggle-pw" onclick="togglePw('password','eye1')" aria-label="Show password"><i class="fa-solid fa-eye" id="eye1"></i></button>
+            <button type="button" class="toggle-pw" onclick="togglePw('password','eye1')" aria-label="Show password"><i class="fa-solid fa-eye-slash" id="eye1"></i></button>
           </div>
           <div class="pw-strength" id="pwStrength">
             <div class="strength-bar"><div class="strength-fill" id="strengthFill"></div></div>
@@ -611,7 +611,7 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible{
           <div class="input-wrap">
             <input class="form-input" type="password" id="confirm_password" name="confirm_password" placeholder="Re-enter your password" required minlength="8" autocomplete="new-password" oninput="checkMatch();"/>
             <i class="fa-solid fa-lock f-icon"></i>
-            <button type="button" class="toggle-pw" onclick="togglePw('confirm_password','eye2')" aria-label="Show confirmation password"><i class="fa-solid fa-eye" id="eye2"></i></button>
+            <button type="button" class="toggle-pw" onclick="togglePw('confirm_password','eye2')" aria-label="Show confirmation password"><i class="fa-solid fa-eye-slash" id="eye2"></i></button>
           </div>
           <div class="match-note" id="matchNote"></div>
         </div>
@@ -636,7 +636,7 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible{
 function togglePw(id, ic){
   const e=document.getElementById(id), i=document.getElementById(ic);
   e.type=e.type==='password'?'text':'password';
-  i.className=e.type==='password'?'fa-solid fa-eye':'fa-solid fa-eye-slash';
+  i.className=e.type==='password'?'fa-solid fa-eye-slash':'fa-solid fa-eye';
 }
 function previewPhoto(input){
   const img=document.getElementById('photoImg'), icon=document.getElementById('phIcon'), clear=document.getElementById('clearPhoto');

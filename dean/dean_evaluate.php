@@ -257,7 +257,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$readOnly) {
             }
 
             $comment = trim((string)($_POST['comment'] ?? ''));
-            if ($error === '' && $scoreCount === 0) $error = 'There are no answerable questions in this questionnaire.';
+            if ($error === '' && $scoreCount === 0) {
+                $error = 'There are no answerable questions in this questionnaire.';
+            } elseif ($error === '' && $scoreCount !== count($questions)) {
+                $missingCount = count($questions) - $scoreCount;
+                $error = 'Please answer all required questions before submitting. ' .
+                    $missingCount . ' question' . ($missingCount === 1 ? '' : 's') . ' remain' . ($missingCount === 1 ? 's' : '') . '.';
+            }
 
             if ($error === '') {
                 $avgScore = round($scoreSum / $scoreCount, 2);
@@ -398,6 +404,15 @@ body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,
 .eval-table th:first-child{text-align:left;width:auto;padding-left:16px}.eval-table th:not(:first-child){width:58px}
 .eval-table td{padding:12px 8px;border-bottom:1px solid rgba(255,255,255,.07);vertical-align:middle;text-align:center}.eval-table tr:last-child td{border-bottom:none}.eval-table td:first-child{text-align:left;padding-left:16px;padding-right:14px}
 .eval-qno{color:var(--violet-h);font-weight:800;margin-right:7px}.eval-qtext{font-size:14px;color:var(--light);line-height:1.45}.eval-rating-cell{display:flex;justify-content:center;align-items:center}.eval-rating-cell input{position:absolute;opacity:0;pointer-events:none}.eval-rating-cell label{width:38px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:7px;border:1px solid rgba(255,255,255,.12);background:rgba(10,25,47,.5);color:var(--muted);font-size:13px;font-weight:800;cursor:pointer;transition:.15s ease}.eval-rating-cell label:hover{border-color:var(--violet-h)}.eval-rating-cell input:checked + label{background:var(--violet);border-color:var(--violet);color:#fff}.eval-category-heading{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--violet-h);margin:24px 0 9px}.eval-category-heading:first-child{margin-top:0}
+.eval-question-row.is-unanswered td{background:rgba(240,84,84,.055);border-bottom-color:rgba(240,84,84,.22)}
+.eval-question-row.is-unanswered td:first-child{box-shadow:inset 4px 0 0 #f05454}
+.eval-question-row.is-unanswered .eval-qno{color:#ff8a8a}
+.eval-completion-status{display:flex;align-items:center;gap:9px;margin:8px 0 12px;padding:10px 13px;border:1px solid rgba(16,185,129,.25);border-radius:9px;background:rgba(16,185,129,.08);color:#a9f0c4;font-size:13px;font-weight:600}
+.eval-completion-status i{font-size:13px}
+.eval-completion-status.is-incomplete{border-color:rgba(240,84,84,.35);background:rgba(240,84,84,.10);color:#ffb0b0}
+.eval-validation-summary{margin:0 0 14px;padding:12px 14px;border-radius:9px;border:1px solid rgba(240,84,84,.4);background:rgba(240,84,84,.12);color:#ffd0d0;font-size:13px;line-height:1.55}
+.eval-validation-summary strong{color:#fff}
+.eval-validation-summary[hidden]{display:none}
 @media(max-width:768px){.eval-table th:not(:first-child){width:48px}.eval-rating-cell label{width:32px;height:30px}.eval-qtext{font-size:13px}}
 
 </style>
@@ -468,7 +483,7 @@ include __DIR__ . '/includes/dean_sidebar.php';
                 <p class="comment-readonly"><?= $existing['comment'] !== '' ? htmlspecialchars($existing['comment']) : 'No written comment.' ?></p>
             </div>
         <?php else: ?>
-            <form method="POST" action="dean_evaluate.php?tab=<?= urlencode($tab) ?>&user_id=<?= (int)$target['id'] ?>">
+            <form method="POST" action="dean_evaluate.php?tab=<?= urlencode($tab) ?>&user_id=<?= (int)$target['id'] ?>" id="deanEvalForm" novalidate>
                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
                 <?php $groupedQuestions=[]; foreach($questions as $q){ $groupedQuestions[$q['category'] ?: 'General'][]=$q; } $qNo=1; ?>
                 <?php foreach($groupedQuestions as $cat=>$catQuestions): ?>
@@ -478,8 +493,9 @@ include __DIR__ . '/includes/dean_sidebar.php';
                         <thead><tr><th>Question</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th></tr></thead>
                         <tbody>
                         <?php foreach($catQuestions as $q): ?>
-                        <tr>
-                            <td><div class="eval-qtext"><span class="eval-qno"><?= $qNo++ ?>.</span><?= htmlspecialchars($q['question']) ?></div></td>
+                        <?php $currentQNo = $qNo++; ?>
+                        <tr class="eval-question-row" data-question-number="<?= $currentQNo ?>">
+                            <td><div class="eval-qtext"><span class="eval-qno"><?= $currentQNo ?>.</span><?= htmlspecialchars($q['question']) ?></div></td>
                             <?php for($i=5;$i>=1;$i--): ?>
                             <td><div class="eval-rating-cell"><input type="radio" name="q_<?= (int)$q['id'] ?>" id="q_<?= (int)$q['id'] ?>_<?= $i ?>" value="<?= $i ?>" required><label for="q_<?= (int)$q['id'] ?>_<?= $i ?>"><?= $i ?></label></div></td>
                             <?php endfor; ?>
@@ -490,6 +506,11 @@ include __DIR__ . '/includes/dean_sidebar.php';
                 </div>
                 <?php endforeach; ?>
 
+                <div class="eval-completion-status" id="evalCompletionStatus" role="status" aria-live="polite">
+                    <i class="fa-solid fa-circle-check"></i>
+                    <span id="evalCompletionText">0 of <?= count($questions) ?> questions answered</span>
+                </div>
+                <div class="eval-validation-summary" id="evalValidationSummary" role="alert" aria-live="assertive" hidden></div>
                 <div class="comment-block"><label for="comment">Comment (optional)</label><textarea id="comment" name="comment" placeholder="Any additional feedback..."></textarea></div>
                 <button type="submit" class="btn-submit" <?= (!$hasPeriod || !$evalOpen) ? 'disabled style="opacity:.5;cursor:not-allowed;"' : '' ?>><i class="fa-solid fa-paper-plane"></i> Submit Evaluation</button>
             </form>
@@ -497,6 +518,76 @@ include __DIR__ . '/includes/dean_sidebar.php';
 
     <?php endif; ?>
 </main>
+<script>
+(function(){
+    const form = document.getElementById('deanEvalForm');
+    const status = document.getElementById('evalCompletionStatus');
+    const statusText = document.getElementById('evalCompletionText');
+    const summary = document.getElementById('evalValidationSummary');
+    if (!form || !status || !statusText) return;
+
+    const rows = Array.from(form.querySelectorAll('.eval-question-row'));
+    const total = rows.length;
+
+    function rowAnswered(row){
+        return !!row.querySelector('input[type="radio"]:checked');
+    }
+
+    function updateProgress(){
+        let answered = 0;
+        rows.forEach(row => {
+            const done = rowAnswered(row);
+            row.classList.toggle('is-unanswered', false);
+            if (done) answered++;
+        });
+        statusText.textContent = answered + ' of ' + total + ' questions answered';
+        status.classList.toggle('is-incomplete', answered < total);
+        const icon = status.querySelector('i');
+        if (icon) icon.className = answered === total ? 'fa-solid fa-circle-check' : 'fa-solid fa-circle-exclamation';
+        return answered;
+    }
+
+    function showMissing(){
+        const missing = rows.filter(row => !rowAnswered(row));
+        rows.forEach(row => row.classList.toggle('is-unanswered', !rowAnswered(row)));
+        const nums = missing.map(row => row.dataset.questionNumber);
+        const count = missing.length;
+        summary.hidden = false;
+        summary.innerHTML = '<strong>Please complete all required questions before submitting.</strong> ' +
+            'You have ' + count + ' unanswered question' + (count === 1 ? '' : 's') +
+            '. Missing question' + (count === 1 ? '' : 's') + ': ' + nums.join(', ') + '.';
+        missing[0]?.scrollIntoView({behavior:'smooth', block:'center'});
+        const first = missing[0]?.querySelector('input[type="radio"]');
+        if (first) first.focus({preventScroll:true});
+    }
+
+    form.addEventListener('change', function(e){
+        if (!e.target.matches('input[type="radio"]')) return;
+        const row = e.target.closest('.eval-question-row');
+        if (row) row.classList.remove('is-unanswered');
+        updateProgress();
+        const remaining = rows.filter(r => !rowAnswered(r));
+        if (remaining.length === 0) {
+            summary.hidden = true;
+            summary.innerHTML = '';
+        }
+    });
+
+    form.addEventListener('submit', function(e){
+        const answered = updateProgress();
+        if (answered !== total) {
+            e.preventDefault();
+            showMissing();
+            return;
+        }
+        summary.hidden = true;
+        summary.innerHTML = '';
+    });
+
+    updateProgress();
+})();
+</script>
+<script src="../admin/eval_status_poll.js" defer></script>
 </body>
 <link rel="stylesheet" href="includes/dean_light_theme.css" id="dean-light-theme-final"/>
 </html>

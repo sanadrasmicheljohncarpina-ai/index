@@ -285,6 +285,191 @@ body{min-height:100vh;background:var(--page-l);font-family:'DM Sans',sans-serif;
 @media(max-width:900px){.two-col{grid-template-columns:1fr;}.card-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
 @media(max-width:560px){.card-grid{grid-template-columns:1fr;}}
 @media(max-width:768px){body{flex-direction:column;}.sidebar{width:100%;min-height:auto;}}
+
+/* ================================================================
+   DEAN SIDEBAR — FINAL FACULTY-MATCHED SHELL
+   Kept inline on the dashboard so the shared sidebar cannot be
+   overridden by the dashboard's legacy .sidebar rules.
+   ================================================================ */
+:root { --sidebar-w:248px; --role-accent:#2563EB; --role-accent-light:#60A5FA; }
+.sidebar {
+  width:var(--sidebar-w) !important;
+  flex:0 0 var(--sidebar-w) !important;
+  min-height:100vh !important;
+  padding:0 !important;
+  background:#0A192F !important;
+  background-image:none !important;
+  border-right:1px solid #172A45 !important;
+  box-shadow:6px 0 20px rgba(0,0,0,.16) !important;
+  overflow:hidden !important;
+  display:flex !important;
+  flex-direction:column !important;
+}
+.sidebar-brand.portal-brand {
+  min-height:68px !important;
+  padding:14px 17px !important;
+  margin:0 !important;
+  border-bottom:1px solid rgba(255,255,255,.08) !important;
+  display:flex !important;
+  align-items:center !important;
+  gap:11px !important;
+  background:transparent !important;
+}
+.portal-brand-logo {
+  width:38px !important; height:38px !important; flex:0 0 38px !important;
+  border-radius:11px !important; display:flex !important; align-items:center !important;
+  justify-content:center !important; overflow:hidden !important;
+  background:#0F1F3D !important; border:1px solid #2563EB !important;
+  box-shadow:0 0 14px rgba(37,99,235,.18) !important;
+}
+.portal-brand-logo img { width:100% !important; height:100% !important; object-fit:cover !important; display:block !important; }
+.portal-brand-copy { min-width:0 !important; display:flex !important; flex-direction:column !important; line-height:1.2 !important; }
+.portal-brand-copy strong { font-family:'Rajdhani','DM Sans',sans-serif !important; font-size:15px !important; font-weight:700 !important; color:#F8FAFC !important; letter-spacing:.25px !important; white-space:nowrap !important; }
+.portal-brand-copy span { margin-top:3px !important; font-size:10px !important; color:#8FA6BF !important; font-weight:600 !important; letter-spacing:.15px !important; white-space:nowrap !important; }
+.portal-sidebar-profile {
+  padding:18px 16px 17px !important; margin:0 !important; text-align:center !important;
+  border-bottom:1px solid rgba(255,255,255,.08) !important; background:transparent !important;
+}
+.portal-profile-avatar-wrap { margin:0 auto 11px !important; display:flex !important; justify-content:center !important; }
+.portal-profile-avatar {
+  width:64px !important; height:64px !important; max-width:64px !important; max-height:64px !important;
+  border-radius:50% !important; object-fit:cover !important; border:2px solid #2563EB !important;
+  background:#0F1F3D !important; box-shadow:0 0 15px rgba(37,99,235,.18) !important; display:block !important; flex:none !important;
+}
+.portal-profile-fallback {
+  color:#60A5FA !important; font-family:'Rajdhani','DM Sans',sans-serif !important;
+  font-size:17px !important; font-weight:700 !important; align-items:center !important; justify-content:center !important;
+}
+.portal-profile-name { color:#F8FAFC !important; font-size:13px !important; line-height:1.35 !important; font-weight:700 !important; word-break:break-word !important; }
+.portal-profile-role { margin-top:3px !important; color:#8FA6BF !important; font-size:10px !important; text-transform:uppercase !important; letter-spacing:.7px !important; font-weight:700 !important; line-height:1.35 !important; }
+.portal-profile-scope { margin-top:4px !important; color:#8FA6BF !important; font-size:10px !important; line-height:1.35 !important; font-weight:600 !important; }
+.portal-sidebar-nav { flex:1 1 auto !important; min-height:0 !important; padding:16px 10px !important; margin:0 !important; overflow-y:auto !important; display:flex !important; flex-direction:column !important; gap:0 !important; }
+.portal-sidebar-nav .nav-section-label { padding:0 8px !important; margin:0 0 7px !important; font-size:9.5px !important; font-weight:800 !important; letter-spacing:1.25px !important; text-align:left !important; color:#8FA6BF !important; line-height:1.3 !important; }
+.portal-sidebar-nav .nav-section-label.sidebar-section-secondary { margin-top:17px !important; }
+.portal-sidebar-nav .nav-link {
+  min-height:40px !important; width:auto !important; margin:2px 2px !important; padding:9px 11px !important;
+  border:0 !important; border-left:0 !important; border-radius:8px !important; gap:10px !important;
+  color:#CBD8E8 !important; background:transparent !important; font-size:13px !important; font-weight:500 !important;
+  line-height:1.2 !important; text-decoration:none !important; display:flex !important; align-items:center !important; box-shadow:none !important; transform:none !important;
+}
+.portal-sidebar-nav .nav-link i { width:18px !important; min-width:18px !important; font-size:14px !important; color:#8FA6BF !important; text-align:center !important; flex:0 0 18px !important; }
+.portal-sidebar-nav .nav-link:hover { background:rgba(255,255,255,.07) !important; color:#FFFFFF !important; }
+.portal-sidebar-nav .nav-link:hover i { color:#60A5FA !important; }
+.portal-sidebar-nav .nav-link.active {
+  background:linear-gradient(90deg,rgba(37,99,235,.18),rgba(255,255,255,.025)) !important;
+  color:#FFFFFF !important; font-weight:700 !important; border:0 !important;
+  box-shadow:inset 3px 0 0 #60A5FA !important;
+}
+.portal-sidebar-nav .nav-link.active i { color:#60A5FA !important; }
+.sidebar-footer { flex:0 0 auto !important; padding:13px 14px 15px !important; margin:0 !important; border-top:1px solid rgba(255,255,255,.08) !important; background:transparent !important; }
+.btn-logout-side {
+  width:100% !important; min-height:40px !important; display:flex !important; align-items:center !important; gap:10px !important;
+  padding:9px 11px !important; border-radius:8px !important; color:#FCA5A5 !important; text-decoration:none !important;
+  font-size:13px !important; font-weight:600 !important; border:1px solid rgba(248,113,113,.28) !important; background:rgba(248,113,113,.08) !important; box-sizing:border-box !important;
+}
+.btn-logout-side i { width:18px !important; min-width:18px !important; text-align:center !important; flex:0 0 18px !important; color:#FF8E8E !important; }
+@media(max-width:768px){ .sidebar{width:248px !important; flex:0 0 248px !important;} }
+
+/* ================================================================
+   DEAN DASHBOARD — DARK MODE CONTENT
+   Uses the same localStorage preference as the Dean settings page.
+   The shared sidebar toggles html.dark-theme; these rules extend that
+   theme across the dashboard workspace itself.
+   ================================================================ */
+html.dark-theme {
+  --page-l:#0A192F !important;
+  --card-l:#172A45 !important;
+  --line-l:rgba(255,255,255,.08) !important;
+  --line-strong-l:rgba(255,255,255,.14) !important;
+  --text-l:#E0E6F0 !important;
+  --muted-l:#A0B3C6 !important;
+  --shadow-l:0 8px 26px rgba(0,0,0,.28) !important;
+  --input-l:#0F1F3D !important;
+  --violet-dark:#9C85F0 !important;
+}
+html.dark-theme body {
+  background:#0A192F !important;
+  color:#E0E6F0 !important;
+  color-scheme:dark !important;
+}
+html.dark-theme .main {
+  background:#0A192F !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .page-title { color:#F8FAFC !important; }
+html.dark-theme .page-sub { color:#A0B3C6 !important; }
+html.dark-theme .section,
+html.dark-theme .stat-card {
+  background:#172A45 !important;
+  color:#E0E6F0 !important;
+  border-color:rgba(255,255,255,.08) !important;
+  box-shadow:0 8px 26px rgba(0,0,0,.28) !important;
+}
+html.dark-theme .section h2 { color:#F8FAFC !important; }
+html.dark-theme .section h2 i,
+html.dark-theme .stat-card i { color:#9C85F0 !important; }
+html.dark-theme .period-field .period-field-label,
+html.dark-theme .stat-card .label,
+html.dark-theme .empty-note,
+html.dark-theme .period-message,
+html.dark-theme .countdown-box .lbl {
+  color:#A0B3C6 !important;
+}
+html.dark-theme .period-field .period-field-value,
+html.dark-theme .stat-card .num,
+html.dark-theme .period-message strong {
+  color:#F8FAFC !important;
+}
+html.dark-theme .period-message { border-top-color:rgba(255,255,255,.08) !important; }
+html.dark-theme .bar-wrap,
+html.dark-theme .countdown-box,
+html.dark-theme .notif-list li,
+html.dark-theme .notif-dropdown {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.08) !important;
+  color:#E0E6F0 !important;
+}
+html.dark-theme .countdown-box .num { color:#F8FAFC !important; }
+html.dark-theme .period-badge {
+  background:rgba(156,133,240,.14) !important;
+  border-color:rgba(156,133,240,.30) !important;
+  color:#C4B5FD !important;
+}
+html.dark-theme .period-badge.closed {
+  background:rgba(240,84,84,.10) !important;
+  border-color:rgba(240,84,84,.30) !important;
+  color:#FCA5A5 !important;
+}
+html.dark-theme .period-badge.scheduled,
+html.dark-theme .period-badge.amber { color:#FBBF24 !important; }
+html.dark-theme .period-badge.gray {
+  background:#0F1F3D !important;
+  border-color:rgba(255,255,255,.08) !important;
+  color:#A0B3C6 !important;
+}
+html.dark-theme .notif-bell {
+  background:rgba(156,133,240,.14) !important;
+  border-color:rgba(156,133,240,.34) !important;
+  color:#C4B5FD !important;
+}
+html.dark-theme .notif-bell:hover { background:rgba(156,133,240,.22) !important; }
+html.dark-theme .notif-dropdown-header {
+  color:#A0B3C6 !important;
+  border-bottom-color:rgba(255,255,255,.08) !important;
+}
+html.dark-theme .notif-list li i { color:#C4B5FD !important; }
+html.dark-theme .notif-badge { border-color:#172A45 !important; }
+html.dark-theme .stub-note {
+  background:rgba(156,133,240,.10) !important;
+  border-color:rgba(156,133,240,.30) !important;
+  color:#C4B5FD !important;
+}
+html.dark-theme .stub-note code { color:#E0E6F0 !important; }
+html.dark-theme a.stat-card-link:hover .stat-card {
+  border-color:rgba(156,133,240,.32) !important;
+  transform:translateY(-1px);
+}
+
 </style>
 </head>
 <body>
@@ -592,6 +777,6 @@ include __DIR__ . '/includes/dean_sidebar.php';
     setInterval(poll, POLL_MS);
 })();
 </script>
+<script src="../admin/eval_status_poll.js" defer></script>
 </body>
-<link rel="stylesheet" href="includes/dean_light_theme.css" id="dean-light-theme-final"/>
 </html>

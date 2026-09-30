@@ -563,9 +563,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_evaluation']))
         } else {
             $ratings = $_POST['rating'] ?? [];
             $comment = trim($_POST['comment'] ?? '');
-            if (empty($ratings)) {
-                $submit_error = "Please answer all questions before submitting.";
-            } else {
+
+            // Build the exact set of question keys that this evaluation should contain.
+            // This mirrors the same question sources used by the AJAX loader above, so
+            // a crafted POST cannot submit a partial evaluation (or unrelated question ids).
+            $expected_question_keys = [];
+            try {
+                if ($evaluation_context === 'teacher') {
+                    $expected_questions = qn_get_faculty_questions($mysqli);
+                    foreach ($expected_questions as $eq) {
+                        $expected_question_keys[] = 'evaluation:' . (int)$eq['id'];
+                    }
+                } elseif ($evaluation_context === 'staff') {
+                    $expected_questions_stmt = $mysqli->prepare(
+                        "SELECT id FROM user_questions
+                         WHERE user_id=? AND target_type='Staff' AND eval_type='general'
+                         ORDER BY category,id"
+                    );
+                    $expected_questions_stmt->bind_param('i', $target_id);
+                    $expected_questions_stmt->execute();
+                    $expected_rows = $expected_questions_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+                    $expected_questions_stmt->close();
+                    foreach ($expected_rows as $eq) {
+                        $expected_question_keys[] = 'user:' . (int)$eq['id'];
+                    }
+                } elseif ($evaluation_context === 'school_head') {
+                    $expected_target_type = (($ctxRow['role'] ?? '') === 'dean') ? 'Dean' : 'Principal';
+                    $expected_questions_stmt = $mysqli->prepare(
+                        "SELECT id FROM user_questions
+                         WHERE user_id=? AND target_type=? AND eval_type='general'
+                         ORDER BY category,id"
+                    );
+                    $expected_questions_stmt->bind_param('is', $target_id, $expected_target_type);
+                    $expected_questions_stmt->execute();
+                    $expected_rows = $expected_questions_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+                    $expected_questions_stmt->close();
+                    foreach ($expected_rows as $eq) {
+                        $expected_question_keys[] = 'user:' . (int)$eq['id'];
+                    }
+                }
+            } catch (Throwable $qe) {
+                $submit_error = 'Unable to verify the evaluation questions. Please close and try again.';
+            }
+
+            if (empty($submit_error)) {
+                $submitted_question_keys = array_keys(is_array($ratings) ? $ratings : []);
+                $missing_question_keys = array_values(array_diff($expected_question_keys, $submitted_question_keys));
+                $unexpected_question_keys = array_values(array_diff($submitted_question_keys, $expected_question_keys));
+
+                if (empty($expected_question_keys)) {
+                    $submit_error = "No evaluation questions are configured for this person yet.";
+                } elseif ($unexpected_question_keys) {
+                    $submit_error = "Invalid evaluation question data. Please close and try again.";
+                } elseif ($missing_question_keys) {
+                    $missing_count = count($missing_question_keys);
+                    $submit_error = "Please answer all questions before submitting. You have {$missing_count} unanswered question" . ($missing_count === 1 ? '' : 's') . " remaining.";
+                }
+            }
+
+            if (empty($submit_error)) {
                 try {
                     $mysqli->begin_transaction();
 
@@ -1378,6 +1434,16 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .btn-cancel-modal:hover{background:rgba(255,255,255,.06);}
 .loading-qs{text-align:center;padding:40px;color:var(--muted);}
 .loading-qs i{font-size:28px;animation:spin 1s linear infinite;display:block;margin-bottom:10px;}
+.eval-validation{display:flex;align-items:flex-start;gap:9px;background:rgba(240,84,84,.11);border:1px solid rgba(240,84,84,.42);color:#ff9b9b;border-radius:9px;padding:11px 13px;margin:0 0 16px;font-size:12.5px;line-height:1.5;}
+.eval-validation i{color:#ff7f7f;flex-shrink:0;margin-top:2px;}
+.eval-validation strong{color:#ffd0d0;}
+.eval-progress{display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(0,229,255,.06);border:1px solid rgba(0,229,255,.16);border-radius:8px;padding:9px 12px;margin:0 0 14px;color:var(--muted);font-size:11.5px;font-weight:600;}
+.eval-progress .progress-status{color:#00E5FF;font-weight:800;white-space:nowrap;}
+.eval-form-table tr.unanswered-question td{background:rgba(240,84,84,.06);}
+.eval-form-table tr.unanswered-question td:first-child{box-shadow:inset 3px 0 0 #ef4444;}
+.eval-form-table tr.unanswered-question .eval-form-qtext{color:#ffd1d1;}
+.eval-form-table tr.unanswered-question .eval-form-qno{color:#ff7f7f;}
+@media(max-width:700px){.eval-progress{font-size:10.5px;}.eval-validation{font-size:12px;}}
 @keyframes spin{to{transform:rotate(360deg)}}
 .empty{text-align:center;padding:48px 20px;color:var(--muted);}
 .empty i{font-size:36px;margin-bottom:12px;display:block;opacity:.3;}
@@ -2170,7 +2236,7 @@ body.light-theme .dash-cta-icon{background:#FEF3C7!important;color:#B45309!impor
             </div>
             <button class="modal-close" onclick="closeEval()"><i class="fa-solid fa-xmark"></i></button>
         </div>
-        <form method="POST" action="student_dashboard.php" id="evalForm">
+        <form method="POST" action="student_dashboard.php" id="evalForm" novalidate>
             <input type="hidden" name="submit_evaluation" value="1"/>
             <input type="hidden" name="target_user_id" id="targetUserId"/>
             <input type="hidden" name="evaluation_context" id="evaluationContext" value="teacher"/>
@@ -2299,6 +2365,11 @@ function openEvalFromData(btn) {
 }
 function openEval(id,name,desig,photo,context){
     questionsLoaded = false;
+    const submitBtn = document.querySelector('#evalForm .btn-submit');
+    if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Submit Evaluation';
+    }
     document.getElementById('targetUserId').value=id;
     const ctxInput=document.getElementById('evaluationContext'); if(ctxInput)ctxInput.value=context||'teacher';
     document.getElementById('modalName').textContent  = name;
@@ -2322,6 +2393,11 @@ function closeEval() {
     document.getElementById('evalModal').classList.remove('open');
     document.body.style.overflow = '';
     questionsLoaded = false;
+    const submitBtn = document.querySelector('#evalForm .btn-submit');
+    if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Submit Evaluation';
+    }
 }
 
 function loadQuestions(id,context){
@@ -2349,17 +2425,21 @@ function loadQuestions(id,context){
                 if (!grouped[cat]) grouped[cat] = [];
                 grouped[cat].push(q);
             });
-            let html = legend;
+            const totalQuestionCount = questions.length;
+            let html = `<div class="eval-validation" id="evalValidation" role="alert" aria-live="assertive" hidden></div>`;
+            html += `<div class="eval-progress" id="evalProgress"><span>Please rate every question before submitting.</span><span class="progress-status" id="evalProgressStatus">0 / ${totalQuestionCount} answered</span></div>`;
+            html += legend;
             let qNum = 1;
             for (const [cat, qs] of Object.entries(grouped)) {
                 html += `<div class="eval-form-cat"><i class="fa-solid fa-layer-group" style="margin-right:5px"></i>${escapeHtml(cat)}</div>`;
                 html += `<div class="eval-form-wrap"><table class="eval-form-table"><thead><tr><th>Question</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th></tr></thead><tbody>`;
                 qs.forEach(q => {
                     const qkey = `${q.question_source}:${q.id}`;
-                    html += `<tr><td><div class="eval-form-qtext"><span class="eval-form-qno">${qNum++}.</span>${escapeHtml(q.question_text)}</div></td>`;
+                    const thisQNum = qNum++;
+                    html += `<tr data-question-key="${escapeHtml(qkey)}" data-question-number="${thisQNum}"><td><div class="eval-form-qtext"><span class="eval-form-qno">${thisQNum}.</span>${escapeHtml(q.question_text)}</div></td>`;
                     [5,4,3,2,1].forEach(v => {
                         const optId = `r_${q.question_source}_${q.id}_${v}`;
-                        html += `<td><div class="eval-form-rating"><input type="radio" name="rating[${qkey}]" id="${optId}" value="${v}" required><label for="${optId}">${v}</label></div></td>`;
+                        html += `<td><div class="eval-form-rating"><input type="radio" name="rating[${qkey}]" id="${optId}" value="${v}" required aria-label="Question ${thisQNum}, rating ${v}"><label for="${optId}">${v}</label></div></td>`;
                     });
                     html += `</tr>`;
                 });
@@ -2390,14 +2470,84 @@ document.getElementById('evalModal').addEventListener('click', function(e) {
     if (e.target === this) closeEval();
 });
 
-document.getElementById('evalForm').addEventListener('submit', function(e) {
-    if (!questionsLoaded) { e.preventDefault(); alert('Questions are still loading. Please wait.'); return; }
-    const radios = this.querySelectorAll('input[type="radio"][name^="rating["]');
-    if (!radios.length) { e.preventDefault(); alert('No questions found. Please close and try again.'); return; }
-    const names      = [...new Set([...radios].map(r => r.name))];
-    const unanswered = names.filter(n => !this.querySelector(`input[name="${CSS.escape(n)}"]:checked`));
-    if (unanswered.length) { e.preventDefault(); alert(`Please answer all questions. (${unanswered.length} remaining)`); return; }
-});
+const evalForm = document.getElementById('evalForm');
+
+function getUnansweredEvaluationQuestions(form) {
+    const radios = form.querySelectorAll('input[type="radio"][name^="rating["]');
+    const names = [...new Set([...radios].map(r => r.name))];
+    return names.filter(name => !form.querySelector(`input[name="${CSS.escape(name)}"]:checked`));
+}
+
+function updateEvaluationProgress(form) {
+    const status = form.querySelector('#evalProgressStatus');
+    const radios = [...form.querySelectorAll('input[type="radio"][name^="rating["]')];
+    if (!status || !radios.length) return;
+    const names = [...new Set(radios.map(r => r.name))];
+    const answered = names.filter(name => form.querySelector(`input[name="${CSS.escape(name)}"]:checked`)).length;
+    status.textContent = `${answered} / ${names.length} answered`;
+    status.style.color = answered === names.length ? '#22c55e' : '#00E5FF';
+}
+
+function showEvaluationValidation(form, unanswered) {
+    const box = form.querySelector('#evalValidation');
+    if (!box) return;
+    const rows = unanswered.map(name => form.querySelector(`input[name="${CSS.escape(name)}"]`)?.closest('tr')).filter(Boolean);
+    form.querySelectorAll('.unanswered-question').forEach(row => row.classList.remove('unanswered-question'));
+    rows.forEach(row => row.classList.add('unanswered-question'));
+
+    const numbers = rows.map(row => row.dataset.questionNumber).filter(Boolean);
+    let detail = '';
+    if (numbers.length <= 6 && numbers.length > 0) {
+        detail = ` Missing: ${numbers.map(n => `Question ${n}`).join(', ')}.`;
+    }
+    box.innerHTML = `<i class="fa-solid fa-circle-exclamation"></i><div><strong>Please complete all required questions.</strong> You have ${unanswered.length} unanswered question${unanswered.length === 1 ? '' : 's'}.${detail}</div>`;
+    box.hidden = false;
+
+    const firstRow = rows[0];
+    const firstRadio = firstRow?.querySelector('input[type="radio"]');
+    if (firstRow) firstRow.scrollIntoView({behavior:'smooth', block:'center'});
+    if (firstRadio) setTimeout(() => firstRadio.focus({preventScroll:true}), 120);
+}
+
+function clearEvaluationValidation(form) {
+    const box = form.querySelector('#evalValidation');
+    if (box) box.hidden = true;
+    form.querySelectorAll('.unanswered-question').forEach(row => row.classList.remove('unanswered-question'));
+}
+
+if (evalForm) {
+    evalForm.addEventListener('change', function(e) {
+        const radio = e.target.closest('input[type="radio"][name^="rating["]');
+        if (!radio) return;
+        const row = radio.closest('tr');
+        if (row) row.classList.remove('unanswered-question');
+        updateEvaluationProgress(this);
+        const unanswered = getUnansweredEvaluationQuestions(this);
+        const box = this.querySelector('#evalValidation');
+        if (box && !unanswered.length) clearEvaluationValidation(this);
+    });
+
+    evalForm.addEventListener('submit', function(e) {
+        if (!questionsLoaded) { e.preventDefault(); alert('Questions are still loading. Please wait.'); return; }
+        const radios = this.querySelectorAll('input[type="radio"][name^="rating["]');
+        if (!radios.length) { e.preventDefault(); alert('No questions found. Please close and try again.'); return; }
+
+        const unanswered = getUnansweredEvaluationQuestions(this);
+        updateEvaluationProgress(this);
+        if (unanswered.length) {
+            e.preventDefault();
+            showEvaluationValidation(this, unanswered);
+            return;
+        }
+
+        clearEvaluationValidation(this);
+        const submitBtn = this.querySelector('.btn-submit');
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Submitting Evaluation...';
+        }
+    });
+}
 
 // If the page reloaded after a submit-evaluation POST (e.g. validation
 // error/success), keep the user on the Evaluate view instead of bouncing
@@ -2429,5 +2579,6 @@ document.addEventListener('DOMContentLoaded', function() {
     applyAppearance(theme);
 });
 </script>
+<script src="../admin/eval_status_poll.js" data-busy-selector="#evalModal.open" defer></script>
 </body>
 </html>

@@ -6,16 +6,16 @@
    ============================================================ */
 
 :root{
-  --accent:#C9A227;
-  --accent-soft:#FFF9E8;
-  --bg:#FFFFFF;
-  --text:#2B2416;
-  --muted:#687386;
+  --accent:#B8860B;
+  --accent-soft:#FBF1D6;
+  --bg:#f4f8ff;
+  --text:#10243f;
+  --muted:#66809c;
   --panel-bg:#fff;
-  --panel-border:#E5E7EB;
-  --input-bg:#FAFAFA;
-  --input-border:#D7DCE3;
-  /* admin_aura_theme.css's .brand-avatar already reads var(--blue-accent, #B8860B) —
+  --panel-border:#dce8f5;
+  --input-bg:#f9fbff;
+  --input-border:#d4e2f2;
+  /* admin_aura_theme.css's .brand-avatar already reads var(--blue-accent, #0F9F6E) —
      hook it to the shared accent so it repaints automatically. */
   --blue-accent:var(--accent);
 }
@@ -702,14 +702,14 @@ html[data-theme="dark"]{
 
   --accent-bg:rgba(47,110,226,.14);
   --accent-border:rgba(47,110,226,.35);
-  --blue-soft:rgba(201,162,39,.14);
-  --green-soft:rgba(201,162,39,.14);
+  --blue-soft:rgba(37,99,235,.14);
+  --green-soft:rgba(15,159,110,.14);
   --amber-soft:rgba(194,123,19,.15);
   --red-soft:rgba(214,69,93,.14);
   --danger-bg:rgba(214,69,93,.14);
   --danger-border:rgba(214,69,93,.38);
-  --success-bg:rgba(201,162,39,.14);
-  --success-border:rgba(201,162,39,.38);
+  --success-bg:rgba(15,159,110,.14);
+  --success-border:rgba(15,159,110,.38);
   --warning-soft:rgba(194,123,19,.14);
 
   /* Friendly Dashboard tokens. */
@@ -721,7 +721,7 @@ html[data-theme="dark"]{
   --fd-primary:var(--accent);
   --fd-primary-soft:rgba(47,110,226,.14);
   --fd-success:#35c692;
-  --fd-success-soft:rgba(201,162,39,.14);
+  --fd-success-soft:rgba(15,159,110,.14);
   --fd-warning:#e6b14b;
   --fd-warning-soft:rgba(194,123,19,.15);
   --dashboard-bg:var(--bg);
@@ -730,14 +730,14 @@ html[data-theme="dark"]{
   --sidebar-card-bg:#142338;
   --sidebar-hover-bg:#182b43;
   --sidebar-border:#273a54;
-  --sidebar-active:rgba(201,162,39,.16);
+  --sidebar-active:rgba(47,110,226,.18);
   --sidebar-active-solid:var(--accent);
   --sidebar-text:var(--text);
   --sidebar-text-dim:var(--muted);
   --sidebar-logo-bg:#172a41;
   --sidebar-logo-border:#345071;
-  --accent-soft-bg:rgba(201,162,39,.14);
-  --accent-soft-border:rgba(201,162,39,.36);
+  --accent-soft-bg:rgba(47,110,226,.14);
+  --accent-soft-border:rgba(47,110,226,.36);
 
   /* Evaluation-specific accent surfaces. */
   --purple:#7c8ff0;
@@ -1007,7 +1007,7 @@ html[data-theme="dark"] .alert-info{background:rgba(47,110,226,.12)!important;co
 html[data-theme="dark"] .success,
 html[data-theme="dark"] .alert-success,
 html[data-theme="dark"] .badge.has,
-html[data-theme="dark"] .status.archived{background:rgba(201,162,39,.12)!important;color:#66dfb5!important;border-color:rgba(201,162,39,.30)!important}
+html[data-theme="dark"] .status.archived{background:rgba(15,159,110,.12)!important;color:#66dfb5!important;border-color:rgba(15,159,110,.30)!important}
 html[data-theme="dark"] .dangerbox,
 html[data-theme="dark"] .alert-error,
 html[data-theme="dark"] .alert-danger,
@@ -1103,7 +1103,7 @@ html[data-theme="dark"] .side button.side-save-btn{background:var(--accent)!impo
 html[data-theme="dark"] .track{background:#3a4b61!important}
 html[data-theme="dark"] .switch input:checked+.track{background:var(--accent)!important}
 html[data-theme="dark"] .track:after{background:#e7eef8!important}
-html[data-theme="dark"] .toast{background:#e7eef8!important;color:#2B2416!important}
+html[data-theme="dark"] .toast{background:#e7eef8!important;color:#10243f!important}
 
 /* Light inline backgrounds in markup (common in this project). */
 html[data-theme="dark"] [style*="background:#fff"],
@@ -1118,8 +1118,8 @@ html[data-theme="dark"] [style*="background:white"],
 html[data-theme="dark"] [style*="background: white"]{
   background:var(--panel-bg)!important;
 }
-html[data-theme="dark"] [style*="background:#FBFAF5"],
-html[data-theme="dark"] [style*="background:#FBFAF5"],
+html[data-theme="dark"] [style*="background:#f8fafc"],
+html[data-theme="dark"] [style*="background:#F8FAFC"],
 html[data-theme="dark"] [style*="background:#f7f9fc"],
 html[data-theme="dark"] [style*="background:#F7F9FC"],
 html[data-theme="dark"] [style*="background:#fbfdff"],
@@ -1190,9 +1190,9 @@ html[data-theme="dark"] .manage-card{
   color:var(--accent)!important;
 }
 html[data-theme="dark"] .card-ea .manage-card{
-  background:rgba(201,162,39,.12)!important;
+  background:rgba(15,159,110,.12)!important;
   color:#66dfb5!important;
-  border-color:rgba(201,162,39,.28)!important;
+  border-color:rgba(15,159,110,.28)!important;
 }
 html[data-theme="dark"] .qcat{
   background:rgba(217,145,33,.12)!important;
@@ -1201,7 +1201,7 @@ html[data-theme="dark"] .qcat{
 }
 html[data-theme="dark"] .question-count{color:var(--muted)!important}
 html[data-theme="dark"] .badge{background:var(--input-bg)!important;color:var(--muted)!important;border-color:var(--panel-border)!important}
-html[data-theme="dark"] .badge.has{background:rgba(201,162,39,.12)!important;color:#66dfb5!important;border-color:rgba(201,162,39,.30)!important}
+html[data-theme="dark"] .badge.has{background:rgba(15,159,110,.12)!important;color:#66dfb5!important;border-color:rgba(15,159,110,.30)!important}
 html[data-theme="dark"] .qxm-modal-icon{background:rgba(214,69,93,.12)!important;color:#ff9eaa!important;border-color:rgba(214,69,93,.25)!important}
 
 /* View Results (ea_results.php) */
@@ -1290,16 +1290,16 @@ html[data-theme="dark"] .faculty-subtab:hover{background:#1a2c43!important;color
 html[data-theme="dark"] .faculty-subtab.active-teacher,
 html[data-theme="dark"] .faculty-subtab.active-staff,
 html[data-theme="dark"] .faculty-subtab.active-mr-all{
-  background:rgba(139,107,31,.14)!important;
+  background:rgba(14,116,144,.14)!important;
   color:#72c7d8!important;
-  border-color:rgba(139,107,31,.34)!important;
+  border-color:rgba(14,116,144,.34)!important;
 }
 html[data-theme="dark"] .tab-count{background:rgba(255,255,255,.08)!important;color:var(--text)!important}
-html[data-theme="dark"] .group-tab.active-all{background:rgba(201,162,39,.16)!important}
-html[data-theme="dark"] .group-tab.active-faculty{background:rgba(139,107,31,.14)!important}
+html[data-theme="dark"] .group-tab.active-all{background:rgba(59,130,246,.16)!important}
+html[data-theme="dark"] .group-tab.active-faculty{background:rgba(14,116,144,.14)!important}
 html[data-theme="dark"] .group-tab.active-schoolhead{background:rgba(199,122,8,.14)!important}
-html[data-theme="dark"] .group-tab.active-ea{background:rgba(201,162,39,.14)!important}
-html[data-theme="dark"] .group-tab.active-staff{background:rgba(139,107,31,.14)!important}
+html[data-theme="dark"] .group-tab.active-ea{background:rgba(15,159,110,.14)!important}
+html[data-theme="dark"] .group-tab.active-staff{background:rgba(8,145,178,.14)!important}
 html[data-theme="dark"] .sheet-name,
 html[data-theme="dark"] .person-name,
 html[data-theme="dark"] .ra-name-text a,
@@ -1329,111 +1329,3 @@ html[data-theme="dark"] [style*="background: white"]{
 
 /* Dynamic dark-surface safety net */
 html[data-theme="dark"] .pbi-dark-surface{background:var(--panel-bg)!important;color:var(--text)!important;border-color:var(--panel-border)!important;}
-
-
-/* ============================================================
-   LIGHT GOLD REFINEMENT
-   Keep the admin workspace predominantly white and use gold only
-   for accents, active states, and subtle highlights.
-   ============================================================ */
-html:not([data-theme="dark"]){
-  --bg:#FFFFFF;
-  --panel-bg:#FFFFFF;
-  --panel-border:#E5E7EB;
-  --input-bg:#FAFAFA;
-  --input-border:#D7DCE3;
-  --accent:#C9A227;
-  --accent-soft:#FFF9E8;
-  --text:#2B2416;
-  --muted:#687386;
-  --dashboard-bg:#FFFFFF;
-  --page-bg:#FFFFFF;
-  --page-bg-tint:#FFFDF6;
-}
-
-/* Authenticated admin workspaces: white page canvas, subtle neutral shadowing. */
-html:not([data-theme="dark"]) body:has(.pbi-sidebar),
-html:not([data-theme="dark"]) body:has(.page-header),
-html:not([data-theme="dark"]) body:has(.et-wrap),
-html:not([data-theme="dark"]) body:has(.table-wrap),
-html:not([data-theme="dark"]) body:has(.panel-card),
-html:not([data-theme="dark"]) body:has(.content-panel),
-html:not([data-theme="dark"]) body:has(.questionnaire-landing),
-html:not([data-theme="dark"]) body:has(.archive-table),
-html:not([data-theme="dark"]) body:has(.logs-wrap){
-  background:#FFFFFF!important;
-}
-
-html:not([data-theme="dark"]) body:has(.pbi-dashboard-container){
-  background:#FFFFFF!important;
-  background-attachment:fixed!important;
-}
-html:not([data-theme="dark"]) body:has(.pbi-dashboard-container)::before{
-  opacity:.05!important;
-  background-image:radial-gradient(circle at 18% 9%, rgba(201,162,39,.12), transparent 36%),
-                   radial-gradient(circle at 88% 92%, rgba(201,162,39,.07), transparent 30%)!important;
-  mix-blend-mode:normal!important;
-}
-html:not([data-theme="dark"]) body:has(.pbi-dashboard-container) .pbi-stat-card,
-html:not([data-theme="dark"]) body:has(.pbi-dashboard-container) .pbi-period-box,
-html:not([data-theme="dark"]) body:has(.pbi-dashboard-container) .pbi-section-box,
-html:not([data-theme="dark"]) body:has(.pbi-dashboard-container) .pbi-panel,
-html:not([data-theme="dark"]) body:has(.pbi-dashboard-container) .pbi-card,
-html:not([data-theme="dark"]) body:has(.pbi-dashboard-container) .pbi-period-tile,
-html:not([data-theme="dark"]) body:has(.pbi-dashboard-container) .pbi-action-btn{
-  background:#FFFFFF!important;
-  border-color:#E5E7EB!important;
-  box-shadow:0 8px 22px rgba(15,23,42,.07),0 2px 6px rgba(15,23,42,.035)!important;
-  backdrop-filter:none!important;
-  -webkit-backdrop-filter:none!important;
-}
-html:not([data-theme="dark"]) body:has(.pbi-dashboard-container) .pbi-period-tile{
-  background:#FFFCF3!important;
-}
-html:not([data-theme="dark"]) body:has(.pbi-dashboard-container) .pbi-action-btn:hover{
-  background:#FFFEFA!important;
-}
-
-/* White tables/cards remain clean; gold is reserved for active/primary UI. */
-html:not([data-theme="dark"]) .sector-tabs,
-html:not([data-theme="dark"]) .eval-switcher,
-html:not([data-theme="dark"]) .tabs,
-html:not([data-theme="dark"]) .level-tabs,
-html:not([data-theme="dark"]) .status-tabs,
-html:not([data-theme="dark"]) .table-wrap,
-html:not([data-theme="dark"]) .content-panel,
-html:not([data-theme="dark"]) .section,
-html:not([data-theme="dark"]) .card,
-html:not([data-theme="dark"]) .panel,
-html:not([data-theme="dark"]) .table-card,
-html:not([data-theme="dark"]) .content-card{
-  background:#FFFFFF;
-}
-html:not([data-theme="dark"]) thead tr,
-html:not([data-theme="dark"]) .et-table th{
-  background:#FFFCF6!important;
-}
-
-/* ================================================================
-   FINAL DARK GOLD REFINEMENT
-   ================================================================ */
-html[data-theme="dark"] .pbi-sidebar .nav-item.active{
-  background:rgba(201,162,39,.16)!important;
-  color:#fff!important;
-  box-shadow:inset 3px 0 0 var(--accent)!important;
-}
-html[data-theme="dark"] .pbi-sidebar .nav-item.active .nav-icon-badge{
-  background:rgba(201,162,39,.20)!important;
-}
-html[data-theme="dark"] .pbi-sidebar .nav-item.active .icon{
-  color:var(--accent)!important;
-}
-html[data-theme="dark"] .sector-tab.active{
-  background:rgba(201,162,39,.20)!important;
-  color:#E0B94F!important;
-  border-color:rgba(201,162,39,.38)!important;
-}
-html[data-theme="dark"] .status-tab.active[data-s="pending"]{
-  background:rgba(201,162,39,.18)!important;
-  color:#E0B94F!important;
-}

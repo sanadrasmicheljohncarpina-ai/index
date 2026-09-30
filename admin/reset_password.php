@@ -58,7 +58,7 @@ if ($mysqli->ping()) $mysqli->close();
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <style>
-:root{--dark-blue:#201A10;--blue-accent:#C9A227;--blue-hover:#9C7A12;--light:#2B2416;--muted:#7A6F58;--radius:10px;--shadow:0 8px 32px rgba(120,100,60,.18);}
+:root{--dark-blue:#14100A;--blue-accent:#C9A227;--blue-hover:#9C7A12;--light:#2B2416;--muted:#7A6F58;--radius:10px;--shadow:0 8px 32px rgba(120,100,60,.18);}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 body{min-height:100vh;background:var(--dark-blue);font-family:'DM Sans',sans-serif;color:var(--light);display:flex;align-items:center;justify-content:center;padding:24px;position:relative;}
 .bg-grid{position:fixed;inset:0;z-index:0;background-image:linear-gradient(rgba(201,162,39,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(201,162,39,.08) 1px,transparent 1px);background-size:48px 48px;}
@@ -153,7 +153,7 @@ function checkStrength(val) {
     let score = 0;
     if (val.length >= 8) score++; if (/[A-Z]/.test(val)) score++;
     if (/[0-9]/.test(val)) score++; if (/[^A-Za-z0-9]/.test(val)) score++;
-    const colors = ['#ff4444','#ff8800','#f0c040','#D6B44A'];
+    const colors = ['#ff4444','#ff8800','#f0c040','#32B98A'];
     const labels = ['Weak','Fair','Good','Strong'];
     if (!val) { bar.style.background = 'rgba(20,15,8,.10)'; hint.textContent = ''; return; }
     bar.style.background = colors[score-1]||colors[0];

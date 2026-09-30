@@ -270,7 +270,7 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
                     <div class="input-wrap">
                         <input class="form-input" type="password" id="password" name="password" placeholder="Min. 8 characters" required minlength="8" oninput="checkStrength(this.value)"/>
                         <i class="fa-solid fa-lock f-icon"></i>
-                        <button type="button" class="toggle-pw" onclick="togglePw('password','eye1')"><i class="fa-solid fa-eye" id="eye1"></i></button>
+                        <button type="button" class="toggle-pw" onclick="togglePw('password','eye1')" aria-label="Show password" title="Show password"><i class="fa-solid fa-eye-slash" id="eye1"></i></button>
                     </div>
                     <div class="pw-strength" id="pwStrength">
                         <div class="strength-bar"><div class="strength-fill" id="strengthFill"></div></div>
@@ -283,7 +283,7 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
                     <div class="input-wrap">
                         <input class="form-input" type="password" id="confirm_password" name="confirm_password" placeholder="Re-enter password" required minlength="8"/>
                         <i class="fa-solid fa-lock f-icon"></i>
-                        <button type="button" class="toggle-pw" onclick="togglePw('confirm_password','eye2')"><i class="fa-solid fa-eye" id="eye2"></i></button>
+                        <button type="button" class="toggle-pw" onclick="togglePw('confirm_password','eye2')" aria-label="Show password" title="Show password"><i class="fa-solid fa-eye-slash" id="eye2"></i></button>
                     </div>
                 </div>
             </div>
@@ -300,7 +300,15 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
     <?php endif; ?>
 </div>
 <script>
-function togglePw(id,ic){const e=document.getElementById(id),i=document.getElementById(ic);e.type=e.type==='password'?'text':'password';i.className=e.type==='password'?'fa-solid fa-eye':'fa-solid fa-eye-slash';}
+function togglePw(id,ic){
+    const e=document.getElementById(id),i=document.getElementById(ic);
+    const showing=e.type==='password';
+    e.type=showing?'text':'password';
+    i.className=showing?'fa-solid fa-eye':'fa-solid fa-eye-slash';
+    const label=showing?'Hide password':'Show password';
+    const btn=i.closest('.toggle-pw');
+    if(btn){btn.setAttribute('aria-label',label);btn.setAttribute('title',label);}
+}
 function previewPhoto(input){if(input.files&&input.files[0]){const r=new FileReader();r.onload=e=>{const img=document.getElementById('photoImg'),ic=document.getElementById('phIcon');img.src=e.target.result;img.style.display='block';ic.style.display='none';};r.readAsDataURL(input.files[0]);}}
 function checkStrength(v){const b=document.getElementById('strengthFill'),l=document.getElementById('strengthLabel'),w=document.getElementById('pwStrength');w.style.display=v?'block':'none';let s=0;if(v.length>=8)s++;if(/[A-Z]/.test(v))s++;if(/[0-9]/.test(v))s++;if(/[^A-Za-z0-9]/.test(v))s++;if(!s){b.style.width='0%';l.textContent='';return;}const lv=[{w:'20%',bg:'#f87171',lb:'Weak'},{w:'45%',bg:'#fb923c',lb:'Fair'},{w:'70%',bg:'#facc15',lb:'Good'},{w:'100%',bg:'#4ade80',lb:'Strong'}][Math.max(0,s-1)];b.style.width=lv.w;b.style.background=lv.bg;l.textContent=lv.lb;l.style.color=lv.bg;}
 </script>

@@ -1705,6 +1705,288 @@ html.dark-theme main.main .subtle-head {
   border-color: rgba(255,255,255,.08) !important;
 }
 
+
+/* -------------------------------------------------------------------------
+   Unified compact Faculty-style sidebar shared by every Dean page.
+   This lives here (rather than only on dean_dashboard.php) so navigation
+   remains identical when switching between dashboard, evaluation, tracker,
+   results, reports, and account settings.
+   ------------------------------------------------------------------------- */
+:root {
+  --sidebar-w: 248px;
+  --role-accent: #2563EB;
+  --role-accent-light: #60A5FA;
+}
+
+.sidebar {
+  width: var(--sidebar-w) !important;
+  min-width: var(--sidebar-w) !important;
+  flex: 0 0 var(--sidebar-w) !important;
+  min-height: 100vh !important;
+  height: 100vh !important;
+  background: #0A192F !important;
+  background-image: none !important;
+  border-right: 1px solid #172A45 !important;
+  box-shadow: 6px 0 20px rgba(0,0,0,.16) !important;
+  padding: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  opacity: 1 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.sidebar-brand.portal-brand {
+  min-height: 68px !important;
+  padding: 14px 17px !important;
+  border-bottom: 1px solid rgba(255,255,255,.08) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 11px !important;
+  flex: 0 0 68px !important;
+}
+
+.portal-brand-logo {
+  width: 38px !important;
+  height: 38px !important;
+  min-width: 38px !important;
+  min-height: 38px !important;
+  flex: 0 0 38px !important;
+  border-radius: 11px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  overflow: hidden !important;
+  background: #0F1F3D !important;
+  border: 1px solid #2563EB !important;
+  box-shadow: 0 0 14px rgba(37,99,235,.18) !important;
+}
+
+.portal-brand-logo img {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: cover !important;
+  display: block !important;
+}
+
+.portal-brand-copy {
+  min-width: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  line-height: 1.2 !important;
+}
+
+.portal-brand-copy strong {
+  font-family: 'Rajdhani', sans-serif !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  color: #F8FAFC !important;
+  letter-spacing: .25px !important;
+}
+
+.portal-brand-copy span {
+  margin-top: 3px !important;
+  font-size: 10px !important;
+  color: #8FA6BF !important;
+  font-weight: 600 !important;
+  letter-spacing: .15px !important;
+  white-space: nowrap !important;
+}
+
+.portal-sidebar-profile {
+  padding: 18px 16px 17px !important;
+  margin: 0 !important;
+  text-align: center !important;
+  border-bottom: 1px solid rgba(255,255,255,.08) !important;
+  flex: 0 0 auto !important;
+}
+
+.portal-profile-avatar-wrap {
+  margin: 0 auto 11px !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+
+.portal-profile-avatar {
+  width: 64px !important;
+  height: 64px !important;
+  min-width: 64px !important;
+  min-height: 64px !important;
+  max-width: 64px !important;
+  max-height: 64px !important;
+  border-radius: 50% !important;
+  object-fit: cover !important;
+  border: 2px solid #2563EB !important;
+  background: #0F1F3D !important;
+  box-shadow: 0 0 15px rgba(37,99,235,.18) !important;
+  display: block !important;
+}
+
+.portal-profile-fallback {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: #60A5FA !important;
+  font-size: 17px !important;
+  font-weight: 700 !important;
+  font-family: 'Rajdhani', sans-serif !important;
+  line-height: 1 !important;
+}
+
+.portal-profile-name {
+  color: #F8FAFC !important;
+  font-size: 13px !important;
+  line-height: 1.35 !important;
+  font-weight: 700 !important;
+  word-break: break-word !important;
+}
+
+.portal-profile-role {
+  margin-top: 3px !important;
+  color: #8FA6BF !important;
+  font-size: 10px !important;
+  text-transform: uppercase !important;
+  letter-spacing: .7px !important;
+  font-weight: 700 !important;
+  line-height: 1.35 !important;
+}
+
+.portal-profile-scope {
+  margin-top: 4px !important;
+  color: #8FA6BF !important;
+  font-size: 10px !important;
+  line-height: 1.35 !important;
+  font-weight: 600 !important;
+}
+
+.portal-sidebar-nav {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  padding: 16px 10px !important;
+  margin: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0 !important;
+}
+
+.portal-sidebar-nav .nav-section-label {
+  padding: 0 8px !important;
+  margin: 0 0 7px !important;
+  font-size: 9.5px !important;
+  font-weight: 800 !important;
+  letter-spacing: 1.25px !important;
+  text-align: left !important;
+  color: #8FA6BF !important;
+  line-height: 1.3 !important;
+  text-transform: none !important;
+  text-shadow: none !important;
+}
+
+.portal-sidebar-nav .nav-section-label.sidebar-section-secondary {
+  margin-top: 17px !important;
+}
+
+.portal-sidebar-nav .nav-link {
+  min-height: 40px !important;
+  margin: 2px 2px !important;
+  padding: 9px 11px !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  gap: 10px !important;
+  color: #CBD8E8 !important;
+  background: transparent !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  line-height: 1.2 !important;
+  text-decoration: none !important;
+  display: flex !important;
+  align-items: center !important;
+  transition: background .18s ease, color .18s ease !important;
+}
+
+.portal-sidebar-nav .nav-link i {
+  width: 18px !important;
+  min-width: 18px !important;
+  flex: 0 0 18px !important;
+  font-size: 14px !important;
+  color: #8FA6BF !important;
+  text-align: center !important;
+}
+
+.portal-sidebar-nav .nav-link:hover {
+  background: rgba(255,255,255,.07) !important;
+  color: #FFFFFF !important;
+}
+
+.portal-sidebar-nav .nav-link:hover i {
+  color: #60A5FA !important;
+}
+
+.portal-sidebar-nav .nav-link.active {
+  background: linear-gradient(90deg, rgba(37,99,235,.18), rgba(255,255,255,.025)) !important;
+  color: #FFFFFF !important;
+  font-weight: 700 !important;
+  box-shadow: inset 3px 0 0 #60A5FA !important;
+}
+
+.portal-sidebar-nav .nav-link.active i {
+  color: #60A5FA !important;
+}
+
+.sidebar-footer {
+  flex: 0 0 auto !important;
+  padding: 13px 14px 15px !important;
+  margin: 0 !important;
+  border-top: 1px solid rgba(255,255,255,.08) !important;
+  background: transparent !important;
+}
+
+.btn-logout-side {
+  width: 100% !important;
+  min-height: 40px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 9px 11px !important;
+  border: 1px solid rgba(248,113,113,.35) !important;
+  border-radius: 8px !important;
+  background: rgba(30,36,54,.72) !important;
+  color: #FF9B9B !important;
+  text-decoration: none !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  transition: background .18s ease, color .18s ease, border-color .18s ease !important;
+  box-sizing: border-box !important;
+}
+
+.btn-logout-side:hover {
+  background: rgba(127,29,29,.28) !important;
+  color: #FFFFFF !important;
+  border-color: rgba(248,113,113,.6) !important;
+}
+
+.btn-logout-side i {
+  width: 18px !important;
+  min-width: 18px !important;
+  text-align: center !important;
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    width: var(--sidebar-w) !important;
+    min-width: var(--sidebar-w) !important;
+    flex: 0 0 var(--sidebar-w) !important;
+    min-height: 100vh !important;
+    height: 100vh !important;
+  }
+}
+
 /* Printing always stays on a white page regardless of the active theme. */
 @media print {
   html.dark-theme,

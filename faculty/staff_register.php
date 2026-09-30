@@ -1,5 +1,5 @@
 <?php
-	// faculty/faculty_register.php
+	// faculty/staff_register.php
 	session_start();
 	require_once 'db.php';   // gives $mysqli + UPLOAD_DIR + UPLOAD_URL
 
@@ -61,9 +61,9 @@
 		// ── INSERT ───────────────────────────────────────────────
 		if (empty($error)) {
 			$password_hash = password_hash($password, PASSWORD_BCRYPT);
-			$designation   = 'Teacher';
-			$role          = 'teacher';
-			$sector        = 'Teacher';
+			$designation   = 'Personnel';
+			$role          = 'staff';
+			$sector        = 'Staff';
 			$is_active     = 1;
 
 			$stmt = $mysqli->prepare(
@@ -79,7 +79,7 @@
 				$stmt->close();
 				$mysqli->close();
 				$_SESSION['reg_success'] = "Account created! Please log in. Your designation will be assigned by the admin.";
-				header("Location: faculty_login.php");
+				header("Location: staff_login.php");
 				exit;
 			} else {
 				$error = "Registration failed: " . $mysqli->error;
@@ -94,28 +94,28 @@
 	<head>
 	<meta charset="UTF-8"/>
 	<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-	<title>PBI — Faculty Registration</title>
+	<title>PBI — Staff Registration</title>
 	<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 	<style>
 	:root{
 		--dark-blue:#0A192F; --blue-mid:#172A45; --blue-inner:#0F1F3D;
-		--blue-accent:#2B6CB0; --teal:#2563EB; --teal-hover:#1D4ED8;
+		--blue-accent:#2B6CB0; --teal:#0D9488; --teal-hover:#14B8A6;
 		--light:#E0E6F0; --muted:#A0B3C6; --danger:#F05454; --radius:10px;
 		--shadow:0 8px 32px rgba(0,0,0,0.45);
 	}
 	*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 	body{
-		min-height:100vh; background:radial-gradient(circle at 50% 36%,rgba(255,255,255,.028),transparent 34%),radial-gradient(circle at 88% 82%,rgba(43,108,176,.11),transparent 30%),radial-gradient(circle at 8% 12%,rgba(37,99,235,.08),transparent 26%),var(--dark-blue);
+		min-height:100vh; background:radial-gradient(circle at 50% 36%,rgba(255,255,255,.028),transparent 34%),radial-gradient(circle at 88% 82%,rgba(43,108,176,.11),transparent 30%),radial-gradient(circle at 8% 12%,rgba(13,148,136,.08),transparent 26%),var(--dark-blue);
 		font-family:'DM Sans',sans-serif; color:var(--light);
 		display:flex; align-items:center; justify-content:center;
 		padding:24px 20px; position:relative; overflow-x:hidden;
 	}
 	.bg-grid{display:block;position:fixed;inset:0;z-index:0;
-		background-image:repeating-linear-gradient(45deg,rgba(37,99,235,.08) 0px,rgba(37,99,235,.08) 1px,transparent 1px,transparent 26px),
-						 repeating-linear-gradient(-45deg,rgba(37,99,235,.05) 0px,rgba(37,99,235,.05) 1px,transparent 1px,transparent 26px);
+		background-image:repeating-linear-gradient(45deg,rgba(13,148,136,.08) 0px,rgba(13,148,136,.08) 1px,transparent 1px,transparent 26px),
+						 repeating-linear-gradient(-45deg,rgba(13,148,136,.05) 0px,rgba(13,148,136,.05) 1px,transparent 1px,transparent 26px);
 	}
-	.hex-deco{position:fixed;z-index:0;pointer-events:none;opacity:.46;filter:drop-shadow(0 0 10px rgba(37,99,235,.05));}
+	.hex-deco{position:fixed;z-index:0;pointer-events:none;opacity:.46;filter:drop-shadow(0 0 10px rgba(13,148,136,.05));}
 	.hex-1{top:-60px;left:-60px;}
 	.hex-2{bottom:-70px;right:-70px;}
 
@@ -124,7 +124,7 @@
 		background:rgba(23,42,69,.88);backdrop-filter:blur(20px);
 		border:1px solid rgba(255,255,255,.09);border-radius:20px;
 		padding:30px 34px 28px;width:100%;max-width:540px;
-		box-shadow:var(--shadow),0 0 0 1px rgba(37,99,235,.13),0 0 38px rgba(37,99,235,.07);
+		box-shadow:var(--shadow),0 0 0 1px rgba(13,148,136,.13),0 0 38px rgba(13,148,136,.07);
 		animation:cardIn .65s cubic-bezier(.22,1,.36,1) both;
 	}
 	@keyframes cardIn{from{opacity:0;transform:translateY(28px) scale(.97)}to{opacity:1;transform:none}}
@@ -133,7 +133,7 @@
 	.logo-ring{
 		width:60px;height:60px;border-radius:50%;
 		border:2.5px solid var(--teal);
-		box-shadow:0 0 12px rgba(245,158,11,.14),0 0 24px rgba(37,99,235,.30),0 0 38px rgba(37,99,235,.09);
+		box-shadow:0 0 12px rgba(245,158,11,.14),0 0 24px rgba(13,148,136,.30),0 0 38px rgba(13,148,136,.09);
 		margin:0 auto 14px;
 		display:block;
 		object-fit:cover;
@@ -142,14 +142,14 @@
 	.card-subtitle{font-size:12px;color:var(--muted);letter-spacing:1.2px;text-transform:uppercase;margin-top:3px;}
 
 	.photo-upload-area{display:flex;align-items:center;gap:18px;margin-bottom:20px;}
-	.photo-preview{width:68px;height:68px;border-radius:50%;background:var(--blue-inner);border:2px dashed rgba(37,99,235,.5);overflow:hidden;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:border-color .2s;flex-shrink:0;}
+	.photo-preview{width:68px;height:68px;border-radius:50%;background:var(--blue-inner);border:2px dashed rgba(13,148,136,.5);overflow:hidden;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:border-color .2s;flex-shrink:0;}
 	.photo-preview:hover{border-color:var(--teal);}
 	.photo-preview img{width:100%;height:100%;object-fit:cover;display:none;}
 	.photo-preview .ph-icon{color:var(--muted);font-size:22px;}
 	.photo-info p{font-size:13px;color:var(--light);font-weight:600;margin-bottom:3px;}
 	.photo-info span{font-size:11px;color:var(--muted);}
-	.btn-photo{display:inline-flex;align-items:center;gap:5px;background:rgba(37,99,235,.15);border:1px solid rgba(37,99,235,.4);color:var(--teal-hover);padding:6px 12px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;transition:all .2s;margin-top:5px;}
-	.btn-photo:hover{background:rgba(37,99,235,.25);}
+	.btn-photo{display:inline-flex;align-items:center;gap:5px;background:rgba(13,148,136,.15);border:1px solid rgba(13,148,136,.4);color:var(--teal-hover);padding:6px 12px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;transition:all .2s;margin-top:5px;}
+	.btn-photo:hover{background:rgba(13,148,136,.25);}
 	input[type="file"]{display:none;}
 
 	.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
@@ -160,7 +160,7 @@
 	.input-wrap .f-icon{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;pointer-events:none;transition:color .2s;}
 	.form-input{width:100%;padding:9px 12px 9px 36px;background:rgba(10,25,47,.7);border:1px solid rgba(255,255,255,.1);border-radius:var(--radius);color:var(--light);font-size:13px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .25s,box-shadow .25s;}
 	.form-input::placeholder{color:rgba(160,179,198,.42);}
-	.form-input:focus{border-color:var(--teal);box-shadow:0 0 0 3px rgba(37,99,235,.17),0 0 16px rgba(37,99,235,.10);}
+	.form-input:focus{border-color:var(--teal);box-shadow:0 0 0 3px rgba(13,148,136,.17),0 0 16px rgba(13,148,136,.10);}
 	.form-input.field-invalid{border-color:var(--danger);box-shadow:0 0 0 3px rgba(240,84,84,.12);}
 	.form-select{appearance:none;-webkit-appearance:none;cursor:pointer;padding-right:40px;}
 	.form-select option{background:var(--blue-inner);color:var(--light);}
@@ -177,8 +177,8 @@
 	.alert-error{background:rgba(240,84,84,.12);border:1px solid rgba(240,84,84,.3);color:#fca5a5;}
 	.alert-success{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.28);color:#86efac;}
 
-	.btn-register{width:100%;padding:11px;background:var(--teal);border:none;border-radius:var(--radius);color:#fff;font-size:14px;font-weight:600;font-family:'DM Sans',sans-serif;letter-spacing:.5px;cursor:pointer;margin-top:12px;transition:background .2s,transform .15s,box-shadow .2s;box-shadow:0 5px 16px rgba(37,99,235,.30),0 0 20px rgba(37,99,235,.16);display:flex;align-items:center;justify-content:center;gap:8px;}
-	.btn-register:hover{background:var(--teal-hover);transform:translateY(-1px);box-shadow:0 8px 24px rgba(37,99,235,.40),0 0 28px rgba(37,99,235,.20);}
+	.btn-register{width:100%;padding:11px;background:var(--teal);border:none;border-radius:var(--radius);color:#fff;font-size:14px;font-weight:600;font-family:'DM Sans',sans-serif;letter-spacing:.5px;cursor:pointer;margin-top:12px;transition:background .2s,transform .15s,box-shadow .2s;box-shadow:0 5px 16px rgba(13,148,136,.30),0 0 20px rgba(13,148,136,.16);display:flex;align-items:center;justify-content:center;gap:8px;}
+	.btn-register:hover{background:var(--teal-hover);transform:translateY(-1px);box-shadow:0 8px 24px rgba(13,148,136,.40),0 0 28px rgba(13,148,136,.20);}
 	.btn-register:active{transform:translateY(0);}
 
 	.card-footer{text-align:center;margin-top:16px;font-size:11px;color:var(--muted);border-top:1px solid rgba(255,255,255,.06);padding-top:14px;}
@@ -193,14 +193,14 @@
 	</head>
 	<body>
 	<div class="bg-grid"></div>
-	<svg class="hex-deco hex-1" width="260" height="260" viewBox="0 0 260 260"><polygon points="130,10 240,70 240,190 130,250 20,190 20,70" fill="none" stroke="#2563EB" stroke-width="1"/><polygon points="130,50 200,90 200,170 130,210 60,170 60,90" fill="none" stroke="#2563EB" stroke-width="1"/></svg>
+	<svg class="hex-deco hex-1" width="260" height="260" viewBox="0 0 260 260"><polygon points="130,10 240,70 240,190 130,250 20,190 20,70" fill="none" stroke="#0D9488" stroke-width="1"/><polygon points="130,50 200,90 200,170 130,210 60,170 60,90" fill="none" stroke="#0D9488" stroke-width="1"/></svg>
 	<svg class="hex-deco hex-2" width="300" height="300" viewBox="0 0 300 300"><polygon points="150,10 280,80 280,220 150,290 20,220 20,80" fill="none" stroke="#2B6CB0" stroke-width="1"/><polygon points="150,60 220,100 220,200 150,240 80,200 80,100" fill="none" stroke="#2B6CB0" stroke-width="1"/></svg>
 
 	<div class="reg-card">
 		<div class="card-header">
 			<img class="logo-ring" src="../image/pbi_logo" alt="PBI Logo"/>
 			<div class="card-title">Create Your Account</div>
-			<div class="card-subtitle">Pandan Bay Institute — Faculty Access</div>
+			<div class="card-subtitle">Pandan Bay Institute — Staff Access</div>
 		</div>
 
 
@@ -210,7 +210,7 @@
 		<?php endif; ?>
 		<?php if ($success): ?>
 		<div class="alert alert-success"><i class="fa-solid fa-circle-check" style="flex-shrink:0;margin-top:1px"></i>
-			<span><?= htmlspecialchars($success) ?> <a href="faculty_login.php" style="color:#4ade80;font-weight:700;">Log in now →</a></span>
+			<span><?= htmlspecialchars($success) ?> <a href="staff_login.php" style="color:#4ade80;font-weight:700;">Log in now →</a></span>
 		</div>
 		<?php endif; ?>
 
@@ -276,12 +276,12 @@
 
 			<button type="submit" class="btn-register">
 				<i class="fa-solid fa-user-plus"></i>
-				<span id="regBtnLabel">Create Faculty Account</span>
+				<span id="regBtnLabel">Create Staff Account</span>
 			</button>
 		</form>
 
 		<div class="card-footer">
-			Already have an account? <a href="faculty_login.php">Sign in here</a><br>
+			Already have an account? <a href="staff_login.php">Sign in here</a><br>
 		</div>
 	</div>
 

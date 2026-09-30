@@ -228,26 +228,26 @@ $uploadDir = '../image/';
         .hidden-radio { position: absolute; opacity: 0; width: 0; height: 0; }
     
 /* ── SHARP LIGHT ADMIN UI ── */
-html { background:#FFFFFF; }
+html { background:#F8FAFC; }
 body {
-  color:#2B2416 !important;
-  background:#FFFFFF !important;
+  color:#0B1F3A !important;
+  background:#F8FAFC !important;
   -webkit-font-smoothing:antialiased;
   text-rendering:optimizeLegibility;
 }
-h1,h2,h3,h4,h5,h6 { color:#2B2416; letter-spacing:-.01em; }
-p, .subtitle, .description, .helper, .muted, small { color:#7A6F58; }
-label, th { color:#5B4B2A; font-weight:600; }
-td { color:#2B2416; }
+h1,h2,h3,h4,h5,h6 { color:#0B1F3A; letter-spacing:-.01em; }
+p, .subtitle, .description, .helper, .muted, small { color:#67819E; }
+label, th { color:#294765; font-weight:600; }
+td { color:#0B1F3A; }
 input, select, textarea {
-  color:#2B2416;
+  color:#0B1F3A;
   background:#FFFFFF;
-  border-color:#D8C89A;
+  border-color:#B9CDE5;
 }
-input::placeholder, textarea::placeholder { color:#9B8B6A; }
+input::placeholder, textarea::placeholder { color:#91A6BE; }
 .card, .panel, .section, .table-card, .content-card {
-  border-color:#D8C89A;
-  box-shadow:0 4px 14px rgba(93,72,22,.09);
+  border-color:#B9CDE5;
+  box-shadow:0 4px 14px rgba(30,82,144,.09);
 }
 button, .btn { font-weight:700; }
 a { color:inherit; }
@@ -335,7 +335,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
                                     <div><?= $index++ . '. ' . htmlspecialchars($target['name']); ?></div>
                                 </div>
                                 <div style="font-size:12px; color:var(--text-secondary); margin-top:4px; padding-left:22px;">
-                                    <span style="text-transform:uppercase; font-size:10px; background:#FFF8E1; color:#1A73E8; padding:2px 6px; border-radius:4px; font-weight:600;">
+                                    <span style="text-transform:uppercase; font-size:10px; background:#E6F0FF; color:#1A73E8; padding:2px 6px; border-radius:4px; font-weight:600;">
                                         <?= htmlspecialchars($roleTag); ?>
                                     </span>
                                 </div>

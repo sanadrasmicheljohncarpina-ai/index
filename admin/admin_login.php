@@ -60,7 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <style>
 :root{
-    --dark-blue:#201A10;
+    --dark-blue:#14100A;
     --blue-mid:#EFE6D0;
     --blue-inner:#E9DFC6;
     --blue-accent:#C9A227;
@@ -163,10 +163,162 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible{outline:3px so
 @media(prefers-reduced-motion:reduce){.login-card,.reg-card{animation:none;transition:none}.btn-main,.photo-preview{transition:none}}
 @media(max-width:480px){body{padding:16px}.login-card{padding:36px 22px 30px}.card-title{font-size:24px}}
 @media(max-height:700px){body{overflow:auto}}
+
+/* Final input icon alignment fix: keep icons inside their own visual space. */
+.input-wrap .f-icon{
+    left:14px!important;
+    z-index:2!important;
+    width:18px!important;
+    text-align:center!important;
+}
+.input-wrap .form-input{
+    padding-left:46px!important;
+    padding-right:46px!important;
+}
+.input-wrap .toggle-pw{
+    right:12px!important;
+    z-index:3!important;
+    width:26px!important;
+    height:30px!important;
+    display:flex!important;
+    align-items:center!important;
+    justify-content:center!important;
+}
+.input-wrap .toggle-pw i{display:block!important;}
 </style>
 
 <link rel="stylesheet" href="admin_appearance.css">
 <script src="admin_appearance.js"></script>
+
+<style id="pbi-auth-navy-theme">
+/* PBI Admin authentication theme — matched to the Executive Assistant
+   navigation/sidebar navy palette shown in the current UI reference. */
+:root{
+    --auth-navy:#0F1E33;
+    --auth-navy-deep:#091727;
+    --auth-navy-panel:#12263E;
+    --auth-navy-input:#0B1B2E;
+    --auth-border:#29405A;
+    --auth-border-soft:rgba(152,178,207,.18);
+    --auth-text:#E7EEF7;
+    --auth-muted:#9AAFC5;
+    --auth-gold:#F2C94C;
+    --auth-gold-hover:#FFD866;
+    --auth-blue:#2F6EE2;
+    --auth-blue-hover:#3D7BF0;
+}
+
+html,body{background:var(--auth-navy-deep)!important;color:var(--auth-text)!important;}
+html{color-scheme:dark!important;}
+body{
+    background:
+        radial-gradient(circle at 10% 8%,rgba(47,110,226,.13),transparent 30%),
+        radial-gradient(circle at 90% 90%,rgba(242,201,76,.08),transparent 28%),
+        repeating-linear-gradient(45deg,rgba(79,129,184,.045) 0,rgba(79,129,184,.045) 1px,transparent 1px,transparent 26px),
+        repeating-linear-gradient(-45deg,rgba(79,129,184,.035) 0,rgba(79,129,184,.035) 1px,transparent 1px,transparent 26px),
+        var(--auth-navy-deep)!important;
+}
+body::before{background:linear-gradient(180deg,rgba(15,30,51,.12),transparent 30%,rgba(47,110,226,.035))!important;}
+.bg-grid{
+    background-image:
+        repeating-linear-gradient(45deg,rgba(79,129,184,.055) 0,rgba(79,129,184,.055) 1px,transparent 1px,transparent 26px),
+        repeating-linear-gradient(-45deg,rgba(79,129,184,.04) 0,rgba(79,129,184,.04) 1px,transparent 1px,transparent 26px)!important;
+}
+
+.login-card,.reg-card{
+    background:rgba(15,30,51,.96)!important;
+    border:1px solid rgba(152,178,207,.18)!important;
+    box-shadow:0 24px 70px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.025),0 0 80px rgba(47,110,226,.07)!important;
+    color:var(--auth-text)!important;
+}
+.login-card:hover,.reg-card:hover{
+    border-color:rgba(98,144,201,.36)!important;
+    box-shadow:0 24px 70px rgba(0,0,0,.48),0 0 0 1px rgba(255,255,255,.025),0 0 90px rgba(47,110,226,.11)!important;
+}
+
+.card-title{color:#F3F7FB!important;}
+.card-subtitle{color:#92A7BF!important;}
+.divider{background:linear-gradient(90deg,transparent,rgba(93,145,204,.36),transparent)!important;}
+.form-label{color:#98ADC3!important;}
+.required,.req{color:#F87171!important;}
+
+.form-input{
+    background:var(--auth-navy-input)!important;
+    border-color:var(--auth-border)!important;
+    color:var(--auth-text)!important;
+}
+.form-input::placeholder{color:rgba(154,175,197,.50)!important;}
+.form-input:hover:not(:focus){
+    background:#0D2035!important;
+    border-color:#345473!important;
+}
+.form-input:focus{
+    background:#0D2035!important;
+    border-color:var(--auth-blue)!important;
+    box-shadow:0 0 0 3px rgba(47,110,226,.20)!important;
+}
+.f-icon,.toggle-pw{color:#92A7BF!important;}
+.input-wrap:focus-within .f-icon,.toggle-pw:hover{color:#B7C9DB!important;}
+
+.forgot-row a,.register-row a,.card-footer a{color:var(--auth-gold)!important;}
+.forgot-row a:hover,.register-row a:hover,.card-footer a:hover{color:var(--auth-gold-hover)!important;}
+
+.btn-main{
+    background:var(--auth-blue)!important;
+    box-shadow:0 8px 22px rgba(47,110,226,.30)!important;
+}
+.btn-main:hover{
+    background:var(--auth-blue-hover)!important;
+    box-shadow:0 10px 28px rgba(47,110,226,.38)!important;
+}
+
+.alert-error{
+    background:rgba(248,113,113,.10)!important;
+    border-color:rgba(248,113,113,.28)!important;
+    color:#FCA5A5!important;
+}
+.alert-success{
+    background:rgba(34,197,94,.09)!important;
+    border-color:rgba(34,197,94,.24)!important;
+    color:#86EFAC!important;
+}
+
+.card-footer{border-top-color:rgba(152,178,207,.12)!important;color:var(--auth-muted)!important;}
+.secure-badge{color:#8FA6BE!important;}
+.secure-badge i{color:#4ADE80!important;}
+
+.photo-upload-area{
+    background:rgba(10,27,46,.78)!important;
+    border-color:rgba(152,178,207,.17)!important;
+}
+.photo-preview{
+    background:#0A1B2E!important;
+    border-color:rgba(79,129,184,.55)!important;
+}
+.photo-preview:hover{border-color:var(--auth-blue)!important;box-shadow:0 0 0 4px rgba(47,110,226,.12)!important;}
+.photo-preview .ph-icon{color:#91A8BF!important;}
+.photo-preview:hover .ph-icon{color:#BDD0E4!important;}
+.photo-info p{color:#E6EDF6!important;}
+.photo-info span{color:#8FA6BE!important;}
+.btn-photo{
+    background:rgba(242,201,76,.08)!important;
+    border-color:rgba(242,201,76,.30)!important;
+    color:var(--auth-gold)!important;
+}
+.btn-photo:hover{
+    background:rgba(242,201,76,.14)!important;
+    border-color:rgba(242,201,76,.50)!important;
+}
+
+.pw-strength{background:rgba(152,178,207,.12)!important;}
+.pw-hint{color:#8FA6BE!important;}
+
+button:focus-visible,a:focus-visible,.photo-preview:focus-visible{
+    outline:3px solid rgba(79,144,231,.35)!important;
+    outline-offset:2px;
+}
+</style>
+
 </head>
 <body>
 <div class="bg-grid" aria-hidden="true"></div>
@@ -212,8 +364,8 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible{outline:3px so
                 <i class="fa-solid fa-lock f-icon"></i>
                 <input class="form-input" type="password" id="lp" name="password"
                        placeholder="Enter your password" required autocomplete="new-password"/>
-                <button type="button" class="toggle-pw" onclick="togglePw()">
-                    <i class="fa-solid fa-eye" id="eyeIcon"></i>
+                <button type="button" class="toggle-pw" id="togglePassword" onclick="togglePw()" aria-label="Show password" title="Show password">
+                    <i class="fa-solid fa-eye-slash" id="eyeIcon"></i>
                 </button>
             </div>
         </div>
@@ -239,8 +391,14 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible{outline:3px so
 <script>
 function togglePw() {
     const el = document.getElementById('lp'), ic = document.getElementById('eyeIcon');
-    el.type = el.type === 'password' ? 'text' : 'password';
-    ic.className = el.type === 'password' ? 'fa-solid fa-eye' : 'fa-solid fa-eye-slash';
+    const btn = document.getElementById('togglePassword');
+    const showing = el.type === 'password';
+    el.type = showing ? 'text' : 'password';
+    ic.className = showing ? 'fa-solid fa-eye' : 'fa-solid fa-eye-slash';
+    if (btn) {
+        btn.setAttribute('aria-label', showing ? 'Hide password' : 'Show password');
+        btn.setAttribute('title', showing ? 'Hide password' : 'Show password');
+    }
 }
 </script>
 </body>

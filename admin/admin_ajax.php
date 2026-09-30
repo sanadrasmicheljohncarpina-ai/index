@@ -19,7 +19,7 @@ PBI.toast = function (msg, type = 'success') {
         position:fixed;top:20px;right:20px;z-index:9999;
         background:${isSuccess ? 'rgba(34,197,94,.15)' : 'rgba(240,84,84,.15)'};
         border:1px solid ${isSuccess ? 'rgba(34,197,94,.35)' : 'rgba(240,84,84,.35)'};
-        color:${isSuccess ? '#E6D49A' : '#E78D9C'};
+        color:${isSuccess ? '#6BCFA9' : '#E78D9C'};
         padding:13px 20px;border-radius:8px;font-size:13px;
         display:flex;align-items:center;gap:9px;
         box-shadow:0 6px 24px rgba(0,0,0,.4);
@@ -106,7 +106,7 @@ PBI.confirm = function (msg, opts = {}) {
     return new Promise(resolve => {
         const okLabel     = opts.okLabel     || 'Confirm';
         const cancelLabel = opts.cancelLabel || 'Cancel';
-        const okColor     = opts.danger === false ? '#B8860B' : '#D6455D';
+        const okColor     = opts.danger === false ? '#0F9F6E' : '#D6455D';
 
         const overlay = document.createElement('div');
         overlay.style.cssText = `
@@ -116,14 +116,14 @@ PBI.confirm = function (msg, opts = {}) {
             font-family:'DM Sans',sans-serif;
         `;
         overlay.innerHTML = `
-            <div style="background:#FFFFFF;border:1px solid rgba(93,72,22,.13);
+            <div style="background:#FFFFFF;border:1px solid rgba(30,82,144,.13);
                         border-radius:14px;padding:28px 26px;max-width:400px;width:100%;
-                        box-shadow:0 20px 60px rgba(93,72,22,.13);">
-                <p style="font-size:14px;color:#2B2416;line-height:1.6;margin-bottom:22px;white-space:pre-line;"></p>
+                        box-shadow:0 20px 60px rgba(30,82,144,.13);">
+                <p style="font-size:14px;color:#0B1F3A;line-height:1.6;margin-bottom:22px;white-space:pre-line;"></p>
                 <div style="display:flex;gap:10px;">
                     <button id="pbi-no"
-                        style="flex:1;padding:10px;background:#FFFFFF;border:1px solid rgba(93,72,22,.13);
-                               border-radius:8px;color:#2B2416;font-size:14px;font-weight:600;cursor:pointer;">
+                        style="flex:1;padding:10px;background:#F8FAFC;border:1px solid rgba(30,82,144,.13);
+                               border-radius:8px;color:#0B1F3A;font-size:14px;font-weight:600;cursor:pointer;">
                         ${cancelLabel}
                     </button>
                     <button id="pbi-yes"

@@ -5,6 +5,68 @@ require_once 'db.php';
 require_once '../shared/EvaluationContextService.php';
 require_once '../shared/system_settings_service.php';
 
+// ── CURRENT-QUESTIONNAIRE FILTER ─────────────────────────────
+// Answers saved under older question banks (before the generalized-
+// questionnaire migration copied them to new IDs) made a 17-question
+// questionnaire show as 29 rows. Matching is on question TEXT so a legacy
+// answer to a question that still exists is kept; answers to questions no
+// longer in the questionnaire are left out of the aggregates. Answers whose
+// text can't be resolved are kept, and if a person has no current questions
+// nothing is filtered, so a report never goes blank. No data is modified.
+if (!function_exists('rp_current_q_core')) {
+    function rp_current_q_core(string $textExpr, string $srcExpr, string $uid): string {
+        $q = "CONVERT($textExpr USING utf8mb4) COLLATE utf8mb4_unicode_ci";
+        $isFaculty = "EXISTS (SELECT 1 FROM users tux WHERE tux.id=$uid
+                       AND (tux.role IN ('teacher','faculty') OR tux.secondary_role='teacher'))";
+        $facBank = "SELECT CONVERT(fqx.question_text USING utf8mb4) COLLATE utf8mb4_unicode_ci FROM evaluation_questions fqx
+                     WHERE fqx.target_type='Faculty' AND fqx.eval_type='general'
+                       AND fqx.evaluator_role='shared' AND fqx.is_active=1";
+        $personBank = "SELECT CONVERT(pqx.question_text USING utf8mb4) COLLATE utf8mb4_unicode_ci FROM user_questions pqx
+                        WHERE pqx.user_id=$uid AND pqx.eval_type='general'";
+        return "(
+            $textExpr IS NULL
+            OR ($isFaculty AND $q IN ($facBank))
+            OR ($srcExpr='evaluation' AND $q IN ($facBank))
+            OR $q IN ($personBank)
+            OR (NOT ($isFaculty AND EXISTS ($facBank)) AND NOT EXISTS ($personBank))
+        )";
+    }
+}
+// $qa = alias of questionnaire_answers; $uid = SQL expr / int of the evaluated person's users.id
+if (!function_exists('rp_current_q_sql')) {
+    function rp_current_q_sql(string $qa, $uid): string {
+        $text = "COALESCE(
+            (SELECT eqx.question_text FROM evaluation_questions eqx
+              WHERE $qa.question_source='evaluation' AND eqx.id=$qa.question_id LIMIT 1),
+            (SELECT uqx.question_text FROM user_questions uqx
+              WHERE $qa.question_source='user' AND uqx.id=COALESCE($qa.user_question_id, $qa.question_id) LIMIT 1))";
+        return rp_current_q_core($text, "$qa.question_source", (string)$uid);
+    }
+}
+// Merge rows that share the same wording (old + new IDs) with a response-weighted average.
+if (!function_exists('rp_merge_question_rows')) {
+    function rp_merge_question_rows(array $rows): array {
+        usort($rows, fn($a, $b) => (int)$b['q_id'] <=> (int)$a['q_id']);
+        $merged = [];
+        foreach ($rows as $r) {
+            $key = mb_strtolower(trim((string)$r['question_text']));
+            $n = (int)$r['total_responses'];
+            $sum = (float)$r['avg_score'] * $n;
+            if (!isset($merged[$key])) { $merged[$key] = $r; $merged[$key]['_n'] = $n; $merged[$key]['_sum'] = $sum; }
+            else { $merged[$key]['_n'] += $n; $merged[$key]['_sum'] += $sum; }
+        }
+        $out = [];
+        foreach ($merged as $r) {
+            $r['total_responses'] = $r['_n'];
+            $r['avg_score'] = $r['_n'] > 0 ? round($r['_sum'] / $r['_n'], 2) : null;
+            unset($r['_n'], $r['_sum']);
+            $out[] = $r;
+        }
+        usort($out, fn($a, $b) => [$a['category'], (int)$a['q_id']] <=> [$b['category'], (int)$b['q_id']]);
+        return $out;
+    }
+}
+
 // ── AUTH GUARD ───────────────────────────────────────────────
 // Evaluation scores and archive/restore actions are sensitive —
 // require an authenticated admin-level session before anything else runs.
@@ -83,6 +145,11 @@ $_SESSION['dean_reports_schema_v1'] = 1;
 $reportScopeSql = "(u.role IN ('dean','principal') OR u.role='staff' OR (u.role IN ('teacher','faculty') AND EXISTS (SELECT 1 FROM user_year_levels scope_uyl WHERE scope_uyl.user_id=u.id AND scope_uyl.year_level IN ('1st Year College','2nd Year College','3rd Year College','4th Year College'))))";
 // Student evaluators are independently restricted below to College. Keep the
 // portal's Higher Education scope explicit here as well for any summary queries.
+// ── STAFF EVALUATION (non-teaching staff evaluating the Executive Assistant) ──
+// The EA account role(s). Adjust this list if your EA accounts use a different users.role value.
+$eaRoles = ['ea','executive_assistant','admin'];
+$eaRolesSql = implode(',', array_map(static fn($r) => "'" . addslashes($r) . "'", $eaRoles));
+$eaScopeSql = "(u.role IN ($eaRolesSql) AND u.is_active=1)";
 $reportStudentScopeSql = "(education_level='higher_ed' OR year_level IN ('1st Year College','2nd Year College','3rd Year College','4th Year College'))";
 
 // ── ARCHIVE / RESTORE (POST + CSRF only) ─────────────────────
@@ -93,13 +160,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['archive_id']) || iss
         http_response_code(403);
         exit('Invalid or expired request. Please go back, refresh the page and try again.');
     }
-    $postEval  = in_array($_POST['eval_type'] ?? '', ['student','peer'], true) ? $_POST['eval_type'] : 'student';
+    $postEval  = in_array($_POST['eval_type'] ?? '', ['student','peer','staff'], true) ? $_POST['eval_type'] : 'student';
+    $postScopeSql = $postEval === 'staff' ? $eaScopeSql : $reportScopeSql;
     $postGroup = (string)($_POST['group'] ?? 'All');
     $qs = "group=" . urlencode($postGroup) . "&eval_type=" . urlencode($postEval);
 
     if (isset($_POST['archive_id'])) {
         $aid = intval($_POST['archive_id']);
-        $scopeCheck = $mysqli->query("SELECT u.id FROM users u WHERE u.id=$aid AND $reportScopeSql LIMIT 1");
+        $scopeCheck = $mysqli->query("SELECT u.id FROM users u WHERE u.id=$aid AND $postScopeSql LIMIT 1");
         if ($scopeCheck && $scopeCheck->num_rows) {
             $stmt = $mysqli->prepare("INSERT IGNORE INTO analytics_archive (target_user_id) VALUES (?)");
             $stmt->bind_param("i", $aid); $stmt->execute(); $stmt->close();
@@ -109,7 +177,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['archive_id']) || iss
     }
 
     $rid = intval($_POST['restore_id']);
-    $scopeCheck = $mysqli->query("SELECT u.id FROM users u WHERE u.id=$rid AND $reportScopeSql LIMIT 1");
+    $scopeCheck = $mysqli->query("SELECT u.id FROM users u WHERE u.id=$rid AND $postScopeSql LIMIT 1");
     if ($scopeCheck && $scopeCheck->num_rows) {
         $stmt = $mysqli->prepare("DELETE FROM analytics_archive WHERE target_user_id=?");
         $stmt->bind_param("i", $rid); $stmt->execute(); $stmt->close();
@@ -131,13 +199,16 @@ $legacyMultiRoleLink = ($requestedEvalType === 'multi_role');
 // allowing an unsupported school-head mode to be activated.
 $legacySchoolHeadLink = ($requestedEvalType === 'schoolhead' || $requestedEvalType === 'school_head');
 $activeEval = ($legacyMultiRoleLink || $legacySchoolHeadLink) ? 'student' : $requestedEvalType;
-if (!in_array($activeEval, ['student','peer'], true)) $activeEval = 'student';
+if (!in_array($activeEval, ['student','peer','staff'], true)) $activeEval = 'student';
 
 $groupFilter = $_GET['group'] ?? 'All';
 $allowedGroups = $activeEval === 'student'
     ? ['All','Faculty','Staff','Dean']
     : ['All','Faculty','Teacher'];
 if (!in_array($groupFilter, $allowedGroups, true)) $groupFilter = 'All';
+if ($activeEval === 'staff') $groupFilter = 'All';
+// Scope used for the people being evaluated: Staff Evaluation targets the EA only.
+$viewScopeSql = $activeEval === 'staff' ? $eaScopeSql : $reportScopeSql;
 $groupForOtherTabs = in_array($groupFilter, ['Faculty','Teacher','Staff'], true) ? $groupFilter : 'All';
 
 $settings = get_system_settings($mysqli);
@@ -188,12 +259,31 @@ $peerEvalPlainSql = "$periodPlainSql AND eval_type IN ($peerTypesSql)
     AND evaluator_id IN ($collegeTeacherIdsSql)
     AND target_user_id IN ($collegeTeacherIdsSql)";
 
+// Staff Evaluation: NON-TEACHING staff (staff role, no teaching assignment / year level)
+// evaluating the Executive Assistant. Any non-student tracker row that matches
+// that evaluator/target pair counts, so it works whatever eval_type value the
+// staff-to-EA form stores.
+$nonTeachingStaffIdsSql = "SELECT nts.id FROM users nts
+    WHERE nts.role='staff'
+      AND COALESCE(nts.sector,'') <> 'Teacher'
+      AND NOT EXISTS (SELECT 1 FROM user_year_levels ntyl WHERE ntyl.user_id=nts.id)
+      AND NOT EXISTS (SELECT 1 FROM teaching_assignments ntta WHERE ntta.user_id=nts.id)";
+$eaTargetIdsSql = "SELECT eat.id FROM users eat WHERE eat.role IN ($eaRolesSql)";
+$staffEvalSql = "$periodSql AND et.eval_type<>$studentTypeSql
+    AND et.evaluator_id IN ($nonTeachingStaffIdsSql)
+    AND et.target_user_id IN ($eaTargetIdsSql)";
+$staffEvalPlainSql = "$periodPlainSql AND eval_type<>$studentTypeSql
+    AND evaluator_id IN ($nonTeachingStaffIdsSql)
+    AND target_user_id IN ($eaTargetIdsSql)";
+
 $evalTypeSql = match ($activeEval) {
     'peer' => $peerEvalSql,
+    'staff' => $staffEvalSql,
     default => "$periodSql AND et.eval_type=$studentTypeSql AND $collegeStudentEvaluatorSql AND (COALESCE(et.evaluation_context,'teacher') IN ($teacherContextSql,$staffContextSql) OR et.target_user_id IN (SELECT id FROM users WHERE role='dean' AND is_active=1 AND account_status='approved'))"
 };
 $evalTypePlainSql = match ($activeEval) {
     'peer' => $peerEvalPlainSql,
+    'staff' => $staffEvalPlainSql,
     default => "$periodPlainSql AND eval_type=$studentTypeSql AND $collegeStudentEvaluatorPlainSql AND (COALESCE(evaluation_context,'teacher') IN ($teacherContextSql,$staffContextSql) OR target_user_id IN (SELECT id FROM users WHERE role='dean' AND is_active=1 AND account_status='approved'))"
 };
 
@@ -293,14 +383,14 @@ function scoreSatisfactionLabel($s) {
 }
 
 // Eval type UI config
-$evalLabel      = $activeEval === 'peer' ? 'Peer-to-Peer Evaluation' : 'Student Evaluation';
-$evalColor      = $activeEval === 'peer' ? '#7C3AED' : '#3B82F6';
-$evalColorBg    = $activeEval === 'peer' ? 'rgba(124,58,237,.08)' : 'rgba(59,130,246,.08)';
-$evalColorBorder= $activeEval === 'peer' ? 'rgba(124,58,237,.25)' : 'rgba(59,130,246,.25)';
-$evalIcon       = $activeEval === 'peer' ? 'fa-people-arrows' : 'fa-graduation-cap';
+$evalLabel      = match ($activeEval) { 'peer' => 'Peer-to-Peer Evaluation', 'staff' => 'Staff Evaluation', default => 'Student Evaluation' };
+$evalColor      = match ($activeEval) { 'peer' => '#7C3AED', 'staff' => '#0D9488', default => '#3B82F6' };
+$evalColorBg    = match ($activeEval) { 'peer' => 'rgba(124,58,237,.08)', 'staff' => 'rgba(13,148,136,.08)', default => 'rgba(59,130,246,.08)' };
+$evalColorBorder= match ($activeEval) { 'peer' => 'rgba(124,58,237,.25)', 'staff' => 'rgba(13,148,136,.25)', default => 'rgba(59,130,246,.25)' };
+$evalIcon       = match ($activeEval) { 'peer' => 'fa-people-arrows', 'staff' => 'fa-briefcase', default => 'fa-graduation-cap' };
 // Label for "who evaluated"
-$evaluatorNoun  = $activeEval === 'peer' ? 'colleague' : 'student';
-$evaluatorNounP = $activeEval === 'peer' ? 'colleagues' : 'students';
+$evaluatorNoun  = match ($activeEval) { 'peer' => 'colleague', 'staff' => 'staff member', default => 'student' };
+$evaluatorNounP = match ($activeEval) { 'peer' => 'colleagues', 'staff' => 'staff', default => 'students' };
 // In evaluation_tracker: student_id = the evaluator (student or peer teacher)
 // eval_type filters which set we show
 
@@ -511,7 +601,7 @@ input,select,textarea{background:#FFFFFF !important;color:#172033 !important;bor
 // VIEW: EVALUATION SHEET
 // ══════════════════════════════════════════════════════════════
 if ($view === 'sheet' && $target_id && $tracker_id) {
-    $tgt = db_row($mysqli, "SELECT id,full_name,designation,photo,role FROM users u WHERE u.id=$target_id AND $reportScopeSql LIMIT 1");
+    $tgt = db_row($mysqli, "SELECT id,full_name,designation,photo,role FROM users u WHERE u.id=$target_id AND $viewScopeSql LIMIT 1");
     if (!$tgt) { http_response_code(404); exit('Personnel not found in this report scope.'); }
     $trk = db_row($mysqli, "SELECT * FROM evaluation_tracker et WHERE et.id=$tracker_id AND et.target_user_id=$target_id AND $evalTypeSql LIMIT 1");
     if (!$trk) { http_response_code(404); exit('Evaluation not found in this report scope.'); }
@@ -590,22 +680,23 @@ if ($view === 'sheet' && $target_id && $tracker_id) {
                    COUNT(answer_score) AS total_responses,
                    AVG(answer_score)   AS avg_score
             FROM (
-                SELECT qa.question_id AS q_id, eq.question_text, eq.category, qa.answer_score
+                SELECT qa.question_id AS q_id, eq.question_text, eq.category, qa.answer_score, qa.question_source AS src
                 FROM questionnaire_answers qa
                 JOIN evaluation_questions eq ON eq.id = qa.question_id
                 WHERE qa.tracker_id IN ($cumIds) AND qa.question_source='evaluation'
                 UNION ALL
-                SELECT qa.user_question_id AS q_id, uq.question_text, uq.category, qa.answer_score
+                SELECT qa.user_question_id AS q_id, uq.question_text, uq.category, qa.answer_score, qa.question_source AS src
                 FROM questionnaire_answers qa
                 JOIN user_questions uq ON uq.id = qa.user_question_id
                 WHERE qa.tracker_id IN ($cumIds) AND qa.question_source='user'
             ) cum_answers
             WHERE answer_score IS NOT NULL
+              AND " . rp_current_q_core('question_text', 'src', (string)(int)$target_id) . "
             GROUP BY category, q_id, question_text
             ORDER BY category, q_id
         ");
         if ($cqb) {
-            foreach ($cqb->fetch_all(MYSQLI_ASSOC) as $cRow) {
+            foreach (rp_merge_question_rows($cqb->fetch_all(MYSQLI_ASSOC)) as $cRow) {
                 $cRow['avg_score'] = round((float)$cRow['avg_score'], 2);
                 $cumByCat[$cRow['category']][] = $cRow;
             }
@@ -625,10 +716,12 @@ if ($view === 'sheet' && $target_id && $tracker_id) {
                 SELECT qa.answer_score
                 FROM questionnaire_answers qa
                 WHERE qa.tracker_id IN ($cumIds) AND qa.question_source='evaluation' AND qa.answer_score IS NOT NULL
+                  AND " . rp_current_q_sql('qa', (int)$target_id) . "
                 UNION ALL
                 SELECT qa.answer_score
                 FROM questionnaire_answers qa
                 WHERE qa.tracker_id IN ($cumIds) AND qa.question_source='user' AND qa.answer_score IS NOT NULL
+                  AND " . rp_current_q_sql('qa', (int)$target_id) . "
             ) cum_all_answers
         ");
         if ($cumOverallRes) {
@@ -672,9 +765,9 @@ if ($view === 'sheet' && $target_id && $tracker_id) {
         fn($r) => $r !== ''
     ));
 
-    $cumRoleText = $tgt['role']==='principal' ? 'Principal'
+    $cumRoleText = $activeEval === 'staff' ? 'Executive Assistant' : ($tgt['role']==='principal' ? 'Principal'
                  : ($tgt['role']==='dean' ? 'Dean'
-                 : (in_array($tgt['role'], ['teacher','faculty'], true) ? 'Faculty' : 'Staff'));
+                 : (in_array($tgt['role'], ['teacher','faculty'], true) ? 'Faculty' : 'Staff')));
 
     $scaleItems  = [5=>'Always',4=>'Often',3=>'Sometimes',2=>'Rarely',1=>'Never'];
     $scaleColors = [5=>'#4ade80',4=>'#86efac',3=>'#facc15',2=>'#fb923c',1=>'#f87171'];
@@ -798,7 +891,7 @@ a { color:inherit; }
     <?php else: ?><div class="sheet-avatar-ph"><i class="fa-solid fa-user"></i></div><?php endif; ?>
     <div>
         <div class="sheet-name"><?= htmlspecialchars($tgt['full_name']) ?></div>
-        <div class="sheet-desig"><?= htmlspecialchars($tgt['designation']) ?> · <?= $tgt['role']==='teacher'?'Teacher':'Staff' ?></div>
+        <div class="sheet-desig"><?= htmlspecialchars($tgt['designation']) ?> · <?= $activeEval==='staff' ? 'Executive Assistant' : ($tgt['role']==='teacher'?'Teacher':'Staff') ?></div>
     </div>
 
     <!-- Visible on screen: shows evaluator identity -->
@@ -1505,7 +1598,7 @@ html.dark-theme ::-webkit-scrollbar-thumb {
 // Shows the selected person's evaluation summary and each received evaluation.
 // ══════════════════════════════════════════════════════════════
 if ($view === 'students' && $target_id) {
-    $tgt = db_row($mysqli, "SELECT id,full_name,designation,photo,role FROM users u WHERE u.id=$target_id AND $reportScopeSql LIMIT 1");
+    $tgt = db_row($mysqli, "SELECT id,full_name,designation,photo,role FROM users u WHERE u.id=$target_id AND $viewScopeSql LIMIT 1");
     if (!$tgt) { http_response_code(404); exit('Personnel not found in this report scope.'); }
 
     // Keep the selected year level only for Student Evaluation.
@@ -1539,7 +1632,7 @@ if ($view === 'students' && $target_id) {
                " . ($activeEval === 'student' ? "u.year_level" : "NULL AS year_level") . ",
                (SELECT AVG(qa.answer_score)
                   FROM questionnaire_answers qa
-                 WHERE qa.tracker_id=et.id) AS avg_score
+                 WHERE qa.tracker_id=et.id AND " . rp_current_q_sql('qa', (int)$target_id) . ") AS avg_score
           FROM evaluation_tracker et
           JOIN users u ON u.id = et.evaluator_id
          WHERE et.target_user_id = $target_id
@@ -1555,7 +1648,7 @@ if ($view === 'students' && $target_id) {
     $overallAvg = null;
     if (!empty($evaluators)) {
         $evTrackerIds = implode(',', array_map('intval', array_column($evaluators, 'tracker_id')));
-        $oa = db_row($mysqli, "SELECT AVG(answer_score) AS a FROM questionnaire_answers WHERE tracker_id IN ($evTrackerIds) AND answer_score IS NOT NULL");
+        $oa = db_row($mysqli, "SELECT AVG(qa.answer_score) AS a FROM questionnaire_answers qa WHERE qa.tracker_id IN ($evTrackerIds) AND qa.answer_score IS NOT NULL AND " . rp_current_q_sql('qa', (int)$target_id));
         if (isset($oa['a']) && $oa['a'] !== null) $overallAvg = round((float)$oa['a'], 2);
     }
 
@@ -1653,7 +1746,7 @@ if ($view === 'students' && $target_id) {
     <div class="detail-eval-icon"><i class="fa-solid <?= $evalIcon ?>"></i></div>
     <div>
         <div class="detail-eval-title"><?= htmlspecialchars($evalLabel) ?></div>
-        <div class="detail-eval-sub"><?= $activeEval === 'peer' ? 'Evaluated by fellow College teachers.' : 'Evaluated by students using the Student Evaluation questionnaire.' ?></div>
+        <div class="detail-eval-sub"><?= $activeEval === 'staff' ? 'Evaluated by non-teaching staff using the Staff Evaluation questionnaire.' : ($activeEval === 'peer' ? 'Evaluated by fellow College teachers.' : 'Evaluated by students using the Student Evaluation questionnaire.') ?></div>
     </div>
 </div>
 
@@ -1663,8 +1756,8 @@ if ($view === 'students' && $target_id) {
     <div class="detail-person-meta">
         <div class="detail-person-name"><?= htmlspecialchars($tgt['full_name']) ?></div>
         <div class="detail-person-desig">
-            · <?= $tgt['role']==='teacher' || $tgt['role']==='faculty' ? 'Faculty' : 'Staff' ?><br>
-            <?= $activeEval === 'peer' ? 'Peer-to-Peer Evaluation' : ($selectedYearLevel !== '' ? htmlspecialchars($selectedYearLevel) : 'College Students Only') ?>
+            · <?= $activeEval==='staff' ? 'Executive Assistant' : ($tgt['role']==='teacher' || $tgt['role']==='faculty' ? 'Faculty' : 'Staff') ?><br>
+            <?= $activeEval === 'staff' ? 'Non-Teaching Staff Evaluation' : ($activeEval === 'peer' ? 'Peer-to-Peer Evaluation' : ($selectedYearLevel !== '' ? htmlspecialchars($selectedYearLevel) : 'College Students Only')) ?>
         </div>
     </div>
     <div class="detail-stats">
@@ -1732,9 +1825,7 @@ if ($view === 'students' && $target_id) {
         <tbody>
         <?php foreach ($evaluators as $i => $ev):
             $sc = $ev['avg_score'] !== null ? round((float)$ev['avg_score'],2) : null;
-            $roleLabel = $activeEval === 'peer'
-                ? 'Faculty / Peer'
-                : 'Student';
+            $roleLabel = match ($activeEval) { 'peer' => 'Faculty / Peer', 'staff' => 'Non-Teaching Staff', default => 'Student' };
             $dateEval = !empty($ev['submitted_at']) ? date('M d, Y', strtotime($ev['submitted_at'])) : '—';
         ?>
         <tr>
@@ -2125,6 +2216,7 @@ if ($view === 'archived') {
         'MultiRoleTeacher','MultiRoleStaff','MultiRole' => "u.role IN ('teacher','staff','faculty')",
         default => "u.role IN ('teacher','staff','faculty')"
     };
+    if ($activeEval === 'staff') $whereRoleArc = "u.role IN ($eaRolesSql)";
     $archived = [];
     $res = $mysqli->query("
         SELECT u.id,u.full_name,u.designation,u.photo,u.role,u.secondary_role,u.source,u.account_status,aa.archived_at,
@@ -2133,8 +2225,8 @@ if ($view === 'archived') {
         FROM analytics_archive aa
         JOIN users u ON u.id=aa.target_user_id
         LEFT JOIN evaluation_tracker et ON et.target_user_id=u.id AND $evalTypeSql
-        LEFT JOIN questionnaire_answers qa ON qa.tracker_id=et.id
-        WHERE $whereRoleArc AND $reportScopeSql
+        LEFT JOIN questionnaire_answers qa ON qa.tracker_id=et.id AND " . rp_current_q_sql('qa', 'u.id') . "
+        WHERE $whereRoleArc AND $viewScopeSql
         GROUP BY u.id ORDER BY aa.archived_at DESC
     ");
     if ($res) $archived = $res->fetch_all(MYSQLI_ASSOC);
@@ -2205,7 +2297,7 @@ a { color:inherit; }
             <div class="person-name"><?= htmlspecialchars($p['full_name']) ?></div>
             <div class="person-meta">
                 <span class="archived-badge"><i class="fa-solid fa-box-archive"></i> Archived <?= date('M d, Y', strtotime($p['archived_at'])) ?></span>
-                <span><?= $p['role']==='teacher'?'Teacher':'Staff' ?> · <?= htmlspecialchars((string)($p['designation'] ?? '')) ?></span>
+                <span><?= $activeEval==='staff' ? 'Executive Assistant' : ($p['role']==='teacher'?'Teacher':'Staff') ?> · <?= htmlspecialchars((string)($p['designation'] ?? '')) ?></span>
                 <span><?= $p['total_responses'] ?> evaluation<?= $p['total_responses']!=1?'s':'' ?></span>
                 <?php if ($avg !== null): ?><span style="color:<?= scoreColor($avg) ?>;font-weight:700;"><?= number_format($avg,2) ?> avg</span><?php endif; ?>
             </div>
@@ -2640,6 +2732,7 @@ $whereRole = match ($activeEval) {
     'student' => "u.role IN ('teacher','staff','faculty','dean')",
     // Peer targets are restricted to College teachers by $peerEvalSql itself.
     'peer'    => "u.role IN ('teacher','faculty','staff')",
+    'staff'   => "u.role IN ($eaRolesSql)",
     default   => "u.role IN ('teacher','staff')"
 };
 
@@ -2654,9 +2747,9 @@ $res = $mysqli->query("
            COUNT(qa.answer_score) AS score_cnt
     FROM users u
     JOIN evaluation_tracker et ON et.target_user_id=u.id AND $evalTypeSql
-    LEFT JOIN questionnaire_answers qa ON qa.tracker_id=et.id
+    LEFT JOIN questionnaire_answers qa ON qa.tracker_id=et.id AND " . rp_current_q_sql('qa', 'u.id') . "
     LEFT JOIN analytics_archive aa ON aa.target_user_id=u.id
-    WHERE $whereRole AND u.is_active=1 AND $reportScopeSql
+    WHERE $whereRole AND u.is_active=1 AND $viewScopeSql
       AND aa.id IS NULL
     GROUP BY u.id
     ORDER BY avg_score DESC, u.full_name ASC
@@ -2742,7 +2835,7 @@ if ($groupFilter === 'Teacher' || $groupFilter === 'Staff') {
     $totalFacStaff = $groupFilter === 'Teacher' ? $facCount : $staffCount;
 }
 
-$archivedCount = db_row($mysqli, "SELECT COUNT(*) as c FROM analytics_archive aa JOIN users u ON u.id=aa.target_user_id WHERE $reportScopeSql")['c'] ?? 0;
+$archivedCount = db_row($mysqli, "SELECT COUNT(*) as c FROM analytics_archive aa JOIN users u ON u.id=aa.target_user_id WHERE $viewScopeSql")['c'] ?? 0;
 $studentEvalCount = db_row($mysqli, "SELECT COUNT(DISTINCT et.id) as c
     FROM evaluation_tracker et
     JOIN users u ON u.id=et.target_user_id
@@ -2760,6 +2853,7 @@ $multiRoleEvalCount = db_row($mysqli, "SELECT COUNT(DISTINCT et.id) AS c
         SELECT 1 FROM questionnaire_answers qam JOIN user_questions uqm ON uqm.id=qam.user_question_id
         WHERE qam.tracker_id=et.id AND uqm.target_type='Multi-Role' AND uqm.eval_type='student'
     )) AND $reportScopeSql")['c'] ?? 0;
+$staffEvalCount = db_row($mysqli, "SELECT COUNT(DISTINCT et.id) AS c FROM evaluation_tracker et WHERE $staffEvalSql")['c'] ?? 0;
 $peerEvalCount = db_row($mysqli, "SELECT COUNT(DISTINCT et.id) AS c FROM evaluation_tracker et WHERE $peerEvalSql")['c'] ?? 0;
 $peerTeacherCount = db_row($mysqli, "SELECT COUNT(*) AS c FROM users u
     WHERE u.is_active=1 AND u.account_status='approved'
@@ -2910,6 +3004,12 @@ a { color:inherit; }
             <span>Peer-to-Peer</span>
             <span class="reports-top-badge"><?= $peerEvalCount ?></span>
         </a>
+        <div class="reports-top-divider"></div>
+        <a href="?group=All&eval_type=staff" class="reports-top-tab staff <?= $activeEval==='staff'?'active':'' ?>">
+            <i class="fa-solid fa-briefcase"></i>
+            <span>Staff Evaluation</span>
+            <span class="reports-top-badge"><?= $staffEvalCount ?></span>
+        </a>
     </div>
 
     <div class="reports-toolbar">
@@ -2933,6 +3033,13 @@ a { color:inherit; }
             <i class="fa-solid fa-briefcase"></i><span>Staff</span><b><?= $staffCount ?></b>
         </a>
     </div>
+    <?php elseif ($activeEval === 'staff'): ?>
+    <div class="reports-filter-tabs">
+        <a href="?group=All&eval_type=staff" class="reports-filter-tab active">
+            <i class="fa-solid fa-user-tie"></i><span>Executive Assistant</span><b><?= count($people) ?></b>
+        </a>
+    </div>
+    <div class="reports-peer-note"><i class="fa-solid fa-circle-info"></i><span><strong>Staff Evaluations</strong> — results submitted by non-teaching staff for the Executive Assistant.</span></div>
     <?php else: ?>
     <div class="reports-filter-tabs">
         <a href="?group=All&eval_type=peer" class="reports-filter-tab active">
@@ -2969,7 +3076,7 @@ a { color:inherit; }
         <?php if (empty($people)): ?>
         <div class="reports-empty-state">
             <i class="fa-solid fa-hourglass-half"></i>
-            <h3>No <?= $activeEval==='peer'?'peer-to-peer':'student' ?> evaluations yet</h3>
+            <h3>No <?= $activeEval==='peer' ? 'peer-to-peer' : ($activeEval==='staff' ? 'staff' : 'student') ?> evaluations yet</h3>
             <p>Personnel will appear here once <?= $evaluatorNounP ?> have evaluated them.</p>
         </div>
         <?php else: ?>
@@ -3003,6 +3110,8 @@ a { color:inherit; }
                         } else {
                             $roleLabel = ucfirst($rawRole);
                         }
+                    } elseif ($activeEval === 'staff') {
+                        $roleLabel = 'Executive Assistant';
                     } else {
                         $roleLabel = in_array($rawRole, ['teacher','faculty'], true) ? 'Faculty' : 'Staff';
                     }
@@ -3049,6 +3158,9 @@ a { color:inherit; }
 .reports-top-tab i{font-size:14px;}
 .reports-top-tab.active{background:#E9F2FF;color:#2161CF;border-color:#7CB0FF;box-shadow:0 2px 7px rgba(45,102,225,.08);}
 .reports-top-tab.peer.active{background:#EEE9FF;color:#6547BE;border-color:#D4C7FF;box-shadow:0 2px 7px rgba(101,71,190,.08);}
+.reports-top-tab.staff{color:#0F766E;}
+.reports-top-tab.staff.active{background:#E6F7F5;color:#0F766E;border-color:#8ED8CF;box-shadow:0 2px 7px rgba(13,148,136,.10);}
+.reports-top-tab.staff.active .reports-top-badge{background:#CDEFEA;color:#0F766E;}
 .reports-top-tab:hover{background:#F7FAFD;color:#274B6C;}
 .reports-top-badge{min-width:23px;padding:4px 7px;border-radius:999px;background:#ECF2F7;color:#58718B;font-size:10px;text-align:center;line-height:1;}
 .reports-top-tab.student.active .reports-top-badge{background:#D4E5FF;color:#2161CF;}

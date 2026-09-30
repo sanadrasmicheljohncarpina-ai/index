@@ -725,7 +725,14 @@ main.main::before {
     <?php endif; ?>
 
     <div class="section" style="background:transparent;border:none;box-shadow:none;padding:0 0 8px;">
-        <h2 style="margin-bottom:18px;"><i class="fa-solid fa-clipboard-list"></i> <?= htmlspecialchars($questionnaireTitle) ?></h2>
+        <div class="eval-heading-row">
+            <h2 style="margin-bottom:18px;"><i class="fa-solid fa-clipboard-list"></i> <?= htmlspecialchars($questionnaireTitle) ?></h2>
+            <div class="eval-progress" id="evalProgress" aria-live="polite">0 / 0 questions answered</div>
+        </div>
+        <div class="eval-missing-alert" id="evalMissingAlert" role="alert" aria-live="assertive">
+            <i class="fa-solid fa-circle-exclamation"></i>
+            <div><strong>Please complete all required questions.</strong><span id="evalMissingText"></span></div>
+        </div>
 
         <?php if (empty($questions)): ?>
         <p class="empty-note">No questions have been configured for this evaluation target yet.</p>
@@ -740,10 +747,11 @@ main.main::before {
                     <thead><tr><th>Question</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th></tr></thead>
                     <tbody>
                     <?php foreach($catQuestions as $q): $field='q_'.$q['id']; $posted=$_POST[$field]??''; ?>
-                    <tr>
-                        <td><div class="eval-qtext"><span class="eval-qno"><?= $qNo++ ?>.</span><?= htmlspecialchars($q['question']) ?><?= $q['is_required'] ? ' <span class="req-star">*</span>' : '' ?></div></td>
+                    <?php $currentQNo = $qNo++; ?>
+                    <tr class="eval-question-row" data-question-number="<?= $currentQNo ?>" data-required="1">
+                        <td><div class="eval-qtext"><span class="eval-qno"><?= $currentQNo ?>.</span><?= htmlspecialchars($q['question']) ?><?= $q['is_required'] ? ' <span class="req-star">*</span>' : '' ?></div></td>
                         <?php for($n=5;$n>=1;$n--): ?>
-                        <td><div class="eval-rating-cell"><input type="radio" name="<?= $field ?>" id="<?= $field ?>_<?= $n ?>" value="<?= $n ?>" <?= (string)$posted===(string)$n?'checked':'' ?> <?= $q['is_required']?'required':'' ?>><label for="<?= $field ?>_<?= $n ?>"><?= $n ?></label></div></td>
+                        <td><div class="eval-rating-cell"><input type="radio" name="<?= $field ?>" id="<?= $field ?>_<?= $n ?>" value="<?= $n ?>" <?= (string)$posted===(string)$n?'checked':'' ?>><label for="<?= $field ?>_<?= $n ?>"><?= $n ?></label></div></td>
                         <?php endfor; ?>
                     </tr>
                     <?php endforeach; ?>
@@ -757,7 +765,7 @@ main.main::before {
                 <textarea name="overall_remarks" rows="3" class="eval-comment-box" placeholder="Any additional feedback..."><?= htmlspecialchars($_POST['overall_remarks'] ?? '') ?></textarea>
             </div>
 
-            <button class="btn-primary eval-submit-btn" type="submit" <?= !$period_id_int ? 'disabled style="opacity:.5;cursor:not-allowed;"' : '' ?>><i class="fa-solid fa-paper-plane"></i> Submit Evaluation</button>
+            <button class="btn-primary eval-submit-btn" id="principalEvalSubmit" type="submit" <?= !$period_id_int ? 'disabled style="opacity:.5;cursor:not-allowed;"' : '' ?>><i class="fa-solid fa-paper-plane"></i> Submit Evaluation</button>
         </form>
         <?php endif; ?>
     </div>
@@ -917,6 +925,7 @@ input:focus,select:focus,textarea:focus{border-color:#d99a2b!important;box-shado
   body{background:#F8FAFC!important;}
 }
 </style>
+<script src="../admin/eval_status_poll.js" defer></script>\n<script id="principal-required-question-feedback-js">\n(function(){\n    const form = document.querySelector('main.main form[method="post"]');\n    if (!form) return;\n\n    const rows = Array.from(form.querySelectorAll('.eval-question-row'));\n    const progress = document.getElementById('evalProgress');\n    const missingAlert = document.getElementById('evalMissingAlert');\n    const missingText = document.getElementById('evalMissingText');\n    const submitBtn = document.getElementById('principalEvalSubmit');\n\n    function unansweredRows(){\n        return rows.filter(row => {\n            const radios = row.querySelectorAll('input[type="radio"]');\n            return !Array.from(radios).some(r => r.checked);\n        });\n    }\n\n    function updateProgress(){\n        const missing = unansweredRows();\n        const answered = rows.length - missing.length;\n        if (progress) {\n            progress.textContent = answered + ' / ' + rows.length + ' questions answered';\n            progress.classList.toggle('complete', rows.length > 0 && missing.length === 0);\n        }\n        rows.forEach(row => row.classList.toggle('unanswered', missing.includes(row)));\n        if (missingAlert && missing.length === 0) missingAlert.classList.remove('show');\n        return missing;\n    }\n\n    rows.forEach(row => {\n        row.querySelectorAll('input[type="radio"]').forEach(input => {\n            input.addEventListener('change', updateProgress);\n        });\n    });\n\n    form.addEventListener('submit', function(e){\n        const missing = updateProgress();\n        if (!missing.length) return;\n\n        e.preventDefault();\n        const nums = missing.map(row => row.getAttribute('data-question-number'));\n        const preview = nums.length <= 6 ? nums.join(', ') : nums.slice(0,6).join(', ') + ' …';\n        if (missingText) {\n            missingText.textContent = ' ' + missing.length + ' question' + (missing.length === 1 ? ' is' : 's are') + ' unanswered. Missing question' + (missing.length === 1 ? '' : 's') + ': ' + preview + '.';\n        }\n        if (missingAlert) missingAlert.classList.add('show');\n        missing[0].scrollIntoView({behavior:'smooth', block:'center'});\n\n        const firstInput = missing[0].querySelector('input[type="radio"]');\n        if (firstInput) firstInput.focus({preventScroll:true});\n    });\n\n    updateProgress();\n})();\n</script>\n
 </body>
 </html>
 <style id="white-theme-override">
@@ -1073,6 +1082,24 @@ main.main > .page-header{
     border-radius:0 !important;
   }
 }
+</style>
+
+<style id="principal-required-question-feedback">
+.eval-heading-row{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+.eval-heading-row h2{margin-bottom:0!important;}
+.eval-progress{font-size:12px;font-weight:800;color:#64748B;background:#F1F5F9;border:1px solid #D9E4EF;border-radius:999px;padding:7px 11px;white-space:nowrap;}
+.eval-progress.complete{color:#15803D;background:#ECFDF5;border-color:#BBF7D0;}
+.eval-missing-alert{display:none;align-items:flex-start;gap:10px;margin:0 0 16px;padding:12px 14px;border:1px solid #FCA5A5;border-radius:10px;background:#FEF2F2;color:#B91C1C;font-size:13px;line-height:1.45;}
+.eval-missing-alert.show{display:flex;}
+.eval-missing-alert>i{margin-top:2px;font-size:14px;flex:0 0 auto;}
+.eval-missing-alert strong{display:block;color:#991B1B;margin-bottom:2px;}
+.eval-missing-alert span{display:block;color:#B91C1C;}
+.eval-question-row.unanswered td{background:#FFF7F7!important;}
+.eval-question-row.unanswered td:first-child{box-shadow:inset 4px 0 0 #EF4444;}
+.eval-question-row.unanswered .eval-qno{color:#DC2626!important;}
+.eval-question-row.unanswered .eval-qtext{color:#991B1B!important;}
+.eval-question-row.unanswered .eval-rating-cell label{border-color:rgba(239,68,68,.35)!important;}
+@media(max-width:700px){.eval-heading-row{align-items:flex-start;}.eval-progress{font-size:11px;}.eval-missing-alert{font-size:12px;}}
 </style>
 
 <link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20260927" id="principal-dark-repairs"/>

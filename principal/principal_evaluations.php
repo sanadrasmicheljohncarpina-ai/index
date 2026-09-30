@@ -1095,6 +1095,7 @@ input:focus,select:focus,textarea:focus{border-color:#d99a2b!important;box-shado
 .eval-tab.active .badge{background:#FFEDD5!important;color:#B45309!important;}
 @media(max-width:700px){.eval-tabs{gap:6px!important;}.eval-tab{padding:10px 14px!important;}}
 </style>
+<script src="../admin/eval_status_poll.js" defer></script>
 </body>
 </html>
 <style id="white-theme-override">

@@ -18,6 +18,16 @@
 // functions those pages used are untouched since other roles still rely
 // on them.
 
+$displayName = (string)($me['full_name'] ?? 'Dean');
+$initials = '';
+foreach (preg_split('/\s+/', trim($displayName)) as $part) {
+    if ($part !== '') $initials .= strtoupper(substr($part, 0, 1));
+    if (strlen($initials) >= 2) break;
+}
+if ($initials === '') $initials = 'D';
+$hasPhoto = !empty($me['photo']);
+$profileFallbackSrc = '../image/pbi_logo';
+
 $navItems = [
     'dashboard'  => ['dean_dashboard.php',          'fa-gauge',           'Dashboard'],
     'evaluation' => ['dean_evaluation.php',         'fa-clipboard-check', 'My Evaluation'],
@@ -27,76 +37,76 @@ $navItems = [
     'settings'   => ['dean_account_settings.php',   'fa-gear',            'Account Settings'],
 ];
 ?>
-<style id="dean-sidebar-section-heading">
-.sb-nav .sb-section-title{
-    width:100%;
-    padding:0 6px;
-    margin:8px 0 3px;
-    color:#C4B5FD;
-    font-size:11px;
-    font-weight:900;
-    letter-spacing:1.5px;
-    line-height:1.25;
-    text-align:center;
-    text-transform:uppercase;
-    text-shadow:0 1px 8px rgba(167,139,250,.16);
-}
-.sb-nav .sb-section-title:first-child{margin-top:0;}
-</style>
-<aside class="sidebar">
-    <div class="sb-profile">
-        <img class="sb-photo" src="<?= htmlspecialchars($photo_src) ?>" alt="Profile"/>
-        <div class="sb-name"><?= htmlspecialchars($me['full_name'] ?? 'Dean') ?></div>
-        <div class="sb-role"><?= htmlspecialchars($me['designation'] ?? 'Dean') ?></div>
+<aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand portal-brand">
+        <div class="portal-brand-logo">
+            <img src="../image/pbi_logo" alt="PBI" onerror="this.style.display='none'"/>
+        </div>
+        <div class="portal-brand-copy">
+            <strong>Dean Workspace</strong>
+            <span>Evaluation Workspace</span>
+        </div>
+    </div>
+
+    <div class="portal-sidebar-profile">
+        <div class="portal-profile-avatar-wrap">
+            <img class="portal-profile-avatar"
+                 src="<?= htmlspecialchars($hasPhoto ? $photo_src : $profileFallbackSrc) ?>"
+                 alt="Profile"
+                 onerror="if (this.dataset.fallbackApplied !== '1') { this.dataset.fallbackApplied='1'; this.src='<?= htmlspecialchars($profileFallbackSrc) ?>'; }"/>
+        </div>
+        <div class="portal-profile-name"><?= htmlspecialchars($me['full_name'] ?? 'Dean') ?></div>
+        <div class="portal-profile-role">DEAN</div>
         <?php if (!empty($sidebarScope)): ?>
-        <div class="sb-scope"><?= htmlspecialchars($sidebarScope) ?></div>
+        <div class="portal-profile-scope"><?= htmlspecialchars($sidebarScope) ?></div>
         <?php endif; ?>
     </div>
-    <nav class="sb-nav">
-        <div class="sb-section-title">MAIN</div>
+
+    <nav class="sidebar-nav portal-sidebar-nav">
+        <div class="nav-section-label">Main</div>
         <?php foreach ($navItems as $key => [$href, $icon, $label]): ?>
             <?php if ($key === 'settings'): ?>
-                <div class="sb-section-title sb-section-title-account">ACCOUNT</div>
+                <div class="nav-section-label sidebar-section-secondary">Account</div>
             <?php endif; ?>
-            <a href="<?= htmlspecialchars($href) ?>" class="<?= (isset($active) && $active === $key) ? 'active' : '' ?>">
-                <i class="fa-solid <?= htmlspecialchars($icon) ?>"></i> <?= htmlspecialchars($label) ?>
+            <a href="<?= htmlspecialchars($href) ?>" class="nav-link <?= (isset($active) && $active === $key) ? 'active' : '' ?>">
+                <i class="fa-solid <?= htmlspecialchars($icon) ?>"></i><span><?= htmlspecialchars($label) ?></span>
             </a>
         <?php endforeach; ?>
     </nav>
-    <div class="sb-logout">
-        <a href="dean_logout.php"><i class="fa-solid fa-right-from-bracket"></i> Log Out</a>
+
+    <div class="sidebar-footer">
+        <a href="dean_logout.php" class="btn-logout-side" onclick="return confirm('Log out of your dean session?')">
+            <i class="fa-solid fa-power-off"></i><span>Log Out</span>
+        </a>
     </div>
+
+    <script>
+    // Appearance toggle (Dark / Light) — shared PBI theme preference.
+    function applyAppearance(mode) {
+        const normalized = mode === 'dark' ? 'dark' : 'light';
+        document.documentElement.classList.toggle('dark-theme', normalized === 'dark');
+        const value = document.getElementById('appearanceVal');
+        if (value) value.textContent = normalized === 'light' ? 'Light' : 'Dark';
+        const lightBtn = document.getElementById('appearanceLightBtn');
+        const darkBtn  = document.getElementById('appearanceDarkBtn');
+        if (lightBtn) lightBtn.classList.toggle('active', normalized === 'light');
+        if (darkBtn) darkBtn.classList.toggle('active', normalized === 'dark');
+    }
+    function setAppearance(mode) {
+        const normalized = mode === 'dark' ? 'dark' : 'light';
+        localStorage.setItem('pbi_theme', normalized);
+        applyAppearance(normalized);
+    }
+    function toggleAppearance(e) {
+        if (e) e.stopPropagation();
+        const current = localStorage.getItem('pbi_theme') === 'dark' ? 'dark' : 'light';
+        setAppearance(current === 'dark' ? 'light' : 'dark');
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+        const savedTheme = localStorage.getItem('pbi_theme');
+        const theme = savedTheme === 'dark' ? 'dark' : 'light';
+        localStorage.setItem('pbi_theme', theme);
+        applyAppearance(theme);
+    });
+    </script>
 </aside>
-<script>
-// ── Appearance toggle (Dark / Light) ──
-// Same pattern as the Faculty portal, and the same localStorage key
-// ('pbi_theme'), so a visitor's choice carries over between portals.
-// Included here (the single shared Dean sidebar) so it runs on every
-// Dean page without having to touch each dean_*.php file individually.
-function applyAppearance(mode) {
-    const normalized = mode === 'dark' ? 'dark' : 'light';
-    document.documentElement.classList.toggle('dark-theme', normalized === 'dark');
-    const value = document.getElementById('appearanceVal');
-    if (value) value.textContent = normalized === 'light' ? 'Light' : 'Dark';
-    const lightBtn = document.getElementById('appearanceLightBtn');
-    const darkBtn  = document.getElementById('appearanceDarkBtn');
-    if (lightBtn) lightBtn.classList.toggle('active', normalized === 'light');
-    if (darkBtn) darkBtn.classList.toggle('active', normalized === 'dark');
-}
-function setAppearance(mode) {
-    const normalized = mode === 'dark' ? 'dark' : 'light';
-    localStorage.setItem('pbi_theme', normalized);
-    applyAppearance(normalized);
-}
-function toggleAppearance(e) {
-    if (e) e.stopPropagation();
-    const current = localStorage.getItem('pbi_theme') === 'dark' ? 'dark' : 'light';
-    setAppearance(current === 'dark' ? 'light' : 'dark');
-}
-document.addEventListener('DOMContentLoaded', function() {
-    const savedTheme = localStorage.getItem('pbi_theme');
-    const theme = savedTheme === 'dark' ? 'dark' : 'light';
-    localStorage.setItem('pbi_theme', theme);
-    applyAppearance(theme);
-});
-</script>

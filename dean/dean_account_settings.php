@@ -218,7 +218,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$photoUrl = !empty($me['photo']) ? UPLOAD_URL . $me['photo'] : '../background.png';
+$photoUrl = !empty($me['photo']) ? UPLOAD_URL . $me['photo'] : UPLOAD_URL . 'pbi_logo';
 $displayDesignation = trim((string)($me['designation'] ?? '')) ?: 'Dean';
 
 $active = 'settings';
@@ -278,7 +278,7 @@ body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,
     <div class="section">
         <h2><i class="fa-solid fa-id-badge"></i> Profile Photo</h2>
         <div class="profile-card">
-            <img class="profile-photo-lg" src="<?= htmlspecialchars($photoUrl) ?>" alt="Dean profile photo">
+            <img class="profile-photo-lg" src="<?= htmlspecialchars($photoUrl) ?>" alt="Dean profile photo" onerror="this.src='<?= htmlspecialchars(UPLOAD_URL . 'pbi_logo') ?>'">
             <div>
                 <form method="post" enctype="multipart/form-data">
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">

@@ -140,7 +140,7 @@ body{min-height:100vh;background:radial-gradient(circle at 50% 42%,rgba(255,255,
 <div class="login-card">
     <div class="card-header">
         <img class="logo-ring" src="../image/pbi_logo" alt="PBI Logo"/>
-        <div class="card-title">Faculty Portal</div>
+        <div class="card-title">Faculty Access</div>
         <div class="card-subtitle">Pandan Bay Institute Inc.</div>
     </div>
     <div class="divider"></div>
@@ -167,8 +167,8 @@ body{min-height:100vh;background:radial-gradient(circle at 50% 42%,rgba(255,255,
                 <input class="form-input" type="password" id="password" name="password"
                        placeholder="Enter your password" required autocomplete="new-password"/>
                 <i class="fa-solid fa-lock f-icon"></i>
-                <button type="button" class="toggle-pw" onclick="togglePw()">
-                    <i class="fa-solid fa-eye" id="eyeIcon"></i>
+                <button type="button" class="toggle-pw" onclick="togglePw()" aria-label="Show password">
+                    <i class="fa-solid fa-eye-slash" id="eyeIcon"></i>
                 </button>
             </div>
         </div>
@@ -191,7 +191,7 @@ body{min-height:100vh;background:radial-gradient(circle at 50% 42%,rgba(255,255,
 function togglePw() {
     const pw = document.getElementById('password'), ic = document.getElementById('eyeIcon');
     pw.type = pw.type === 'password' ? 'text' : 'password';
-    ic.className = pw.type === 'password' ? 'fa-solid fa-eye' : 'fa-solid fa-eye-slash';
+    ic.className = pw.type === 'password' ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye';
 }
 </script>
 </body>

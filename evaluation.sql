@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Sep 19, 2026 at 08:37 AM
+-- Generation Time: Sep 30, 2026 at 02:20 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -73,7 +73,35 @@ INSERT INTO `activity_log` (`id`, `actor_name`, `actor_type`, `action_text`, `ic
 (29, 'Lorraine R. Sabay', 'admin', 'Restored evaluation archive #2 for 2026-2027', 'fa-box-open', '#0F9F6E', '2026-09-18 17:05:09'),
 (30, 'Lorraine R. Sabay', 'admin', 'Restored evaluation archive #1 for 2026-2027', 'fa-box-open', '#0F9F6E', '2026-09-18 17:05:09'),
 (31, 'Lorraine R. Sabay', 'admin', 'Archived evaluation data for 2026-2027 (Archive #1)', 'fa-box-archive', '#2563EB', '2026-09-19 11:05:57'),
-(32, 'Lorraine R. Sabay', 'admin', 'Restored evaluation archive #1 for 2026-2027', 'fa-box-open', '#0F9F6E', '2026-09-19 12:44:36');
+(32, 'Lorraine R. Sabay', 'admin', 'Restored evaluation archive #1 for 2026-2027', 'fa-box-open', '#0F9F6E', '2026-09-19 12:44:36'),
+(33, 'Lorraine R. Sabay', 'admin', 'Deleted evaluation archive #1 for 2026-2027 (2026-2027 — 1st Semester)', 'fa-trash', '#D6455D', '2026-09-20 15:57:18'),
+(34, 'Flowen Nina Anecito', 'admin', 'Archived evaluation data for 2026-2027 (Archive #4)', 'fa-box-archive', '#2563EB', '2026-09-21 10:37:21'),
+(35, 'Flowen Nina Anecito', 'admin', 'Archived evaluation data for 2026-2027 (Archive #5)', 'fa-box-archive', '#2563EB', '2026-09-21 10:37:26'),
+(36, 'Flowen Nina Anecito', 'admin', 'Archived evaluation data for 2026-2027 (Archive #2)', 'fa-box-archive', '#2563EB', '2026-09-21 10:37:31'),
+(37, 'Flowen Nina Anecito', 'admin', 'Archived evaluation data for 2026-2027 (Archive #3)', 'fa-box-archive', '#2563EB', '2026-09-21 10:37:34'),
+(38, 'Flowen Nina Anecito', 'admin', 'Deleted evaluation archive #3 for 2026-2027 (2026-2027 — School Year)', 'fa-trash', '#D6455D', '2026-09-21 13:53:43'),
+(39, 'Flowen Nina Anecito', 'admin', 'Restored evaluation archive #2 for 2026-2027', 'fa-box-open', '#0F9F6E', '2026-09-21 13:53:47'),
+(40, 'Flowen Nina Anecito', 'admin', 'Archived evaluation data for 2026-2027 (Archive #2)', 'fa-box-archive', '#2563EB', '2026-09-23 14:48:33'),
+(41, 'Flowen Nina Anecito', 'admin', 'Archived evaluation data for 2026-2027 (Archive #6)', 'fa-box-archive', '#2563EB', '2026-09-23 14:48:36'),
+(42, 'Flowen Nina Anecito', 'admin', 'Restored evaluation archive #6 for 2026-2027', 'fa-box-open', '#0F9F6E', '2026-09-23 14:49:19'),
+(43, 'Flowen Nina Anecito', 'admin', 'Restored evaluation archive #2 for 2026-2027', 'fa-box-open', '#0F9F6E', '2026-09-23 14:49:19'),
+(44, 'Flowen Nina Anecito', 'admin', 'Restored evaluation archive #5 for 2026-2027', 'fa-box-open', '#0F9F6E', '2026-09-23 14:49:19'),
+(45, 'Lorraine R. Sabay', 'admin', 'Archived evaluation data for 2026-2027 (Archive #5)', 'fa-box-archive', '#2563EB', '2026-09-24 08:49:39'),
+(46, 'Lorraine R. Sabay', 'admin', 'Archived evaluation data for 2026-2027 (Archive #2)', 'fa-box-archive', '#2563EB', '2026-09-24 08:49:42'),
+(47, 'Lorraine R. Sabay', 'admin', 'Restored evaluation archive #2 for 2026-2027', 'fa-box-open', '#0F9F6E', '2026-09-24 08:49:44'),
+(48, 'Lorraine R. Sabay', 'admin', 'Restored evaluation archive #5 for 2026-2027', 'fa-box-open', '#0F9F6E', '2026-09-24 08:49:47'),
+(49, 'Lorraine R. Sabay', 'admin', 'Archived evaluation data for 2026-2027 (Archive #2)', 'fa-box-archive', '#2563EB', '2026-09-27 11:31:43'),
+(50, 'Lorraine R. Sabay', 'admin', 'Archived evaluation data for 2026-2027 (Archive #5)', 'fa-box-archive', '#2563EB', '2026-09-27 11:31:50'),
+(51, 'Lorraine R. Sabay', 'admin', 'Archived evaluation data for 2026-2027 (Archive #6)', 'fa-box-archive', '#2563EB', '2026-09-27 11:31:54'),
+(52, 'Lorraine R. Sabay', 'admin', 'Restored evaluation archive #6 for 2026-2027', 'fa-box-open', '#0F9F6E', '2026-09-27 15:52:15'),
+(53, 'Lorraine R. Sabay', 'admin', 'Restored evaluation archive #5 for 2026-2027', 'fa-box-open', '#0F9F6E', '2026-09-27 15:52:15'),
+(54, 'Lorraine R. Sabay', 'admin', 'Restored evaluation archive #2 for 2026-2027', 'fa-box-open', '#0F9F6E', '2026-09-27 15:52:15'),
+(55, 'Lorraine R. Sabay', 'admin', 'Archived evaluation data for 2026-2027 (Archive #5)', 'fa-box-archive', '#2563EB', '2026-09-28 22:21:11'),
+(56, 'Lorraine R. Sabay', 'admin', 'Archived evaluation data for 2026-2027 (Archive #6)', 'fa-box-archive', '#2563EB', '2026-09-28 22:21:14'),
+(57, 'Lorraine R. Sabay', 'admin', 'Archived evaluation data for 2026-2027 (Archive #2)', 'fa-box-archive', '#2563EB', '2026-09-28 22:21:16'),
+(58, 'Lorraine R. Sabay', 'admin', 'Restored evaluation archive #2 for 2026-2027', 'fa-box-open', '#0F9F6E', '2026-09-28 22:25:56'),
+(59, 'Lorraine R. Sabay', 'admin', 'Restored evaluation archive #6 for 2026-2027', 'fa-box-open', '#0F9F6E', '2026-09-28 22:25:56'),
+(60, 'Lorraine R. Sabay', 'admin', 'Restored evaluation archive #5 for 2026-2027', 'fa-box-open', '#0F9F6E', '2026-09-28 22:25:56');
 
 -- --------------------------------------------------------
 
@@ -151,7 +179,9 @@ CREATE TABLE `analytics_archive` (
 
 INSERT INTO `analytics_archive` (`id`, `target_user_id`, `archived_at`) VALUES
 (16, 158, '2026-08-29 12:54:06'),
-(18, 157, '2026-09-18 07:47:12');
+(18, 157, '2026-09-18 07:47:12'),
+(19, 209, '2026-09-21 13:53:12'),
+(20, 144, '2026-09-21 13:53:15');
 
 -- --------------------------------------------------------
 
@@ -190,6 +220,60 @@ CREATE TABLE `appointments` (
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `auth_attempts`
+--
+
+CREATE TABLE `auth_attempts` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `kind` varchar(16) NOT NULL,
+  `identifier` varchar(100) NOT NULL,
+  `ip` varchar(45) NOT NULL,
+  `success` tinyint(1) NOT NULL DEFAULT 0,
+  `attempted_at` datetime NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `auth_attempts`
+--
+
+INSERT INTO `auth_attempts` (`id`, `kind`, `identifier`, `ip`, `success`, `attempted_at`) VALUES
+(29, 'login', 'jeo', '::1', 1, '2026-09-23 05:15:31'),
+(30, 'login', 'jeo', '::1', 1, '2026-09-23 05:18:27'),
+(31, 'login', 'j', '::1', 0, '2026-09-23 08:08:52'),
+(32, 'login', 'jeo', '::1', 1, '2026-09-23 08:08:56'),
+(33, 'login', 'jeo', '::1', 1, '2026-09-23 08:09:18'),
+(36, 'login', 'jeo', '::1', 1, '2026-09-23 09:41:50'),
+(37, 'login', 'john', '::1', 1, '2026-09-23 10:06:37'),
+(40, 'login', 'josesantos', '::1', 1, '2026-09-24 03:33:39'),
+(43, 'login', 'john', '::1', 1, '2026-09-24 03:35:43'),
+(44, 'login', 'dim', '::1', 1, '2026-09-24 03:38:17'),
+(45, 'login', 'dim', '::1', 1, '2026-09-24 04:46:23'),
+(46, 'login', 'jeo', '::1', 1, '2026-09-24 04:46:38'),
+(47, 'login', 'dim', '::1', 1, '2026-09-24 04:56:55'),
+(50, 'login', 'dim', '::1', 1, '2026-09-24 10:05:51'),
+(51, 'login', 'jeo', '::1', 1, '2026-09-24 10:06:10'),
+(52, 'login', 'dim', '::1', 1, '2026-09-24 10:12:51'),
+(53, 'login', 'dimmy', '::1', 1, '2026-09-24 10:23:26'),
+(54, 'login', 'dim', '::1', 1, '2026-09-24 10:39:02'),
+(55, 'login', 'dim', '::1', 1, '2026-09-26 15:04:47'),
+(56, 'login', 'dim', '::1', 1, '2026-09-26 15:48:28'),
+(57, 'login', 'dim', '::1', 1, '2026-09-27 05:23:42'),
+(59, 'login', 'jeo', '::1', 1, '2026-09-27 05:25:55'),
+(60, 'login', 'dim', '::1', 1, '2026-09-27 09:16:11'),
+(62, 'login', 'jeo', '::1', 1, '2026-09-28 10:28:14'),
+(63, 'login', 'dimmy', '::1', 0, '2026-09-28 15:57:32'),
+(64, 'login', 'dimmy', '::1', 0, '2026-09-28 15:57:38'),
+(65, 'login', 'michel', '::1', 1, '2026-09-28 15:57:57'),
+(66, 'login', 'neil', '::1', 0, '2026-09-29 04:08:55'),
+(67, 'login', 'neil', '::1', 0, '2026-09-29 04:09:05'),
+(68, 'login', 'dim', '::1', 1, '2026-09-29 04:09:43'),
+(69, 'login', 'dim', '::1', 1, '2026-09-29 09:39:42'),
+(71, 'login', 'dim', '::1', 1, '2026-09-29 09:47:54'),
+(72, 'login', 'jeo', '::1', 1, '2026-09-29 09:49:31');
 
 -- --------------------------------------------------------
 
@@ -273,11 +357,6 @@ CREATE TABLE `evaluation_answers` (
 --
 
 INSERT INTO `evaluation_answers` (`id`, `tracker_id`, `category`, `question`, `score`) VALUES
-(1, 70, 'Job Performance', 'Performs assigned duties competently and reliably.', 5),
-(2, 70, 'Communication', 'Communicates clearly with colleagues and stakeholders.', 4),
-(3, 70, 'Professionalism', 'Demonstrates professionalism in the workplace.', 5),
-(4, 70, 'Punctuality', 'Is punctual and dependable.', 5),
-(5, 70, 'Overall Rating', 'Overall, meets expectations for this role.', 5),
 (6, 73, 'Professionalism', 'Explains lessons clearly and effectively.', 5),
 (7, 73, 'Professionalism', 'Handles classroom concerns appropriately.', 4),
 (8, 73, 'Teaching Effectiveness', 'Presents learning objectives clearly.', 5),
@@ -314,13 +393,14 @@ CREATE TABLE `evaluation_periods` (
 
 INSERT INTO `evaluation_periods` (`id`, `period_label`, `school_year`, `semester`, `date_start`, `date_end`, `is_active`, `created_at`, `tracking_enabled`) VALUES
 (1, '2024-2025 1st Semester', '2024-2025', '1st Semester', NULL, NULL, 0, '2026-06-08 22:14:26', 0),
-(2, '2026-2027 — School Year', '2026-2027', 'School Year', '2026-09-19', '2026-09-19', 1, '2026-08-05 18:15:42', 0),
+(2, '2026-2027 — School Year', '2026-2027', 'School Year', '2026-09-28', '2026-09-28', 0, '2026-08-05 18:15:42', 0),
 (3, '2026-2027 — 1st Semester', '2026-2027', '1st Semester', '2026-09-19', '2026-08-26', 0, '2026-08-05 18:16:56', 0),
 (4, '2025-2-26 — School Year', '2025-2-26', 'School Year', '2026-08-06', '2026-08-06', 0, '2026-08-06 11:03:33', 0),
 (5, '2026-2027 — Summer', '2026-2027', 'Summer', '2026-08-26', '2026-08-26', 0, '2026-08-06 13:21:02', 0),
-(6, '1st semester 2026-2027', '2026-2027', '1st Semester', '2026-08-21', '2026-08-22', 0, '2026-08-21 12:39:24', 0),
+(6, '2026-2027 — 1st Semester', '2026-2027', '1st Semester', '2026-09-28', '2026-09-28', 1, '2026-08-21 12:39:24', 0),
 (7, '2026-2027 — 2nd Semester', '2026-2027', '2nd Semester', '2026-08-07', '2026-08-07', 0, '2026-08-24 09:52:56', 0),
-(8, '2027-2028 — Summer', '2027-2028', 'Summer', '2026-08-07', '2026-08-07', 0, '2026-08-25 08:39:06', 0);
+(8, '2027-2028 — Summer', '2027-2028', 'Summer', '2026-08-07', '2026-08-07', 0, '2026-08-25 08:39:06', 0),
+(9, '2027-2028 — 1st Semester', '2027-2028', '1st Semester', '2026-09-28', '2026-09-28', 0, '2026-09-28 22:22:47', 0);
 
 -- --------------------------------------------------------
 
@@ -381,7 +461,36 @@ INSERT INTO `evaluation_questions` (`id`, `target_type`, `category`, `question_t
 (240, 'EA', 'Professionalism', 'Demonstrates punctuality, excellent attendance', 'staff', '2026-09-15 14:26:16', 1, '2026-09-15 06:26:16', 'shared'),
 (241, 'EA', 'Professionalism', 'integrates the school’s Vision, Mission, Objectives and Core Values in the lesson for the day', 'staff', '2026-09-15 14:26:40', 1, '2026-09-15 06:26:40', 'shared'),
 (242, 'EA', 'Administrative Support', 'Clearly explains lessons and course-related concepts.', 'staff', '2026-09-18 15:23:42', 1, '2026-09-18 07:23:42', 'shared'),
-(243, 'EA', 'Service & Coordination', 'Demonstrates effective teaching strategies and methods.', 'staff', '2026-09-18 15:23:47', 1, '2026-09-18 07:23:47', 'shared');
+(243, 'EA', 'Service & Coordination', 'Demonstrates effective teaching strategies and methods.', 'staff', '2026-09-18 15:23:47', 1, '2026-09-18 07:23:47', 'shared'),
+(244, 'Faculty', 'General', 'Collaborates effectively with colleagues in academic activities.', 'general', '2026-09-19 17:02:41', 0, '2026-09-19 09:02:41', 'shared'),
+(245, 'Faculty', 'General', 'Shares knowledge, ideas, and teaching resources with other teachers.', 'general', '2026-09-19 17:02:41', 0, '2026-09-19 09:02:41', 'shared'),
+(246, 'Faculty', 'General', 'Shows willingness to support colleagues in addressing teaching-related concerns.', 'general', '2026-09-19 17:02:41', 0, '2026-09-19 09:02:41', 'shared'),
+(247, 'Faculty', 'General', 'Contributes positively to a collaborative and supportive school environment.', 'general', '2026-09-19 17:02:41', 0, '2026-09-19 09:02:41', 'shared'),
+(248, 'Faculty', 'General', 'Demonstrates professionalism and respect toward colleagues.', 'general', '2026-09-19 17:02:41', 0, '2026-09-19 09:02:41', 'shared'),
+(249, 'Faculty', 'General', 'Accepts feedback and suggestions from fellow teachers constructively.', 'general', '2026-09-19 17:02:41', 0, '2026-09-19 09:02:41', 'shared'),
+(250, 'Faculty', 'General', 'Explains lessons clearly and effectively.', 'general', '2026-09-19 17:02:41', 0, '2026-09-19 09:02:41', 'shared'),
+(251, 'Faculty', 'Teaching & Learning', 'Presents learning objectives clearly.', 'general', '2026-09-19 17:02:41', 1, '2026-09-19 09:02:41', 'shared'),
+(252, 'Faculty', 'Teaching & Learning', 'Uses appropriate teaching strategies and methods.', 'general', '2026-09-19 17:02:41', 1, '2026-09-19 09:02:41', 'shared'),
+(253, 'Faculty', 'Teaching & Learning', 'Provides clear instructions for activities and assignments.', 'general', '2026-09-19 17:02:41', 1, '2026-09-19 09:02:41', 'shared'),
+(254, 'Faculty', 'Teaching & Learning', 'Encourages active participation during class discussions.', 'general', '2026-09-19 17:02:41', 1, '2026-09-19 09:02:41', 'shared'),
+(255, 'Faculty', 'Teaching & Learning', 'Maintains proper classroom discipline.', 'general', '2026-09-19 17:02:41', 1, '2026-09-19 09:02:41', 'shared'),
+(256, 'Faculty', 'Teaching & Learning', 'Creates a positive and respectful learning environment.', 'general', '2026-09-19 17:02:41', 1, '2026-09-19 09:02:41', 'shared'),
+(257, 'Faculty', 'Teaching & Learning', 'Manages classroom activities effectively.', 'general', '2026-09-19 17:02:41', 1, '2026-09-19 09:02:41', 'shared'),
+(258, 'Faculty', 'Teaching & Learning', 'Treats students fairly and respectfully.', 'general', '2026-09-19 17:02:41', 1, '2026-09-19 09:02:41', 'shared'),
+(259, 'Faculty', 'General', 'Handles classroom concerns appropriately.', 'general', '2026-09-19 17:02:41', 0, '2026-09-19 09:02:41', 'shared'),
+(260, 'Faculty', 'Teaching & Learning', 'testing', 'general', '2026-09-19 17:02:41', 1, '2026-09-19 09:02:41', 'shared'),
+(261, 'Faculty', 'General', 'integrates the school’s Vision, Mission, Objectives and Core Values in the lesson for the day *', 'general', '2026-09-19 17:02:41', 0, '2026-09-19 09:02:41', 'shared'),
+(262, 'Faculty', 'General', 'Demonstrates punctuality, excellent attendance *', 'general', '2026-09-19 17:02:41', 1, '2026-09-19 09:02:41', 'shared'),
+(263, 'Faculty', 'General', 'dvfdxv', 'general', '2026-09-19 17:02:41', 0, '2026-09-19 09:02:41', 'shared'),
+(264, 'Faculty', 'Teaching & Learning', 'Clearly explains lessons and course-related concepts.', 'general', '2026-09-19 17:02:41', 0, '2026-09-19 09:02:41', 'shared'),
+(265, 'Faculty', 'General', 'dsfsdsdfsd', 'general', '2026-09-19 20:37:30', 0, '2026-09-19 12:37:30', 'shared'),
+(266, 'Faculty', 'Professionalism & Student Support', 'Attends In every Class', 'general', '2026-09-22 10:46:49', 1, '2026-09-22 02:46:49', 'shared'),
+(267, 'Faculty', 'Teaching & Learning', 'Effective teaching?', 'general', '2026-09-22 12:10:59', 1, '2026-09-22 04:10:59', 'shared'),
+(268, 'Faculty', 'Professionalism & Student Support', 'Demonstrates punctuality and preparedness for classes', 'general', '2026-09-23 12:29:52', 1, '2026-09-23 04:29:52', 'shared'),
+(269, 'Faculty', 'Professionalism & Student Support', 'Treats students fairly, respectfully, and professionally.', 'general', '2026-09-23 12:29:58', 1, '2026-09-23 04:29:58', 'shared'),
+(270, 'Faculty', 'Professionalism & Student Support', 'Maintains a positive and conducive learning environment.', 'general', '2026-09-23 12:30:03', 1, '2026-09-23 04:30:03', 'shared'),
+(271, 'Faculty', 'Professionalism & Student Support', 'Communicates effectively with students and fellow faculty members.', 'general', '2026-09-23 12:30:08', 1, '2026-09-23 04:30:08', 'shared'),
+(272, 'Faculty', 'Professionalism & Student Support', 'Demonstrates responsibility in performing teaching and academic duties.', 'general', '2026-09-23 12:30:12', 1, '2026-09-23 04:30:12', 'shared');
 
 -- --------------------------------------------------------
 
@@ -442,7 +551,31 @@ INSERT INTO `evaluation_question_categories` (`question_id`, `category_id`) VALU
 (240, 4360),
 (241, 4360),
 (242, 4358),
-(243, 4362);
+(243, 4362),
+(244, 4384),
+(245, 4384),
+(246, 4384),
+(250, 4387),
+(251, 4387),
+(252, 4387),
+(253, 4387),
+(254, 4387),
+(255, 4387),
+(256, 4387),
+(257, 4387),
+(258, 4387),
+(260, 4387),
+(261, 4384),
+(262, 4384),
+(263, 4384),
+(264, 4387),
+(266, 4389),
+(267, 4387),
+(268, 4389),
+(269, 4389),
+(270, 4389),
+(271, 4389),
+(272, 4389);
 
 -- --------------------------------------------------------
 
@@ -465,7 +598,6 @@ CREATE TABLE `evaluation_reminders` (
 --
 
 INSERT INTO `evaluation_reminders` (`id`, `period_id`, `sender_id`, `recipient_id`, `eval_type`, `level`, `created_at`) VALUES
-(1, 5, 157, 151, 'student', 'college', '2026-08-15 13:03:02'),
 (2, 5, 157, 175, 'student', 'college', '2026-08-24 17:19:27');
 
 -- --------------------------------------------------------
@@ -546,75 +678,36 @@ CREATE TABLE `evaluation_tracker` (
 --
 
 INSERT INTO `evaluation_tracker` (`id`, `legacy_submission_id`, `evaluator_id`, `target_user_id`, `eval_bucket`, `level`, `form_type`, `form_id`, `source_module`, `period`, `period_id`, `score`, `remarks`, `eval_type`, `peer_group`, `status`, `submitted_at`, `updated_at`, `evaluator_year_level`, `evaluator_department`, `evaluation_context`) VALUES
-(26, NULL, 167, 170, 'Faculty', NULL, '', NULL, NULL, NULL, 5, NULL, 'N/A', 'student', NULL, 'submitted', '2026-08-13 07:57:36', '2026-08-13 07:57:36', NULL, NULL, 'teacher'),
-(29, NULL, 171, 136, 'Faculty', NULL, '', NULL, NULL, NULL, 5, NULL, 'N/A', 'student', NULL, 'submitted', '2026-08-14 14:58:06', '2026-08-17 17:58:18', NULL, NULL, 'multi_role'),
-(38, NULL, 166, 136, 'Faculty', NULL, '', NULL, NULL, NULL, 5, NULL, 'N/A', 'student', NULL, 'submitted', '2026-08-16 12:33:07', '2026-08-17 17:58:18', NULL, NULL, 'multi_role'),
-(45, NULL, 151, 170, 'Faculty', NULL, '', NULL, NULL, NULL, 5, NULL, 'N/A', 'student', NULL, 'submitted', '2026-08-17 16:48:00', '2026-08-17 16:48:00', NULL, NULL, 'teacher'),
-(47, NULL, 175, 172, 'Faculty', NULL, '', NULL, NULL, NULL, 5, NULL, 'N/A', 'student', NULL, 'submitted', '2026-08-19 13:42:27', '2026-08-19 13:42:27', NULL, NULL, 'staff'),
-(55, NULL, 161, 144, 'Faculty', NULL, '', NULL, NULL, NULL, 5, NULL, 'N/A', 'student', NULL, 'submitted', '2026-08-24 14:03:23', '2026-08-24 14:03:23', NULL, NULL, 'staff'),
-(58, NULL, 125, 158, 'Faculty', NULL, '', NULL, NULL, NULL, 5, NULL, '', 'ea', NULL, 'submitted', '2026-08-24 14:57:55', '2026-08-24 14:57:55', NULL, NULL, 'teacher'),
-(62, NULL, 167, 136, 'Faculty', NULL, '', NULL, NULL, NULL, 5, NULL, 'N/A', 'student', NULL, 'submitted', '2026-08-26 10:35:38', '2026-08-27 15:02:30', NULL, NULL, 'staff'),
-(64, NULL, 167, 172, 'Faculty', NULL, '', NULL, NULL, NULL, 5, NULL, 'N/A', 'student', NULL, 'submitted', '2026-08-26 11:18:16', '2026-08-27 15:02:30', NULL, NULL, 'staff'),
-(65, NULL, 167, 181, 'Faculty', NULL, '', NULL, NULL, NULL, 5, NULL, 'N/A', 'student', NULL, 'submitted', '2026-08-26 11:18:28', '2026-08-27 15:02:30', NULL, NULL, 'staff'),
-(67, NULL, 170, 183, 'Faculty', NULL, '', 3, NULL, NULL, 5, 4.63, 'N/A', 'faculty_peer', 'Teacher', 'submitted', '2026-08-26 11:42:05', '2026-08-27 15:02:30', NULL, NULL, 'teacher'),
-(68, NULL, 170, 136, 'Faculty', NULL, '', 3, NULL, NULL, 5, 4.57, 'N/A', 'faculty_peer', 'Staff', 'submitted', '2026-08-26 12:08:51', '2026-08-27 15:02:30', NULL, NULL, 'teacher'),
-(69, NULL, 171, 170, 'Faculty', NULL, '', NULL, NULL, NULL, 5, NULL, 'N/A', 'student', NULL, 'submitted', '2026-08-27 15:03:41', '2026-08-27 15:03:41', NULL, NULL, 'teacher'),
-(70, NULL, 157, 144, 'Staff', 'college', 'staff_dean', NULL, NULL, NULL, 5, 4.80, 'N/A', 'dean', NULL, 'submitted', '2026-08-27 15:59:01', '2026-08-27 15:59:01', NULL, NULL, 'teacher'),
-(71, NULL, 170, 139, 'Faculty', NULL, '', 3, NULL, NULL, 5, 4.75, 'N/A', 'faculty_peer', 'Teacher', 'submitted', '2026-08-27 16:02:21', '2026-08-27 16:02:21', NULL, NULL, 'teacher'),
-(72, NULL, 125, 157, 'Faculty', NULL, '', NULL, NULL, NULL, 5, NULL, 'N/A', 'ea', NULL, 'submitted', '2026-08-27 16:55:58', '2026-08-27 16:55:58', NULL, NULL, 'teacher'),
-(73, NULL, 157, 136, 'Faculty', 'college', 'faculty_dean', NULL, NULL, NULL, 3, 4.64, 'N/A', 'dean', NULL, 'submitted', '2026-08-28 19:54:10', '2026-08-28 19:54:10', NULL, NULL, 'teacher'),
-(74, NULL, 157, 136, 'Faculty', 'college', 'faculty_dean', NULL, NULL, NULL, 3, 4.55, 'N/A', 'school_head', NULL, 'submitted', '2026-08-28 19:55:39', '2026-08-28 19:55:39', NULL, NULL, 'teacher'),
-(75, NULL, 158, 183, 'Teacher', '', 'Teacher Performance Evaluation (Supervisor)', 5, NULL, NULL, 2, 4.67, 'N/A', 'supervisor_to_teacher', NULL, 'submitted', '2026-08-28 20:01:30', '2026-08-28 20:01:30', NULL, NULL, 'teacher'),
-(76, NULL, 171, 183, 'Faculty', NULL, '', NULL, NULL, NULL, 2, NULL, 'N/A', 'student', NULL, 'submitted', '2026-08-29 10:29:36', '2026-08-29 10:29:36', NULL, NULL, 'teacher'),
-(77, NULL, 125, 158, 'Faculty', NULL, '', NULL, NULL, NULL, 2, NULL, 'errtyydd', 'ea', NULL, 'submitted', '2026-08-29 11:13:11', '2026-08-29 11:13:11', NULL, NULL, 'teacher'),
-(78, NULL, 161, 144, 'Faculty', NULL, '', NULL, NULL, NULL, 3, NULL, 'very good', 'student', NULL, 'submitted', '2026-08-29 12:56:21', '2026-08-29 12:56:21', NULL, NULL, 'teacher'),
-(79, NULL, 161, 183, 'Faculty', NULL, '', NULL, NULL, NULL, 3, NULL, 'good', 'student', NULL, 'submitted', '2026-08-29 12:57:03', '2026-08-29 12:57:03', NULL, NULL, 'teacher'),
-(80, NULL, 161, 172, 'Faculty', NULL, '', NULL, NULL, NULL, 3, NULL, 'very good', 'student', NULL, 'submitted', '2026-08-29 12:57:39', '2026-08-29 12:57:39', NULL, NULL, 'staff'),
-(81, NULL, 161, 181, 'Faculty', NULL, '', NULL, NULL, NULL, 3, NULL, '', 'student', NULL, 'submitted', '2026-08-29 12:58:14', '2026-08-29 12:58:14', NULL, NULL, 'staff'),
-(82, NULL, 192, 144, 'Faculty', NULL, '', NULL, NULL, NULL, 3, NULL, '', 'student', NULL, 'submitted', '2026-08-29 13:04:08', '2026-08-29 13:04:08', NULL, NULL, 'teacher'),
-(83, NULL, 192, 136, 'Faculty', NULL, '', NULL, NULL, NULL, 3, NULL, '', 'student', NULL, 'submitted', '2026-08-29 13:04:53', '2026-08-29 13:04:53', NULL, NULL, 'teacher'),
-(84, NULL, 192, 172, 'Faculty', NULL, '', NULL, NULL, NULL, 3, NULL, '', 'student', NULL, 'submitted', '2026-08-29 13:05:19', '2026-08-29 13:05:19', NULL, NULL, 'staff'),
-(86, NULL, 192, 152, 'Faculty', NULL, '', NULL, NULL, NULL, 3, NULL, '', 'student', NULL, 'submitted', '2026-08-29 13:07:08', '2026-08-29 13:07:08', NULL, NULL, 'multi_role'),
-(87, NULL, 192, 158, 'Faculty', NULL, '', NULL, NULL, NULL, 3, NULL, '', 'student', NULL, 'submitted', '2026-08-29 13:07:30', '2026-08-29 13:07:30', NULL, NULL, 'school_head'),
-(88, NULL, 170, 172, 'Faculty', NULL, '', 3, NULL, NULL, 2, 4.50, 'N/A', 'faculty_peer', 'Staff', 'submitted', '2026-09-13 18:52:36', '2026-09-13 18:52:36', NULL, NULL, 'teacher'),
-(89, NULL, 164, 139, 'Faculty', NULL, '', 3, NULL, NULL, 2, 4.67, 'N/A', 'faculty_peer', 'Faculty', 'submitted', '2026-09-13 18:54:47', '2026-09-13 18:54:47', NULL, NULL, 'teacher'),
-(90, NULL, 144, 158, 'Faculty', NULL, '', 7, NULL, NULL, 3, 4.67, 'N/A', 'staff', 'Staff Evaluation', 'submitted', '2026-09-13 22:05:54', '2026-09-15 16:19:26', NULL, NULL, 'teacher'),
-(91, NULL, 161, 194, 'Faculty', NULL, '', NULL, NULL, NULL, 3, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-14 08:30:27', '2026-09-14 08:30:27', NULL, NULL, 'teacher'),
-(92, NULL, 161, 198, 'Faculty', NULL, '', NULL, NULL, NULL, 3, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-14 08:30:58', '2026-09-14 08:30:58', NULL, NULL, 'staff'),
-(93, NULL, 161, 158, 'Faculty', NULL, '', NULL, NULL, NULL, 3, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-14 08:31:12', '2026-09-14 08:31:12', NULL, NULL, 'school_head'),
-(94, NULL, 170, 144, 'Faculty', NULL, '', 3, NULL, NULL, 3, 4.67, 'N/A', 'faculty_peer', 'Faculty', 'submitted', '2026-09-14 08:37:19', '2026-09-14 08:37:19', NULL, NULL, 'teacher'),
-(95, NULL, 170, 172, 'Faculty', NULL, '', 3, NULL, NULL, 3, 4.50, 'N/A', 'faculty_peer', 'Staff', 'submitted', '2026-09-14 08:37:55', '2026-09-14 08:37:55', NULL, NULL, 'teacher'),
-(96, NULL, 170, 157, 'Faculty', NULL, '', 3, NULL, NULL, 3, 4.75, 'N/A', 'faculty_peer', 'Dean / Principal', 'submitted', '2026-09-14 08:40:12', '2026-09-14 08:40:12', NULL, NULL, 'teacher'),
-(97, NULL, 170, 158, 'Faculty', NULL, '', 3, NULL, NULL, 3, 5.00, 'N/A', 'faculty_peer', 'Dean / Principal', 'submitted', '2026-09-14 08:40:32', '2026-09-14 08:40:32', NULL, NULL, 'teacher'),
-(98, NULL, 161, 157, 'Faculty', NULL, '', NULL, NULL, NULL, 3, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-14 08:42:23', '2026-09-14 08:42:23', NULL, NULL, 'school_head'),
-(99, NULL, 171, 157, 'Faculty', NULL, '', NULL, NULL, NULL, 2, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-14 08:43:00', '2026-09-14 08:43:00', NULL, NULL, 'school_head'),
-(100, NULL, 171, 158, 'Faculty', NULL, '', NULL, NULL, NULL, 2, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-14 08:43:05', '2026-09-14 08:43:05', NULL, NULL, 'school_head'),
-(101, NULL, 167, 158, 'Faculty', NULL, '', NULL, NULL, NULL, 2, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-14 08:55:14', '2026-09-14 08:55:14', NULL, NULL, 'school_head'),
-(102, NULL, 167, 157, 'Faculty', NULL, '', NULL, NULL, NULL, 2, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-14 08:55:59', '2026-09-14 08:55:59', NULL, NULL, 'school_head'),
-(103, NULL, 166, 158, 'Faculty', NULL, '', NULL, NULL, NULL, 2, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-14 09:34:50', '2026-09-14 09:34:50', NULL, NULL, 'school_head'),
-(104, NULL, 149, 139, 'Faculty', NULL, '', NULL, NULL, NULL, 2, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-14 16:28:49', '2026-09-14 16:28:49', NULL, NULL, 'teacher'),
-(105, NULL, 149, 172, 'Faculty', NULL, '', NULL, NULL, NULL, 2, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-14 16:29:01', '2026-09-14 16:29:01', NULL, NULL, 'staff'),
-(106, NULL, 149, 158, 'Faculty', NULL, '', NULL, NULL, NULL, 2, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-14 16:29:08', '2026-09-14 16:29:08', NULL, NULL, 'school_head'),
-(107, NULL, 149, 157, 'Faculty', NULL, '', NULL, NULL, NULL, 2, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-14 16:29:19', '2026-09-14 16:29:19', NULL, NULL, 'school_head'),
-(108, NULL, 157, 183, 'Faculty', 'college', 'school_head_dean_faculty', NULL, NULL, NULL, 3, 4.67, 'N/A', 'school_head', NULL, 'submitted', '2026-09-14 21:41:32', '2026-09-14 21:41:32', NULL, NULL, 'teacher'),
-(109, NULL, 157, 172, 'Staff', 'college', 'school_head_dean_staff', NULL, NULL, NULL, 3, 5.00, 'N/A', 'school_head', NULL, 'submitted', '2026-09-15 07:47:25', '2026-09-15 07:47:25', NULL, NULL, 'teacher'),
-(110, NULL, 157, 125, 'EA', 'college', 'school_head_dean_ea', NULL, NULL, NULL, 3, 4.67, 'N/A', 'school_head', NULL, 'submitted', '2026-09-15 07:49:43', '2026-09-15 07:49:43', NULL, NULL, 'teacher'),
-(111, NULL, 207, 157, 'Faculty', NULL, '', 7, NULL, NULL, 3, 4.50, 'N/A', 'staff', 'Staff Evaluation', 'submitted', '2026-09-15 14:30:22', '2026-09-15 16:19:26', NULL, NULL, 'teacher'),
-(113, NULL, 144, 157, 'Faculty', NULL, '', 7, NULL, NULL, 3, 4.50, 'N/A', 'staff', 'Staff Evaluation', 'submitted', '2026-09-15 16:11:34', '2026-09-15 16:19:26', NULL, NULL, 'teacher'),
-(114, NULL, 144, 125, 'Faculty', NULL, '', 7, NULL, NULL, 3, 4.67, 'N/A', 'staff', 'Staff Evaluation', 'submitted', '2026-09-15 16:22:04', '2026-09-15 16:22:04', NULL, NULL, 'teacher'),
-(115, NULL, 125, 181, 'Faculty', NULL, '', NULL, NULL, NULL, 3, NULL, 'N/A', 'ea', NULL, 'submitted', '2026-09-15 16:40:12', '2026-09-15 16:40:12', NULL, NULL, 'teacher'),
-(116, NULL, 125, 158, 'Faculty', NULL, '', NULL, NULL, NULL, 3, NULL, 'N/A', 'ea', NULL, 'submitted', '2026-09-15 16:41:50', '2026-09-15 16:41:50', NULL, NULL, 'teacher'),
-(117, NULL, 158, 172, 'Staff', '', 'Principal Evaluation — Non-Teaching Staff', NULL, NULL, NULL, 2, 5.00, 'N/A', 'school_head', NULL, 'submitted', '2026-09-16 10:15:15', '2026-09-16 10:15:15', NULL, NULL, 'teacher'),
-(118, NULL, 161, 170, 'Faculty', NULL, '', NULL, NULL, NULL, 3, NULL, 'wala', 'student', NULL, 'submitted', '2026-09-17 13:51:08', '2026-09-17 13:51:08', NULL, NULL, 'teacher'),
-(119, NULL, 208, 198, 'Faculty', NULL, '', NULL, NULL, NULL, 3, NULL, 'N/A', 'ea', NULL, 'submitted', '2026-09-17 14:02:33', '2026-09-17 14:02:33', NULL, NULL, 'teacher'),
-(120, NULL, 175, 144, 'Faculty', NULL, '', NULL, NULL, NULL, 3, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-18 07:45:03', '2026-09-18 07:45:03', NULL, NULL, 'teacher'),
+(58, NULL, 236, 158, 'Faculty', NULL, '', NULL, NULL, NULL, 5, NULL, '', 'ea', NULL, 'submitted', '2026-08-24 14:57:55', '2026-09-24 14:36:32', NULL, NULL, 'teacher'),
+(72, NULL, 236, 157, 'Faculty', NULL, '', NULL, NULL, NULL, 5, NULL, 'N/A', 'ea', NULL, 'submitted', '2026-08-27 16:55:58', '2026-09-24 14:36:32', NULL, NULL, 'teacher'),
+(110, NULL, 157, 236, 'EA', 'college', 'school_head_dean_ea', NULL, NULL, NULL, 3, 4.67, 'N/A', 'school_head', NULL, 'submitted', '2026-09-15 07:49:43', '2026-09-24 14:36:32', NULL, NULL, 'teacher'),
+(116, NULL, 236, 158, 'Faculty', NULL, '', NULL, NULL, NULL, 3, NULL, 'N/A', 'ea', NULL, 'submitted', '2026-09-15 16:41:50', '2026-09-24 14:36:32', NULL, NULL, 'teacher'),
 (121, NULL, 175, 158, 'Faculty', NULL, '', NULL, NULL, NULL, 3, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-18 07:47:29', '2026-09-18 07:47:29', NULL, NULL, 'school_head'),
-(122, NULL, 175, 194, 'Faculty', NULL, '', NULL, NULL, NULL, 3, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-18 07:52:42', '2026-09-18 07:52:42', NULL, NULL, 'teacher'),
-(123, NULL, 186, 144, 'Faculty', NULL, '', NULL, NULL, NULL, 3, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-18 08:08:03', '2026-09-18 08:08:03', NULL, NULL, 'teacher'),
-(124, NULL, 186, 158, 'Faculty', NULL, '', NULL, NULL, NULL, 3, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-18 08:08:52', '2026-09-18 08:08:52', NULL, NULL, 'school_head'),
-(125, NULL, 158, 170, 'Faculty', '', 'Principal Evaluation — Faculty', NULL, NULL, NULL, 2, 5.00, '', 'school_head', NULL, 'submitted', '2026-09-18 14:48:11', '2026-09-18 14:48:11', NULL, NULL, 'teacher'),
-(126, NULL, 208, 158, 'Faculty', NULL, '', NULL, NULL, NULL, 2, NULL, 'N/A', 'ea', NULL, 'submitted', '2026-09-18 15:15:38', '2026-09-18 15:15:38', NULL, NULL, 'teacher'),
-(127, NULL, 158, 139, 'Faculty', '', 'Principal Evaluation — Faculty', NULL, NULL, NULL, 2, 4.67, 'n/a', 'school_head', NULL, 'submitted', '2026-09-19 10:56:15', '2026-09-19 10:56:15', NULL, NULL, 'teacher');
+(138, NULL, 236, 218, 'Faculty', NULL, '', NULL, NULL, NULL, 6, NULL, 'N/A', 'ea', NULL, 'submitted', '2026-09-22 10:49:47', '2026-09-24 14:36:32', NULL, NULL, 'teacher'),
+(139, NULL, 157, 236, 'EA', 'college', 'school_head_dean_ea', NULL, NULL, NULL, 6, 4.75, 'N/A', 'school_head', NULL, 'submitted', '2026-09-22 10:51:05', '2026-09-24 14:36:32', NULL, NULL, 'teacher'),
+(140, NULL, 158, 217, 'Faculty', '', 'Principal Evaluation — Faculty', NULL, NULL, NULL, 2, 4.91, 'N/A', 'school_head', NULL, 'submitted', '2026-09-22 10:58:50', '2026-09-22 10:58:50', NULL, NULL, 'teacher'),
+(141, NULL, 171, 158, 'Faculty', NULL, '', NULL, NULL, NULL, 2, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-22 11:00:39', '2026-09-22 11:00:39', NULL, NULL, 'school_head'),
+(142, NULL, 171, 218, 'Faculty', NULL, '', NULL, NULL, NULL, 2, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-22 11:01:58', '2026-09-22 11:01:58', NULL, NULL, 'staff'),
+(143, NULL, 175, 218, 'Faculty', NULL, '', NULL, NULL, NULL, 6, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-22 11:05:51', '2026-09-22 11:05:51', NULL, NULL, 'staff'),
+(144, NULL, 218, 236, 'Faculty', NULL, '', 7, NULL, NULL, 6, 5.00, 'N/A', 'staff', 'Staff Evaluation', 'submitted', '2026-09-22 11:09:59', '2026-09-24 14:36:32', NULL, NULL, 'teacher'),
+(145, NULL, 217, 216, 'Faculty', NULL, '', 3, NULL, NULL, 6, 5.00, 'N/A', 'faculty_peer', 'Faculty', 'submitted', '2026-09-22 11:14:00', '2026-09-22 11:14:00', NULL, NULL, 'teacher'),
+(146, NULL, 175, 215, 'Faculty', NULL, '', NULL, NULL, NULL, 6, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-22 11:19:31', '2026-09-22 11:19:31', NULL, NULL, 'staff'),
+(147, NULL, 175, 157, 'Faculty', NULL, '', NULL, NULL, NULL, 6, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-22 11:20:04', '2026-09-22 11:20:04', NULL, NULL, 'school_head'),
+(148, NULL, 219, 220, 'Faculty', NULL, '', NULL, NULL, NULL, 2, NULL, 'Palaging Late', 'student', NULL, 'submitted', '2026-09-22 11:45:15', '2026-09-22 11:45:15', NULL, NULL, 'teacher'),
+(149, NULL, 171, 220, 'Faculty', NULL, '', NULL, NULL, NULL, 2, NULL, 'Sleeping', 'student', NULL, 'submitted', '2026-09-22 11:52:17', '2026-09-22 11:52:17', NULL, NULL, 'teacher'),
+(150, NULL, 220, 217, 'Faculty', NULL, '', 3, NULL, NULL, 2, 3.45, '', 'faculty_peer', 'Faculty', 'submitted', '2026-09-22 11:58:19', '2026-09-22 11:58:19', NULL, NULL, 'teacher'),
+(151, NULL, 217, 158, 'Faculty', NULL, '', 3, NULL, NULL, 2, 4.75, 'N/A', 'faculty_peer', 'Principal', 'submitted', '2026-09-23 10:29:32', '2026-09-23 10:29:32', NULL, NULL, 'teacher'),
+(152, NULL, 236, 158, 'Faculty', NULL, '', NULL, NULL, NULL, 6, NULL, '', 'ea', NULL, 'submitted', '2026-09-23 14:22:44', '2026-09-24 14:36:32', NULL, NULL, 'teacher'),
+(153, NULL, 222, 216, 'Faculty', NULL, '', 3, NULL, NULL, 6, 4.53, '', 'faculty_peer', 'Faculty', 'submitted', '2026-09-23 14:35:12', '2026-09-23 14:35:12', NULL, NULL, 'teacher'),
+(154, NULL, 227, 216, 'Faculty', NULL, '', 3, NULL, NULL, 6, 4.06, 'N/A', 'faculty_peer', 'Faculty', 'submitted', '2026-09-23 14:38:24', '2026-09-23 14:38:24', NULL, NULL, 'teacher'),
+(155, NULL, 171, 217, 'Faculty', NULL, '', NULL, NULL, NULL, 2, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-23 15:51:42', '2026-09-23 15:51:42', NULL, NULL, 'teacher'),
+(156, NULL, 219, 217, 'Faculty', NULL, '', NULL, NULL, NULL, 2, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-24 09:35:00', '2026-09-24 09:35:00', NULL, NULL, 'teacher'),
+(157, NULL, 235, 217, 'Faculty', NULL, '', NULL, NULL, NULL, 6, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-24 09:38:06', '2026-09-24 09:38:06', NULL, NULL, 'teacher'),
+(158, NULL, 175, 217, 'Faculty', NULL, '', NULL, NULL, NULL, 6, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-24 09:38:47', '2026-09-24 09:38:47', NULL, NULL, 'teacher'),
+(159, NULL, 175, 225, 'Faculty', NULL, '', NULL, NULL, NULL, 6, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-24 16:39:57', '2026-09-24 16:39:57', NULL, NULL, 'teacher'),
+(160, NULL, 233, 236, 'Faculty', NULL, '', 7, NULL, NULL, 6, 4.30, 'N/A', 'staff', 'Staff Evaluation', 'submitted', '2026-09-28 15:58:31', '2026-09-28 15:58:31', NULL, NULL, 'teacher'),
+(161, NULL, 233, 236, 'Faculty', NULL, '', 7, NULL, NULL, 2, 4.40, 'N/A', 'staff', 'Staff Evaluation', 'submitted', '2026-09-28 16:00:48', '2026-09-28 16:00:48', NULL, NULL, 'teacher'),
+(162, NULL, 237, 217, 'Faculty', NULL, '', NULL, NULL, NULL, 6, NULL, 'N/A', 'student', NULL, 'submitted', '2026-09-28 22:00:21', '2026-09-28 22:00:21', NULL, NULL, 'teacher');
 
 -- --------------------------------------------------------
 
@@ -668,14 +761,6 @@ CREATE TABLE `login_confirmations` (
   `used` tinyint(1) NOT NULL DEFAULT 0,
   `created_at` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- Dumping data for table `login_confirmations`
---
-
-INSERT INTO `login_confirmations` (`id`, `user_id`, `token`, `expires_at`, `used`, `created_at`) VALUES
-(1, 125, '67393592b4aa8980465dafb25e8d1622609d269a03a31fe736fd604403ee3d87', '2026-07-26 21:57:23', 0, '2026-07-26 21:42:23'),
-(2, 125, 'a0c97a948841b33a299aefa8db4005900fa8fdcb5c40325f9e838ae37497a0af', '2026-07-27 11:33:35', 0, '2026-07-27 11:18:35');
 
 -- --------------------------------------------------------
 
@@ -741,15 +826,42 @@ INSERT INTO `notifications` (`id`, `type`, `user_id`, `message`, `extra_data`, `
 (41, 'evaluation_received', 172, 'You have received a new evaluation.', NULL, 0, '2026-09-13 18:52:36'),
 (42, 'evaluation_received', 139, 'You have received a new evaluation.', NULL, 0, '2026-09-13 18:54:47'),
 (43, 'evaluation_received', 158, 'You have received a new Staff Evaluation.', '{\"evaluation_type\":\"staff\",\"target_type\":\"Principal\",\"target_label\":\"Principal\"}', 0, '2026-09-13 22:05:54'),
-(44, 'evaluation_received', 144, 'You have received a new evaluation.', NULL, 0, '2026-09-14 08:37:19'),
 (45, 'evaluation_received', 172, 'You have received a new evaluation.', NULL, 0, '2026-09-14 08:37:55'),
 (46, 'evaluation_received', 157, 'You have received a new Dean / Principal evaluation.', NULL, 0, '2026-09-14 08:40:12'),
 (47, 'evaluation_received', 158, 'You have received a new Dean / Principal evaluation.', NULL, 0, '2026-09-14 08:40:32'),
 (48, 'evaluation_received', 157, 'You have received a new Staff Evaluation.', '{\"evaluation_type\":\"staff\",\"target_type\":\"Dean\",\"target_label\":\"Dean\"}', 0, '2026-09-15 14:30:22'),
 (49, 'evaluation_received', 157, 'You have received a new Staff Evaluation.', '{\"evaluation_type\":\"staff\",\"target_type\":\"Dean\",\"target_label\":\"Dean\"}', 0, '2026-09-15 16:11:34'),
-(50, 'evaluation_received', 125, 'You have received a new Staff Evaluation.', '{\"evaluation_type\":\"staff\",\"target_type\":\"EA\",\"target_label\":\"Executive Assistant\"}', 0, '2026-09-15 16:22:04'),
+(50, 'evaluation_received', 236, 'You have received a new Staff Evaluation.', '{\"evaluation_type\":\"staff\",\"target_type\":\"EA\",\"target_label\":\"Executive Assistant\"}', 0, '2026-09-15 16:22:04'),
 (51, 'designation_update', 209, 'Jessie A. Aquillo updated their designation from \"Personnel\" to \"Formation Services\".', '{\"user_id\":209,\"full_name\":\"Jessie A. Aquillo\",\"role\":\"staff\",\"old_desig\":\"Personnel\",\"new_desig\":\"Formation Services\"}', 0, '2026-09-18 15:48:41'),
-(52, 'designation_update', 209, 'Jessie A. Aquillo updated their designation from \"Formation Services\" to \"Formation Services Coordinator/ CMO\".', '{\"user_id\":209,\"full_name\":\"Jessie A. Aquillo\",\"role\":\"staff\",\"old_desig\":\"Formation Services\",\"new_desig\":\"Formation Services Coordinator\\/ CMO\"}', 0, '2026-09-18 15:48:54');
+(52, 'designation_update', 209, 'Jessie A. Aquillo updated their designation from \"Formation Services\" to \"Formation Services Coordinator/ CMO\".', '{\"user_id\":209,\"full_name\":\"Jessie A. Aquillo\",\"role\":\"staff\",\"old_desig\":\"Formation Services\",\"new_desig\":\"Formation Services Coordinator\\/ CMO\"}', 0, '2026-09-18 15:48:54'),
+(53, 'designation_update', 209, 'Jessie A. Aquillo updated their designation from \"Formation Services Coordinator/ CMO\" to \"Bookkeeper\".', '{\"user_id\":209,\"full_name\":\"Jessie A. Aquillo\",\"role\":\"staff\",\"old_desig\":\"Formation Services Coordinator\\/ CMO\",\"new_desig\":\"Bookkeeper\"}', 0, '2026-09-21 13:59:12'),
+(54, 'evaluation_received', 194, 'You have received a new peer evaluation.', NULL, 0, '2026-09-21 22:34:07'),
+(56, 'designation_update', 215, 'Valerie Jane S. Bendijo updated their designation from \"Personnel\" to \"BS Nursing\".', '{\"user_id\":215,\"full_name\":\"Valerie Jane S. Bendijo\",\"role\":\"staff\",\"old_desig\":\"Personnel\",\"new_desig\":\"BS Nursing\"}', 0, '2026-09-22 10:09:01'),
+(57, 'designation_update', 170, 'Jingle R. Ausan updated their designation from \"Teacher/ librarian\" to \"BEED - General Education\".', '{\"user_id\":170,\"full_name\":\"Jingle R. Ausan\",\"role\":\"teacher\",\"old_desig\":\"Teacher\\/ librarian\",\"new_desig\":\"BEED - General Education\"}', 0, '2026-09-22 10:09:45'),
+(58, 'designation_update', 216, 'Stephanie M. Puntal updated their designation from \"Teacher\" to \"BS Information Technology  with Certificate in Teaching – Social Studies\".', '{\"user_id\":216,\"full_name\":\"Stephanie M. Puntal\",\"role\":\"teacher\",\"old_desig\":\"Teacher\",\"new_desig\":\"BS Information Technology  with Certificate in Teaching \\u2013 Social Studies\"}', 0, '2026-09-22 10:22:24'),
+(59, 'designation_update', 217, 'Cedrick Dante Espillo updated their designation from \"Teacher\" to \"BSED - English\".', '{\"user_id\":217,\"full_name\":\"Cedrick Dante Espillo\",\"role\":\"teacher\",\"old_desig\":\"Teacher\",\"new_desig\":\"BSED - English\"}', 0, '2026-09-22 10:22:59'),
+(61, 'designation_update', 218, 'Malou De la Torre updated their designation from \"Personnel\" to \"Master in Library and Information Science BSBA – Management\".', '{\"user_id\":218,\"full_name\":\"Malou De la Torre\",\"role\":\"staff\",\"old_desig\":\"Personnel\",\"new_desig\":\"Master in Library and Information Science BSBA \\u2013 Management\"}', 0, '2026-09-22 10:38:12'),
+(62, 'designation_update', 218, 'Malou De la Torre updated their designation from \"Master in Library and Information Science BSBA – Management\" to \"Librarian\".', '{\"user_id\":218,\"full_name\":\"Malou De la Torre\",\"role\":\"staff\",\"old_desig\":\"Master in Library and Information Science BSBA \\u2013 Management\",\"new_desig\":\"Librarian\"}', 0, '2026-09-22 11:08:19'),
+(63, 'evaluation_received', 236, 'You have received a new Staff Evaluation.', '{\"evaluation_type\":\"staff\",\"target_type\":\"EA\",\"target_label\":\"Executive Assistant\"}', 0, '2026-09-22 11:09:59'),
+(64, 'designation_update', 217, 'Cedrick Dante Espillo updated their designation from \"BSED - English\" to \"Teacher/ Coordinator\".', '{\"user_id\":217,\"full_name\":\"Cedrick Dante Espillo\",\"role\":\"teacher\",\"old_desig\":\"BSED - English\",\"new_desig\":\"Teacher\\/ Coordinator\"}', 0, '2026-09-22 11:11:49'),
+(65, 'evaluation_received', 216, 'You have received a new evaluation.', NULL, 0, '2026-09-22 11:14:00'),
+(66, 'designation_update', 220, 'Barcibal Emily R. updated their designation from \"Teacher\" to \"Teacher/ Cashier\".', '{\"user_id\":220,\"full_name\":\"Barcibal Emily R.\",\"role\":\"teacher\",\"old_desig\":\"Teacher\",\"new_desig\":\"Teacher\\/ Cashier\"}', 0, '2026-09-22 11:54:31'),
+(67, 'evaluation_received', 217, 'You have received a new evaluation.', NULL, 0, '2026-09-22 11:58:19'),
+(68, 'evaluation_received', 158, 'You have received a new Principal evaluation.', NULL, 0, '2026-09-23 10:29:32'),
+(69, 'designation_update', 221, 'Anecito John Kenneth M. updated their designation from \"Personnel\" to \"Physical Plant Coordinator/ Computer Lab Custodian\".', '{\"user_id\":221,\"full_name\":\"Anecito John Kenneth M.\",\"role\":\"staff\",\"old_desig\":\"Personnel\",\"new_desig\":\"Physical Plant Coordinator\\/ Computer Lab Custodian\"}', 0, '2026-09-23 10:59:19'),
+(70, 'designation_update', 222, 'Biadora Jennifer A. updated their designation from \"Teacher\" to \"ESC/ SHSVP/ TSS Encoder YEARBOOK IN CHARGE\".', '{\"user_id\":222,\"full_name\":\"Biadora Jennifer A.\",\"role\":\"teacher\",\"old_desig\":\"Teacher\",\"new_desig\":\"ESC\\/ SHSVP\\/ TSS Encoder YEARBOOK IN CHARGE\"}', 0, '2026-09-23 11:01:14'),
+(71, 'designation_update', 222, 'Biadora Jennifer A. updated their designation from \"ESC/ SHSVP/ TSS Encoder YEARBOOK IN CHARGE\" to \"Teacher/ ESC/ SHSVP/ TSS Encoder YEARBOOK IN CHARGE\".', '{\"user_id\":222,\"full_name\":\"Biadora Jennifer A.\",\"role\":\"teacher\",\"old_desig\":\"ESC\\/ SHSVP\\/ TSS Encoder YEARBOOK IN CHARGE\",\"new_desig\":\"Teacher\\/ ESC\\/ SHSVP\\/ TSS Encoder YEARBOOK IN CHARGE\"}', 0, '2026-09-23 11:01:22'),
+(72, 'designation_update', 225, 'Anecito John Kenneth M. updated their designation from \"Personnel\" to \"Physical Plant Coordinator/ Computer Lab Custodian\".', '{\"user_id\":225,\"full_name\":\"Anecito John Kenneth M.\",\"role\":\"staff\",\"old_desig\":\"Personnel\",\"new_desig\":\"Physical Plant Coordinator\\/ Computer Lab Custodian\"}', 0, '2026-09-23 11:23:34'),
+(73, 'designation_update', 226, 'Delos Santos Johnny E. updated their designation from \"Personnel\" to \"MAINTENANCE OFFICER\".', '{\"user_id\":226,\"full_name\":\"Delos Santos Johnny E.\",\"role\":\"staff\",\"old_desig\":\"Personnel\",\"new_desig\":\"MAINTENANCE OFFICER\"}', 0, '2026-09-23 11:25:48'),
+(74, 'designation_update', 230, 'Delos Santos Gerald V. updated their designation from \"Personnel\" to \"GUIDANCE STAFF/ SPORTS PROGRAM MANAGER/ SDRRM OFFICER\".', '{\"user_id\":230,\"full_name\":\"Delos Santos Gerald V.\",\"role\":\"staff\",\"old_desig\":\"Personnel\",\"new_desig\":\"GUIDANCE STAFF\\/ SPORTS PROGRAM MANAGER\\/ SDRRM OFFICER\"}', 0, '2026-09-23 11:32:31'),
+(75, 'designation_update', 232, 'Arevalo Raffy E. updated their designation from \"Personnel\" to \"School Registrar/ ADMIN COORDINATOR\".', '{\"user_id\":232,\"full_name\":\"Arevalo Raffy E.\",\"role\":\"staff\",\"old_desig\":\"Personnel\",\"new_desig\":\"School Registrar\\/ ADMIN COORDINATOR\"}', 0, '2026-09-23 11:36:38'),
+(76, 'designation_update', 227, 'Sardina Joselle C. updated their designation from \"Teacher\" to \"Ang Kingke Adviser/ Grade 7 - St. Albert Adviser/ HS TEACHER\".', '{\"user_id\":227,\"full_name\":\"Sardina Joselle C.\",\"role\":\"teacher\",\"old_desig\":\"Teacher\",\"new_desig\":\"Ang Kingke Adviser\\/ Grade 7 - St. Albert Adviser\\/ HS TEACHER\"}', 0, '2026-09-23 11:42:39'),
+(77, 'designation_update', 233, 'Candolita Amelia C. updated their designation from \"Personnel\" to \"Bookkeeper\".', '{\"user_id\":233,\"full_name\":\"Candolita Amelia C.\",\"role\":\"staff\",\"old_desig\":\"Personnel\",\"new_desig\":\"Bookkeeper\"}', 0, '2026-09-23 11:50:55'),
+(78, 'designation_update', 234, 'Aquillo Jessie A. updated their designation from \"Personnel\" to \"VE/CLE COORDINATOR/ HS TEACHER\".', '{\"user_id\":234,\"full_name\":\"Aquillo Jessie A.\",\"role\":\"staff\",\"old_desig\":\"Personnel\",\"new_desig\":\"VE\\/CLE COORDINATOR\\/ HS TEACHER\"}', 0, '2026-09-23 11:52:55'),
+(79, 'evaluation_received', 216, 'You have received a new evaluation.', NULL, 0, '2026-09-23 14:35:12'),
+(80, 'evaluation_received', 216, 'You have received a new evaluation.', NULL, 0, '2026-09-23 14:38:24'),
+(81, 'evaluation_received', 236, 'You have received a new Staff Evaluation.', '{\"evaluation_type\":\"staff\",\"target_type\":\"EA\",\"target_label\":\"Executive Assistant\"}', 0, '2026-09-28 15:58:31'),
+(82, 'evaluation_received', 236, 'You have received a new Staff Evaluation.', '{\"evaluation_type\":\"staff\",\"target_type\":\"EA\",\"target_label\":\"Executive Assistant\"}', 0, '2026-09-28 16:00:48');
 
 -- --------------------------------------------------------
 
@@ -763,14 +875,6 @@ CREATE TABLE `password_resets` (
   `token` varchar(64) NOT NULL,
   `expires_at` datetime NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
---
--- Dumping data for table `password_resets`
---
-
-INSERT INTO `password_resets` (`id`, `user_id`, `token`, `expires_at`) VALUES
-(45, 125, '7cf325b585a72f624e5ae498c6586515f9566ad6797bbc57a479d085d5ec1b68', '2026-08-28 09:14:05'),
-(49, 136, '9b58af58056bebf33035ce1910c02389777b69c3f0b95719e202ffbbb50b8a83', '2026-09-18 11:59:53');
 
 -- --------------------------------------------------------
 
@@ -825,260 +929,14 @@ CREATE TABLE `questionnaire_answers` (
 --
 
 INSERT INTO `questionnaire_answers` (`id`, `tracker_id`, `question_id`, `question_source`, `user_question_id`, `answer_text`, `answer_score`, `submitted_at`, `comments`) VALUES
-(244, 26, 184, 'evaluation', NULL, NULL, 5.00, '2026-08-13 07:57:36', NULL),
-(245, 26, 185, 'evaluation', NULL, NULL, 2.00, '2026-08-13 07:57:36', NULL),
-(246, 26, 188, 'evaluation', NULL, NULL, 5.00, '2026-08-13 07:57:36', NULL),
-(247, 26, 189, 'evaluation', NULL, NULL, 4.00, '2026-08-13 07:57:36', NULL),
-(256, 29, 192, 'evaluation', NULL, NULL, 5.00, '2026-08-14 14:58:06', NULL),
-(265, 38, 192, 'evaluation', NULL, NULL, 4.00, '2026-08-16 12:33:07', NULL),
-(290, 45, 184, 'evaluation', NULL, NULL, 5.00, '2026-08-17 16:48:00', NULL),
-(291, 45, 185, 'evaluation', NULL, NULL, 4.00, '2026-08-17 16:48:00', NULL),
-(292, 45, 188, 'evaluation', NULL, NULL, 5.00, '2026-08-17 16:48:00', NULL),
-(293, 45, 189, 'evaluation', NULL, NULL, 5.00, '2026-08-17 16:48:00', NULL),
-(307, 55, NULL, 'user', 75, NULL, 5.00, '2026-08-24 14:03:23', NULL),
-(308, 55, NULL, 'user', 73, NULL, 4.00, '2026-08-24 14:03:23', NULL),
 (315, 58, 153, 'evaluation', NULL, NULL, 4.00, '2026-08-24 14:57:55', NULL),
 (316, 58, 79, 'evaluation', NULL, NULL, 3.00, '2026-08-24 14:57:55', NULL),
-(327, 62, NULL, 'user', 209, NULL, 4.00, '2026-08-26 10:35:38', NULL),
-(328, 62, NULL, 'user', 210, NULL, 5.00, '2026-08-26 10:35:38', NULL),
-(329, 62, NULL, 'user', 211, NULL, 4.00, '2026-08-26 10:35:38', NULL),
-(330, 62, NULL, 'user', 212, NULL, 5.00, '2026-08-26 10:35:38', NULL),
-(331, 62, NULL, 'user', 213, NULL, 5.00, '2026-08-26 10:35:38', NULL),
-(332, 64, NULL, 'user', 199, NULL, 5.00, '2026-08-26 11:18:16', NULL),
-(333, 64, NULL, 'user', 200, NULL, 5.00, '2026-08-26 11:18:16', NULL),
-(334, 64, NULL, 'user', 201, NULL, 4.00, '2026-08-26 11:18:16', NULL),
-(335, 64, NULL, 'user', 202, NULL, 5.00, '2026-08-26 11:18:16', NULL),
-(336, 64, NULL, 'user', 203, NULL, 4.00, '2026-08-26 11:18:16', NULL),
-(337, 65, NULL, 'user', 219, NULL, 5.00, '2026-08-26 11:18:28', NULL),
-(338, 65, NULL, 'user', 220, NULL, 5.00, '2026-08-26 11:18:28', NULL),
-(339, 65, NULL, 'user', 221, NULL, 4.00, '2026-08-26 11:18:28', NULL),
-(340, 65, NULL, 'user', 222, NULL, 5.00, '2026-08-26 11:18:28', NULL),
-(341, 65, NULL, 'user', 223, NULL, 4.00, '2026-08-26 11:18:28', NULL),
-(347, 67, 201, 'evaluation', NULL, NULL, 5.00, '2026-08-26 11:42:05', NULL),
-(348, 67, 202, 'evaluation', NULL, NULL, 5.00, '2026-08-26 11:42:05', NULL),
-(349, 67, 206, 'evaluation', NULL, NULL, 4.00, '2026-08-26 11:42:05', NULL),
-(350, 67, 203, 'evaluation', NULL, NULL, 4.00, '2026-08-26 11:42:05', NULL),
-(351, 67, 204, 'evaluation', NULL, NULL, 5.00, '2026-08-26 11:42:05', NULL),
-(352, 67, 205, 'evaluation', NULL, NULL, 5.00, '2026-08-26 11:42:05', NULL),
-(353, 67, 207, 'evaluation', NULL, NULL, 4.00, '2026-08-26 11:42:05', NULL),
-(354, 67, 208, 'evaluation', NULL, NULL, 5.00, '2026-08-26 11:42:05', NULL),
-(355, 68, NULL, 'user', 224, NULL, 5.00, '2026-08-26 12:08:51', NULL),
-(356, 68, NULL, 'user', 225, NULL, 5.00, '2026-08-26 12:08:51', NULL),
-(357, 68, NULL, 'user', 226, NULL, 4.00, '2026-08-26 12:08:51', NULL),
-(358, 68, NULL, 'user', 227, NULL, 5.00, '2026-08-26 12:08:51', NULL),
-(359, 68, NULL, 'user', 228, NULL, 4.00, '2026-08-26 12:08:51', NULL),
-(360, 68, NULL, 'user', 229, NULL, 5.00, '2026-08-26 12:08:51', NULL),
-(361, 68, NULL, 'user', 230, NULL, 4.00, '2026-08-26 12:08:51', NULL),
-(362, 69, 209, 'evaluation', NULL, NULL, 5.00, '2026-08-27 15:03:41', NULL),
-(363, 69, 218, 'evaluation', NULL, NULL, 4.00, '2026-08-27 15:03:41', NULL),
-(364, 69, 210, 'evaluation', NULL, NULL, 5.00, '2026-08-27 15:03:41', NULL),
-(365, 69, 211, 'evaluation', NULL, NULL, 4.00, '2026-08-27 15:03:41', NULL),
-(366, 69, 212, 'evaluation', NULL, NULL, 5.00, '2026-08-27 15:03:41', NULL),
-(367, 69, 213, 'evaluation', NULL, NULL, 4.00, '2026-08-27 15:03:41', NULL),
-(368, 69, 214, 'evaluation', NULL, NULL, 5.00, '2026-08-27 15:03:41', NULL),
-(369, 69, 215, 'evaluation', NULL, NULL, 4.00, '2026-08-27 15:03:41', NULL),
-(370, 69, 216, 'evaluation', NULL, NULL, 5.00, '2026-08-27 15:03:41', NULL),
-(371, 69, 217, 'evaluation', NULL, NULL, 4.00, '2026-08-27 15:03:41', NULL),
-(372, 69, 219, 'evaluation', NULL, NULL, 5.00, '2026-08-27 15:03:41', NULL),
-(373, 71, 201, 'evaluation', NULL, NULL, 5.00, '2026-08-27 16:02:21', NULL),
-(374, 71, 202, 'evaluation', NULL, NULL, 5.00, '2026-08-27 16:02:21', NULL),
-(375, 71, 206, 'evaluation', NULL, NULL, 4.00, '2026-08-27 16:02:21', NULL),
-(376, 71, 203, 'evaluation', NULL, NULL, 5.00, '2026-08-27 16:02:21', NULL),
-(377, 71, 204, 'evaluation', NULL, NULL, 4.00, '2026-08-27 16:02:21', NULL),
-(378, 71, 205, 'evaluation', NULL, NULL, 5.00, '2026-08-27 16:02:21', NULL),
-(379, 71, 207, 'evaluation', NULL, NULL, 5.00, '2026-08-27 16:02:21', NULL),
-(380, 71, 208, 'evaluation', NULL, NULL, 5.00, '2026-08-27 16:02:21', NULL),
 (381, 72, 80, 'evaluation', NULL, NULL, 5.00, '2026-08-27 16:55:58', NULL),
 (382, 72, 82, 'evaluation', NULL, NULL, 4.00, '2026-08-27 16:55:58', NULL),
 (383, 72, 83, 'evaluation', NULL, NULL, 5.00, '2026-08-27 16:55:58', NULL),
-(384, 74, 209, 'evaluation', NULL, NULL, 5.00, '2026-08-28 19:55:39', NULL),
-(385, 74, 218, 'evaluation', NULL, NULL, 4.00, '2026-08-28 19:55:39', NULL),
-(386, 74, 210, 'evaluation', NULL, NULL, 4.00, '2026-08-28 19:55:39', NULL),
-(387, 74, 211, 'evaluation', NULL, NULL, 5.00, '2026-08-28 19:55:39', NULL),
-(388, 74, 212, 'evaluation', NULL, NULL, 4.00, '2026-08-28 19:55:39', NULL),
-(389, 74, 213, 'evaluation', NULL, NULL, 5.00, '2026-08-28 19:55:39', NULL),
-(390, 74, 214, 'evaluation', NULL, NULL, 4.00, '2026-08-28 19:55:39', NULL),
-(391, 74, 215, 'evaluation', NULL, NULL, 5.00, '2026-08-28 19:55:39', NULL),
-(392, 74, 216, 'evaluation', NULL, NULL, 5.00, '2026-08-28 19:55:39', NULL),
-(393, 74, 217, 'evaluation', NULL, NULL, 5.00, '2026-08-28 19:55:39', NULL),
-(394, 74, 219, 'evaluation', NULL, NULL, 4.00, '2026-08-28 19:55:39', NULL),
-(395, 75, 4, 'evaluation', NULL, NULL, 5.00, '2026-08-28 20:01:30', NULL),
-(396, 75, 5, 'evaluation', NULL, NULL, 4.00, '2026-08-28 20:01:30', NULL),
-(397, 75, 6, 'evaluation', NULL, NULL, 5.00, '2026-08-28 20:01:30', NULL),
-(398, 76, 209, 'evaluation', NULL, NULL, 5.00, '2026-08-29 10:29:36', NULL),
-(399, 76, 218, 'evaluation', NULL, NULL, 4.00, '2026-08-29 10:29:36', NULL),
-(400, 76, 210, 'evaluation', NULL, NULL, 5.00, '2026-08-29 10:29:36', NULL),
-(401, 76, 211, 'evaluation', NULL, NULL, 5.00, '2026-08-29 10:29:36', NULL),
-(402, 76, 212, 'evaluation', NULL, NULL, 4.00, '2026-08-29 10:29:36', NULL),
-(403, 76, 213, 'evaluation', NULL, NULL, 5.00, '2026-08-29 10:29:36', NULL),
-(404, 76, 214, 'evaluation', NULL, NULL, 4.00, '2026-08-29 10:29:36', NULL),
-(405, 76, 215, 'evaluation', NULL, NULL, 4.00, '2026-08-29 10:29:36', NULL),
-(406, 76, 216, 'evaluation', NULL, NULL, 5.00, '2026-08-29 10:29:36', NULL),
-(407, 76, 217, 'evaluation', NULL, NULL, 5.00, '2026-08-29 10:29:36', NULL),
-(408, 76, 219, 'evaluation', NULL, NULL, 3.00, '2026-08-29 10:29:36', NULL),
-(409, 77, 153, 'evaluation', NULL, NULL, 5.00, '2026-08-29 11:13:11', NULL),
-(410, 77, 79, 'evaluation', NULL, NULL, 5.00, '2026-08-29 11:13:11', NULL),
-(411, 78, 209, 'evaluation', NULL, NULL, 5.00, '2026-08-29 12:56:21', NULL),
-(412, 78, 218, 'evaluation', NULL, NULL, 5.00, '2026-08-29 12:56:21', NULL),
-(413, 78, 210, 'evaluation', NULL, NULL, 5.00, '2026-08-29 12:56:21', NULL),
-(414, 78, 211, 'evaluation', NULL, NULL, 5.00, '2026-08-29 12:56:21', NULL),
-(415, 78, 212, 'evaluation', NULL, NULL, 5.00, '2026-08-29 12:56:21', NULL),
-(416, 78, 213, 'evaluation', NULL, NULL, 5.00, '2026-08-29 12:56:21', NULL),
-(417, 78, 214, 'evaluation', NULL, NULL, 5.00, '2026-08-29 12:56:21', NULL),
-(418, 78, 215, 'evaluation', NULL, NULL, 5.00, '2026-08-29 12:56:21', NULL),
-(419, 78, 216, 'evaluation', NULL, NULL, 5.00, '2026-08-29 12:56:21', NULL),
-(420, 78, 217, 'evaluation', NULL, NULL, 5.00, '2026-08-29 12:56:21', NULL),
-(421, 78, 219, 'evaluation', NULL, NULL, 5.00, '2026-08-29 12:56:21', NULL),
-(422, 79, 209, 'evaluation', NULL, NULL, 4.00, '2026-08-29 12:57:03', NULL),
-(423, 79, 218, 'evaluation', NULL, NULL, 4.00, '2026-08-29 12:57:03', NULL),
-(424, 79, 210, 'evaluation', NULL, NULL, 4.00, '2026-08-29 12:57:03', NULL),
-(425, 79, 211, 'evaluation', NULL, NULL, 4.00, '2026-08-29 12:57:03', NULL),
-(426, 79, 212, 'evaluation', NULL, NULL, 4.00, '2026-08-29 12:57:03', NULL),
-(427, 79, 213, 'evaluation', NULL, NULL, 4.00, '2026-08-29 12:57:03', NULL),
-(428, 79, 214, 'evaluation', NULL, NULL, 4.00, '2026-08-29 12:57:03', NULL),
-(429, 79, 215, 'evaluation', NULL, NULL, 4.00, '2026-08-29 12:57:03', NULL),
-(430, 79, 216, 'evaluation', NULL, NULL, 4.00, '2026-08-29 12:57:03', NULL),
-(431, 79, 217, 'evaluation', NULL, NULL, 4.00, '2026-08-29 12:57:03', NULL),
-(432, 79, 219, 'evaluation', NULL, NULL, 4.00, '2026-08-29 12:57:03', NULL),
-(433, 80, NULL, 'user', 199, NULL, 5.00, '2026-08-29 12:57:39', NULL),
-(434, 80, NULL, 'user', 200, NULL, 5.00, '2026-08-29 12:57:39', NULL),
-(435, 80, NULL, 'user', 201, NULL, 5.00, '2026-08-29 12:57:39', NULL),
-(436, 80, NULL, 'user', 202, NULL, 5.00, '2026-08-29 12:57:39', NULL),
-(437, 80, NULL, 'user', 203, NULL, 5.00, '2026-08-29 12:57:39', NULL),
-(438, 81, NULL, 'user', 219, NULL, 5.00, '2026-08-29 12:58:14', NULL),
-(439, 81, NULL, 'user', 220, NULL, 5.00, '2026-08-29 12:58:14', NULL),
-(440, 81, NULL, 'user', 221, NULL, 5.00, '2026-08-29 12:58:14', NULL),
-(441, 81, NULL, 'user', 222, NULL, 5.00, '2026-08-29 12:58:14', NULL),
-(442, 81, NULL, 'user', 223, NULL, 5.00, '2026-08-29 12:58:14', NULL),
-(443, 82, 209, 'evaluation', NULL, NULL, 5.00, '2026-08-29 13:04:08', NULL),
-(444, 82, 218, 'evaluation', NULL, NULL, 5.00, '2026-08-29 13:04:08', NULL),
-(445, 82, 210, 'evaluation', NULL, NULL, 5.00, '2026-08-29 13:04:08', NULL),
-(446, 82, 211, 'evaluation', NULL, NULL, 5.00, '2026-08-29 13:04:08', NULL),
-(447, 82, 212, 'evaluation', NULL, NULL, 5.00, '2026-08-29 13:04:08', NULL),
-(448, 82, 213, 'evaluation', NULL, NULL, 5.00, '2026-08-29 13:04:08', NULL),
-(449, 82, 214, 'evaluation', NULL, NULL, 5.00, '2026-08-29 13:04:08', NULL),
-(450, 82, 215, 'evaluation', NULL, NULL, 5.00, '2026-08-29 13:04:08', NULL),
-(451, 82, 216, 'evaluation', NULL, NULL, 5.00, '2026-08-29 13:04:08', NULL),
-(452, 82, 217, 'evaluation', NULL, NULL, 5.00, '2026-08-29 13:04:08', NULL),
-(453, 82, 219, 'evaluation', NULL, NULL, 5.00, '2026-08-29 13:04:08', NULL),
-(454, 83, 209, 'evaluation', NULL, NULL, 5.00, '2026-08-29 13:04:53', NULL),
-(455, 83, 218, 'evaluation', NULL, NULL, 5.00, '2026-08-29 13:04:53', NULL),
-(456, 83, 210, 'evaluation', NULL, NULL, 5.00, '2026-08-29 13:04:53', NULL),
-(457, 83, 211, 'evaluation', NULL, NULL, 5.00, '2026-08-29 13:04:53', NULL),
-(458, 83, 212, 'evaluation', NULL, NULL, 5.00, '2026-08-29 13:04:53', NULL),
-(459, 83, 213, 'evaluation', NULL, NULL, 5.00, '2026-08-29 13:04:53', NULL),
-(460, 83, 214, 'evaluation', NULL, NULL, 5.00, '2026-08-29 13:04:53', NULL),
-(461, 83, 215, 'evaluation', NULL, NULL, 5.00, '2026-08-29 13:04:53', NULL),
-(462, 83, 216, 'evaluation', NULL, NULL, 5.00, '2026-08-29 13:04:53', NULL),
-(463, 83, 217, 'evaluation', NULL, NULL, 5.00, '2026-08-29 13:04:53', NULL),
-(464, 83, 219, 'evaluation', NULL, NULL, 5.00, '2026-08-29 13:04:53', NULL),
-(465, 84, NULL, 'user', 199, NULL, 5.00, '2026-08-29 13:05:19', NULL),
-(466, 84, NULL, 'user', 200, NULL, 5.00, '2026-08-29 13:05:19', NULL),
-(467, 84, NULL, 'user', 201, NULL, 5.00, '2026-08-29 13:05:19', NULL),
-(468, 84, NULL, 'user', 202, NULL, 5.00, '2026-08-29 13:05:19', NULL),
-(469, 84, NULL, 'user', 203, NULL, 5.00, '2026-08-29 13:05:19', NULL),
-(470, 86, NULL, 'user', 92, NULL, 5.00, '2026-08-29 13:07:08', NULL),
-(471, 86, NULL, 'user', 93, NULL, 5.00, '2026-08-29 13:07:08', NULL),
-(472, 86, NULL, 'user', 94, NULL, 5.00, '2026-08-29 13:07:08', NULL),
-(473, 86, NULL, 'user', 95, NULL, 5.00, '2026-08-29 13:07:08', NULL),
-(474, 86, NULL, 'user', 96, NULL, 5.00, '2026-08-29 13:07:08', NULL),
-(475, 86, NULL, 'user', 97, NULL, 5.00, '2026-08-29 13:07:08', NULL),
-(476, 86, NULL, 'user', 98, NULL, 5.00, '2026-08-29 13:07:08', NULL),
-(477, 86, NULL, 'user', 99, NULL, 5.00, '2026-08-29 13:07:08', NULL),
-(478, 86, NULL, 'user', 100, NULL, 5.00, '2026-08-29 13:07:08', NULL),
-(479, 86, NULL, 'user', 101, NULL, 5.00, '2026-08-29 13:07:08', NULL),
-(480, 87, NULL, 'user', 232, NULL, 5.00, '2026-08-29 13:07:30', NULL),
-(481, 88, NULL, 'user', 237, NULL, 5.00, '2026-09-13 18:52:36', NULL),
-(482, 88, NULL, 'user', 238, NULL, 4.00, '2026-09-13 18:52:36', NULL),
-(483, 89, 206, 'evaluation', NULL, NULL, 5.00, '2026-09-13 18:54:47', NULL),
-(484, 89, 203, 'evaluation', NULL, NULL, 4.00, '2026-09-13 18:54:47', NULL),
-(485, 89, 204, 'evaluation', NULL, NULL, 5.00, '2026-09-13 18:54:47', NULL),
-(486, 89, 205, 'evaluation', NULL, NULL, 4.00, '2026-09-13 18:54:47', NULL),
-(487, 89, 207, 'evaluation', NULL, NULL, 5.00, '2026-09-13 18:54:47', NULL),
-(488, 89, 208, 'evaluation', NULL, NULL, 5.00, '2026-09-13 18:54:47', NULL),
-(489, 90, 235, 'evaluation', NULL, NULL, 5.00, '2026-09-13 22:05:54', NULL),
-(490, 90, 233, 'evaluation', NULL, NULL, 4.00, '2026-09-13 22:05:54', NULL),
-(491, 90, 236, 'evaluation', NULL, NULL, 5.00, '2026-09-13 22:05:54', NULL),
-(492, 91, 209, 'evaluation', NULL, NULL, 5.00, '2026-09-14 08:30:27', NULL),
-(493, 91, 218, 'evaluation', NULL, NULL, 5.00, '2026-09-14 08:30:27', NULL),
-(494, 91, 210, 'evaluation', NULL, NULL, 4.00, '2026-09-14 08:30:27', NULL),
-(495, 91, 211, 'evaluation', NULL, NULL, 5.00, '2026-09-14 08:30:27', NULL),
-(496, 91, 212, 'evaluation', NULL, NULL, 5.00, '2026-09-14 08:30:27', NULL),
-(497, 91, 213, 'evaluation', NULL, NULL, 4.00, '2026-09-14 08:30:27', NULL),
-(498, 91, 214, 'evaluation', NULL, NULL, 5.00, '2026-09-14 08:30:27', NULL),
-(499, 91, 215, 'evaluation', NULL, NULL, 4.00, '2026-09-14 08:30:27', NULL),
-(500, 91, 216, 'evaluation', NULL, NULL, 5.00, '2026-09-14 08:30:27', NULL),
-(501, 91, 217, 'evaluation', NULL, NULL, 4.00, '2026-09-14 08:30:27', NULL),
-(502, 91, 219, 'evaluation', NULL, NULL, 3.00, '2026-09-14 08:30:27', NULL),
-(503, 92, NULL, 'user', 236, NULL, 5.00, '2026-09-14 08:30:58', NULL),
-(504, 93, NULL, 'user', 232, NULL, 5.00, '2026-09-14 08:31:12', NULL),
-(505, 94, 206, 'evaluation', NULL, NULL, 5.00, '2026-09-14 08:37:19', NULL),
-(506, 94, 203, 'evaluation', NULL, NULL, 4.00, '2026-09-14 08:37:19', NULL),
-(507, 94, 204, 'evaluation', NULL, NULL, 5.00, '2026-09-14 08:37:19', NULL),
-(508, 94, 205, 'evaluation', NULL, NULL, 4.00, '2026-09-14 08:37:19', NULL),
-(509, 94, 207, 'evaluation', NULL, NULL, 5.00, '2026-09-14 08:37:19', NULL),
-(510, 94, 208, 'evaluation', NULL, NULL, 5.00, '2026-09-14 08:37:19', NULL),
-(511, 95, NULL, 'user', 237, NULL, 5.00, '2026-09-14 08:37:55', NULL),
-(512, 95, NULL, 'user', 238, NULL, 4.00, '2026-09-14 08:37:55', NULL),
-(513, 96, NULL, 'user', 239, NULL, 5.00, '2026-09-14 08:40:12', NULL),
-(514, 96, NULL, 'user', 240, NULL, 5.00, '2026-09-14 08:40:12', NULL),
-(515, 96, NULL, 'user', 241, NULL, 4.00, '2026-09-14 08:40:12', NULL),
-(516, 96, NULL, 'user', 242, NULL, 5.00, '2026-09-14 08:40:12', NULL),
-(517, 97, NULL, 'user', 233, NULL, 5.00, '2026-09-14 08:40:32', NULL),
-(518, 98, NULL, 'user', 243, NULL, 5.00, '2026-09-14 08:42:23', NULL),
-(519, 99, NULL, 'user', 243, NULL, 5.00, '2026-09-14 08:43:00', NULL),
-(520, 100, NULL, 'user', 232, NULL, 5.00, '2026-09-14 08:43:05', NULL),
-(521, 101, NULL, 'user', 232, NULL, 5.00, '2026-09-14 08:55:14', NULL),
-(522, 101, NULL, 'user', 244, NULL, 4.00, '2026-09-14 08:55:14', NULL),
-(523, 101, NULL, 'user', 245, NULL, 5.00, '2026-09-14 08:55:14', NULL),
-(524, 102, NULL, 'user', 246, NULL, 5.00, '2026-09-14 08:55:59', NULL),
-(525, 102, NULL, 'user', 247, NULL, 4.00, '2026-09-14 08:55:59', NULL),
-(526, 102, NULL, 'user', 243, NULL, 5.00, '2026-09-14 08:55:59', NULL),
-(527, 103, NULL, 'user', 232, NULL, 5.00, '2026-09-14 09:34:50', NULL),
-(528, 103, NULL, 'user', 244, NULL, 5.00, '2026-09-14 09:34:50', NULL),
-(529, 103, NULL, 'user', 245, NULL, 4.00, '2026-09-14 09:34:50', NULL),
-(530, 104, 209, 'evaluation', NULL, NULL, 5.00, '2026-09-14 16:28:49', NULL),
-(531, 104, 218, 'evaluation', NULL, NULL, 4.00, '2026-09-14 16:28:49', NULL),
-(532, 104, 210, 'evaluation', NULL, NULL, 5.00, '2026-09-14 16:28:49', NULL),
-(533, 104, 211, 'evaluation', NULL, NULL, 4.00, '2026-09-14 16:28:49', NULL),
-(534, 104, 212, 'evaluation', NULL, NULL, 5.00, '2026-09-14 16:28:49', NULL),
-(535, 104, 213, 'evaluation', NULL, NULL, 5.00, '2026-09-14 16:28:49', NULL),
-(536, 104, 214, 'evaluation', NULL, NULL, 4.00, '2026-09-14 16:28:49', NULL),
-(537, 104, 215, 'evaluation', NULL, NULL, 5.00, '2026-09-14 16:28:49', NULL),
-(538, 104, 216, 'evaluation', NULL, NULL, 5.00, '2026-09-14 16:28:49', NULL),
-(539, 104, 217, 'evaluation', NULL, NULL, 4.00, '2026-09-14 16:28:49', NULL),
-(540, 104, 219, 'evaluation', NULL, NULL, 5.00, '2026-09-14 16:28:49', NULL),
-(541, 105, NULL, 'user', 199, NULL, 5.00, '2026-09-14 16:29:01', NULL),
-(542, 105, NULL, 'user', 200, NULL, 4.00, '2026-09-14 16:29:01', NULL),
-(543, 105, NULL, 'user', 201, NULL, 5.00, '2026-09-14 16:29:01', NULL),
-(544, 105, NULL, 'user', 202, NULL, 5.00, '2026-09-14 16:29:01', NULL),
-(545, 105, NULL, 'user', 203, NULL, 4.00, '2026-09-14 16:29:01', NULL),
-(546, 106, NULL, 'user', 232, NULL, 5.00, '2026-09-14 16:29:08', NULL),
-(547, 106, NULL, 'user', 244, NULL, 4.00, '2026-09-14 16:29:08', NULL),
-(548, 106, NULL, 'user', 245, NULL, 5.00, '2026-09-14 16:29:08', NULL),
-(549, 107, NULL, 'user', 246, NULL, 5.00, '2026-09-14 16:29:19', NULL),
-(550, 107, NULL, 'user', 247, NULL, 5.00, '2026-09-14 16:29:19', NULL),
-(551, 107, NULL, 'user', 243, NULL, 4.00, '2026-09-14 16:29:19', NULL),
-(552, 108, 224, 'evaluation', NULL, NULL, 5.00, '2026-09-14 21:41:32', NULL),
-(553, 108, 226, 'evaluation', NULL, NULL, 4.00, '2026-09-14 21:41:32', NULL),
-(554, 108, 230, 'evaluation', NULL, NULL, 5.00, '2026-09-14 21:41:32', NULL),
-(555, 109, NULL, 'user', 234, NULL, 5.00, '2026-09-15 07:47:25', NULL),
-(556, 109, NULL, 'user', 235, NULL, 5.00, '2026-09-15 07:47:25', NULL),
 (557, 110, 237, 'evaluation', NULL, NULL, 5.00, '2026-09-15 07:49:43', NULL),
 (558, 110, 238, 'evaluation', NULL, NULL, 4.00, '2026-09-15 07:49:43', NULL),
 (559, 110, 239, 'evaluation', NULL, NULL, 5.00, '2026-09-15 07:49:43', NULL),
-(560, 111, 231, 'evaluation', NULL, NULL, 5.00, '2026-09-15 14:30:22', NULL),
-(561, 111, 232, 'evaluation', NULL, NULL, 4.00, '2026-09-15 14:30:22', NULL),
-(562, 113, 231, 'evaluation', NULL, NULL, 5.00, '2026-09-15 16:11:34', NULL),
-(563, 113, 232, 'evaluation', NULL, NULL, 4.00, '2026-09-15 16:11:34', NULL),
-(564, 114, 234, 'evaluation', NULL, NULL, 5.00, '2026-09-15 16:22:04', NULL),
-(565, 114, 240, 'evaluation', NULL, NULL, 5.00, '2026-09-15 16:22:04', NULL),
-(566, 114, 241, 'evaluation', NULL, NULL, 4.00, '2026-09-15 16:22:04', NULL),
-(567, 115, 295, 'evaluation', NULL, NULL, 5.00, '2026-09-15 16:40:12', NULL),
-(568, 115, 296, 'evaluation', NULL, NULL, 4.00, '2026-09-15 16:40:12', NULL),
-(569, 115, 297, 'evaluation', NULL, NULL, 5.00, '2026-09-15 16:40:12', NULL),
-(570, 115, 298, 'evaluation', NULL, NULL, 5.00, '2026-09-15 16:40:12', NULL),
-(571, 115, 299, 'evaluation', NULL, NULL, 4.00, '2026-09-15 16:40:12', NULL),
 (572, 116, 315, 'evaluation', NULL, NULL, 5.00, '2026-09-15 16:41:50', NULL),
 (573, 116, 157, 'evaluation', NULL, NULL, 5.00, '2026-09-15 16:41:50', NULL),
 (574, 116, 314, 'evaluation', NULL, NULL, 4.00, '2026-09-15 16:41:50', NULL),
@@ -1087,74 +945,314 @@ INSERT INTO `questionnaire_answers` (`id`, `tracker_id`, `question_id`, `questio
 (577, 116, 158, 'evaluation', NULL, NULL, 5.00, '2026-09-15 16:41:50', NULL),
 (578, 116, 159, 'evaluation', NULL, NULL, 5.00, '2026-09-15 16:41:50', NULL),
 (579, 116, 156, 'evaluation', NULL, NULL, 4.00, '2026-09-15 16:41:50', NULL),
-(580, 117, NULL, 'user', 234, NULL, 5.00, '2026-09-16 10:15:15', NULL),
-(581, 117, NULL, 'user', 235, NULL, 5.00, '2026-09-16 10:15:15', NULL),
-(582, 118, 209, 'evaluation', NULL, NULL, 5.00, '2026-09-17 13:51:08', NULL),
-(583, 118, 218, 'evaluation', NULL, NULL, 4.00, '2026-09-17 13:51:08', NULL),
-(584, 118, 210, 'evaluation', NULL, NULL, 4.00, '2026-09-17 13:51:08', NULL),
-(585, 118, 211, 'evaluation', NULL, NULL, 4.00, '2026-09-17 13:51:08', NULL),
-(586, 118, 212, 'evaluation', NULL, NULL, 4.00, '2026-09-17 13:51:08', NULL),
-(587, 118, 213, 'evaluation', NULL, NULL, 5.00, '2026-09-17 13:51:08', NULL),
-(588, 118, 214, 'evaluation', NULL, NULL, 4.00, '2026-09-17 13:51:08', NULL),
-(589, 118, 215, 'evaluation', NULL, NULL, 5.00, '2026-09-17 13:51:08', NULL),
-(590, 118, 216, 'evaluation', NULL, NULL, 4.00, '2026-09-17 13:51:08', NULL),
-(591, 118, 217, 'evaluation', NULL, NULL, 5.00, '2026-09-17 13:51:08', NULL),
-(592, 118, 219, 'evaluation', NULL, NULL, 4.00, '2026-09-17 13:51:08', NULL),
-(593, 119, 300, 'evaluation', NULL, NULL, 5.00, '2026-09-17 14:02:33', NULL),
-(594, 120, 209, 'evaluation', NULL, NULL, 5.00, '2026-09-18 07:45:03', NULL),
-(595, 120, 218, 'evaluation', NULL, NULL, 5.00, '2026-09-18 07:45:03', NULL),
-(596, 120, 210, 'evaluation', NULL, NULL, 4.00, '2026-09-18 07:45:03', NULL),
-(597, 120, 211, 'evaluation', NULL, NULL, 5.00, '2026-09-18 07:45:03', NULL),
-(598, 120, 212, 'evaluation', NULL, NULL, 4.00, '2026-09-18 07:45:03', NULL),
-(599, 120, 213, 'evaluation', NULL, NULL, 5.00, '2026-09-18 07:45:03', NULL),
-(600, 120, 214, 'evaluation', NULL, NULL, 5.00, '2026-09-18 07:45:03', NULL),
-(601, 120, 215, 'evaluation', NULL, NULL, 4.00, '2026-09-18 07:45:03', NULL),
-(602, 120, 216, 'evaluation', NULL, NULL, 5.00, '2026-09-18 07:45:03', NULL),
-(603, 120, 217, 'evaluation', NULL, NULL, 5.00, '2026-09-18 07:45:03', NULL),
-(604, 120, 219, 'evaluation', NULL, NULL, 4.00, '2026-09-18 07:45:03', NULL),
 (605, 121, NULL, 'user', 232, NULL, 5.00, '2026-09-18 07:47:29', NULL),
 (606, 121, NULL, 'user', 244, NULL, 4.00, '2026-09-18 07:47:29', NULL),
 (607, 121, NULL, 'user', 245, NULL, 5.00, '2026-09-18 07:47:29', NULL),
-(608, 122, 209, 'evaluation', NULL, NULL, 5.00, '2026-09-18 07:52:42', NULL),
-(609, 122, 218, 'evaluation', NULL, NULL, 5.00, '2026-09-18 07:52:42', NULL),
-(610, 122, 210, 'evaluation', NULL, NULL, 4.00, '2026-09-18 07:52:42', NULL),
-(611, 122, 211, 'evaluation', NULL, NULL, 5.00, '2026-09-18 07:52:42', NULL),
-(612, 122, 212, 'evaluation', NULL, NULL, 4.00, '2026-09-18 07:52:42', NULL),
-(613, 122, 213, 'evaluation', NULL, NULL, 5.00, '2026-09-18 07:52:42', NULL),
-(614, 122, 214, 'evaluation', NULL, NULL, 5.00, '2026-09-18 07:52:42', NULL),
-(615, 122, 215, 'evaluation', NULL, NULL, 4.00, '2026-09-18 07:52:42', NULL),
-(616, 122, 216, 'evaluation', NULL, NULL, 4.00, '2026-09-18 07:52:42', NULL),
-(617, 122, 217, 'evaluation', NULL, NULL, 5.00, '2026-09-18 07:52:42', NULL),
-(618, 122, 219, 'evaluation', NULL, NULL, 4.00, '2026-09-18 07:52:42', NULL),
-(619, 123, 209, 'evaluation', NULL, NULL, 5.00, '2026-09-18 08:08:03', NULL),
-(620, 123, 218, 'evaluation', NULL, NULL, 4.00, '2026-09-18 08:08:03', NULL),
-(621, 123, 210, 'evaluation', NULL, NULL, 5.00, '2026-09-18 08:08:03', NULL),
-(622, 123, 211, 'evaluation', NULL, NULL, 5.00, '2026-09-18 08:08:03', NULL),
-(623, 123, 212, 'evaluation', NULL, NULL, 4.00, '2026-09-18 08:08:03', NULL),
-(624, 123, 213, 'evaluation', NULL, NULL, 5.00, '2026-09-18 08:08:03', NULL),
-(625, 123, 214, 'evaluation', NULL, NULL, 5.00, '2026-09-18 08:08:03', NULL),
-(626, 123, 215, 'evaluation', NULL, NULL, 4.00, '2026-09-18 08:08:03', NULL),
-(627, 123, 216, 'evaluation', NULL, NULL, 5.00, '2026-09-18 08:08:03', NULL),
-(628, 123, 217, 'evaluation', NULL, NULL, 4.00, '2026-09-18 08:08:03', NULL),
-(629, 123, 219, 'evaluation', NULL, NULL, 5.00, '2026-09-18 08:08:03', NULL),
-(630, 124, NULL, 'user', 232, NULL, 5.00, '2026-09-18 08:08:52', NULL),
-(631, 124, NULL, 'user', 244, NULL, 4.00, '2026-09-18 08:08:52', NULL),
-(632, 124, NULL, 'user', 245, NULL, 5.00, '2026-09-18 08:08:52', NULL),
-(633, 125, 225, 'evaluation', NULL, NULL, 5.00, '2026-09-18 14:48:11', NULL),
-(634, 125, 227, 'evaluation', NULL, NULL, 5.00, '2026-09-18 14:48:11', NULL),
-(635, 125, 229, 'evaluation', NULL, NULL, 5.00, '2026-09-18 14:48:11', NULL),
-(636, 126, 315, 'evaluation', NULL, NULL, 5.00, '2026-09-18 15:15:38', NULL),
-(637, 126, 319, 'evaluation', NULL, NULL, 5.00, '2026-09-18 15:15:38', NULL),
-(638, 126, 157, 'evaluation', NULL, NULL, 4.00, '2026-09-18 15:15:38', NULL),
-(639, 126, 314, 'evaluation', NULL, NULL, 5.00, '2026-09-18 15:15:38', NULL),
-(640, 126, 154, 'evaluation', NULL, NULL, 5.00, '2026-09-18 15:15:38', NULL),
-(641, 126, 155, 'evaluation', NULL, NULL, 4.00, '2026-09-18 15:15:38', NULL),
-(642, 126, 158, 'evaluation', NULL, NULL, 5.00, '2026-09-18 15:15:38', NULL),
-(643, 126, 159, 'evaluation', NULL, NULL, 5.00, '2026-09-18 15:15:38', NULL),
-(644, 126, 156, 'evaluation', NULL, NULL, 5.00, '2026-09-18 15:15:38', NULL),
-(645, 127, 225, 'evaluation', NULL, NULL, 5.00, '2026-09-19 10:56:15', NULL),
-(646, 127, 227, 'evaluation', NULL, NULL, 4.00, '2026-09-19 10:56:15', NULL),
-(647, 127, 229, 'evaluation', NULL, NULL, 5.00, '2026-09-19 10:56:15', NULL);
+(852, 140, 266, 'evaluation', NULL, NULL, 5.00, '2026-09-22 10:58:50', NULL),
+(853, 140, 262, 'evaluation', NULL, NULL, 4.00, '2026-09-22 10:58:50', NULL),
+(854, 140, 251, 'evaluation', NULL, NULL, 5.00, '2026-09-22 10:58:50', NULL),
+(855, 140, 252, 'evaluation', NULL, NULL, 5.00, '2026-09-22 10:58:50', NULL),
+(856, 140, 253, 'evaluation', NULL, NULL, 5.00, '2026-09-22 10:58:50', NULL),
+(857, 140, 254, 'evaluation', NULL, NULL, 5.00, '2026-09-22 10:58:50', NULL),
+(858, 140, 255, 'evaluation', NULL, NULL, 5.00, '2026-09-22 10:58:50', NULL),
+(859, 140, 256, 'evaluation', NULL, NULL, 5.00, '2026-09-22 10:58:50', NULL),
+(860, 140, 257, 'evaluation', NULL, NULL, 5.00, '2026-09-22 10:58:50', NULL),
+(861, 140, 258, 'evaluation', NULL, NULL, 5.00, '2026-09-22 10:58:50', NULL),
+(862, 140, 260, 'evaluation', NULL, NULL, 5.00, '2026-09-22 10:58:50', NULL),
+(881, 145, 266, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:14:00', NULL),
+(882, 145, 262, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:14:00', NULL),
+(883, 145, 251, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:14:00', NULL),
+(884, 145, 252, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:14:00', NULL),
+(885, 145, 253, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:14:00', NULL),
+(886, 145, 254, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:14:00', NULL),
+(887, 145, 255, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:14:00', NULL),
+(888, 145, 256, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:14:00', NULL),
+(889, 145, 257, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:14:00', NULL),
+(890, 145, 258, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:14:00', NULL),
+(891, 145, 260, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:14:00', NULL),
+(906, 148, 266, 'evaluation', NULL, NULL, 3.00, '2026-09-22 11:45:15', NULL),
+(907, 148, 247, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:45:15', NULL),
+(908, 148, 265, 'evaluation', NULL, NULL, 4.00, '2026-09-22 11:45:15', NULL),
+(909, 148, 244, 'evaluation', NULL, NULL, 2.00, '2026-09-22 11:45:15', NULL),
+(910, 148, 245, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:45:15', NULL),
+(911, 148, 246, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:45:15', NULL),
+(912, 148, 263, 'evaluation', NULL, NULL, 2.00, '2026-09-22 11:45:15', NULL),
+(913, 148, 248, 'evaluation', NULL, NULL, 4.00, '2026-09-22 11:45:15', NULL),
+(914, 148, 249, 'evaluation', NULL, NULL, 3.00, '2026-09-22 11:45:15', NULL),
+(915, 148, 250, 'evaluation', NULL, NULL, 3.00, '2026-09-22 11:45:15', NULL),
+(916, 148, 259, 'evaluation', NULL, NULL, 4.00, '2026-09-22 11:45:15', NULL),
+(917, 148, 261, 'evaluation', NULL, NULL, 2.00, '2026-09-22 11:45:15', NULL),
+(918, 148, 262, 'evaluation', NULL, NULL, 1.00, '2026-09-22 11:45:15', NULL),
+(919, 148, 251, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:45:15', NULL),
+(920, 148, 252, 'evaluation', NULL, NULL, 4.00, '2026-09-22 11:45:15', NULL),
+(921, 148, 253, 'evaluation', NULL, NULL, 4.00, '2026-09-22 11:45:15', NULL),
+(922, 148, 254, 'evaluation', NULL, NULL, 3.00, '2026-09-22 11:45:15', NULL),
+(923, 148, 255, 'evaluation', NULL, NULL, 3.00, '2026-09-22 11:45:15', NULL),
+(924, 148, 256, 'evaluation', NULL, NULL, 2.00, '2026-09-22 11:45:15', NULL),
+(925, 148, 257, 'evaluation', NULL, NULL, 1.00, '2026-09-22 11:45:15', NULL),
+(926, 148, 258, 'evaluation', NULL, NULL, 4.00, '2026-09-22 11:45:15', NULL),
+(927, 148, 260, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:45:15', NULL),
+(928, 148, 264, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:45:15', NULL),
+(929, 149, 266, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:52:17', NULL),
+(930, 149, 247, 'evaluation', NULL, NULL, 4.00, '2026-09-22 11:52:17', NULL),
+(931, 149, 265, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:52:17', NULL),
+(932, 149, 244, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:52:17', NULL),
+(933, 149, 245, 'evaluation', NULL, NULL, 4.00, '2026-09-22 11:52:17', NULL),
+(934, 149, 246, 'evaluation', NULL, NULL, 3.00, '2026-09-22 11:52:17', NULL),
+(935, 149, 263, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:52:17', NULL),
+(936, 149, 248, 'evaluation', NULL, NULL, 2.00, '2026-09-22 11:52:17', NULL),
+(937, 149, 249, 'evaluation', NULL, NULL, 4.00, '2026-09-22 11:52:17', NULL),
+(938, 149, 250, 'evaluation', NULL, NULL, 3.00, '2026-09-22 11:52:17', NULL),
+(939, 149, 259, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:52:17', NULL),
+(940, 149, 261, 'evaluation', NULL, NULL, 3.00, '2026-09-22 11:52:17', NULL),
+(941, 149, 262, 'evaluation', NULL, NULL, 4.00, '2026-09-22 11:52:17', NULL),
+(942, 149, 251, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:52:17', NULL),
+(943, 149, 252, 'evaluation', NULL, NULL, 1.00, '2026-09-22 11:52:17', NULL),
+(944, 149, 253, 'evaluation', NULL, NULL, 4.00, '2026-09-22 11:52:17', NULL),
+(945, 149, 254, 'evaluation', NULL, NULL, 3.00, '2026-09-22 11:52:17', NULL),
+(946, 149, 255, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:52:17', NULL),
+(947, 149, 256, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:52:17', NULL),
+(948, 149, 257, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:52:17', NULL),
+(949, 149, 258, 'evaluation', NULL, NULL, 4.00, '2026-09-22 11:52:17', NULL),
+(950, 149, 260, 'evaluation', NULL, NULL, 3.00, '2026-09-22 11:52:17', NULL),
+(951, 149, 264, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:52:17', NULL),
+(952, 150, 266, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:58:19', NULL),
+(953, 150, 262, 'evaluation', NULL, NULL, 4.00, '2026-09-22 11:58:19', NULL),
+(954, 150, 251, 'evaluation', NULL, NULL, 3.00, '2026-09-22 11:58:19', NULL),
+(955, 150, 252, 'evaluation', NULL, NULL, 2.00, '2026-09-22 11:58:19', NULL),
+(956, 150, 253, 'evaluation', NULL, NULL, 1.00, '2026-09-22 11:58:19', NULL),
+(957, 150, 254, 'evaluation', NULL, NULL, 2.00, '2026-09-22 11:58:19', NULL),
+(958, 150, 255, 'evaluation', NULL, NULL, 3.00, '2026-09-22 11:58:19', NULL),
+(959, 150, 256, 'evaluation', NULL, NULL, 4.00, '2026-09-22 11:58:19', NULL),
+(960, 150, 257, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:58:19', NULL),
+(961, 150, 258, 'evaluation', NULL, NULL, 5.00, '2026-09-22 11:58:19', NULL),
+(962, 150, 260, 'evaluation', NULL, NULL, 4.00, '2026-09-22 11:58:19', NULL),
+(975, 152, NULL, 'user', 529, NULL, 3.00, '2026-09-23 14:22:44', NULL),
+(976, 152, NULL, 'user', 530, NULL, 4.00, '2026-09-23 14:22:44', NULL),
+(977, 152, NULL, 'user', 531, NULL, 4.00, '2026-09-23 14:22:44', NULL),
+(978, 152, NULL, 'user', 532, NULL, 3.00, '2026-09-23 14:22:44', NULL),
+(979, 152, NULL, 'user', 533, NULL, 5.00, '2026-09-23 14:22:44', NULL),
+(980, 152, NULL, 'user', 534, NULL, 5.00, '2026-09-23 14:22:44', NULL),
+(981, 152, NULL, 'user', 535, NULL, 4.00, '2026-09-23 14:22:44', NULL),
+(982, 152, NULL, 'user', 536, NULL, 4.00, '2026-09-23 14:22:44', NULL),
+(983, 152, NULL, 'user', 537, NULL, 3.00, '2026-09-23 14:22:44', NULL),
+(984, 152, NULL, 'user', 538, NULL, 4.00, '2026-09-23 14:22:44', NULL),
+(985, 153, 262, 'evaluation', NULL, NULL, 5.00, '2026-09-23 14:35:12', NULL),
+(986, 153, 266, 'evaluation', NULL, NULL, 4.00, '2026-09-23 14:35:12', NULL),
+(987, 153, 268, 'evaluation', NULL, NULL, 4.00, '2026-09-23 14:35:12', NULL),
+(988, 153, 269, 'evaluation', NULL, NULL, 5.00, '2026-09-23 14:35:12', NULL),
+(989, 153, 270, 'evaluation', NULL, NULL, 5.00, '2026-09-23 14:35:12', NULL),
+(990, 153, 271, 'evaluation', NULL, NULL, 5.00, '2026-09-23 14:35:12', NULL),
+(991, 153, 272, 'evaluation', NULL, NULL, 5.00, '2026-09-23 14:35:12', NULL),
+(992, 153, 251, 'evaluation', NULL, NULL, 5.00, '2026-09-23 14:35:12', NULL),
+(993, 153, 252, 'evaluation', NULL, NULL, 5.00, '2026-09-23 14:35:12', NULL),
+(994, 153, 253, 'evaluation', NULL, NULL, 4.00, '2026-09-23 14:35:12', NULL),
+(995, 153, 254, 'evaluation', NULL, NULL, 5.00, '2026-09-23 14:35:12', NULL),
+(996, 153, 255, 'evaluation', NULL, NULL, 4.00, '2026-09-23 14:35:12', NULL),
+(997, 153, 256, 'evaluation', NULL, NULL, 5.00, '2026-09-23 14:35:12', NULL),
+(998, 153, 257, 'evaluation', NULL, NULL, 4.00, '2026-09-23 14:35:12', NULL),
+(999, 153, 258, 'evaluation', NULL, NULL, 4.00, '2026-09-23 14:35:12', NULL),
+(1000, 153, 260, 'evaluation', NULL, NULL, 4.00, '2026-09-23 14:35:12', NULL),
+(1001, 153, 267, 'evaluation', NULL, NULL, 4.00, '2026-09-23 14:35:12', NULL),
+(1002, 154, 262, 'evaluation', NULL, NULL, 5.00, '2026-09-23 14:38:24', NULL),
+(1003, 154, 266, 'evaluation', NULL, NULL, 4.00, '2026-09-23 14:38:24', NULL),
+(1004, 154, 268, 'evaluation', NULL, NULL, 3.00, '2026-09-23 14:38:24', NULL),
+(1005, 154, 269, 'evaluation', NULL, NULL, 4.00, '2026-09-23 14:38:24', NULL),
+(1006, 154, 270, 'evaluation', NULL, NULL, 2.00, '2026-09-23 14:38:24', NULL),
+(1007, 154, 271, 'evaluation', NULL, NULL, 5.00, '2026-09-23 14:38:24', NULL),
+(1008, 154, 272, 'evaluation', NULL, NULL, 4.00, '2026-09-23 14:38:24', NULL),
+(1009, 154, 251, 'evaluation', NULL, NULL, 5.00, '2026-09-23 14:38:24', NULL),
+(1010, 154, 252, 'evaluation', NULL, NULL, 4.00, '2026-09-23 14:38:24', NULL),
+(1011, 154, 253, 'evaluation', NULL, NULL, 4.00, '2026-09-23 14:38:24', NULL),
+(1012, 154, 254, 'evaluation', NULL, NULL, 5.00, '2026-09-23 14:38:24', NULL),
+(1013, 154, 255, 'evaluation', NULL, NULL, 5.00, '2026-09-23 14:38:24', NULL),
+(1014, 154, 256, 'evaluation', NULL, NULL, 1.00, '2026-09-23 14:38:24', NULL),
+(1015, 154, 257, 'evaluation', NULL, NULL, 4.00, '2026-09-23 14:38:24', NULL),
+(1016, 154, 258, 'evaluation', NULL, NULL, 5.00, '2026-09-23 14:38:24', NULL),
+(1017, 154, 260, 'evaluation', NULL, NULL, 4.00, '2026-09-23 14:38:24', NULL),
+(1018, 154, 267, 'evaluation', NULL, NULL, 5.00, '2026-09-23 14:38:24', NULL),
+(1019, 155, 244, 'evaluation', NULL, NULL, 5.00, '2026-09-23 15:51:42', NULL),
+(1020, 155, 245, 'evaluation', NULL, NULL, 4.00, '2026-09-23 15:51:42', NULL),
+(1021, 155, 246, 'evaluation', NULL, NULL, 5.00, '2026-09-23 15:51:42', NULL),
+(1022, 155, 247, 'evaluation', NULL, NULL, 5.00, '2026-09-23 15:51:42', NULL),
+(1023, 155, 248, 'evaluation', NULL, NULL, 3.00, '2026-09-23 15:51:42', NULL),
+(1024, 155, 249, 'evaluation', NULL, NULL, 5.00, '2026-09-23 15:51:42', NULL),
+(1025, 155, 250, 'evaluation', NULL, NULL, 5.00, '2026-09-23 15:51:42', NULL),
+(1026, 155, 259, 'evaluation', NULL, NULL, 5.00, '2026-09-23 15:51:42', NULL),
+(1027, 155, 261, 'evaluation', NULL, NULL, 5.00, '2026-09-23 15:51:42', NULL),
+(1028, 155, 262, 'evaluation', NULL, NULL, 5.00, '2026-09-23 15:51:42', NULL),
+(1029, 155, 263, 'evaluation', NULL, NULL, 5.00, '2026-09-23 15:51:42', NULL),
+(1030, 155, 265, 'evaluation', NULL, NULL, 5.00, '2026-09-23 15:51:42', NULL),
+(1031, 155, 266, 'evaluation', NULL, NULL, 5.00, '2026-09-23 15:51:42', NULL),
+(1032, 155, 268, 'evaluation', NULL, NULL, 4.00, '2026-09-23 15:51:42', NULL),
+(1033, 155, 269, 'evaluation', NULL, NULL, 5.00, '2026-09-23 15:51:42', NULL),
+(1034, 155, 270, 'evaluation', NULL, NULL, 5.00, '2026-09-23 15:51:42', NULL),
+(1035, 155, 271, 'evaluation', NULL, NULL, 4.00, '2026-09-23 15:51:42', NULL),
+(1036, 155, 272, 'evaluation', NULL, NULL, 5.00, '2026-09-23 15:51:42', NULL),
+(1037, 155, 251, 'evaluation', NULL, NULL, 5.00, '2026-09-23 15:51:42', NULL),
+(1038, 155, 252, 'evaluation', NULL, NULL, 5.00, '2026-09-23 15:51:42', NULL),
+(1039, 155, 253, 'evaluation', NULL, NULL, 5.00, '2026-09-23 15:51:42', NULL),
+(1040, 155, 254, 'evaluation', NULL, NULL, 4.00, '2026-09-23 15:51:42', NULL),
+(1041, 155, 255, 'evaluation', NULL, NULL, 5.00, '2026-09-23 15:51:42', NULL),
+(1042, 155, 256, 'evaluation', NULL, NULL, 5.00, '2026-09-23 15:51:42', NULL),
+(1043, 155, 257, 'evaluation', NULL, NULL, 5.00, '2026-09-23 15:51:42', NULL),
+(1044, 155, 258, 'evaluation', NULL, NULL, 4.00, '2026-09-23 15:51:42', NULL),
+(1045, 155, 260, 'evaluation', NULL, NULL, 5.00, '2026-09-23 15:51:42', NULL),
+(1046, 155, 264, 'evaluation', NULL, NULL, 5.00, '2026-09-23 15:51:42', NULL),
+(1047, 155, 267, 'evaluation', NULL, NULL, 4.00, '2026-09-23 15:51:42', NULL),
+(1048, 156, 244, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:35:00', NULL),
+(1049, 156, 245, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:35:00', NULL),
+(1050, 156, 246, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:35:00', NULL),
+(1051, 156, 247, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:35:00', NULL),
+(1052, 156, 248, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:35:00', NULL),
+(1053, 156, 249, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:35:00', NULL),
+(1054, 156, 250, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:35:00', NULL),
+(1055, 156, 259, 'evaluation', NULL, NULL, 3.00, '2026-09-24 09:35:00', NULL),
+(1056, 156, 261, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:35:00', NULL),
+(1057, 156, 262, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:35:00', NULL),
+(1058, 156, 263, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:35:00', NULL),
+(1059, 156, 265, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:35:00', NULL),
+(1060, 156, 266, 'evaluation', NULL, NULL, 3.00, '2026-09-24 09:35:00', NULL),
+(1061, 156, 268, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:35:00', NULL),
+(1062, 156, 269, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:35:00', NULL),
+(1063, 156, 270, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:35:00', NULL),
+(1064, 156, 271, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:35:00', NULL),
+(1065, 156, 272, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:35:00', NULL),
+(1066, 156, 251, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:35:00', NULL),
+(1067, 156, 252, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:35:00', NULL),
+(1068, 156, 253, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:35:00', NULL),
+(1069, 156, 254, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:35:00', NULL),
+(1070, 156, 255, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:35:00', NULL),
+(1071, 156, 256, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:35:00', NULL),
+(1072, 156, 257, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:35:00', NULL),
+(1073, 156, 258, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:35:00', NULL),
+(1074, 156, 260, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:35:00', NULL),
+(1075, 156, 264, 'evaluation', NULL, NULL, 3.00, '2026-09-24 09:35:00', NULL),
+(1076, 156, 267, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:35:00', NULL),
+(1077, 157, 244, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:06', NULL),
+(1078, 157, 245, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:38:06', NULL),
+(1079, 157, 246, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:06', NULL),
+(1080, 157, 247, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:06', NULL),
+(1081, 157, 248, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:38:06', NULL),
+(1082, 157, 249, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:06', NULL),
+(1083, 157, 250, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:06', NULL),
+(1084, 157, 259, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:38:06', NULL),
+(1085, 157, 261, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:06', NULL),
+(1086, 157, 262, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:06', NULL),
+(1087, 157, 263, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:38:06', NULL),
+(1088, 157, 265, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:06', NULL),
+(1089, 157, 266, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:06', NULL),
+(1090, 157, 268, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:38:06', NULL),
+(1091, 157, 269, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:06', NULL),
+(1092, 157, 270, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:06', NULL),
+(1093, 157, 271, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:38:06', NULL),
+(1094, 157, 272, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:06', NULL),
+(1095, 157, 251, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:06', NULL),
+(1096, 157, 252, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:38:06', NULL),
+(1097, 157, 253, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:06', NULL),
+(1098, 157, 254, 'evaluation', NULL, NULL, 3.00, '2026-09-24 09:38:06', NULL),
+(1099, 157, 255, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:06', NULL),
+(1100, 157, 256, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:06', NULL),
+(1101, 157, 257, 'evaluation', NULL, NULL, 3.00, '2026-09-24 09:38:06', NULL),
+(1102, 157, 258, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:06', NULL),
+(1103, 157, 260, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:38:06', NULL),
+(1104, 157, 264, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:06', NULL),
+(1105, 157, 267, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:06', NULL),
+(1106, 158, 244, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:47', NULL),
+(1107, 158, 245, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:38:47', NULL),
+(1108, 158, 246, 'evaluation', NULL, NULL, 3.00, '2026-09-24 09:38:47', NULL),
+(1109, 158, 247, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:47', NULL),
+(1110, 158, 248, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:47', NULL),
+(1111, 158, 249, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:38:47', NULL),
+(1112, 158, 250, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:47', NULL),
+(1113, 158, 259, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:47', NULL),
+(1114, 158, 261, 'evaluation', NULL, NULL, 3.00, '2026-09-24 09:38:47', NULL),
+(1115, 158, 262, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:47', NULL),
+(1116, 158, 263, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:38:47', NULL),
+(1117, 158, 265, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:47', NULL),
+(1118, 158, 266, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:47', NULL),
+(1119, 158, 268, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:38:47', NULL),
+(1120, 158, 269, 'evaluation', NULL, NULL, 3.00, '2026-09-24 09:38:47', NULL),
+(1121, 158, 270, 'evaluation', NULL, NULL, 3.00, '2026-09-24 09:38:47', NULL),
+(1122, 158, 271, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:47', NULL),
+(1123, 158, 272, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:38:47', NULL),
+(1124, 158, 251, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:47', NULL),
+(1125, 158, 252, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:38:47', NULL),
+(1126, 158, 253, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:47', NULL),
+(1127, 158, 254, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:38:47', NULL),
+(1128, 158, 255, 'evaluation', NULL, NULL, 3.00, '2026-09-24 09:38:47', NULL),
+(1129, 158, 256, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:47', NULL),
+(1130, 158, 257, 'evaluation', NULL, NULL, 4.00, '2026-09-24 09:38:47', NULL),
+(1131, 158, 258, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:47', NULL),
+(1132, 158, 260, 'evaluation', NULL, NULL, 3.00, '2026-09-24 09:38:47', NULL),
+(1133, 158, 264, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:47', NULL),
+(1134, 158, 267, 'evaluation', NULL, NULL, 5.00, '2026-09-24 09:38:47', NULL),
+(1135, 159, 244, 'evaluation', NULL, NULL, 5.00, '2026-09-24 16:39:57', NULL),
+(1136, 159, 245, 'evaluation', NULL, NULL, 4.00, '2026-09-24 16:39:57', NULL),
+(1137, 159, 246, 'evaluation', NULL, NULL, 5.00, '2026-09-24 16:39:57', NULL),
+(1138, 159, 247, 'evaluation', NULL, NULL, 3.00, '2026-09-24 16:39:57', NULL),
+(1139, 159, 248, 'evaluation', NULL, NULL, 5.00, '2026-09-24 16:39:57', NULL),
+(1140, 159, 249, 'evaluation', NULL, NULL, 4.00, '2026-09-24 16:39:57', NULL),
+(1141, 159, 250, 'evaluation', NULL, NULL, 5.00, '2026-09-24 16:39:57', NULL),
+(1142, 159, 259, 'evaluation', NULL, NULL, 4.00, '2026-09-24 16:39:57', NULL),
+(1143, 159, 261, 'evaluation', NULL, NULL, 5.00, '2026-09-24 16:39:57', NULL),
+(1144, 159, 262, 'evaluation', NULL, NULL, 2.00, '2026-09-24 16:39:57', NULL),
+(1145, 159, 263, 'evaluation', NULL, NULL, 5.00, '2026-09-24 16:39:57', NULL),
+(1146, 159, 265, 'evaluation', NULL, NULL, 4.00, '2026-09-24 16:39:57', NULL),
+(1147, 159, 266, 'evaluation', NULL, NULL, 5.00, '2026-09-24 16:39:57', NULL),
+(1148, 159, 268, 'evaluation', NULL, NULL, 4.00, '2026-09-24 16:39:57', NULL),
+(1149, 159, 269, 'evaluation', NULL, NULL, 5.00, '2026-09-24 16:39:57', NULL),
+(1150, 159, 270, 'evaluation', NULL, NULL, 4.00, '2026-09-24 16:39:57', NULL),
+(1151, 159, 271, 'evaluation', NULL, NULL, 5.00, '2026-09-24 16:39:57', NULL),
+(1152, 159, 272, 'evaluation', NULL, NULL, 3.00, '2026-09-24 16:39:57', NULL),
+(1153, 159, 251, 'evaluation', NULL, NULL, 5.00, '2026-09-24 16:39:57', NULL),
+(1154, 159, 252, 'evaluation', NULL, NULL, 4.00, '2026-09-24 16:39:57', NULL),
+(1155, 159, 253, 'evaluation', NULL, NULL, 5.00, '2026-09-24 16:39:57', NULL),
+(1156, 159, 254, 'evaluation', NULL, NULL, 5.00, '2026-09-24 16:39:57', NULL),
+(1157, 159, 255, 'evaluation', NULL, NULL, 4.00, '2026-09-24 16:39:57', NULL),
+(1158, 159, 256, 'evaluation', NULL, NULL, 5.00, '2026-09-24 16:39:57', NULL),
+(1159, 159, 257, 'evaluation', NULL, NULL, 5.00, '2026-09-24 16:39:57', NULL),
+(1160, 159, 258, 'evaluation', NULL, NULL, 4.00, '2026-09-24 16:39:57', NULL),
+(1161, 159, 260, 'evaluation', NULL, NULL, 5.00, '2026-09-24 16:39:57', NULL),
+(1162, 159, 264, 'evaluation', NULL, NULL, 5.00, '2026-09-24 16:39:57', NULL),
+(1163, 159, 267, 'evaluation', NULL, NULL, 4.00, '2026-09-24 16:39:57', NULL),
+(1164, 160, NULL, 'user', 549, NULL, 5.00, '2026-09-28 15:58:31', NULL),
+(1165, 160, NULL, 'user', 550, NULL, 4.00, '2026-09-28 15:58:31', NULL),
+(1166, 160, NULL, 'user', 551, NULL, 5.00, '2026-09-28 15:58:31', NULL),
+(1167, 160, NULL, 'user', 552, NULL, 4.00, '2026-09-28 15:58:31', NULL),
+(1168, 160, NULL, 'user', 553, NULL, 5.00, '2026-09-28 15:58:31', NULL),
+(1169, 160, NULL, 'user', 554, NULL, 4.00, '2026-09-28 15:58:31', NULL),
+(1170, 160, NULL, 'user', 555, NULL, 4.00, '2026-09-28 15:58:31', NULL),
+(1171, 160, NULL, 'user', 556, NULL, 5.00, '2026-09-28 15:58:31', NULL),
+(1172, 160, NULL, 'user', 557, NULL, 3.00, '2026-09-28 15:58:31', NULL),
+(1173, 160, NULL, 'user', 558, NULL, 4.00, '2026-09-28 15:58:31', NULL),
+(1174, 161, NULL, 'user', 549, NULL, 5.00, '2026-09-28 16:00:48', NULL),
+(1175, 161, NULL, 'user', 550, NULL, 4.00, '2026-09-28 16:00:48', NULL),
+(1176, 161, NULL, 'user', 551, NULL, 4.00, '2026-09-28 16:00:48', NULL),
+(1177, 161, NULL, 'user', 552, NULL, 5.00, '2026-09-28 16:00:48', NULL),
+(1178, 161, NULL, 'user', 553, NULL, 3.00, '2026-09-28 16:00:48', NULL),
+(1179, 161, NULL, 'user', 554, NULL, 5.00, '2026-09-28 16:00:48', NULL),
+(1180, 161, NULL, 'user', 555, NULL, 5.00, '2026-09-28 16:00:48', NULL),
+(1181, 161, NULL, 'user', 556, NULL, 4.00, '2026-09-28 16:00:48', NULL),
+(1182, 161, NULL, 'user', 557, NULL, 5.00, '2026-09-28 16:00:48', NULL),
+(1183, 161, NULL, 'user', 558, NULL, 4.00, '2026-09-28 16:00:48', NULL),
+(1184, 162, 262, 'evaluation', NULL, NULL, 5.00, '2026-09-28 22:00:21', NULL),
+(1185, 162, 266, 'evaluation', NULL, NULL, 4.00, '2026-09-28 22:00:21', NULL),
+(1186, 162, 268, 'evaluation', NULL, NULL, 4.00, '2026-09-28 22:00:21', NULL),
+(1187, 162, 269, 'evaluation', NULL, NULL, 5.00, '2026-09-28 22:00:21', NULL),
+(1188, 162, 270, 'evaluation', NULL, NULL, 3.00, '2026-09-28 22:00:21', NULL),
+(1189, 162, 271, 'evaluation', NULL, NULL, 4.00, '2026-09-28 22:00:21', NULL),
+(1190, 162, 272, 'evaluation', NULL, NULL, 5.00, '2026-09-28 22:00:21', NULL),
+(1191, 162, 251, 'evaluation', NULL, NULL, 5.00, '2026-09-28 22:00:21', NULL),
+(1192, 162, 252, 'evaluation', NULL, NULL, 3.00, '2026-09-28 22:00:21', NULL),
+(1193, 162, 253, 'evaluation', NULL, NULL, 5.00, '2026-09-28 22:00:21', NULL),
+(1194, 162, 254, 'evaluation', NULL, NULL, 5.00, '2026-09-28 22:00:21', NULL),
+(1195, 162, 255, 'evaluation', NULL, NULL, 4.00, '2026-09-28 22:00:21', NULL),
+(1196, 162, 256, 'evaluation', NULL, NULL, 5.00, '2026-09-28 22:00:21', NULL),
+(1197, 162, 257, 'evaluation', NULL, NULL, 5.00, '2026-09-28 22:00:21', NULL),
+(1198, 162, 258, 'evaluation', NULL, NULL, 4.00, '2026-09-28 22:00:21', NULL),
+(1199, 162, 260, 'evaluation', NULL, NULL, 5.00, '2026-09-28 22:00:21', NULL),
+(1200, 162, 267, 'evaluation', NULL, NULL, 5.00, '2026-09-28 22:00:21', NULL);
 
 -- --------------------------------------------------------
 
@@ -1187,6 +1285,24 @@ INSERT INTO `questionnaire_forms` (`id`, `title`, `description`, `sector`, `peri
 (5, 'Teacher Performance Evaluation (Supervisor)', NULL, 'Teacher', NULL, 1, NULL, '2026-08-06 19:32:37', '2026-08-06 19:32:37', 'supervisor_to_teacher'),
 (6, 'Staff Performance Evaluation (Supervisor)', NULL, 'Staff', NULL, 1, NULL, '2026-08-06 19:32:37', '2026-08-06 19:32:37', 'supervisor_to_staff'),
 (7, 'Executive Assistant Performance Evaluation (Supervisor)', NULL, 'Executive Assistant', NULL, 1, NULL, '2026-08-07 14:56:19', '2026-08-24 08:12:15', 'upward_to_ea');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `questionnaire_migrations`
+--
+
+CREATE TABLE `questionnaire_migrations` (
+  `migration_key` varchar(120) NOT NULL,
+  `applied_at` datetime NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `questionnaire_migrations`
+--
+
+INSERT INTO `questionnaire_migrations` (`migration_key`, `applied_at`) VALUES
+('generalized_questionnaire_v1', '2026-09-19 17:02:41');
 
 -- --------------------------------------------------------
 
@@ -1415,7 +1531,10 @@ INSERT INTO `question_categories` (`id`, `target_type`, `category_name`, `eval_t
 (4379, 'EA', 'Administrative Management', 'school_head', 1, '2026-09-13 17:05:28', 'principal'),
 (4380, 'EA', 'Communication', 'school_head', 2, '2026-09-13 17:05:28', 'principal'),
 (4381, 'EA', 'Professionalism', 'school_head', 3, '2026-09-13 17:05:28', 'principal'),
-(4382, 'EA', 'Responsiveness', 'school_head', 4, '2026-09-13 17:05:28', 'principal');
+(4382, 'EA', 'Responsiveness', 'school_head', 4, '2026-09-13 17:05:28', 'principal'),
+(4384, 'Faculty', 'General', 'general', 0, '2026-09-19 17:02:41', 'shared'),
+(4387, 'Faculty', 'Teaching & Learning', 'general', 5, '2026-09-19 17:02:41', 'shared'),
+(4389, 'Faculty', 'Professionalism & Student Support', 'general', 0, '2026-09-22 10:46:18', 'shared');
 
 -- --------------------------------------------------------
 
@@ -1476,7 +1595,26 @@ INSERT INTO `role_change_log` (`id`, `user_id`, `performed_by_id`, `source_modul
 (15, 197, NULL, NULL, 'faculty', 'faculty', 'Teacher', 'Personnel', '2026-08-29 13:21:36'),
 (16, 199, NULL, NULL, 'faculty', 'faculty', 'Teacher', 'Teacher/ BSIT-3 Adviser', '2026-08-29 13:42:23'),
 (17, 209, NULL, NULL, 'staff', 'staff', 'Personnel', 'Formation Services', '2026-09-18 15:48:41'),
-(18, 209, NULL, NULL, 'staff', 'staff', 'Formation Services', 'Formation Services Coordinator/ CMO', '2026-09-18 15:48:54');
+(18, 209, NULL, NULL, 'staff', 'staff', 'Formation Services', 'Formation Services Coordinator/ CMO', '2026-09-18 15:48:54'),
+(19, 209, NULL, NULL, 'staff', 'staff', 'Formation Services Coordinator/ CMO', 'Bookkeeper', '2026-09-21 13:59:12'),
+(21, 215, NULL, NULL, 'staff', 'staff', 'Personnel', 'BS Nursing', '2026-09-22 10:09:01'),
+(22, 170, NULL, NULL, 'faculty', 'faculty', 'Teacher/ librarian', 'BEED - General Education', '2026-09-22 10:09:45'),
+(23, 216, NULL, NULL, 'faculty', 'faculty', 'Teacher', 'BS Information Technology  with Certificate in Teaching – Social Studies', '2026-09-22 10:22:24'),
+(24, 217, NULL, NULL, 'faculty', 'faculty', 'Teacher', 'BSED - English', '2026-09-22 10:22:59'),
+(25, 218, NULL, NULL, 'staff', 'staff', 'Personnel', 'Master in Library and Information Science BSBA – Management', '2026-09-22 10:38:12'),
+(26, 218, NULL, NULL, 'staff', 'staff', 'Master in Library and Information Science BSBA – Management', 'Librarian', '2026-09-22 11:08:19'),
+(27, 217, NULL, NULL, 'faculty', 'faculty', 'BSED - English', 'Teacher/ Coordinator', '2026-09-22 11:11:49'),
+(28, 220, NULL, NULL, 'faculty', 'faculty', 'Teacher', 'Teacher/ Cashier', '2026-09-22 11:54:31'),
+(29, 221, NULL, NULL, 'staff', 'staff', 'Personnel', 'Physical Plant Coordinator/ Computer Lab Custodian', '2026-09-23 10:59:19'),
+(30, 222, NULL, NULL, 'faculty', 'faculty', 'Teacher', 'ESC/ SHSVP/ TSS Encoder YEARBOOK IN CHARGE', '2026-09-23 11:01:14'),
+(31, 222, NULL, NULL, 'faculty', 'faculty', 'ESC/ SHSVP/ TSS Encoder YEARBOOK IN CHARGE', 'Teacher/ ESC/ SHSVP/ TSS Encoder YEARBOOK IN CHARGE', '2026-09-23 11:01:22'),
+(32, 225, NULL, NULL, 'staff', 'staff', 'Personnel', 'Physical Plant Coordinator/ Computer Lab Custodian', '2026-09-23 11:23:34'),
+(33, 226, NULL, NULL, 'staff', 'staff', 'Personnel', 'MAINTENANCE OFFICER', '2026-09-23 11:25:48'),
+(34, 230, NULL, NULL, 'staff', 'staff', 'Personnel', 'GUIDANCE STAFF/ SPORTS PROGRAM MANAGER/ SDRRM OFFICER', '2026-09-23 11:32:31'),
+(35, 232, NULL, NULL, 'staff', 'staff', 'Personnel', 'School Registrar/ ADMIN COORDINATOR', '2026-09-23 11:36:38'),
+(36, 227, NULL, NULL, 'faculty', 'faculty', 'Teacher', 'Ang Kingke Adviser/ Grade 7 - St. Albert Adviser/ HS TEACHER', '2026-09-23 11:42:39'),
+(37, 233, NULL, NULL, 'staff', 'staff', 'Personnel', 'Bookkeeper', '2026-09-23 11:50:55'),
+(38, 234, NULL, NULL, 'staff', 'staff', 'Personnel', 'VE/CLE COORDINATOR/ HS TEACHER', '2026-09-23 11:52:55');
 
 -- --------------------------------------------------------
 
@@ -1574,6 +1712,48 @@ CREATE TABLE `staff_services` (
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `student_security_answers`
+--
+
+CREATE TABLE `student_security_answers` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `user_id` int(11) NOT NULL,
+  `slot` tinyint(3) UNSIGNED NOT NULL,
+  `question_key` varchar(40) NOT NULL,
+  `answer_hash` varchar(255) NOT NULL,
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `student_security_answers`
+--
+
+INSERT INTO `student_security_answers` (`id`, `user_id`, `slot`, `question_key`, `answer_hash`, `updated_at`) VALUES
+(4, 175, 1, 'childhood_nick', '$2y$10$RSCnEjMmQ0w3Lkkgyx5zGOu.dhheBdUq1KxPti7XgLin6HOWSTK5u', '2026-09-21 03:45:49'),
+(5, 175, 2, 'first_trip', '$2y$10$IAF6eIETa8Np7LMD6kcQ7ed7GcyDNd8TS8vhQMskm2N0viHaQ8R/S', '2026-09-21 03:45:49'),
+(6, 175, 3, 'first_game', '$2y$10$kyhg70YCBeFlCS/w2NQI3eD1uEc3tHa9xWC2QctOuCF0EkrBSgU2.', '2026-09-21 03:45:49'),
+(19, 171, 1, 'first_pet', '$2y$10$qwljCVmtTvoOWpKSZNAXJeesUsb2dqhfjgO05vSv3XgDJ7nohoKYW', '2026-09-22 01:59:34'),
+(20, 171, 2, 'childhood_nick', '$2y$10$6uTUVL.Mg3tGFsG.Vn9uZuHyIwZctC5EFgPpR8Z6uhCfE1v.VVrEC', '2026-09-22 01:59:34'),
+(21, 171, 3, 'grandparent_middle', '$2y$10$4rQHBsmRWxdkiOftzGDonuor3QnoGTMN9myd3egjaU6aofZ4Mms.a', '2026-09-22 01:59:34'),
+(22, 219, 1, 'first_pet', '$2y$10$oEUI7hk/9ormI1MzYyhZtOtPI4jY91BWOvs4FB7yi/Wf6XBS8YBY2', '2026-09-22 03:33:12'),
+(23, 219, 2, 'childhood_nick', '$2y$10$gWimup9QQMfp9zMzebD5hehgHnQM.ssHIOKAHctTiXtgZ7bXiqCw.', '2026-09-22 03:33:12'),
+(24, 219, 3, 'parents_met', '$2y$10$v0KlPIZMvwThmUcnsyKUze4U/A4zLqjc8O.g4Hpp2EpqN06p23ulq', '2026-09-22 03:33:12'),
+(25, 235, 1, 'first_pet', '$2y$10$u/e2ddCpyas2e0SfCVr/.OLtRyb7EZkqBMKgCjJl51dGraFL3tSj2', '2026-09-23 08:05:55'),
+(26, 235, 2, 'childhood_nick', '$2y$10$lRkWVjhdrJcWPGFsaeosae2hLinCBYhQ5wQtz0ubFIk5goaZTQ2im', '2026-09-23 08:05:55'),
+(27, 235, 3, 'grandparent_middle', '$2y$10$HExrPQ.pBgj2NKWqA8X1ReUg4AGzEuS6d3B4fWlhFaptck7C3Jbvi', '2026-09-23 08:05:55'),
+(28, 237, 1, 'first_pet', '$2y$10$Ka1Cff0XMZCItSW1CKzOIObylrdptP45WV1DaNlvWtpZn4KwlS/4O', '2026-09-24 03:22:29'),
+(29, 237, 2, 'childhood_nick', '$2y$10$gi7ZH/CZzlV52OfW5wr/q.19R8Ep4BMbnzXb5jHYHIPF60iymYs0e', '2026-09-24 03:22:29'),
+(30, 237, 3, 'first_phone', '$2y$10$kzjzLV.0neH8Z35bRVcKe.QdGtU.1gd/jo5VQNC6zIinRUU7UhnZK', '2026-09-24 03:22:29'),
+(31, 238, 1, 'first_pet', '$2y$10$6fjld65uUdhbcddE.b/1FuzxlcCphrAODKIHJMOubWupEXYZyyZ5a', '2026-09-24 03:27:31'),
+(32, 238, 2, 'childhood_nick', '$2y$10$gDx0ILtGjuJ8KOhoKJZIwOECsHLBfUL9l3Ryg23.fNUVch0vzae8S', '2026-09-24 03:27:31'),
+(33, 238, 3, 'grandparent_middle', '$2y$10$WtLcNEQk31YfeGxWr8FGQeTC1C9xrW5wIESrAAZopMGxao3qJdazy', '2026-09-24 03:27:31'),
+(34, 240, 1, 'first_pet', '$2y$10$EZEKzqdPQ1ScRk51EG10der/Kwf3AUDiCWERpOX1vhUrAq8wDrnkG', '2026-09-24 08:22:50'),
+(35, 240, 2, 'oldest_cousin', '$2y$10$zRR3J.4Bq911oX5I9dXPQeUkWKYSaWYYzGS1sCDM22xQWVwHsR3q6', '2026-09-24 08:22:50'),
+(36, 240, 3, 'parents_met', '$2y$10$w.U9DzXZoYgq.pdFVfFi9uNzUXBsuQ2RWSXf.D6G8Pf.KuhmbPnly', '2026-09-24 08:22:50');
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `system_archives`
 --
 
@@ -1598,11 +1778,11 @@ CREATE TABLE `system_archives` (
 --
 
 INSERT INTO `system_archives` (`id`, `period_id`, `period_label`, `school_year`, `archived_by`, `archived_by_name`, `archived_at`, `restored_at`, `restored_by`, `status`, `record_count`, `summary_json`, `payload_json`) VALUES
-(1, 3, '2026-2027 — 1st Semester', '2026-2027', 208, 'Lorraine R. Sabay', '2026-09-19 11:05:57', '2026-09-19 12:44:36', 208, 'restored', 236, '{\"evaluation_tracker\":35,\"questionnaire_answers\":190,\"evaluation_answers\":11,\"evaluation_submissions\":0,\"evaluation_results\":0,\"peer_evaluation_submissions\":0,\"peer_evaluation_results\":0,\"evaluation_reminders\":0,\"analytics_reports\":0,\"notifications\":0,\"activity_log_snapshot\":0}', '{\"evaluation_tracker\":[{\"id\":\"73\",\"legacy_submission_id\":null,\"evaluator_id\":\"157\",\"target_user_id\":\"136\",\"eval_bucket\":\"Faculty\",\"level\":\"college\",\"form_type\":\"faculty_dean\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":\"4.64\",\"remarks\":\"N/A\",\"eval_type\":\"dean\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-28 19:54:10\",\"updated_at\":\"2026-08-28 19:54:10\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"74\",\"legacy_submission_id\":null,\"evaluator_id\":\"157\",\"target_user_id\":\"136\",\"eval_bucket\":\"Faculty\",\"level\":\"college\",\"form_type\":\"faculty_dean\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":\"4.55\",\"remarks\":\"N/A\",\"eval_type\":\"school_head\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-28 19:55:39\",\"updated_at\":\"2026-08-28 19:55:39\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"78\",\"legacy_submission_id\":null,\"evaluator_id\":\"161\",\"target_user_id\":\"144\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":null,\"remarks\":\"very good\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-29 12:56:21\",\"updated_at\":\"2026-08-29 12:56:21\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"79\",\"legacy_submission_id\":null,\"evaluator_id\":\"161\",\"target_user_id\":\"183\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":null,\"remarks\":\"good\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-29 12:57:03\",\"updated_at\":\"2026-08-29 12:57:03\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"80\",\"legacy_submission_id\":null,\"evaluator_id\":\"161\",\"target_user_id\":\"172\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":null,\"remarks\":\"very good\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-29 12:57:39\",\"updated_at\":\"2026-08-29 12:57:39\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"staff\"},{\"id\":\"81\",\"legacy_submission_id\":null,\"evaluator_id\":\"161\",\"target_user_id\":\"181\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":null,\"remarks\":\"\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-29 12:58:14\",\"updated_at\":\"2026-08-29 12:58:14\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"staff\"},{\"id\":\"82\",\"legacy_submission_id\":null,\"evaluator_id\":\"192\",\"target_user_id\":\"144\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":null,\"remarks\":\"\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-29 13:04:08\",\"updated_at\":\"2026-08-29 13:04:08\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"83\",\"legacy_submission_id\":null,\"evaluator_id\":\"192\",\"target_user_id\":\"136\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":null,\"remarks\":\"\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-29 13:04:53\",\"updated_at\":\"2026-08-29 13:04:53\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"84\",\"legacy_submission_id\":null,\"evaluator_id\":\"192\",\"target_user_id\":\"172\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":null,\"remarks\":\"\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-29 13:05:19\",\"updated_at\":\"2026-08-29 13:05:19\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"staff\"},{\"id\":\"86\",\"legacy_submission_id\":null,\"evaluator_id\":\"192\",\"target_user_id\":\"152\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":null,\"remarks\":\"\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-29 13:07:08\",\"updated_at\":\"2026-08-29 13:07:08\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"multi_role\"},{\"id\":\"87\",\"legacy_submission_id\":null,\"evaluator_id\":\"192\",\"target_user_id\":\"158\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":null,\"remarks\":\"\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-29 13:07:30\",\"updated_at\":\"2026-08-29 13:07:30\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"school_head\"},{\"id\":\"90\",\"legacy_submission_id\":null,\"evaluator_id\":\"144\",\"target_user_id\":\"158\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":\"7\",\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":\"4.67\",\"remarks\":\"N/A\",\"eval_type\":\"staff\",\"peer_group\":\"Staff Evaluation\",\"status\":\"submitted\",\"submitted_at\":\"2026-09-13 22:05:54\",\"updated_at\":\"2026-09-15 16:19:26\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"91\",\"legacy_submission_id\":null,\"evaluator_id\":\"161\",\"target_user_id\":\"194\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-14 08:30:27\",\"updated_at\":\"2026-09-14 08:30:27\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"92\",\"legacy_submission_id\":null,\"evaluator_id\":\"161\",\"target_user_id\":\"198\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-14 08:30:58\",\"updated_at\":\"2026-09-14 08:30:58\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"staff\"},{\"id\":\"93\",\"legacy_submission_id\":null,\"evaluator_id\":\"161\",\"target_user_id\":\"158\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-14 08:31:12\",\"updated_at\":\"2026-09-14 08:31:12\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"school_head\"},{\"id\":\"94\",\"legacy_submission_id\":null,\"evaluator_id\":\"170\",\"target_user_id\":\"144\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":\"3\",\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":\"4.67\",\"remarks\":\"N/A\",\"eval_type\":\"faculty_peer\",\"peer_group\":\"Faculty\",\"status\":\"submitted\",\"submitted_at\":\"2026-09-14 08:37:19\",\"updated_at\":\"2026-09-14 08:37:19\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"95\",\"legacy_submission_id\":null,\"evaluator_id\":\"170\",\"target_user_id\":\"172\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":\"3\",\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":\"4.50\",\"remarks\":\"N/A\",\"eval_type\":\"faculty_peer\",\"peer_group\":\"Staff\",\"status\":\"submitted\",\"submitted_at\":\"2026-09-14 08:37:55\",\"updated_at\":\"2026-09-14 08:37:55\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"96\",\"legacy_submission_id\":null,\"evaluator_id\":\"170\",\"target_user_id\":\"157\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":\"3\",\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":\"4.75\",\"remarks\":\"N/A\",\"eval_type\":\"faculty_peer\",\"peer_group\":\"Dean / Principal\",\"status\":\"submitted\",\"submitted_at\":\"2026-09-14 08:40:12\",\"updated_at\":\"2026-09-14 08:40:12\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"97\",\"legacy_submission_id\":null,\"evaluator_id\":\"170\",\"target_user_id\":\"158\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":\"3\",\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":\"5.00\",\"remarks\":\"N/A\",\"eval_type\":\"faculty_peer\",\"peer_group\":\"Dean / Principal\",\"status\":\"submitted\",\"submitted_at\":\"2026-09-14 08:40:32\",\"updated_at\":\"2026-09-14 08:40:32\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"98\",\"legacy_submission_id\":null,\"evaluator_id\":\"161\",\"target_user_id\":\"157\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-14 08:42:23\",\"updated_at\":\"2026-09-14 08:42:23\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"school_head\"},{\"id\":\"108\",\"legacy_submission_id\":null,\"evaluator_id\":\"157\",\"target_user_id\":\"183\",\"eval_bucket\":\"Faculty\",\"level\":\"college\",\"form_type\":\"school_head_dean_faculty\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":\"4.67\",\"remarks\":\"N/A\",\"eval_type\":\"school_head\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-14 21:41:32\",\"updated_at\":\"2026-09-14 21:41:32\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"109\",\"legacy_submission_id\":null,\"evaluator_id\":\"157\",\"target_user_id\":\"172\",\"eval_bucket\":\"Staff\",\"level\":\"college\",\"form_type\":\"school_head_dean_staff\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":\"5.00\",\"remarks\":\"N/A\",\"eval_type\":\"school_head\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-15 07:47:25\",\"updated_at\":\"2026-09-15 07:47:25\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"110\",\"legacy_submission_id\":null,\"evaluator_id\":\"157\",\"target_user_id\":\"125\",\"eval_bucket\":\"EA\",\"level\":\"college\",\"form_type\":\"school_head_dean_ea\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":\"4.67\",\"remarks\":\"N/A\",\"eval_type\":\"school_head\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-15 07:49:43\",\"updated_at\":\"2026-09-15 07:49:43\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"111\",\"legacy_submission_id\":null,\"evaluator_id\":\"207\",\"target_user_id\":\"157\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":\"7\",\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":\"4.50\",\"remarks\":\"N/A\",\"eval_type\":\"staff\",\"peer_group\":\"Staff Evaluation\",\"status\":\"submitted\",\"submitted_at\":\"2026-09-15 14:30:22\",\"updated_at\":\"2026-09-15 16:19:26\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"113\",\"legacy_submission_id\":null,\"evaluator_id\":\"144\",\"target_user_id\":\"157\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":\"7\",\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":\"4.50\",\"remarks\":\"N/A\",\"eval_type\":\"staff\",\"peer_group\":\"Staff Evaluation\",\"status\":\"submitted\",\"submitted_at\":\"2026-09-15 16:11:34\",\"updated_at\":\"2026-09-15 16:19:26\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"114\",\"legacy_submission_id\":null,\"evaluator_id\":\"144\",\"target_user_id\":\"125\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":\"7\",\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":\"4.67\",\"remarks\":\"N/A\",\"eval_type\":\"staff\",\"peer_group\":\"Staff Evaluation\",\"status\":\"submitted\",\"submitted_at\":\"2026-09-15 16:22:04\",\"updated_at\":\"2026-09-15 16:22:04\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"115\",\"legacy_submission_id\":null,\"evaluator_id\":\"125\",\"target_user_id\":\"181\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"ea\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-15 16:40:12\",\"updated_at\":\"2026-09-15 16:40:12\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"116\",\"legacy_submission_id\":null,\"evaluator_id\":\"125\",\"target_user_id\":\"158\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"ea\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-15 16:41:50\",\"updated_at\":\"2026-09-15 16:41:50\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"118\",\"legacy_submission_id\":null,\"evaluator_id\":\"161\",\"target_user_id\":\"170\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":null,\"remarks\":\"wala\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-17 13:51:08\",\"updated_at\":\"2026-09-17 13:51:08\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"119\",\"legacy_submission_id\":null,\"evaluator_id\":\"208\",\"target_user_id\":\"198\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"ea\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-17 14:02:33\",\"updated_at\":\"2026-09-17 14:02:33\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"120\",\"legacy_submission_id\":null,\"evaluator_id\":\"175\",\"target_user_id\":\"144\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-18 07:45:03\",\"updated_at\":\"2026-09-18 07:45:03\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"121\",\"legacy_submission_id\":null,\"evaluator_id\":\"175\",\"target_user_id\":\"158\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-18 07:47:29\",\"updated_at\":\"2026-09-18 07:47:29\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"school_head\"},{\"id\":\"122\",\"legacy_submission_id\":null,\"evaluator_id\":\"175\",\"target_user_id\":\"194\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-18 07:52:42\",\"updated_at\":\"2026-09-18 07:52:42\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"123\",\"legacy_submission_id\":null,\"evaluator_id\":\"186\",\"target_user_id\":\"144\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-18 08:08:03\",\"updated_at\":\"2026-09-18 08:08:03\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"124\",\"legacy_submission_id\":null,\"evaluator_id\":\"186\",\"target_user_id\":\"158\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-18 08:08:52\",\"updated_at\":\"2026-09-18 08:08:52\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"school_head\"}],\"questionnaire_answers\":[{\"id\":\"384\",\"tracker_id\":\"74\",\"question_id\":\"209\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-28 19:55:39\",\"comments\":null},{\"id\":\"385\",\"tracker_id\":\"74\",\"question_id\":\"218\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-28 19:55:39\",\"comments\":null},{\"id\":\"386\",\"tracker_id\":\"74\",\"question_id\":\"210\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-28 19:55:39\",\"comments\":null},{\"id\":\"387\",\"tracker_id\":\"74\",\"question_id\":\"211\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-28 19:55:39\",\"comments\":null},{\"id\":\"388\",\"tracker_id\":\"74\",\"question_id\":\"212\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-28 19:55:39\",\"comments\":null},{\"id\":\"389\",\"tracker_id\":\"74\",\"question_id\":\"213\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-28 19:55:39\",\"comments\":null},{\"id\":\"390\",\"tracker_id\":\"74\",\"question_id\":\"214\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-28 19:55:39\",\"comments\":null},{\"id\":\"391\",\"tracker_id\":\"74\",\"question_id\":\"215\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-28 19:55:39\",\"comments\":null},{\"id\":\"392\",\"tracker_id\":\"74\",\"question_id\":\"216\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-28 19:55:39\",\"comments\":null},{\"id\":\"393\",\"tracker_id\":\"74\",\"question_id\":\"217\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-28 19:55:39\",\"comments\":null},{\"id\":\"394\",\"tracker_id\":\"74\",\"question_id\":\"219\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-28 19:55:39\",\"comments\":null},{\"id\":\"411\",\"tracker_id\":\"78\",\"question_id\":\"209\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 12:56:21\",\"comments\":null},{\"id\":\"412\",\"tracker_id\":\"78\",\"question_id\":\"218\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 12:56:21\",\"comments\":null},{\"id\":\"413\",\"tracker_id\":\"78\",\"question_id\":\"210\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 12:56:21\",\"comments\":null},{\"id\":\"414\",\"tracker_id\":\"78\",\"question_id\":\"211\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 12:56:21\",\"comments\":null},{\"id\":\"415\",\"tracker_id\":\"78\",\"question_id\":\"212\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 12:56:21\",\"comments\":null},{\"id\":\"416\",\"tracker_id\":\"78\",\"question_id\":\"213\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 12:56:21\",\"comments\":null},{\"id\":\"417\",\"tracker_id\":\"78\",\"question_id\":\"214\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 12:56:21\",\"comments\":null},{\"id\":\"418\",\"tracker_id\":\"78\",\"question_id\":\"215\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 12:56:21\",\"comments\":null},{\"id\":\"419\",\"tracker_id\":\"78\",\"question_id\":\"216\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 12:56:21\",\"comments\":null},{\"id\":\"420\",\"tracker_id\":\"78\",\"question_id\":\"217\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 12:56:21\",\"comments\":null},{\"id\":\"421\",\"tracker_id\":\"78\",\"question_id\":\"219\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 12:56:21\",\"comments\":null},{\"id\":\"422\",\"tracker_id\":\"79\",\"question_id\":\"209\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-29 12:57:03\",\"comments\":null},{\"id\":\"423\",\"tracker_id\":\"79\",\"question_id\":\"218\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-29 12:57:03\",\"comments\":null},{\"id\":\"424\",\"tracker_id\":\"79\",\"question_id\":\"210\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-29 12:57:03\",\"comments\":null},{\"id\":\"425\",\"tracker_id\":\"79\",\"question_id\":\"211\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-29 12:57:03\",\"comments\":null},{\"id\":\"426\",\"tracker_id\":\"79\",\"question_id\":\"212\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-29 12:57:03\",\"comments\":null},{\"id\":\"427\",\"tracker_id\":\"79\",\"question_id\":\"213\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-29 12:57:03\",\"comments\":null},{\"id\":\"428\",\"tracker_id\":\"79\",\"question_id\":\"214\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-29 12:57:03\",\"comments\":null},{\"id\":\"429\",\"tracker_id\":\"79\",\"question_id\":\"215\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-29 12:57:03\",\"comments\":null},{\"id\":\"430\",\"tracker_id\":\"79\",\"question_id\":\"216\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-29 12:57:03\",\"comments\":null},{\"id\":\"431\",\"tracker_id\":\"79\",\"question_id\":\"217\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-29 12:57:03\",\"comments\":null},{\"id\":\"432\",\"tracker_id\":\"79\",\"question_id\":\"219\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-29 12:57:03\",\"comments\":null},{\"id\":\"433\",\"tracker_id\":\"80\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"199\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 12:57:39\",\"comments\":null},{\"id\":\"434\",\"tracker_id\":\"80\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"200\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 12:57:39\",\"comments\":null},{\"id\":\"435\",\"tracker_id\":\"80\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"201\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 12:57:39\",\"comments\":null},{\"id\":\"436\",\"tracker_id\":\"80\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"202\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 12:57:39\",\"comments\":null},{\"id\":\"437\",\"tracker_id\":\"80\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"203\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 12:57:39\",\"comments\":null},{\"id\":\"438\",\"tracker_id\":\"81\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"219\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 12:58:14\",\"comments\":null},{\"id\":\"439\",\"tracker_id\":\"81\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"220\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 12:58:14\",\"comments\":null},{\"id\":\"440\",\"tracker_id\":\"81\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"221\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 12:58:14\",\"comments\":null},{\"id\":\"441\",\"tracker_id\":\"81\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"222\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 12:58:14\",\"comments\":null},{\"id\":\"442\",\"tracker_id\":\"81\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"223\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 12:58:14\",\"comments\":null},{\"id\":\"443\",\"tracker_id\":\"82\",\"question_id\":\"209\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:04:08\",\"comments\":null},{\"id\":\"444\",\"tracker_id\":\"82\",\"question_id\":\"218\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:04:08\",\"comments\":null},{\"id\":\"445\",\"tracker_id\":\"82\",\"question_id\":\"210\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:04:08\",\"comments\":null},{\"id\":\"446\",\"tracker_id\":\"82\",\"question_id\":\"211\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:04:08\",\"comments\":null},{\"id\":\"447\",\"tracker_id\":\"82\",\"question_id\":\"212\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:04:08\",\"comments\":null},{\"id\":\"448\",\"tracker_id\":\"82\",\"question_id\":\"213\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:04:08\",\"comments\":null},{\"id\":\"449\",\"tracker_id\":\"82\",\"question_id\":\"214\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:04:08\",\"comments\":null},{\"id\":\"450\",\"tracker_id\":\"82\",\"question_id\":\"215\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:04:08\",\"comments\":null},{\"id\":\"451\",\"tracker_id\":\"82\",\"question_id\":\"216\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:04:08\",\"comments\":null},{\"id\":\"452\",\"tracker_id\":\"82\",\"question_id\":\"217\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:04:08\",\"comments\":null},{\"id\":\"453\",\"tracker_id\":\"82\",\"question_id\":\"219\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:04:08\",\"comments\":null},{\"id\":\"454\",\"tracker_id\":\"83\",\"question_id\":\"209\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:04:53\",\"comments\":null},{\"id\":\"455\",\"tracker_id\":\"83\",\"question_id\":\"218\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:04:53\",\"comments\":null},{\"id\":\"456\",\"tracker_id\":\"83\",\"question_id\":\"210\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:04:53\",\"comments\":null},{\"id\":\"457\",\"tracker_id\":\"83\",\"question_id\":\"211\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:04:53\",\"comments\":null},{\"id\":\"458\",\"tracker_id\":\"83\",\"question_id\":\"212\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:04:53\",\"comments\":null},{\"id\":\"459\",\"tracker_id\":\"83\",\"question_id\":\"213\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:04:53\",\"comments\":null},{\"id\":\"460\",\"tracker_id\":\"83\",\"question_id\":\"214\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:04:53\",\"comments\":null},{\"id\":\"461\",\"tracker_id\":\"83\",\"question_id\":\"215\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:04:53\",\"comments\":null},{\"id\":\"462\",\"tracker_id\":\"83\",\"question_id\":\"216\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:04:53\",\"comments\":null},{\"id\":\"463\",\"tracker_id\":\"83\",\"question_id\":\"217\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:04:53\",\"comments\":null},{\"id\":\"464\",\"tracker_id\":\"83\",\"question_id\":\"219\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:04:53\",\"comments\":null},{\"id\":\"465\",\"tracker_id\":\"84\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"199\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:05:19\",\"comments\":null},{\"id\":\"466\",\"tracker_id\":\"84\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"200\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:05:19\",\"comments\":null},{\"id\":\"467\",\"tracker_id\":\"84\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"201\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:05:19\",\"comments\":null},{\"id\":\"468\",\"tracker_id\":\"84\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"202\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:05:19\",\"comments\":null},{\"id\":\"469\",\"tracker_id\":\"84\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"203\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:05:19\",\"comments\":null},{\"id\":\"470\",\"tracker_id\":\"86\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"92\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:07:08\",\"comments\":null},{\"id\":\"471\",\"tracker_id\":\"86\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"93\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:07:08\",\"comments\":null},{\"id\":\"472\",\"tracker_id\":\"86\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"94\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:07:08\",\"comments\":null},{\"id\":\"473\",\"tracker_id\":\"86\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"95\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:07:08\",\"comments\":null},{\"id\":\"474\",\"tracker_id\":\"86\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"96\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:07:08\",\"comments\":null},{\"id\":\"475\",\"tracker_id\":\"86\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"97\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:07:08\",\"comments\":null},{\"id\":\"476\",\"tracker_id\":\"86\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"98\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:07:08\",\"comments\":null},{\"id\":\"477\",\"tracker_id\":\"86\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"99\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:07:08\",\"comments\":null},{\"id\":\"478\",\"tracker_id\":\"86\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"100\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:07:08\",\"comments\":null},{\"id\":\"479\",\"tracker_id\":\"86\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"101\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:07:08\",\"comments\":null},{\"id\":\"480\",\"tracker_id\":\"87\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"232\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 13:07:30\",\"comments\":null},{\"id\":\"489\",\"tracker_id\":\"90\",\"question_id\":\"235\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-13 22:05:54\",\"comments\":null},{\"id\":\"490\",\"tracker_id\":\"90\",\"question_id\":\"233\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-13 22:05:54\",\"comments\":null},{\"id\":\"491\",\"tracker_id\":\"90\",\"question_id\":\"236\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-13 22:05:54\",\"comments\":null},{\"id\":\"492\",\"tracker_id\":\"91\",\"question_id\":\"209\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 08:30:27\",\"comments\":null},{\"id\":\"493\",\"tracker_id\":\"91\",\"question_id\":\"218\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 08:30:27\",\"comments\":null},{\"id\":\"494\",\"tracker_id\":\"91\",\"question_id\":\"210\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-14 08:30:27\",\"comments\":null},{\"id\":\"495\",\"tracker_id\":\"91\",\"question_id\":\"211\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 08:30:27\",\"comments\":null},{\"id\":\"496\",\"tracker_id\":\"91\",\"question_id\":\"212\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 08:30:27\",\"comments\":null},{\"id\":\"497\",\"tracker_id\":\"91\",\"question_id\":\"213\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-14 08:30:27\",\"comments\":null},{\"id\":\"498\",\"tracker_id\":\"91\",\"question_id\":\"214\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 08:30:27\",\"comments\":null},{\"id\":\"499\",\"tracker_id\":\"91\",\"question_id\":\"215\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-14 08:30:27\",\"comments\":null},{\"id\":\"500\",\"tracker_id\":\"91\",\"question_id\":\"216\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 08:30:27\",\"comments\":null},{\"id\":\"501\",\"tracker_id\":\"91\",\"question_id\":\"217\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-14 08:30:27\",\"comments\":null},{\"id\":\"502\",\"tracker_id\":\"91\",\"question_id\":\"219\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"3.00\",\"submitted_at\":\"2026-09-14 08:30:27\",\"comments\":null},{\"id\":\"503\",\"tracker_id\":\"92\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"236\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 08:30:58\",\"comments\":null},{\"id\":\"504\",\"tracker_id\":\"93\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"232\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 08:31:12\",\"comments\":null},{\"id\":\"505\",\"tracker_id\":\"94\",\"question_id\":\"206\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 08:37:19\",\"comments\":null},{\"id\":\"506\",\"tracker_id\":\"94\",\"question_id\":\"203\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-14 08:37:19\",\"comments\":null},{\"id\":\"507\",\"tracker_id\":\"94\",\"question_id\":\"204\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 08:37:19\",\"comments\":null},{\"id\":\"508\",\"tracker_id\":\"94\",\"question_id\":\"205\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-14 08:37:19\",\"comments\":null},{\"id\":\"509\",\"tracker_id\":\"94\",\"question_id\":\"207\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 08:37:19\",\"comments\":null},{\"id\":\"510\",\"tracker_id\":\"94\",\"question_id\":\"208\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 08:37:19\",\"comments\":null},{\"id\":\"511\",\"tracker_id\":\"95\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"237\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 08:37:55\",\"comments\":null},{\"id\":\"512\",\"tracker_id\":\"95\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"238\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-14 08:37:55\",\"comments\":null},{\"id\":\"513\",\"tracker_id\":\"96\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"239\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 08:40:12\",\"comments\":null},{\"id\":\"514\",\"tracker_id\":\"96\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"240\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 08:40:12\",\"comments\":null},{\"id\":\"515\",\"tracker_id\":\"96\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"241\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-14 08:40:12\",\"comments\":null},{\"id\":\"516\",\"tracker_id\":\"96\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"242\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 08:40:12\",\"comments\":null},{\"id\":\"517\",\"tracker_id\":\"97\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"233\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 08:40:32\",\"comments\":null},{\"id\":\"518\",\"tracker_id\":\"98\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"243\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 08:42:23\",\"comments\":null},{\"id\":\"552\",\"tracker_id\":\"108\",\"question_id\":\"224\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 21:41:32\",\"comments\":null},{\"id\":\"553\",\"tracker_id\":\"108\",\"question_id\":\"226\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-14 21:41:32\",\"comments\":null},{\"id\":\"554\",\"tracker_id\":\"108\",\"question_id\":\"230\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 21:41:32\",\"comments\":null},{\"id\":\"555\",\"tracker_id\":\"109\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"234\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-15 07:47:25\",\"comments\":null},{\"id\":\"556\",\"tracker_id\":\"109\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"235\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-15 07:47:25\",\"comments\":null},{\"id\":\"557\",\"tracker_id\":\"110\",\"question_id\":\"237\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-15 07:49:43\",\"comments\":null},{\"id\":\"558\",\"tracker_id\":\"110\",\"question_id\":\"238\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-15 07:49:43\",\"comments\":null},{\"id\":\"559\",\"tracker_id\":\"110\",\"question_id\":\"239\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-15 07:49:43\",\"comments\":null},{\"id\":\"560\",\"tracker_id\":\"111\",\"question_id\":\"231\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-15 14:30:22\",\"comments\":null},{\"id\":\"561\",\"tracker_id\":\"111\",\"question_id\":\"232\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-15 14:30:22\",\"comments\":null},{\"id\":\"562\",\"tracker_id\":\"113\",\"question_id\":\"231\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-15 16:11:34\",\"comments\":null},{\"id\":\"563\",\"tracker_id\":\"113\",\"question_id\":\"232\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-15 16:11:34\",\"comments\":null},{\"id\":\"564\",\"tracker_id\":\"114\",\"question_id\":\"234\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-15 16:22:04\",\"comments\":null},{\"id\":\"565\",\"tracker_id\":\"114\",\"question_id\":\"240\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-15 16:22:04\",\"comments\":null},{\"id\":\"566\",\"tracker_id\":\"114\",\"question_id\":\"241\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-15 16:22:04\",\"comments\":null},{\"id\":\"567\",\"tracker_id\":\"115\",\"question_id\":\"295\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-15 16:40:12\",\"comments\":null},{\"id\":\"568\",\"tracker_id\":\"115\",\"question_id\":\"296\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-15 16:40:12\",\"comments\":null},{\"id\":\"569\",\"tracker_id\":\"115\",\"question_id\":\"297\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-15 16:40:12\",\"comments\":null},{\"id\":\"570\",\"tracker_id\":\"115\",\"question_id\":\"298\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-15 16:40:12\",\"comments\":null},{\"id\":\"571\",\"tracker_id\":\"115\",\"question_id\":\"299\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-15 16:40:12\",\"comments\":null},{\"id\":\"572\",\"tracker_id\":\"116\",\"question_id\":\"315\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-15 16:41:50\",\"comments\":null},{\"id\":\"573\",\"tracker_id\":\"116\",\"question_id\":\"157\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-15 16:41:50\",\"comments\":null},{\"id\":\"574\",\"tracker_id\":\"116\",\"question_id\":\"314\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-15 16:41:50\",\"comments\":null},{\"id\":\"575\",\"tracker_id\":\"116\",\"question_id\":\"154\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-15 16:41:50\",\"comments\":null},{\"id\":\"576\",\"tracker_id\":\"116\",\"question_id\":\"155\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-15 16:41:50\",\"comments\":null},{\"id\":\"577\",\"tracker_id\":\"116\",\"question_id\":\"158\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-15 16:41:50\",\"comments\":null},{\"id\":\"578\",\"tracker_id\":\"116\",\"question_id\":\"159\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-15 16:41:50\",\"comments\":null},{\"id\":\"579\",\"tracker_id\":\"116\",\"question_id\":\"156\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-15 16:41:50\",\"comments\":null},{\"id\":\"582\",\"tracker_id\":\"118\",\"question_id\":\"209\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-17 13:51:08\",\"comments\":null},{\"id\":\"583\",\"tracker_id\":\"118\",\"question_id\":\"218\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-17 13:51:08\",\"comments\":null},{\"id\":\"584\",\"tracker_id\":\"118\",\"question_id\":\"210\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-17 13:51:08\",\"comments\":null},{\"id\":\"585\",\"tracker_id\":\"118\",\"question_id\":\"211\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-17 13:51:08\",\"comments\":null},{\"id\":\"586\",\"tracker_id\":\"118\",\"question_id\":\"212\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-17 13:51:08\",\"comments\":null},{\"id\":\"587\",\"tracker_id\":\"118\",\"question_id\":\"213\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-17 13:51:08\",\"comments\":null},{\"id\":\"588\",\"tracker_id\":\"118\",\"question_id\":\"214\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-17 13:51:08\",\"comments\":null},{\"id\":\"589\",\"tracker_id\":\"118\",\"question_id\":\"215\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-17 13:51:08\",\"comments\":null},{\"id\":\"590\",\"tracker_id\":\"118\",\"question_id\":\"216\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-17 13:51:08\",\"comments\":null},{\"id\":\"591\",\"tracker_id\":\"118\",\"question_id\":\"217\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-17 13:51:08\",\"comments\":null},{\"id\":\"592\",\"tracker_id\":\"118\",\"question_id\":\"219\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-17 13:51:08\",\"comments\":null},{\"id\":\"593\",\"tracker_id\":\"119\",\"question_id\":\"300\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-17 14:02:33\",\"comments\":null},{\"id\":\"594\",\"tracker_id\":\"120\",\"question_id\":\"209\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 07:45:03\",\"comments\":null},{\"id\":\"595\",\"tracker_id\":\"120\",\"question_id\":\"218\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 07:45:03\",\"comments\":null},{\"id\":\"596\",\"tracker_id\":\"120\",\"question_id\":\"210\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-18 07:45:03\",\"comments\":null},{\"id\":\"597\",\"tracker_id\":\"120\",\"question_id\":\"211\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 07:45:03\",\"comments\":null},{\"id\":\"598\",\"tracker_id\":\"120\",\"question_id\":\"212\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-18 07:45:03\",\"comments\":null},{\"id\":\"599\",\"tracker_id\":\"120\",\"question_id\":\"213\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 07:45:03\",\"comments\":null},{\"id\":\"600\",\"tracker_id\":\"120\",\"question_id\":\"214\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 07:45:03\",\"comments\":null},{\"id\":\"601\",\"tracker_id\":\"120\",\"question_id\":\"215\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-18 07:45:03\",\"comments\":null},{\"id\":\"602\",\"tracker_id\":\"120\",\"question_id\":\"216\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 07:45:03\",\"comments\":null},{\"id\":\"603\",\"tracker_id\":\"120\",\"question_id\":\"217\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 07:45:03\",\"comments\":null},{\"id\":\"604\",\"tracker_id\":\"120\",\"question_id\":\"219\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-18 07:45:03\",\"comments\":null},{\"id\":\"605\",\"tracker_id\":\"121\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"232\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 07:47:29\",\"comments\":null},{\"id\":\"606\",\"tracker_id\":\"121\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"244\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-18 07:47:29\",\"comments\":null},{\"id\":\"607\",\"tracker_id\":\"121\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"245\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 07:47:29\",\"comments\":null},{\"id\":\"608\",\"tracker_id\":\"122\",\"question_id\":\"209\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 07:52:42\",\"comments\":null},{\"id\":\"609\",\"tracker_id\":\"122\",\"question_id\":\"218\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 07:52:42\",\"comments\":null},{\"id\":\"610\",\"tracker_id\":\"122\",\"question_id\":\"210\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-18 07:52:42\",\"comments\":null},{\"id\":\"611\",\"tracker_id\":\"122\",\"question_id\":\"211\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 07:52:42\",\"comments\":null},{\"id\":\"612\",\"tracker_id\":\"122\",\"question_id\":\"212\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-18 07:52:42\",\"comments\":null},{\"id\":\"613\",\"tracker_id\":\"122\",\"question_id\":\"213\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 07:52:42\",\"comments\":null},{\"id\":\"614\",\"tracker_id\":\"122\",\"question_id\":\"214\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 07:52:42\",\"comments\":null},{\"id\":\"615\",\"tracker_id\":\"122\",\"question_id\":\"215\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-18 07:52:42\",\"comments\":null},{\"id\":\"616\",\"tracker_id\":\"122\",\"question_id\":\"216\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-18 07:52:42\",\"comments\":null},{\"id\":\"617\",\"tracker_id\":\"122\",\"question_id\":\"217\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 07:52:42\",\"comments\":null},{\"id\":\"618\",\"tracker_id\":\"122\",\"question_id\":\"219\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-18 07:52:42\",\"comments\":null},{\"id\":\"619\",\"tracker_id\":\"123\",\"question_id\":\"209\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 08:08:03\",\"comments\":null},{\"id\":\"620\",\"tracker_id\":\"123\",\"question_id\":\"218\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-18 08:08:03\",\"comments\":null},{\"id\":\"621\",\"tracker_id\":\"123\",\"question_id\":\"210\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 08:08:03\",\"comments\":null},{\"id\":\"622\",\"tracker_id\":\"123\",\"question_id\":\"211\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 08:08:03\",\"comments\":null},{\"id\":\"623\",\"tracker_id\":\"123\",\"question_id\":\"212\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-18 08:08:03\",\"comments\":null},{\"id\":\"624\",\"tracker_id\":\"123\",\"question_id\":\"213\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 08:08:03\",\"comments\":null},{\"id\":\"625\",\"tracker_id\":\"123\",\"question_id\":\"214\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 08:08:03\",\"comments\":null},{\"id\":\"626\",\"tracker_id\":\"123\",\"question_id\":\"215\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-18 08:08:03\",\"comments\":null},{\"id\":\"627\",\"tracker_id\":\"123\",\"question_id\":\"216\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 08:08:03\",\"comments\":null},{\"id\":\"628\",\"tracker_id\":\"123\",\"question_id\":\"217\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-18 08:08:03\",\"comments\":null},{\"id\":\"629\",\"tracker_id\":\"123\",\"question_id\":\"219\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 08:08:03\",\"comments\":null},{\"id\":\"630\",\"tracker_id\":\"124\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"232\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 08:08:52\",\"comments\":null},{\"id\":\"631\",\"tracker_id\":\"124\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"244\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-18 08:08:52\",\"comments\":null},{\"id\":\"632\",\"tracker_id\":\"124\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"245\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 08:08:52\",\"comments\":null}],\"evaluation_answers\":[{\"id\":\"6\",\"tracker_id\":\"73\",\"category\":\"Professionalism\",\"question\":\"Explains lessons clearly and effectively.\",\"score\":\"5\"},{\"id\":\"7\",\"tracker_id\":\"73\",\"category\":\"Professionalism\",\"question\":\"Handles classroom concerns appropriately.\",\"score\":\"4\"},{\"id\":\"8\",\"tracker_id\":\"73\",\"category\":\"Teaching Effectiveness\",\"question\":\"Presents learning objectives clearly.\",\"score\":\"5\"},{\"id\":\"9\",\"tracker_id\":\"73\",\"category\":\"Teaching Effectiveness\",\"question\":\"Uses appropriate teaching strategies and methods.\",\"score\":\"5\"},{\"id\":\"10\",\"tracker_id\":\"73\",\"category\":\"Teaching Effectiveness\",\"question\":\"Provides clear instructions for activities and assignments.\",\"score\":\"5\"},{\"id\":\"11\",\"tracker_id\":\"73\",\"category\":\"Teaching Effectiveness\",\"question\":\"Encourages active participation during class discussions.\",\"score\":\"4\"},{\"id\":\"12\",\"tracker_id\":\"73\",\"category\":\"Teaching Effectiveness\",\"question\":\"Maintains proper classroom discipline.\",\"score\":\"4\"},{\"id\":\"13\",\"tracker_id\":\"73\",\"category\":\"Teaching Effectiveness\",\"question\":\"Creates a positive and respectful learning environment.\",\"score\":\"5\"},{\"id\":\"14\",\"tracker_id\":\"73\",\"category\":\"Teaching Effectiveness\",\"question\":\"Manages classroom activities effectively.\",\"score\":\"5\"},{\"id\":\"15\",\"tracker_id\":\"73\",\"category\":\"Teaching Effectiveness\",\"question\":\"Treats students fairly and respectfully.\",\"score\":\"5\"},{\"id\":\"16\",\"tracker_id\":\"73\",\"category\":\"Teaching Effectiveness\",\"question\":\"testing\",\"score\":\"4\"}],\"evaluation_submissions\":[],\"evaluation_results\":[],\"peer_evaluation_submissions\":[],\"peer_evaluation_results\":[],\"evaluation_reminders\":[],\"analytics_reports\":[],\"notifications\":[],\"activity_log_snapshot\":[]}');
+(2, 5, '2026-2027 — Summer', '2026-2027', 236, 'Lorraine R. Sabay', '2026-09-28 22:21:16', '2026-09-28 22:25:56', 236, 'restored', 8, '{\"evaluation_tracker\":2,\"questionnaire_answers\":5,\"evaluation_answers\":0,\"evaluation_submissions\":0,\"evaluation_results\":0,\"peer_evaluation_submissions\":0,\"peer_evaluation_results\":0,\"evaluation_reminders\":1,\"analytics_reports\":0,\"notifications\":0,\"activity_log_snapshot\":0}', '{\"evaluation_tracker\":[{\"id\":\"58\",\"legacy_submission_id\":null,\"evaluator_id\":\"236\",\"target_user_id\":\"158\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"5\",\"score\":null,\"remarks\":\"\",\"eval_type\":\"ea\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-24 14:57:55\",\"updated_at\":\"2026-09-24 14:36:32\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"72\",\"legacy_submission_id\":null,\"evaluator_id\":\"236\",\"target_user_id\":\"157\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"5\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"ea\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-27 16:55:58\",\"updated_at\":\"2026-09-24 14:36:32\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"}],\"questionnaire_answers\":[{\"id\":\"315\",\"tracker_id\":\"58\",\"question_id\":\"153\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-24 14:57:55\",\"comments\":null},{\"id\":\"316\",\"tracker_id\":\"58\",\"question_id\":\"79\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"3.00\",\"submitted_at\":\"2026-08-24 14:57:55\",\"comments\":null},{\"id\":\"381\",\"tracker_id\":\"72\",\"question_id\":\"80\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-27 16:55:58\",\"comments\":null},{\"id\":\"382\",\"tracker_id\":\"72\",\"question_id\":\"82\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-27 16:55:58\",\"comments\":null},{\"id\":\"383\",\"tracker_id\":\"72\",\"question_id\":\"83\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-27 16:55:58\",\"comments\":null}],\"evaluation_answers\":[],\"evaluation_submissions\":[],\"evaluation_results\":[],\"peer_evaluation_submissions\":[],\"peer_evaluation_results\":[],\"evaluation_reminders\":[{\"id\":\"2\",\"period_id\":\"5\",\"sender_id\":\"157\",\"recipient_id\":\"175\",\"eval_type\":\"student\",\"level\":\"college\",\"created_at\":\"2026-08-24 17:19:27\"}],\"analytics_reports\":[],\"notifications\":[],\"activity_log_snapshot\":[]}'),
+(4, 6, '2026-2027 — 1st Semester', '2026-2027', 125, 'Flowen Nina Anecito', '2026-09-21 10:37:21', NULL, NULL, 'archived', 69, '{\"evaluation_tracker\":3,\"questionnaire_answers\":66,\"evaluation_answers\":0,\"evaluation_submissions\":0,\"evaluation_results\":0,\"peer_evaluation_submissions\":0,\"peer_evaluation_results\":0,\"evaluation_reminders\":0,\"analytics_reports\":0,\"notifications\":0,\"activity_log_snapshot\":1}', '{\"evaluation_tracker\":[{\"id\":\"128\",\"legacy_submission_id\":null,\"evaluator_id\":\"157\",\"target_user_id\":\"144\",\"eval_bucket\":\"Faculty\",\"level\":\"college\",\"form_type\":\"school_head_dean_faculty\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"6\",\"score\":\"4.68\",\"remarks\":\"Overall Goods naman po!\",\"eval_type\":\"school_head\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-19 22:10:23\",\"updated_at\":\"2026-09-19 22:10:23\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"129\",\"legacy_submission_id\":null,\"evaluator_id\":\"161\",\"target_user_id\":\"144\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"6\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-20 15:56:25\",\"updated_at\":\"2026-09-20 15:56:25\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"130\",\"legacy_submission_id\":null,\"evaluator_id\":\"161\",\"target_user_id\":\"194\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"6\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-20 16:09:50\",\"updated_at\":\"2026-09-20 16:09:50\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"}],\"questionnaire_answers\":[{\"id\":\"648\",\"tracker_id\":\"128\",\"question_id\":\"247\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-19 22:10:23\",\"comments\":null},{\"id\":\"649\",\"tracker_id\":\"128\",\"question_id\":\"265\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-19 22:10:23\",\"comments\":null},{\"id\":\"650\",\"tracker_id\":\"128\",\"question_id\":\"244\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-19 22:10:23\",\"comments\":null},{\"id\":\"651\",\"tracker_id\":\"128\",\"question_id\":\"245\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-19 22:10:23\",\"comments\":null},{\"id\":\"652\",\"tracker_id\":\"128\",\"question_id\":\"246\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-19 22:10:23\",\"comments\":null},{\"id\":\"653\",\"tracker_id\":\"128\",\"question_id\":\"263\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-19 22:10:23\",\"comments\":null},{\"id\":\"654\",\"tracker_id\":\"128\",\"question_id\":\"248\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-19 22:10:23\",\"comments\":null},{\"id\":\"655\",\"tracker_id\":\"128\",\"question_id\":\"249\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-19 22:10:23\",\"comments\":null},{\"id\":\"656\",\"tracker_id\":\"128\",\"question_id\":\"250\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-19 22:10:23\",\"comments\":null},{\"id\":\"657\",\"tracker_id\":\"128\",\"question_id\":\"259\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-19 22:10:23\",\"comments\":null},{\"id\":\"658\",\"tracker_id\":\"128\",\"question_id\":\"261\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-19 22:10:23\",\"comments\":null},{\"id\":\"659\",\"tracker_id\":\"128\",\"question_id\":\"262\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-19 22:10:23\",\"comments\":null},{\"id\":\"660\",\"tracker_id\":\"128\",\"question_id\":\"251\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-19 22:10:23\",\"comments\":null},{\"id\":\"661\",\"tracker_id\":\"128\",\"question_id\":\"252\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-19 22:10:23\",\"comments\":null},{\"id\":\"662\",\"tracker_id\":\"128\",\"question_id\":\"253\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-19 22:10:23\",\"comments\":null},{\"id\":\"663\",\"tracker_id\":\"128\",\"question_id\":\"254\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-19 22:10:23\",\"comments\":null},{\"id\":\"664\",\"tracker_id\":\"128\",\"question_id\":\"255\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-19 22:10:23\",\"comments\":null},{\"id\":\"665\",\"tracker_id\":\"128\",\"question_id\":\"256\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-19 22:10:23\",\"comments\":null},{\"id\":\"666\",\"tracker_id\":\"128\",\"question_id\":\"257\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-19 22:10:23\",\"comments\":null},{\"id\":\"667\",\"tracker_id\":\"128\",\"question_id\":\"258\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-19 22:10:23\",\"comments\":null},{\"id\":\"668\",\"tracker_id\":\"128\",\"question_id\":\"260\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-19 22:10:23\",\"comments\":null},{\"id\":\"669\",\"tracker_id\":\"128\",\"question_id\":\"264\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-19 22:10:23\",\"comments\":null},{\"id\":\"670\",\"tracker_id\":\"129\",\"question_id\":\"247\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 15:56:25\",\"comments\":null},{\"id\":\"671\",\"tracker_id\":\"129\",\"question_id\":\"265\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-20 15:56:25\",\"comments\":null},{\"id\":\"672\",\"tracker_id\":\"129\",\"question_id\":\"244\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-20 15:56:25\",\"comments\":null},{\"id\":\"673\",\"tracker_id\":\"129\",\"question_id\":\"245\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 15:56:25\",\"comments\":null},{\"id\":\"674\",\"tracker_id\":\"129\",\"question_id\":\"246\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 15:56:25\",\"comments\":null},{\"id\":\"675\",\"tracker_id\":\"129\",\"question_id\":\"263\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-20 15:56:25\",\"comments\":null},{\"id\":\"676\",\"tracker_id\":\"129\",\"question_id\":\"248\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 15:56:25\",\"comments\":null},{\"id\":\"677\",\"tracker_id\":\"129\",\"question_id\":\"249\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-20 15:56:25\",\"comments\":null},{\"id\":\"678\",\"tracker_id\":\"129\",\"question_id\":\"250\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 15:56:25\",\"comments\":null},{\"id\":\"679\",\"tracker_id\":\"129\",\"question_id\":\"259\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-20 15:56:25\",\"comments\":null},{\"id\":\"680\",\"tracker_id\":\"129\",\"question_id\":\"261\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 15:56:25\",\"comments\":null},{\"id\":\"681\",\"tracker_id\":\"129\",\"question_id\":\"262\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 15:56:25\",\"comments\":null},{\"id\":\"682\",\"tracker_id\":\"129\",\"question_id\":\"251\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 15:56:25\",\"comments\":null},{\"id\":\"683\",\"tracker_id\":\"129\",\"question_id\":\"252\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-20 15:56:25\",\"comments\":null},{\"id\":\"684\",\"tracker_id\":\"129\",\"question_id\":\"253\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 15:56:25\",\"comments\":null},{\"id\":\"685\",\"tracker_id\":\"129\",\"question_id\":\"254\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 15:56:25\",\"comments\":null},{\"id\":\"686\",\"tracker_id\":\"129\",\"question_id\":\"255\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-20 15:56:25\",\"comments\":null},{\"id\":\"687\",\"tracker_id\":\"129\",\"question_id\":\"256\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 15:56:25\",\"comments\":null},{\"id\":\"688\",\"tracker_id\":\"129\",\"question_id\":\"257\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 15:56:25\",\"comments\":null},{\"id\":\"689\",\"tracker_id\":\"129\",\"question_id\":\"258\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 15:56:25\",\"comments\":null},{\"id\":\"690\",\"tracker_id\":\"129\",\"question_id\":\"260\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-20 15:56:25\",\"comments\":null},{\"id\":\"691\",\"tracker_id\":\"129\",\"question_id\":\"264\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 15:56:25\",\"comments\":null},{\"id\":\"692\",\"tracker_id\":\"130\",\"question_id\":\"247\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 16:09:50\",\"comments\":null},{\"id\":\"693\",\"tracker_id\":\"130\",\"question_id\":\"265\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 16:09:50\",\"comments\":null},{\"id\":\"694\",\"tracker_id\":\"130\",\"question_id\":\"244\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-20 16:09:50\",\"comments\":null},{\"id\":\"695\",\"tracker_id\":\"130\",\"question_id\":\"245\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 16:09:50\",\"comments\":null},{\"id\":\"696\",\"tracker_id\":\"130\",\"question_id\":\"246\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-20 16:09:50\",\"comments\":null},{\"id\":\"697\",\"tracker_id\":\"130\",\"question_id\":\"263\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 16:09:50\",\"comments\":null},{\"id\":\"698\",\"tracker_id\":\"130\",\"question_id\":\"248\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 16:09:50\",\"comments\":null},{\"id\":\"699\",\"tracker_id\":\"130\",\"question_id\":\"249\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-20 16:09:50\",\"comments\":null},{\"id\":\"700\",\"tracker_id\":\"130\",\"question_id\":\"250\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 16:09:50\",\"comments\":null},{\"id\":\"701\",\"tracker_id\":\"130\",\"question_id\":\"259\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 16:09:50\",\"comments\":null},{\"id\":\"702\",\"tracker_id\":\"130\",\"question_id\":\"261\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-20 16:09:50\",\"comments\":null},{\"id\":\"703\",\"tracker_id\":\"130\",\"question_id\":\"262\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 16:09:50\",\"comments\":null},{\"id\":\"704\",\"tracker_id\":\"130\",\"question_id\":\"251\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 16:09:50\",\"comments\":null},{\"id\":\"705\",\"tracker_id\":\"130\",\"question_id\":\"252\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-20 16:09:50\",\"comments\":null},{\"id\":\"706\",\"tracker_id\":\"130\",\"question_id\":\"253\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 16:09:50\",\"comments\":null},{\"id\":\"707\",\"tracker_id\":\"130\",\"question_id\":\"254\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 16:09:50\",\"comments\":null},{\"id\":\"708\",\"tracker_id\":\"130\",\"question_id\":\"255\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-20 16:09:50\",\"comments\":null},{\"id\":\"709\",\"tracker_id\":\"130\",\"question_id\":\"256\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 16:09:50\",\"comments\":null},{\"id\":\"710\",\"tracker_id\":\"130\",\"question_id\":\"257\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 16:09:50\",\"comments\":null},{\"id\":\"711\",\"tracker_id\":\"130\",\"question_id\":\"258\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-20 16:09:50\",\"comments\":null},{\"id\":\"712\",\"tracker_id\":\"130\",\"question_id\":\"260\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 16:09:50\",\"comments\":null},{\"id\":\"713\",\"tracker_id\":\"130\",\"question_id\":\"264\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-20 16:09:50\",\"comments\":null}],\"evaluation_answers\":[],\"evaluation_submissions\":[],\"evaluation_results\":[],\"peer_evaluation_submissions\":[],\"peer_evaluation_results\":[],\"evaluation_reminders\":[],\"analytics_reports\":[],\"notifications\":[],\"activity_log_snapshot\":[{\"id\":\"33\",\"actor_name\":\"Lorraine R. Sabay\",\"actor_type\":\"admin\",\"action_text\":\"Deleted evaluation archive #1 for 2026-2027 (2026-2027 — 1st Semester)\",\"icon\":\"fa-trash\",\"color\":\"#D6455D\",\"created_at\":\"2026-09-20 15:57:18\"}]}'),
+(5, 3, '2026-2027 — 1st Semester', '2026-2027', 236, 'Lorraine R. Sabay', '2026-09-28 22:21:11', '2026-09-28 22:25:56', 236, 'restored', 17, '{\"evaluation_tracker\":3,\"questionnaire_answers\":14,\"evaluation_answers\":0,\"evaluation_submissions\":0,\"evaluation_results\":0,\"peer_evaluation_submissions\":0,\"peer_evaluation_results\":0,\"evaluation_reminders\":0,\"analytics_reports\":0,\"notifications\":0,\"activity_log_snapshot\":0}', '{\"evaluation_tracker\":[{\"id\":\"110\",\"legacy_submission_id\":null,\"evaluator_id\":\"157\",\"target_user_id\":\"236\",\"eval_bucket\":\"EA\",\"level\":\"college\",\"form_type\":\"school_head_dean_ea\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":\"4.67\",\"remarks\":\"N/A\",\"eval_type\":\"school_head\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-15 07:49:43\",\"updated_at\":\"2026-09-24 14:36:32\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"116\",\"legacy_submission_id\":null,\"evaluator_id\":\"236\",\"target_user_id\":\"158\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"ea\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-15 16:41:50\",\"updated_at\":\"2026-09-24 14:36:32\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"121\",\"legacy_submission_id\":null,\"evaluator_id\":\"175\",\"target_user_id\":\"158\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"3\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-18 07:47:29\",\"updated_at\":\"2026-09-18 07:47:29\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"school_head\"}],\"questionnaire_answers\":[{\"id\":\"557\",\"tracker_id\":\"110\",\"question_id\":\"237\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-15 07:49:43\",\"comments\":null},{\"id\":\"558\",\"tracker_id\":\"110\",\"question_id\":\"238\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-15 07:49:43\",\"comments\":null},{\"id\":\"559\",\"tracker_id\":\"110\",\"question_id\":\"239\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-15 07:49:43\",\"comments\":null},{\"id\":\"572\",\"tracker_id\":\"116\",\"question_id\":\"315\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-15 16:41:50\",\"comments\":null},{\"id\":\"573\",\"tracker_id\":\"116\",\"question_id\":\"157\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-15 16:41:50\",\"comments\":null},{\"id\":\"574\",\"tracker_id\":\"116\",\"question_id\":\"314\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-15 16:41:50\",\"comments\":null},{\"id\":\"575\",\"tracker_id\":\"116\",\"question_id\":\"154\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-15 16:41:50\",\"comments\":null},{\"id\":\"576\",\"tracker_id\":\"116\",\"question_id\":\"155\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-15 16:41:50\",\"comments\":null},{\"id\":\"577\",\"tracker_id\":\"116\",\"question_id\":\"158\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-15 16:41:50\",\"comments\":null},{\"id\":\"578\",\"tracker_id\":\"116\",\"question_id\":\"159\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-15 16:41:50\",\"comments\":null},{\"id\":\"579\",\"tracker_id\":\"116\",\"question_id\":\"156\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-15 16:41:50\",\"comments\":null},{\"id\":\"605\",\"tracker_id\":\"121\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"232\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 07:47:29\",\"comments\":null},{\"id\":\"606\",\"tracker_id\":\"121\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"244\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-18 07:47:29\",\"comments\":null},{\"id\":\"607\",\"tracker_id\":\"121\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"245\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 07:47:29\",\"comments\":null}],\"evaluation_answers\":[],\"evaluation_submissions\":[],\"evaluation_results\":[],\"peer_evaluation_submissions\":[],\"peer_evaluation_results\":[],\"evaluation_reminders\":[],\"analytics_reports\":[],\"notifications\":[],\"activity_log_snapshot\":[]}');
 INSERT INTO `system_archives` (`id`, `period_id`, `period_label`, `school_year`, `archived_by`, `archived_by_name`, `archived_at`, `restored_at`, `restored_by`, `status`, `record_count`, `summary_json`, `payload_json`) VALUES
-(2, 5, '2026-2027 — Summer', '2026-2027', 208, 'Lorraine R. Sabay', '2026-09-18 17:03:50', '2026-09-18 17:05:09', 208, 'restored', 89, '{\"evaluation_tracker\":16,\"questionnaire_answers\":66,\"evaluation_answers\":5,\"evaluation_submissions\":0,\"evaluation_results\":0,\"peer_evaluation_submissions\":0,\"peer_evaluation_results\":0,\"evaluation_reminders\":2,\"analytics_reports\":0,\"notifications\":0,\"activity_log_snapshot\":0}', '{\"evaluation_tracker\":[{\"id\":\"26\",\"legacy_submission_id\":null,\"evaluator_id\":\"167\",\"target_user_id\":\"170\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"5\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-13 07:57:36\",\"updated_at\":\"2026-08-13 07:57:36\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"29\",\"legacy_submission_id\":null,\"evaluator_id\":\"171\",\"target_user_id\":\"136\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"5\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-14 14:58:06\",\"updated_at\":\"2026-08-17 17:58:18\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"multi_role\"},{\"id\":\"38\",\"legacy_submission_id\":null,\"evaluator_id\":\"166\",\"target_user_id\":\"136\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"5\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-16 12:33:07\",\"updated_at\":\"2026-08-17 17:58:18\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"multi_role\"},{\"id\":\"45\",\"legacy_submission_id\":null,\"evaluator_id\":\"151\",\"target_user_id\":\"170\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"5\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-17 16:48:00\",\"updated_at\":\"2026-08-17 16:48:00\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"47\",\"legacy_submission_id\":null,\"evaluator_id\":\"175\",\"target_user_id\":\"172\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"5\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-19 13:42:27\",\"updated_at\":\"2026-08-19 13:42:27\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"staff\"},{\"id\":\"55\",\"legacy_submission_id\":null,\"evaluator_id\":\"161\",\"target_user_id\":\"144\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"5\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-24 14:03:23\",\"updated_at\":\"2026-08-24 14:03:23\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"staff\"},{\"id\":\"58\",\"legacy_submission_id\":null,\"evaluator_id\":\"125\",\"target_user_id\":\"158\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"5\",\"score\":null,\"remarks\":\"\",\"eval_type\":\"ea\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-24 14:57:55\",\"updated_at\":\"2026-08-24 14:57:55\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"62\",\"legacy_submission_id\":null,\"evaluator_id\":\"167\",\"target_user_id\":\"136\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"5\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-26 10:35:38\",\"updated_at\":\"2026-08-27 15:02:30\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"staff\"},{\"id\":\"64\",\"legacy_submission_id\":null,\"evaluator_id\":\"167\",\"target_user_id\":\"172\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"5\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-26 11:18:16\",\"updated_at\":\"2026-08-27 15:02:30\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"staff\"},{\"id\":\"65\",\"legacy_submission_id\":null,\"evaluator_id\":\"167\",\"target_user_id\":\"181\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"5\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-26 11:18:28\",\"updated_at\":\"2026-08-27 15:02:30\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"staff\"},{\"id\":\"67\",\"legacy_submission_id\":null,\"evaluator_id\":\"170\",\"target_user_id\":\"183\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":\"3\",\"source_module\":null,\"period\":null,\"period_id\":\"5\",\"score\":\"4.63\",\"remarks\":\"N/A\",\"eval_type\":\"faculty_peer\",\"peer_group\":\"Teacher\",\"status\":\"submitted\",\"submitted_at\":\"2026-08-26 11:42:05\",\"updated_at\":\"2026-08-27 15:02:30\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"68\",\"legacy_submission_id\":null,\"evaluator_id\":\"170\",\"target_user_id\":\"136\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":\"3\",\"source_module\":null,\"period\":null,\"period_id\":\"5\",\"score\":\"4.57\",\"remarks\":\"N/A\",\"eval_type\":\"faculty_peer\",\"peer_group\":\"Staff\",\"status\":\"submitted\",\"submitted_at\":\"2026-08-26 12:08:51\",\"updated_at\":\"2026-08-27 15:02:30\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"69\",\"legacy_submission_id\":null,\"evaluator_id\":\"171\",\"target_user_id\":\"170\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"5\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-27 15:03:41\",\"updated_at\":\"2026-08-27 15:03:41\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"70\",\"legacy_submission_id\":null,\"evaluator_id\":\"157\",\"target_user_id\":\"144\",\"eval_bucket\":\"Staff\",\"level\":\"college\",\"form_type\":\"staff_dean\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"5\",\"score\":\"4.80\",\"remarks\":\"N/A\",\"eval_type\":\"dean\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-27 15:59:01\",\"updated_at\":\"2026-08-27 15:59:01\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"71\",\"legacy_submission_id\":null,\"evaluator_id\":\"170\",\"target_user_id\":\"139\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":\"3\",\"source_module\":null,\"period\":null,\"period_id\":\"5\",\"score\":\"4.75\",\"remarks\":\"N/A\",\"eval_type\":\"faculty_peer\",\"peer_group\":\"Teacher\",\"status\":\"submitted\",\"submitted_at\":\"2026-08-27 16:02:21\",\"updated_at\":\"2026-08-27 16:02:21\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"72\",\"legacy_submission_id\":null,\"evaluator_id\":\"125\",\"target_user_id\":\"157\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"5\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"ea\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-27 16:55:58\",\"updated_at\":\"2026-08-27 16:55:58\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"}],\"questionnaire_answers\":[{\"id\":\"244\",\"tracker_id\":\"26\",\"question_id\":\"184\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-13 07:57:36\",\"comments\":null},{\"id\":\"245\",\"tracker_id\":\"26\",\"question_id\":\"185\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"2.00\",\"submitted_at\":\"2026-08-13 07:57:36\",\"comments\":null},{\"id\":\"246\",\"tracker_id\":\"26\",\"question_id\":\"188\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-13 07:57:36\",\"comments\":null},{\"id\":\"247\",\"tracker_id\":\"26\",\"question_id\":\"189\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-13 07:57:36\",\"comments\":null},{\"id\":\"256\",\"tracker_id\":\"29\",\"question_id\":\"192\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-14 14:58:06\",\"comments\":null},{\"id\":\"265\",\"tracker_id\":\"38\",\"question_id\":\"192\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-16 12:33:07\",\"comments\":null},{\"id\":\"290\",\"tracker_id\":\"45\",\"question_id\":\"184\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-17 16:48:00\",\"comments\":null},{\"id\":\"291\",\"tracker_id\":\"45\",\"question_id\":\"185\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-17 16:48:00\",\"comments\":null},{\"id\":\"292\",\"tracker_id\":\"45\",\"question_id\":\"188\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-17 16:48:00\",\"comments\":null},{\"id\":\"293\",\"tracker_id\":\"45\",\"question_id\":\"189\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-17 16:48:00\",\"comments\":null},{\"id\":\"307\",\"tracker_id\":\"55\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"75\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-24 14:03:23\",\"comments\":null},{\"id\":\"308\",\"tracker_id\":\"55\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"73\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-24 14:03:23\",\"comments\":null},{\"id\":\"315\",\"tracker_id\":\"58\",\"question_id\":\"153\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-24 14:57:55\",\"comments\":null},{\"id\":\"316\",\"tracker_id\":\"58\",\"question_id\":\"79\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"3.00\",\"submitted_at\":\"2026-08-24 14:57:55\",\"comments\":null},{\"id\":\"327\",\"tracker_id\":\"62\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"209\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-26 10:35:38\",\"comments\":null},{\"id\":\"328\",\"tracker_id\":\"62\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"210\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-26 10:35:38\",\"comments\":null},{\"id\":\"329\",\"tracker_id\":\"62\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"211\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-26 10:35:38\",\"comments\":null},{\"id\":\"330\",\"tracker_id\":\"62\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"212\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-26 10:35:38\",\"comments\":null},{\"id\":\"331\",\"tracker_id\":\"62\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"213\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-26 10:35:38\",\"comments\":null},{\"id\":\"332\",\"tracker_id\":\"64\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"199\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-26 11:18:16\",\"comments\":null},{\"id\":\"333\",\"tracker_id\":\"64\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"200\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-26 11:18:16\",\"comments\":null},{\"id\":\"334\",\"tracker_id\":\"64\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"201\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-26 11:18:16\",\"comments\":null},{\"id\":\"335\",\"tracker_id\":\"64\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"202\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-26 11:18:16\",\"comments\":null},{\"id\":\"336\",\"tracker_id\":\"64\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"203\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-26 11:18:16\",\"comments\":null},{\"id\":\"337\",\"tracker_id\":\"65\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"219\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-26 11:18:28\",\"comments\":null},{\"id\":\"338\",\"tracker_id\":\"65\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"220\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-26 11:18:28\",\"comments\":null},{\"id\":\"339\",\"tracker_id\":\"65\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"221\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-26 11:18:28\",\"comments\":null},{\"id\":\"340\",\"tracker_id\":\"65\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"222\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-26 11:18:28\",\"comments\":null},{\"id\":\"341\",\"tracker_id\":\"65\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"223\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-26 11:18:28\",\"comments\":null},{\"id\":\"347\",\"tracker_id\":\"67\",\"question_id\":\"201\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-26 11:42:05\",\"comments\":null},{\"id\":\"348\",\"tracker_id\":\"67\",\"question_id\":\"202\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-26 11:42:05\",\"comments\":null},{\"id\":\"349\",\"tracker_id\":\"67\",\"question_id\":\"206\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-26 11:42:05\",\"comments\":null},{\"id\":\"350\",\"tracker_id\":\"67\",\"question_id\":\"203\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-26 11:42:05\",\"comments\":null},{\"id\":\"351\",\"tracker_id\":\"67\",\"question_id\":\"204\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-26 11:42:05\",\"comments\":null},{\"id\":\"352\",\"tracker_id\":\"67\",\"question_id\":\"205\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-26 11:42:05\",\"comments\":null},{\"id\":\"353\",\"tracker_id\":\"67\",\"question_id\":\"207\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-26 11:42:05\",\"comments\":null},{\"id\":\"354\",\"tracker_id\":\"67\",\"question_id\":\"208\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-26 11:42:05\",\"comments\":null},{\"id\":\"355\",\"tracker_id\":\"68\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"224\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-26 12:08:51\",\"comments\":null},{\"id\":\"356\",\"tracker_id\":\"68\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"225\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-26 12:08:51\",\"comments\":null},{\"id\":\"357\",\"tracker_id\":\"68\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"226\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-26 12:08:51\",\"comments\":null},{\"id\":\"358\",\"tracker_id\":\"68\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"227\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-26 12:08:51\",\"comments\":null},{\"id\":\"359\",\"tracker_id\":\"68\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"228\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-26 12:08:51\",\"comments\":null},{\"id\":\"360\",\"tracker_id\":\"68\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"229\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-26 12:08:51\",\"comments\":null},{\"id\":\"361\",\"tracker_id\":\"68\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"230\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-26 12:08:51\",\"comments\":null},{\"id\":\"362\",\"tracker_id\":\"69\",\"question_id\":\"209\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-27 15:03:41\",\"comments\":null},{\"id\":\"363\",\"tracker_id\":\"69\",\"question_id\":\"218\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-27 15:03:41\",\"comments\":null},{\"id\":\"364\",\"tracker_id\":\"69\",\"question_id\":\"210\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-27 15:03:41\",\"comments\":null},{\"id\":\"365\",\"tracker_id\":\"69\",\"question_id\":\"211\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-27 15:03:41\",\"comments\":null},{\"id\":\"366\",\"tracker_id\":\"69\",\"question_id\":\"212\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-27 15:03:41\",\"comments\":null},{\"id\":\"367\",\"tracker_id\":\"69\",\"question_id\":\"213\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-27 15:03:41\",\"comments\":null},{\"id\":\"368\",\"tracker_id\":\"69\",\"question_id\":\"214\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-27 15:03:41\",\"comments\":null},{\"id\":\"369\",\"tracker_id\":\"69\",\"question_id\":\"215\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-27 15:03:41\",\"comments\":null},{\"id\":\"370\",\"tracker_id\":\"69\",\"question_id\":\"216\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-27 15:03:41\",\"comments\":null},{\"id\":\"371\",\"tracker_id\":\"69\",\"question_id\":\"217\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-27 15:03:41\",\"comments\":null},{\"id\":\"372\",\"tracker_id\":\"69\",\"question_id\":\"219\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-27 15:03:41\",\"comments\":null},{\"id\":\"373\",\"tracker_id\":\"71\",\"question_id\":\"201\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-27 16:02:21\",\"comments\":null},{\"id\":\"374\",\"tracker_id\":\"71\",\"question_id\":\"202\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-27 16:02:21\",\"comments\":null},{\"id\":\"375\",\"tracker_id\":\"71\",\"question_id\":\"206\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-27 16:02:21\",\"comments\":null},{\"id\":\"376\",\"tracker_id\":\"71\",\"question_id\":\"203\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-27 16:02:21\",\"comments\":null},{\"id\":\"377\",\"tracker_id\":\"71\",\"question_id\":\"204\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-27 16:02:21\",\"comments\":null},{\"id\":\"378\",\"tracker_id\":\"71\",\"question_id\":\"205\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-27 16:02:21\",\"comments\":null},{\"id\":\"379\",\"tracker_id\":\"71\",\"question_id\":\"207\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-27 16:02:21\",\"comments\":null},{\"id\":\"380\",\"tracker_id\":\"71\",\"question_id\":\"208\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-27 16:02:21\",\"comments\":null},{\"id\":\"381\",\"tracker_id\":\"72\",\"question_id\":\"80\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-27 16:55:58\",\"comments\":null},{\"id\":\"382\",\"tracker_id\":\"72\",\"question_id\":\"82\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-27 16:55:58\",\"comments\":null},{\"id\":\"383\",\"tracker_id\":\"72\",\"question_id\":\"83\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-27 16:55:58\",\"comments\":null}],\"evaluation_answers\":[{\"id\":\"1\",\"tracker_id\":\"70\",\"category\":\"Job Performance\",\"question\":\"Performs assigned duties competently and reliably.\",\"score\":\"5\"},{\"id\":\"2\",\"tracker_id\":\"70\",\"category\":\"Communication\",\"question\":\"Communicates clearly with colleagues and stakeholders.\",\"score\":\"4\"},{\"id\":\"3\",\"tracker_id\":\"70\",\"category\":\"Professionalism\",\"question\":\"Demonstrates professionalism in the workplace.\",\"score\":\"5\"},{\"id\":\"4\",\"tracker_id\":\"70\",\"category\":\"Punctuality\",\"question\":\"Is punctual and dependable.\",\"score\":\"5\"},{\"id\":\"5\",\"tracker_id\":\"70\",\"category\":\"Overall Rating\",\"question\":\"Overall, meets expectations for this role.\",\"score\":\"5\"}],\"evaluation_submissions\":[],\"evaluation_results\":[],\"peer_evaluation_submissions\":[],\"peer_evaluation_results\":[],\"evaluation_reminders\":[{\"id\":\"1\",\"period_id\":\"5\",\"sender_id\":\"157\",\"recipient_id\":\"151\",\"eval_type\":\"student\",\"level\":\"college\",\"created_at\":\"2026-08-15 13:03:02\"},{\"id\":\"2\",\"period_id\":\"5\",\"sender_id\":\"157\",\"recipient_id\":\"175\",\"eval_type\":\"student\",\"level\":\"college\",\"created_at\":\"2026-08-24 17:19:27\"}],\"analytics_reports\":[],\"notifications\":[],\"activity_log_snapshot\":[]}');
-INSERT INTO `system_archives` (`id`, `period_id`, `period_label`, `school_year`, `archived_by`, `archived_by_name`, `archived_at`, `restored_at`, `restored_by`, `status`, `record_count`, `summary_json`, `payload_json`) VALUES
-(3, 2, '2026-2027 — School Year', '2026-2027', 208, 'Lorraine R. Sabay', '2026-09-18 17:03:54', '2026-09-18 17:05:09', 208, 'restored', 88, '{\"evaluation_tracker\":17,\"questionnaire_answers\":71,\"evaluation_answers\":0,\"evaluation_submissions\":0,\"evaluation_results\":0,\"peer_evaluation_submissions\":0,\"peer_evaluation_results\":0,\"evaluation_reminders\":0,\"analytics_reports\":0,\"notifications\":0,\"activity_log_snapshot\":0}', '{\"evaluation_tracker\":[{\"id\":\"75\",\"legacy_submission_id\":null,\"evaluator_id\":\"158\",\"target_user_id\":\"183\",\"eval_bucket\":\"Teacher\",\"level\":\"\",\"form_type\":\"Teacher Performance Evaluation (Supervisor)\",\"form_id\":\"5\",\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":\"4.67\",\"remarks\":\"N/A\",\"eval_type\":\"supervisor_to_teacher\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-28 20:01:30\",\"updated_at\":\"2026-08-28 20:01:30\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"76\",\"legacy_submission_id\":null,\"evaluator_id\":\"171\",\"target_user_id\":\"183\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-29 10:29:36\",\"updated_at\":\"2026-08-29 10:29:36\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"77\",\"legacy_submission_id\":null,\"evaluator_id\":\"125\",\"target_user_id\":\"158\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":null,\"remarks\":\"errtyydd\",\"eval_type\":\"ea\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-08-29 11:13:11\",\"updated_at\":\"2026-08-29 11:13:11\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"88\",\"legacy_submission_id\":null,\"evaluator_id\":\"170\",\"target_user_id\":\"172\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":\"3\",\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":\"4.50\",\"remarks\":\"N/A\",\"eval_type\":\"faculty_peer\",\"peer_group\":\"Staff\",\"status\":\"submitted\",\"submitted_at\":\"2026-09-13 18:52:36\",\"updated_at\":\"2026-09-13 18:52:36\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"89\",\"legacy_submission_id\":null,\"evaluator_id\":\"164\",\"target_user_id\":\"139\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":\"3\",\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":\"4.67\",\"remarks\":\"N/A\",\"eval_type\":\"faculty_peer\",\"peer_group\":\"Faculty\",\"status\":\"submitted\",\"submitted_at\":\"2026-09-13 18:54:47\",\"updated_at\":\"2026-09-13 18:54:47\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"99\",\"legacy_submission_id\":null,\"evaluator_id\":\"171\",\"target_user_id\":\"157\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-14 08:43:00\",\"updated_at\":\"2026-09-14 08:43:00\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"school_head\"},{\"id\":\"100\",\"legacy_submission_id\":null,\"evaluator_id\":\"171\",\"target_user_id\":\"158\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-14 08:43:05\",\"updated_at\":\"2026-09-14 08:43:05\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"school_head\"},{\"id\":\"101\",\"legacy_submission_id\":null,\"evaluator_id\":\"167\",\"target_user_id\":\"158\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-14 08:55:14\",\"updated_at\":\"2026-09-14 08:55:14\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"school_head\"},{\"id\":\"102\",\"legacy_submission_id\":null,\"evaluator_id\":\"167\",\"target_user_id\":\"157\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-14 08:55:59\",\"updated_at\":\"2026-09-14 08:55:59\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"school_head\"},{\"id\":\"103\",\"legacy_submission_id\":null,\"evaluator_id\":\"166\",\"target_user_id\":\"158\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-14 09:34:50\",\"updated_at\":\"2026-09-14 09:34:50\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"school_head\"},{\"id\":\"104\",\"legacy_submission_id\":null,\"evaluator_id\":\"149\",\"target_user_id\":\"139\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-14 16:28:49\",\"updated_at\":\"2026-09-14 16:28:49\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"105\",\"legacy_submission_id\":null,\"evaluator_id\":\"149\",\"target_user_id\":\"172\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-14 16:29:01\",\"updated_at\":\"2026-09-14 16:29:01\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"staff\"},{\"id\":\"106\",\"legacy_submission_id\":null,\"evaluator_id\":\"149\",\"target_user_id\":\"158\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-14 16:29:08\",\"updated_at\":\"2026-09-14 16:29:08\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"school_head\"},{\"id\":\"107\",\"legacy_submission_id\":null,\"evaluator_id\":\"149\",\"target_user_id\":\"157\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-14 16:29:19\",\"updated_at\":\"2026-09-14 16:29:19\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"school_head\"},{\"id\":\"117\",\"legacy_submission_id\":null,\"evaluator_id\":\"158\",\"target_user_id\":\"172\",\"eval_bucket\":\"Staff\",\"level\":\"\",\"form_type\":\"Principal Evaluation — Non-Teaching Staff\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":\"5.00\",\"remarks\":\"N/A\",\"eval_type\":\"school_head\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-16 10:15:15\",\"updated_at\":\"2026-09-16 10:15:15\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"125\",\"legacy_submission_id\":null,\"evaluator_id\":\"158\",\"target_user_id\":\"170\",\"eval_bucket\":\"Faculty\",\"level\":\"\",\"form_type\":\"Principal Evaluation — Faculty\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":\"5.00\",\"remarks\":\"\",\"eval_type\":\"school_head\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-18 14:48:11\",\"updated_at\":\"2026-09-18 14:48:11\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"126\",\"legacy_submission_id\":null,\"evaluator_id\":\"208\",\"target_user_id\":\"158\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"ea\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-18 15:15:38\",\"updated_at\":\"2026-09-18 15:15:38\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"}],\"questionnaire_answers\":[{\"id\":\"395\",\"tracker_id\":\"75\",\"question_id\":\"4\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-28 20:01:30\",\"comments\":null},{\"id\":\"396\",\"tracker_id\":\"75\",\"question_id\":\"5\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-28 20:01:30\",\"comments\":null},{\"id\":\"397\",\"tracker_id\":\"75\",\"question_id\":\"6\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-28 20:01:30\",\"comments\":null},{\"id\":\"398\",\"tracker_id\":\"76\",\"question_id\":\"209\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 10:29:36\",\"comments\":null},{\"id\":\"399\",\"tracker_id\":\"76\",\"question_id\":\"218\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-29 10:29:36\",\"comments\":null},{\"id\":\"400\",\"tracker_id\":\"76\",\"question_id\":\"210\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 10:29:36\",\"comments\":null},{\"id\":\"401\",\"tracker_id\":\"76\",\"question_id\":\"211\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 10:29:36\",\"comments\":null},{\"id\":\"402\",\"tracker_id\":\"76\",\"question_id\":\"212\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-29 10:29:36\",\"comments\":null},{\"id\":\"403\",\"tracker_id\":\"76\",\"question_id\":\"213\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 10:29:36\",\"comments\":null},{\"id\":\"404\",\"tracker_id\":\"76\",\"question_id\":\"214\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-29 10:29:36\",\"comments\":null},{\"id\":\"405\",\"tracker_id\":\"76\",\"question_id\":\"215\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-08-29 10:29:36\",\"comments\":null},{\"id\":\"406\",\"tracker_id\":\"76\",\"question_id\":\"216\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 10:29:36\",\"comments\":null},{\"id\":\"407\",\"tracker_id\":\"76\",\"question_id\":\"217\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 10:29:36\",\"comments\":null},{\"id\":\"408\",\"tracker_id\":\"76\",\"question_id\":\"219\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"3.00\",\"submitted_at\":\"2026-08-29 10:29:36\",\"comments\":null},{\"id\":\"409\",\"tracker_id\":\"77\",\"question_id\":\"153\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 11:13:11\",\"comments\":null},{\"id\":\"410\",\"tracker_id\":\"77\",\"question_id\":\"79\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-08-29 11:13:11\",\"comments\":null},{\"id\":\"481\",\"tracker_id\":\"88\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"237\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-13 18:52:36\",\"comments\":null},{\"id\":\"482\",\"tracker_id\":\"88\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"238\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-13 18:52:36\",\"comments\":null},{\"id\":\"483\",\"tracker_id\":\"89\",\"question_id\":\"206\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-13 18:54:47\",\"comments\":null},{\"id\":\"484\",\"tracker_id\":\"89\",\"question_id\":\"203\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-13 18:54:47\",\"comments\":null},{\"id\":\"485\",\"tracker_id\":\"89\",\"question_id\":\"204\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-13 18:54:47\",\"comments\":null},{\"id\":\"486\",\"tracker_id\":\"89\",\"question_id\":\"205\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-13 18:54:47\",\"comments\":null},{\"id\":\"487\",\"tracker_id\":\"89\",\"question_id\":\"207\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-13 18:54:47\",\"comments\":null},{\"id\":\"488\",\"tracker_id\":\"89\",\"question_id\":\"208\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-13 18:54:47\",\"comments\":null},{\"id\":\"519\",\"tracker_id\":\"99\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"243\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 08:43:00\",\"comments\":null},{\"id\":\"520\",\"tracker_id\":\"100\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"232\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 08:43:05\",\"comments\":null},{\"id\":\"521\",\"tracker_id\":\"101\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"232\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 08:55:14\",\"comments\":null},{\"id\":\"522\",\"tracker_id\":\"101\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"244\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-14 08:55:14\",\"comments\":null},{\"id\":\"523\",\"tracker_id\":\"101\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"245\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 08:55:14\",\"comments\":null},{\"id\":\"524\",\"tracker_id\":\"102\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"246\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 08:55:59\",\"comments\":null},{\"id\":\"525\",\"tracker_id\":\"102\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"247\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-14 08:55:59\",\"comments\":null},{\"id\":\"526\",\"tracker_id\":\"102\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"243\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 08:55:59\",\"comments\":null},{\"id\":\"527\",\"tracker_id\":\"103\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"232\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 09:34:50\",\"comments\":null},{\"id\":\"528\",\"tracker_id\":\"103\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"244\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 09:34:50\",\"comments\":null},{\"id\":\"529\",\"tracker_id\":\"103\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"245\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-14 09:34:50\",\"comments\":null},{\"id\":\"530\",\"tracker_id\":\"104\",\"question_id\":\"209\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 16:28:49\",\"comments\":null},{\"id\":\"531\",\"tracker_id\":\"104\",\"question_id\":\"218\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-14 16:28:49\",\"comments\":null},{\"id\":\"532\",\"tracker_id\":\"104\",\"question_id\":\"210\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 16:28:49\",\"comments\":null},{\"id\":\"533\",\"tracker_id\":\"104\",\"question_id\":\"211\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-14 16:28:49\",\"comments\":null},{\"id\":\"534\",\"tracker_id\":\"104\",\"question_id\":\"212\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 16:28:49\",\"comments\":null},{\"id\":\"535\",\"tracker_id\":\"104\",\"question_id\":\"213\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 16:28:49\",\"comments\":null},{\"id\":\"536\",\"tracker_id\":\"104\",\"question_id\":\"214\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-14 16:28:49\",\"comments\":null},{\"id\":\"537\",\"tracker_id\":\"104\",\"question_id\":\"215\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 16:28:49\",\"comments\":null},{\"id\":\"538\",\"tracker_id\":\"104\",\"question_id\":\"216\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 16:28:49\",\"comments\":null},{\"id\":\"539\",\"tracker_id\":\"104\",\"question_id\":\"217\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-14 16:28:49\",\"comments\":null},{\"id\":\"540\",\"tracker_id\":\"104\",\"question_id\":\"219\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 16:28:49\",\"comments\":null},{\"id\":\"541\",\"tracker_id\":\"105\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"199\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 16:29:01\",\"comments\":null},{\"id\":\"542\",\"tracker_id\":\"105\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"200\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-14 16:29:01\",\"comments\":null},{\"id\":\"543\",\"tracker_id\":\"105\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"201\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 16:29:01\",\"comments\":null},{\"id\":\"544\",\"tracker_id\":\"105\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"202\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 16:29:01\",\"comments\":null},{\"id\":\"545\",\"tracker_id\":\"105\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"203\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-14 16:29:01\",\"comments\":null},{\"id\":\"546\",\"tracker_id\":\"106\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"232\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 16:29:08\",\"comments\":null},{\"id\":\"547\",\"tracker_id\":\"106\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"244\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-14 16:29:08\",\"comments\":null},{\"id\":\"548\",\"tracker_id\":\"106\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"245\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 16:29:08\",\"comments\":null},{\"id\":\"549\",\"tracker_id\":\"107\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"246\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 16:29:19\",\"comments\":null},{\"id\":\"550\",\"tracker_id\":\"107\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"247\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-14 16:29:19\",\"comments\":null},{\"id\":\"551\",\"tracker_id\":\"107\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"243\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-14 16:29:19\",\"comments\":null},{\"id\":\"580\",\"tracker_id\":\"117\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"234\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-16 10:15:15\",\"comments\":null},{\"id\":\"581\",\"tracker_id\":\"117\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"235\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-16 10:15:15\",\"comments\":null},{\"id\":\"633\",\"tracker_id\":\"125\",\"question_id\":\"225\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 14:48:11\",\"comments\":null},{\"id\":\"634\",\"tracker_id\":\"125\",\"question_id\":\"227\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 14:48:11\",\"comments\":null},{\"id\":\"635\",\"tracker_id\":\"125\",\"question_id\":\"229\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 14:48:11\",\"comments\":null},{\"id\":\"636\",\"tracker_id\":\"126\",\"question_id\":\"315\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 15:15:38\",\"comments\":null},{\"id\":\"637\",\"tracker_id\":\"126\",\"question_id\":\"319\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 15:15:38\",\"comments\":null},{\"id\":\"638\",\"tracker_id\":\"126\",\"question_id\":\"157\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-18 15:15:38\",\"comments\":null},{\"id\":\"639\",\"tracker_id\":\"126\",\"question_id\":\"314\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 15:15:38\",\"comments\":null},{\"id\":\"640\",\"tracker_id\":\"126\",\"question_id\":\"154\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 15:15:38\",\"comments\":null},{\"id\":\"641\",\"tracker_id\":\"126\",\"question_id\":\"155\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-18 15:15:38\",\"comments\":null},{\"id\":\"642\",\"tracker_id\":\"126\",\"question_id\":\"158\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 15:15:38\",\"comments\":null},{\"id\":\"643\",\"tracker_id\":\"126\",\"question_id\":\"159\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 15:15:38\",\"comments\":null},{\"id\":\"644\",\"tracker_id\":\"126\",\"question_id\":\"156\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-18 15:15:38\",\"comments\":null}],\"evaluation_answers\":[],\"evaluation_submissions\":[],\"evaluation_results\":[],\"peer_evaluation_submissions\":[],\"peer_evaluation_results\":[],\"evaluation_reminders\":[],\"analytics_reports\":[],\"notifications\":[],\"activity_log_snapshot\":[]}');
+(6, 2, '2026-2027 — School Year', '2026-2027', 236, 'Lorraine R. Sabay', '2026-09-28 22:21:14', '2026-09-28 22:25:56', 236, 'restored', 146, '{\"evaluation_tracker\":10,\"questionnaire_answers\":136,\"evaluation_answers\":0,\"evaluation_submissions\":0,\"evaluation_results\":0,\"peer_evaluation_submissions\":0,\"peer_evaluation_results\":0,\"evaluation_reminders\":0,\"analytics_reports\":0,\"notifications\":0,\"activity_log_snapshot\":1}', '{\"evaluation_tracker\":[{\"id\":\"140\",\"legacy_submission_id\":null,\"evaluator_id\":\"158\",\"target_user_id\":\"217\",\"eval_bucket\":\"Faculty\",\"level\":\"\",\"form_type\":\"Principal Evaluation — Faculty\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":\"4.91\",\"remarks\":\"N/A\",\"eval_type\":\"school_head\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-22 10:58:50\",\"updated_at\":\"2026-09-22 10:58:50\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"141\",\"legacy_submission_id\":null,\"evaluator_id\":\"171\",\"target_user_id\":\"158\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-22 11:00:39\",\"updated_at\":\"2026-09-22 11:00:39\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"school_head\"},{\"id\":\"142\",\"legacy_submission_id\":null,\"evaluator_id\":\"171\",\"target_user_id\":\"218\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-22 11:01:58\",\"updated_at\":\"2026-09-22 11:01:58\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"staff\"},{\"id\":\"148\",\"legacy_submission_id\":null,\"evaluator_id\":\"219\",\"target_user_id\":\"220\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":null,\"remarks\":\"Palaging Late\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-22 11:45:15\",\"updated_at\":\"2026-09-22 11:45:15\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"149\",\"legacy_submission_id\":null,\"evaluator_id\":\"171\",\"target_user_id\":\"220\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":null,\"remarks\":\"Sleeping\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-22 11:52:17\",\"updated_at\":\"2026-09-22 11:52:17\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"150\",\"legacy_submission_id\":null,\"evaluator_id\":\"220\",\"target_user_id\":\"217\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":\"3\",\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":\"3.45\",\"remarks\":\"\",\"eval_type\":\"faculty_peer\",\"peer_group\":\"Faculty\",\"status\":\"submitted\",\"submitted_at\":\"2026-09-22 11:58:19\",\"updated_at\":\"2026-09-22 11:58:19\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"151\",\"legacy_submission_id\":null,\"evaluator_id\":\"217\",\"target_user_id\":\"158\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":\"3\",\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":\"4.75\",\"remarks\":\"N/A\",\"eval_type\":\"faculty_peer\",\"peer_group\":\"Principal\",\"status\":\"submitted\",\"submitted_at\":\"2026-09-23 10:29:32\",\"updated_at\":\"2026-09-23 10:29:32\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"155\",\"legacy_submission_id\":null,\"evaluator_id\":\"171\",\"target_user_id\":\"217\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-23 15:51:42\",\"updated_at\":\"2026-09-23 15:51:42\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"156\",\"legacy_submission_id\":null,\"evaluator_id\":\"219\",\"target_user_id\":\"217\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":null,\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":null,\"remarks\":\"N/A\",\"eval_type\":\"student\",\"peer_group\":null,\"status\":\"submitted\",\"submitted_at\":\"2026-09-24 09:35:00\",\"updated_at\":\"2026-09-24 09:35:00\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"},{\"id\":\"161\",\"legacy_submission_id\":null,\"evaluator_id\":\"233\",\"target_user_id\":\"236\",\"eval_bucket\":\"Faculty\",\"level\":null,\"form_type\":\"\",\"form_id\":\"7\",\"source_module\":null,\"period\":null,\"period_id\":\"2\",\"score\":\"4.40\",\"remarks\":\"N/A\",\"eval_type\":\"staff\",\"peer_group\":\"Staff Evaluation\",\"status\":\"submitted\",\"submitted_at\":\"2026-09-28 16:00:48\",\"updated_at\":\"2026-09-28 16:00:48\",\"evaluator_year_level\":null,\"evaluator_department\":null,\"evaluation_context\":\"teacher\"}],\"questionnaire_answers\":[{\"id\":\"852\",\"tracker_id\":\"140\",\"question_id\":\"266\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 10:58:50\",\"comments\":null},{\"id\":\"853\",\"tracker_id\":\"140\",\"question_id\":\"262\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-22 10:58:50\",\"comments\":null},{\"id\":\"854\",\"tracker_id\":\"140\",\"question_id\":\"251\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 10:58:50\",\"comments\":null},{\"id\":\"855\",\"tracker_id\":\"140\",\"question_id\":\"252\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 10:58:50\",\"comments\":null},{\"id\":\"856\",\"tracker_id\":\"140\",\"question_id\":\"253\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 10:58:50\",\"comments\":null},{\"id\":\"857\",\"tracker_id\":\"140\",\"question_id\":\"254\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 10:58:50\",\"comments\":null},{\"id\":\"858\",\"tracker_id\":\"140\",\"question_id\":\"255\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 10:58:50\",\"comments\":null},{\"id\":\"859\",\"tracker_id\":\"140\",\"question_id\":\"256\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 10:58:50\",\"comments\":null},{\"id\":\"860\",\"tracker_id\":\"140\",\"question_id\":\"257\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 10:58:50\",\"comments\":null},{\"id\":\"861\",\"tracker_id\":\"140\",\"question_id\":\"258\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 10:58:50\",\"comments\":null},{\"id\":\"862\",\"tracker_id\":\"140\",\"question_id\":\"260\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 10:58:50\",\"comments\":null},{\"id\":\"906\",\"tracker_id\":\"148\",\"question_id\":\"266\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"3.00\",\"submitted_at\":\"2026-09-22 11:45:15\",\"comments\":null},{\"id\":\"907\",\"tracker_id\":\"148\",\"question_id\":\"247\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 11:45:15\",\"comments\":null},{\"id\":\"908\",\"tracker_id\":\"148\",\"question_id\":\"265\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-22 11:45:15\",\"comments\":null},{\"id\":\"909\",\"tracker_id\":\"148\",\"question_id\":\"244\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"2.00\",\"submitted_at\":\"2026-09-22 11:45:15\",\"comments\":null},{\"id\":\"910\",\"tracker_id\":\"148\",\"question_id\":\"245\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 11:45:15\",\"comments\":null},{\"id\":\"911\",\"tracker_id\":\"148\",\"question_id\":\"246\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 11:45:15\",\"comments\":null},{\"id\":\"912\",\"tracker_id\":\"148\",\"question_id\":\"263\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"2.00\",\"submitted_at\":\"2026-09-22 11:45:15\",\"comments\":null},{\"id\":\"913\",\"tracker_id\":\"148\",\"question_id\":\"248\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-22 11:45:15\",\"comments\":null},{\"id\":\"914\",\"tracker_id\":\"148\",\"question_id\":\"249\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"3.00\",\"submitted_at\":\"2026-09-22 11:45:15\",\"comments\":null},{\"id\":\"915\",\"tracker_id\":\"148\",\"question_id\":\"250\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"3.00\",\"submitted_at\":\"2026-09-22 11:45:15\",\"comments\":null},{\"id\":\"916\",\"tracker_id\":\"148\",\"question_id\":\"259\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-22 11:45:15\",\"comments\":null},{\"id\":\"917\",\"tracker_id\":\"148\",\"question_id\":\"261\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"2.00\",\"submitted_at\":\"2026-09-22 11:45:15\",\"comments\":null},{\"id\":\"918\",\"tracker_id\":\"148\",\"question_id\":\"262\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"1.00\",\"submitted_at\":\"2026-09-22 11:45:15\",\"comments\":null},{\"id\":\"919\",\"tracker_id\":\"148\",\"question_id\":\"251\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 11:45:15\",\"comments\":null},{\"id\":\"920\",\"tracker_id\":\"148\",\"question_id\":\"252\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-22 11:45:15\",\"comments\":null},{\"id\":\"921\",\"tracker_id\":\"148\",\"question_id\":\"253\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-22 11:45:15\",\"comments\":null},{\"id\":\"922\",\"tracker_id\":\"148\",\"question_id\":\"254\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"3.00\",\"submitted_at\":\"2026-09-22 11:45:15\",\"comments\":null},{\"id\":\"923\",\"tracker_id\":\"148\",\"question_id\":\"255\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"3.00\",\"submitted_at\":\"2026-09-22 11:45:15\",\"comments\":null},{\"id\":\"924\",\"tracker_id\":\"148\",\"question_id\":\"256\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"2.00\",\"submitted_at\":\"2026-09-22 11:45:15\",\"comments\":null},{\"id\":\"925\",\"tracker_id\":\"148\",\"question_id\":\"257\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"1.00\",\"submitted_at\":\"2026-09-22 11:45:15\",\"comments\":null},{\"id\":\"926\",\"tracker_id\":\"148\",\"question_id\":\"258\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-22 11:45:15\",\"comments\":null},{\"id\":\"927\",\"tracker_id\":\"148\",\"question_id\":\"260\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 11:45:15\",\"comments\":null},{\"id\":\"928\",\"tracker_id\":\"148\",\"question_id\":\"264\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 11:45:15\",\"comments\":null},{\"id\":\"929\",\"tracker_id\":\"149\",\"question_id\":\"266\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 11:52:17\",\"comments\":null},{\"id\":\"930\",\"tracker_id\":\"149\",\"question_id\":\"247\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-22 11:52:17\",\"comments\":null},{\"id\":\"931\",\"tracker_id\":\"149\",\"question_id\":\"265\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 11:52:17\",\"comments\":null},{\"id\":\"932\",\"tracker_id\":\"149\",\"question_id\":\"244\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 11:52:17\",\"comments\":null},{\"id\":\"933\",\"tracker_id\":\"149\",\"question_id\":\"245\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-22 11:52:17\",\"comments\":null},{\"id\":\"934\",\"tracker_id\":\"149\",\"question_id\":\"246\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"3.00\",\"submitted_at\":\"2026-09-22 11:52:17\",\"comments\":null},{\"id\":\"935\",\"tracker_id\":\"149\",\"question_id\":\"263\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 11:52:17\",\"comments\":null},{\"id\":\"936\",\"tracker_id\":\"149\",\"question_id\":\"248\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"2.00\",\"submitted_at\":\"2026-09-22 11:52:17\",\"comments\":null},{\"id\":\"937\",\"tracker_id\":\"149\",\"question_id\":\"249\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-22 11:52:17\",\"comments\":null},{\"id\":\"938\",\"tracker_id\":\"149\",\"question_id\":\"250\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"3.00\",\"submitted_at\":\"2026-09-22 11:52:17\",\"comments\":null},{\"id\":\"939\",\"tracker_id\":\"149\",\"question_id\":\"259\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 11:52:17\",\"comments\":null},{\"id\":\"940\",\"tracker_id\":\"149\",\"question_id\":\"261\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"3.00\",\"submitted_at\":\"2026-09-22 11:52:17\",\"comments\":null},{\"id\":\"941\",\"tracker_id\":\"149\",\"question_id\":\"262\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-22 11:52:17\",\"comments\":null},{\"id\":\"942\",\"tracker_id\":\"149\",\"question_id\":\"251\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 11:52:17\",\"comments\":null},{\"id\":\"943\",\"tracker_id\":\"149\",\"question_id\":\"252\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"1.00\",\"submitted_at\":\"2026-09-22 11:52:17\",\"comments\":null},{\"id\":\"944\",\"tracker_id\":\"149\",\"question_id\":\"253\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-22 11:52:17\",\"comments\":null},{\"id\":\"945\",\"tracker_id\":\"149\",\"question_id\":\"254\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"3.00\",\"submitted_at\":\"2026-09-22 11:52:17\",\"comments\":null},{\"id\":\"946\",\"tracker_id\":\"149\",\"question_id\":\"255\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 11:52:17\",\"comments\":null},{\"id\":\"947\",\"tracker_id\":\"149\",\"question_id\":\"256\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 11:52:17\",\"comments\":null},{\"id\":\"948\",\"tracker_id\":\"149\",\"question_id\":\"257\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 11:52:17\",\"comments\":null},{\"id\":\"949\",\"tracker_id\":\"149\",\"question_id\":\"258\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-22 11:52:17\",\"comments\":null},{\"id\":\"950\",\"tracker_id\":\"149\",\"question_id\":\"260\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"3.00\",\"submitted_at\":\"2026-09-22 11:52:17\",\"comments\":null},{\"id\":\"951\",\"tracker_id\":\"149\",\"question_id\":\"264\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 11:52:17\",\"comments\":null},{\"id\":\"952\",\"tracker_id\":\"150\",\"question_id\":\"266\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 11:58:19\",\"comments\":null},{\"id\":\"953\",\"tracker_id\":\"150\",\"question_id\":\"262\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-22 11:58:19\",\"comments\":null},{\"id\":\"954\",\"tracker_id\":\"150\",\"question_id\":\"251\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"3.00\",\"submitted_at\":\"2026-09-22 11:58:19\",\"comments\":null},{\"id\":\"955\",\"tracker_id\":\"150\",\"question_id\":\"252\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"2.00\",\"submitted_at\":\"2026-09-22 11:58:19\",\"comments\":null},{\"id\":\"956\",\"tracker_id\":\"150\",\"question_id\":\"253\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"1.00\",\"submitted_at\":\"2026-09-22 11:58:19\",\"comments\":null},{\"id\":\"957\",\"tracker_id\":\"150\",\"question_id\":\"254\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"2.00\",\"submitted_at\":\"2026-09-22 11:58:19\",\"comments\":null},{\"id\":\"958\",\"tracker_id\":\"150\",\"question_id\":\"255\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"3.00\",\"submitted_at\":\"2026-09-22 11:58:19\",\"comments\":null},{\"id\":\"959\",\"tracker_id\":\"150\",\"question_id\":\"256\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-22 11:58:19\",\"comments\":null},{\"id\":\"960\",\"tracker_id\":\"150\",\"question_id\":\"257\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 11:58:19\",\"comments\":null},{\"id\":\"961\",\"tracker_id\":\"150\",\"question_id\":\"258\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-22 11:58:19\",\"comments\":null},{\"id\":\"962\",\"tracker_id\":\"150\",\"question_id\":\"260\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-22 11:58:19\",\"comments\":null},{\"id\":\"1019\",\"tracker_id\":\"155\",\"question_id\":\"244\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1020\",\"tracker_id\":\"155\",\"question_id\":\"245\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1021\",\"tracker_id\":\"155\",\"question_id\":\"246\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1022\",\"tracker_id\":\"155\",\"question_id\":\"247\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1023\",\"tracker_id\":\"155\",\"question_id\":\"248\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"3.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1024\",\"tracker_id\":\"155\",\"question_id\":\"249\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1025\",\"tracker_id\":\"155\",\"question_id\":\"250\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1026\",\"tracker_id\":\"155\",\"question_id\":\"259\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1027\",\"tracker_id\":\"155\",\"question_id\":\"261\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1028\",\"tracker_id\":\"155\",\"question_id\":\"262\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1029\",\"tracker_id\":\"155\",\"question_id\":\"263\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1030\",\"tracker_id\":\"155\",\"question_id\":\"265\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1031\",\"tracker_id\":\"155\",\"question_id\":\"266\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1032\",\"tracker_id\":\"155\",\"question_id\":\"268\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1033\",\"tracker_id\":\"155\",\"question_id\":\"269\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1034\",\"tracker_id\":\"155\",\"question_id\":\"270\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1035\",\"tracker_id\":\"155\",\"question_id\":\"271\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1036\",\"tracker_id\":\"155\",\"question_id\":\"272\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1037\",\"tracker_id\":\"155\",\"question_id\":\"251\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1038\",\"tracker_id\":\"155\",\"question_id\":\"252\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1039\",\"tracker_id\":\"155\",\"question_id\":\"253\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1040\",\"tracker_id\":\"155\",\"question_id\":\"254\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1041\",\"tracker_id\":\"155\",\"question_id\":\"255\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1042\",\"tracker_id\":\"155\",\"question_id\":\"256\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1043\",\"tracker_id\":\"155\",\"question_id\":\"257\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1044\",\"tracker_id\":\"155\",\"question_id\":\"258\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1045\",\"tracker_id\":\"155\",\"question_id\":\"260\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1046\",\"tracker_id\":\"155\",\"question_id\":\"264\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1047\",\"tracker_id\":\"155\",\"question_id\":\"267\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-23 15:51:42\",\"comments\":null},{\"id\":\"1048\",\"tracker_id\":\"156\",\"question_id\":\"244\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1049\",\"tracker_id\":\"156\",\"question_id\":\"245\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1050\",\"tracker_id\":\"156\",\"question_id\":\"246\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1051\",\"tracker_id\":\"156\",\"question_id\":\"247\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1052\",\"tracker_id\":\"156\",\"question_id\":\"248\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1053\",\"tracker_id\":\"156\",\"question_id\":\"249\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1054\",\"tracker_id\":\"156\",\"question_id\":\"250\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1055\",\"tracker_id\":\"156\",\"question_id\":\"259\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"3.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1056\",\"tracker_id\":\"156\",\"question_id\":\"261\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1057\",\"tracker_id\":\"156\",\"question_id\":\"262\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1058\",\"tracker_id\":\"156\",\"question_id\":\"263\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1059\",\"tracker_id\":\"156\",\"question_id\":\"265\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1060\",\"tracker_id\":\"156\",\"question_id\":\"266\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"3.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1061\",\"tracker_id\":\"156\",\"question_id\":\"268\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1062\",\"tracker_id\":\"156\",\"question_id\":\"269\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1063\",\"tracker_id\":\"156\",\"question_id\":\"270\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1064\",\"tracker_id\":\"156\",\"question_id\":\"271\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1065\",\"tracker_id\":\"156\",\"question_id\":\"272\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1066\",\"tracker_id\":\"156\",\"question_id\":\"251\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1067\",\"tracker_id\":\"156\",\"question_id\":\"252\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1068\",\"tracker_id\":\"156\",\"question_id\":\"253\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1069\",\"tracker_id\":\"156\",\"question_id\":\"254\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1070\",\"tracker_id\":\"156\",\"question_id\":\"255\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1071\",\"tracker_id\":\"156\",\"question_id\":\"256\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1072\",\"tracker_id\":\"156\",\"question_id\":\"257\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1073\",\"tracker_id\":\"156\",\"question_id\":\"258\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1074\",\"tracker_id\":\"156\",\"question_id\":\"260\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1075\",\"tracker_id\":\"156\",\"question_id\":\"264\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"3.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1076\",\"tracker_id\":\"156\",\"question_id\":\"267\",\"question_source\":\"evaluation\",\"user_question_id\":null,\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-24 09:35:00\",\"comments\":null},{\"id\":\"1174\",\"tracker_id\":\"161\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"549\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-28 16:00:48\",\"comments\":null},{\"id\":\"1175\",\"tracker_id\":\"161\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"550\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-28 16:00:48\",\"comments\":null},{\"id\":\"1176\",\"tracker_id\":\"161\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"551\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-28 16:00:48\",\"comments\":null},{\"id\":\"1177\",\"tracker_id\":\"161\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"552\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-28 16:00:48\",\"comments\":null},{\"id\":\"1178\",\"tracker_id\":\"161\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"553\",\"answer_text\":null,\"answer_score\":\"3.00\",\"submitted_at\":\"2026-09-28 16:00:48\",\"comments\":null},{\"id\":\"1179\",\"tracker_id\":\"161\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"554\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-28 16:00:48\",\"comments\":null},{\"id\":\"1180\",\"tracker_id\":\"161\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"555\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-28 16:00:48\",\"comments\":null},{\"id\":\"1181\",\"tracker_id\":\"161\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"556\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-28 16:00:48\",\"comments\":null},{\"id\":\"1182\",\"tracker_id\":\"161\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"557\",\"answer_text\":null,\"answer_score\":\"5.00\",\"submitted_at\":\"2026-09-28 16:00:48\",\"comments\":null},{\"id\":\"1183\",\"tracker_id\":\"161\",\"question_id\":null,\"question_source\":\"user\",\"user_question_id\":\"558\",\"answer_text\":null,\"answer_score\":\"4.00\",\"submitted_at\":\"2026-09-28 16:00:48\",\"comments\":null}],\"evaluation_answers\":[],\"evaluation_submissions\":[],\"evaluation_results\":[],\"peer_evaluation_submissions\":[],\"peer_evaluation_results\":[],\"evaluation_reminders\":[],\"analytics_reports\":[],\"notifications\":[],\"activity_log_snapshot\":[{\"id\":\"55\",\"actor_name\":\"Lorraine R. Sabay\",\"actor_type\":\"admin\",\"action_text\":\"Archived evaluation data for 2026-2027 (Archive #5)\",\"icon\":\"fa-box-archive\",\"color\":\"#2563EB\",\"created_at\":\"2026-09-28 22:21:11\"}]}');
 
 -- --------------------------------------------------------
 
@@ -1644,13 +1824,13 @@ CREATE TABLE `system_settings` (
 --
 
 INSERT INTO `system_settings` (`setting_key`, `setting_value`) VALUES
-('acad_structure', 'jhs'),
-('acad_term', 'School Year'),
+('acad_structure', 'college'),
+('acad_term', '1st Semester'),
 ('acad_year', '2026-2027'),
 ('auto_schedule', '1'),
-('control_mode', 'schedule'),
-('eval_end', '2026-09-19T16:07'),
-('eval_start', '2026-09-19T14:35'),
+('control_mode', 'open'),
+('eval_end', '2026-09-28T23:00'),
+('eval_start', '2026-09-28T22:15'),
 ('maintenance', '0'),
 ('notify_eval_closing', '1'),
 ('notify_eval_open', '1'),
@@ -1663,7 +1843,8 @@ INSERT INTO `system_settings` (`setting_key`, `setting_value`) VALUES
 ('rule_one_submission', '0'),
 ('rule_only_during_period', '0'),
 ('rule_prevent_late', '0'),
-('rule_require_all', '0');
+('rule_require_all', '0'),
+('year_level_edit_mode', 'open');
 
 -- --------------------------------------------------------
 
@@ -1680,13 +1861,6 @@ CREATE TABLE `teaching_assignments` (
   `assigned_by` int(10) UNSIGNED DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- Dumping data for table `teaching_assignments`
---
-
-INSERT INTO `teaching_assignments` (`id`, `user_id`, `education_level`, `year_level`, `section`, `assigned_by`, `created_at`) VALUES
-(2, 144, 'College', '4th Year College', NULL, 125, '2026-08-12 16:10:58');
 
 -- --------------------------------------------------------
 
@@ -1728,37 +1902,29 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`id`, `username`, `password_hash`, `full_name`, `email`, `photo`, `sector`, `designation`, `role`, `education_level`, `is_active`, `created_at`, `updated_at`, `department`, `year_level`, `registration_source`, `source`, `is_logged_in`, `assigned_period`, `account_status`, `employee_id`, `academic_level`, `grade_level`, `secondary_role`, `id_number`) VALUES
-(125, 'FLOWEN', '$2y$10$McAetVIQaYyYwehdL9BDuuCeYe9X5VUPM2FJP/7/Cj4nArP9J9hvK', 'Flowen Nina Anecito', 'flowen@gmail.com', 'adm_6a64c5e2705b58.11850790.jpg', 'Student', NULL, 'superadmin', NULL, 1, '2026-07-25 22:19:14', '2026-07-31 08:39:54', NULL, NULL, 'self', 'admin', 1, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
-(136, 'JONG', '$2y$10$yIgcKx4BXUAnDTdeVFNYc.VTSHH.6/RNTnzvmkLre1MqBxtmDoME2', 'John Kenneth M. Annecito', 'jong@gmail.com', 'usr_6a6bf4fe9dd670.57218068.jpg', 'Staff', 'Staff/Physical Plant Coordinator/ Computer Lab Custodian', 'staff', NULL, 1, '2026-07-31 09:06:06', '2026-09-13 09:10:34', NULL, NULL, 'self', 'self', 0, '1st Semester', 'approved', NULL, NULL, NULL, NULL, NULL),
-(139, 'JOSELLE', '$2y$10$xkqqXKvb/YeuzLlxn8QV3Oepaj3wc7K7yrzd0x3PcavVkPyIsvQxS', 'Joselle C. Sardina', 'joselle@gmail.com', 'sh_6a6bfe5c5c7ba8.23401888.jpg', 'Student', NULL, 'teacher', NULL, 1, '2026-07-31 09:46:04', '2026-08-29 10:04:27', NULL, NULL, 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
-(144, 'AMELIA', '$2y$10$91M06KZVDkHgDF.HDgxyh.Rq2.o3r4s1aYcu9W8Di80jMSDZiqXzi', 'Amelia C. Candolita', 'amelia@gmail.com', 'usr_6a6c0604ed7ea9.70902212.jpg', 'Staff', NULL, 'staff', NULL, 1, '2026-07-31 10:18:45', '2026-09-13 17:07:28', NULL, NULL, 'self', 'self', 0, '1st Semester', 'approved', NULL, NULL, NULL, NULL, NULL),
-(147, 'MAE', '$2y$10$0DCP31ME2z44AdkQMY6uUeXLT7gQC2UB0Ie19CEtolJxbncgl6HjS', 'Mae', 'mae@gmail.com', NULL, 'Student', NULL, 'student', 'junior_high', 0, '2026-08-01 20:33:23', '2026-08-09 08:13:37', 'JHS', NULL, 'self', 'self', 0, NULL, 'blocked', NULL, NULL, NULL, NULL, NULL),
-(148, 'SHANE', '$2y$10$Uxq42pUMebCF/.8qO1AfrOX07Fynr.GkswbE76YpgGFUzLOmHBLQ2', 'Shane Mae', 'shane@gmail.com', NULL, 'Student', NULL, 'student', 'junior_high', 0, '2026-08-01 20:34:18', '2026-08-09 08:13:37', 'JHS', NULL, 'self', 'self', 0, NULL, 'blocked', NULL, NULL, NULL, NULL, NULL),
-(149, 'MANUEL', '$2y$10$KkFZ.qbX44UhDrdvTK8JCOq4MOm/pTmqQr1/5M.dqcHWawaIlkvkG', 'Manuel', 'manuel@gmail.com', NULL, 'Student', NULL, 'student', 'junior_high', 1, '2026-08-01 20:37:55', '2026-08-10 18:14:31', 'JHS', 'Grade 8', 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
-(151, 'JOHN MANUEL', '$2y$10$AZ2iOeXQ/i3HP9gouaVqDe8LeARAgKMSHrqsn0NFiFtGEsSiJLEhm', 'John Manuel', 'john@gmail.com', NULL, 'Student', NULL, 'student', 'college', 1, '2026-08-01 20:48:10', '2026-08-10 18:14:07', 'College', '4th Year College', 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
-(152, 'Sheramay', '$2y$10$Tm3/LgiyY8jZN3w4a2SiAuoOorLDbai.lyUY7a5Fz7tlhM/v19I02', 'Sheramay Dawn S. Pamay', 'Sheramay@gmail.com', 'usr_6a6e05fe01c7c9.51646425.jpg', 'Staff', 'Staff/Cashier', 'staff', NULL, 1, '2026-08-01 22:43:10', '2026-08-17 18:00:10', NULL, NULL, 'self', 'self', 0, '1st Semester', 'approved', NULL, NULL, NULL, NULL, NULL),
-(157, 'RENALITA', '$2y$10$Hwg1Afa273XUtZk2LUtmmOgUen.3TL.hlM1k4rV9ObyFxBPWMlpoq', 'Renalita', 'renalita@gmail.com', NULL, 'Student', NULL, 'dean', 'college', 1, '2026-08-04 17:52:56', '2026-08-04 17:53:20', 'BSIT', NULL, 'self', 'self', 0, NULL, 'approved', '040506', NULL, NULL, NULL, NULL),
+(157, 'RINALITA', '$2y$10$Hwg1Afa273XUtZk2LUtmmOgUen.3TL.hlM1k4rV9ObyFxBPWMlpoq', 'Rinalita S. Tutor', 'rinalita@gmail.com', NULL, 'Student', 'DEAN', 'dean', 'college', 1, '2026-08-04 17:52:56', '2026-09-23 12:21:44', 'BSIT', NULL, 'self', 'self', 0, NULL, 'approved', '040506', NULL, NULL, NULL, NULL),
 (158, 'RAY', '$2y$10$w4.0sOL2y99sh.GLmm.3Que0wRUt.ECQuR/hifUHHEf0ce5os2O7q', 'Evelyn M. Verano', 'ray@gmail.com', NULL, 'Student', NULL, 'principal', 'both', 1, '2026-08-05 15:38:01', '2026-09-19 10:51:11', '', NULL, 'self', 'self', 1, NULL, 'approved', '060708', NULL, NULL, NULL, NULL),
-(161, 'NEIL', '$2y$10$ww/kd/xsVNEfgELFicHvpu/wxv9Vu09dnHvZgNJ1Ae6epGNU90rWO', 'Neil Alonsagay', 'neil@gmail.com', NULL, 'Student', NULL, 'student', 'college', 1, '2026-08-06 13:41:55', '2026-08-10 18:13:56', 'College', '4th Year College', 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
-(164, 'REYNALDO', '$2y$10$QstDY64FSyEg7QqgXmcEhuvEoDjmwpuUW7G4LHJLWF/p2jtlL4ZQC', 'Reynaldo C. Varon', 'reynaldo@gmail.com', 'usr_6a7449a9bc1589.35072434.jpg', 'Teacher', NULL, 'teacher', NULL, 1, '2026-08-06 16:45:29', '2026-09-14 08:29:05', NULL, NULL, 'self', 'self', 0, '2nd Semester', 'approved', NULL, NULL, NULL, NULL, NULL),
-(166, 'REY', '$2y$10$HXxlbXpqMq0oSyd.6tGGaO7LgBIDSQ9D4nv9HCZv0L4pqS03i2rH6', 'rey', 'rey@gmail.com', NULL, 'Student', 'Student', 'student', 'junior_high', 1, '2026-08-07 23:49:57', '2026-08-07 23:50:27', 'JHS', 'Grade 7', 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
-(167, 'MITCH', '$2y$10$eQrzPSnPHnEXbBZfkAJzg.CQUkFuoEsfgqn/zKUiZX8a5r1L92LYa', 'mitch', 'mitch@gmail.com', NULL, 'Student', 'Student', 'student', 'senior_high', 1, '2026-08-10 11:54:33', '2026-08-10 11:54:50', 'SHS', 'Grade 11', 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
-(169, 'mike', '$2y$10$g1dQUAfERbzpVtHFz.XbbeWd2UZT2aJOtPN9CDiCaEF6vrCux/P4a', 'mike', 'mike@gmail.com', NULL, 'Student', 'Student', 'student', 'college', 0, '2026-08-10 18:17:11', '2026-08-24 13:51:49', 'College', '4th Year College', 'self', 'self', 0, NULL, 'blocked', NULL, NULL, NULL, NULL, NULL),
-(170, 'JINGLE', '$2y$10$bt4LdJXqYIOEM4KDXQr0XuKQsXL1zE31DDGhQdYusxMQtu28/pD0e', 'Jingle R. Ausan', 'jingle@gmail.com', 'usr_6a7c94c5d7f8d3.77865885.jpg', 'Teacher', 'Teacher/ librarian', 'teacher', NULL, 1, '2026-08-12 23:44:05', '2026-08-29 12:46:12', NULL, NULL, 'self', 'self', 0, '1st Semester', 'approved', NULL, NULL, NULL, NULL, NULL),
-(171, 'jeo', '$2y$10$.qFtE1a2ywTVnQUKGiSWAO.tHmTrkmdYEB.xi2WsmGGUvwnLdsAvm', 'jeo', 'jeo@gmail.com', 'stu_6aac8ee4e9f6e8.04613904.jpg', 'Student', 'Student', 'student', 'senior_high', 1, '2026-08-12 23:45:19', '2026-09-18 09:07:48', 'SHS', 'Grade 11', 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
-(172, 'johnny_e._delos_santos_6518', 'NOT NULL', 'Johnny E. Delos Santos', NULL, 'p_6a818636de0682.39560707.jpg', 'Student', 'Personnel', 'staff', NULL, 1, '2026-08-16 17:43:18', '2026-08-18 13:08:38', NULL, NULL, 'self', 'admin_nologin', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
-(175, 'Dim', '$2y$10$NoPujTO4svEjolJP03d3C.c6jlJG8ShC2B3K/0f7EAwVC57CNiGai', 'Dim Mark Damaso', 'dim@gmail.com', NULL, 'Student', 'Student', 'student', 'college', 1, '2026-08-18 16:28:09', '2026-08-18 16:28:19', 'College', '4th Year College', 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
-(181, 'valerie_jane_s._bendijo_8a42', 'NOT NULL', 'Valerie Jane S. Bendijo', NULL, 'p_6a8a4a6ec7c716.61866805.jpg', 'Student', 'Personnel', 'staff', NULL, 1, '2026-08-23 09:18:38', '2026-08-23 09:18:38', 'HEALTH SERVICES OFFICER SCHOOL NURSE', NULL, 'self', 'admin_nologin', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
-(183, 'jessie_a._aquillo_a0ed', 'NOT NULL', 'Jessie A. Aquillo', NULL, '', 'Student', 'Teacher', 'teacher', NULL, 1, '2026-08-23 09:52:08', '2026-08-29 12:55:38', 'Campus Ministry Officer  Formation Services Coordinator', NULL, 'self', 'admin_nologin', 0, '1st Semester', 'approved', NULL, NULL, NULL, NULL, NULL),
-(186, 'hannah', '$2y$10$dNABV5O5TASosm.18I5Jr.ME4QZWo7pYZDwk2LZ4aTGPcXyQZwKve', 'hannah mae solangon', 'hannahmaesolangon377@gmail.com', NULL, 'Student', 'Student', 'student', 'college', 1, '2026-08-27 14:44:25', '2026-08-27 14:45:15', 'College', '4th Year College', 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
-(187, 'charlo', '$2y$10$qTK2Y8N9bUFF/uVu/u.ZTuZjvj7IVQlNBdCYD47gw8b6agroc7tMa', 'Charlo Ronquillio', 'charlo@gmail.com', NULL, 'Student', 'Student', 'student', 'college', 1, '2026-08-27 14:54:15', '2026-08-27 14:54:17', 'College', '4th Year College', 'self', 'self', 0, NULL, 'pending', NULL, NULL, NULL, NULL, NULL),
-(192, 'jen', '$2y$10$c8Szh4dkzPNXny4Wv/G./OkvwKdPtS283yi17yroW0k/vave98pgm', 'jen', '', NULL, 'Student', 'Student', 'student', 'junior_high', 1, '2026-08-29 13:01:57', '2026-08-29 13:02:32', 'JHS', 'Grade 7', 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
-(194, 'jenjen', '$2y$10$B5wJnJT1uysAVeOx0GP1Y.DFqPToTqfaYVTQQ3SPj7MNMVOLvMKeW', 'Jennifer Biadora', 'j@gmail.com', NULL, 'Teacher', 'Teacher', 'teacher', NULL, 1, '2026-08-29 13:16:24', '2026-09-14 08:29:08', NULL, NULL, 'self', 'self', 0, '1st Semester', 'approved', NULL, NULL, NULL, NULL, NULL),
-(198, 'merlyn', '$2y$10$uOST1T6NFBfcBrUvQ0khFe1v1sgwvhHwdFJDOAeE4gruWMNV3NAXi', 'MERLYN MANTAC', 'm@gmail.com', NULL, 'Staff', 'Personnel', 'staff', NULL, 1, '2026-08-29 13:24:07', '2026-08-29 13:26:47', NULL, NULL, 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
-(207, 'TERENCE', '$2y$10$2hKK5vAR2/nqs2uParR7TOWjHsdarLazxiiOMpreHtguAFM5AM8US', 'Terence Tendan', 'terence@gmail.com', 'usr_6aa8e5df34ba49.14763314.jpg', 'Staff', 'Personnel', 'staff', NULL, 1, '2026-09-15 14:29:51', '2026-09-15 14:30:00', NULL, NULL, 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
-(208, 'lorraine', '$2y$10$u/57xCh0Y79h8NQruzbhF.Y08Wwm7pdh3Wgup8CL4veEEbpL5E0aW', 'Lorraine R. Sabay', 'lorraine@gmail.com', 'adm_6aaaa3471a2248.08134121.jpg', 'Student', NULL, 'superadmin', NULL, 1, '2026-09-16 22:10:15', '2026-09-16 22:10:23', NULL, NULL, 'self', 'self', 1, NULL, 'pending', NULL, NULL, NULL, NULL, NULL),
-(209, 'JESSIE', '$2y$10$Mhlg9IrZizekQ8RHttBo1.guYFfwqgmV83Avf2BT2XTZCLO7hBU5e', 'Jessie A. Aquillo', 'jessie@gmail.com', 'usr_6aacec88926157.43007193.jpg', 'Staff', 'Formation Services Coordinator/ CMO', 'staff', NULL, 1, '2026-09-18 15:47:20', '2026-09-18 15:52:12', NULL, NULL, 'self', 'self', 0, '1st Semester', 'approved', NULL, NULL, NULL, NULL, NULL),
-(210, 'EVELYN', '$2y$10$AgC53awqMbcQ919ZKTXHaeLxXx2YA5VXn91WwUrofb0ijAZ4naYH6', 'Evelyn M. Verano', 'evelyn@gmail.com', NULL, 'Student', NULL, 'principal', 'both', 1, '2026-09-19 10:45:49', '2026-09-19 10:46:20', NULL, NULL, 'self', '', 1, NULL, 'approved', NULL, NULL, NULL, NULL, NULL);
+(171, 'jeo', '$2y$10$.qFtE1a2ywTVnQUKGiSWAO.tHmTrkmdYEB.xi2WsmGGUvwnLdsAvm', 'jeo', 'jeo@gmail.com', 'stu_6aac8ee4e9f6e8.04613904.jpg', 'Student', 'Student', 'student', 'senior_high', 1, '2026-08-12 23:45:19', '2026-09-22 09:33:49', 'SHS', 'Grade 11', 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
+(175, 'Dim', '$2y$10$NoPujTO4svEjolJP03d3C.c6jlJG8ShC2B3K/0f7EAwVC57CNiGai', 'Dim Mark Damaso', 'dim@gmail.com', NULL, 'Student', 'Student', 'student', 'college', 1, '2026-08-18 16:28:09', '2026-09-26 22:18:00', 'College', '4th Year College', 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
+(215, 'Valerie', '$2y$10$7aawtl2Ba53xdo5VBZNSt.Ee4WAs/IZqzB6vifBgP/2Y.GWnj00ge', 'Valerie Jane S. Bendijo', 'valerie@gmail.com', 'usr_6ab1df39eb6404.56845468.jpg', 'Staff', 'BS Nursing', 'staff', NULL, 1, '2026-09-22 09:51:54', '2026-09-22 10:09:01', NULL, NULL, 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
+(216, 'Stephanie', '$2y$10$8iab0i7yVIqTleak05eDI.NHV5dSFLikKxb4t2wUKjqjng/m3NIde', 'Stephanie M. Puntal', 'stephanie@gmail.com', 'usr_6ab1e532bcc723.93036759.jpg', 'Teacher', 'BS Information Technology  with Certificate in Teaching – Social Studies', 'teacher', NULL, 1, '2026-09-22 10:17:22', '2026-09-22 10:22:24', NULL, NULL, 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
+(217, 'Cedrick', '$2y$10$QZPaDcfro.BW8A3uSXFgu.o4MwRGMynAhzJFTQvYxTx70iueHoNMO', 'Cedrick Dante Espillo', 'cedrick@gmail.com', 'usr_6ab1e58b175c02.72807880.jpg', 'Teacher', 'Teacher/ Coordinator', 'teacher', NULL, 1, '2026-09-22 10:18:51', '2026-09-22 11:15:25', NULL, NULL, 'self', 'self', 0, '1st Semester', 'approved', NULL, NULL, NULL, NULL, NULL),
+(218, 'Maluo', '$2y$10$EGHjk/Jiqo.4hf9hb7xplemI2eCQM1.CbnTyV2AUpN7ibYtBAvvQG', 'Malou De la Torre', 'maluo@gmail.com', 'usr_6ab1e9f519e7f0.00650896.jpg', 'Staff', 'Librarian', 'staff', NULL, 1, '2026-09-22 10:37:41', '2026-09-22 11:08:19', NULL, NULL, 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
+(219, 'josesantos', '$2y$10$GC8Y.eElesI4rxXGH83TOeJ3laR9J/sxJhDov5/yEn2kIuidZsS0q', 'Jose K. Santos', 'jose@gmail.com', NULL, 'Student', 'Student', 'student', 'junior_high', 1, '2026-09-22 11:33:12', '2026-09-22 11:33:51', 'JHS', 'Grade 7', 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
+(220, 'Em26', '$2y$10$t4w5yiDb8iaUg0tksEMbnuNQ5mcQKQptJSVttiykaW7YAQ.903wre', 'Barcibal Emily R.', 'em@gmail.com', 'usr_6ab1f8a95ddf77.68369057.jpg', 'Teacher', 'Teacher/ Cashier', 'teacher', NULL, 1, '2026-09-22 11:40:25', '2026-09-22 11:54:31', NULL, NULL, 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
+(222, 'Jen jen', '$2y$10$uMKlZHbQzjYKQq/4d8OLhe4/1fkjKntXxqxGaKpINgZ63fOGD3/hC', 'Biadora Jennifer A.', 'jen@gmail.com', 'usr_6ab340d75b1240.55091137.jpg', 'Teacher', 'Teacher/ ESC/ SHSVP/ TSS Encoder YEARBOOK IN CHARGE', 'teacher', NULL, 1, '2026-09-23 11:00:39', '2026-09-24 16:33:48', NULL, NULL, 'self', 'self', 0, '1st Semester', 'approved', NULL, NULL, NULL, NULL, NULL),
+(225, 'Jhong', '$2y$10$BJN/.a6HFx5OQ6T5.xKLFe1WCG80yIBic5fJb5Hkop9cn82fBdsfi', 'Anecito John Kenneth M.', 'jhong@gmail.com', 'usr_6ab34615511401.85637987.jpg', 'Staff', 'Physical Plant Coordinator/ Computer Lab Custodian', 'staff', NULL, 1, '2026-09-23 11:23:01', '2026-09-24 10:48:20', NULL, NULL, 'self', 'self', 0, '1st Semester', 'approved', NULL, NULL, NULL, NULL, NULL),
+(226, 'Johnny', '$2y$10$e8RUwdkMbrUh.jVeqyyMe.s3JLncs7O051OeyGs7I3NbxY8G8cr1m', 'Delos Santos Johnny E.', 'johnny@gmail.com', 'usr_6ab346a3ba25d3.72583291.jpg', 'Staff', 'MAINTENANCE OFFICER', 'staff', NULL, 1, '2026-09-23 11:25:23', '2026-09-23 11:25:48', NULL, NULL, 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
+(227, 'Joselle', '$2y$10$Z5FBPjfYF///65dyfVXmVO/ox.qy5WEN1JpJYPnCOvHYVlCP5a/Ue', 'Sardina Joselle C.', 'joselle@gmail.com', 'usr_6ab3474341f3f6.96519829.jpg', 'Teacher', 'Ang Kingke Adviser/ Grade 7 - St. Albert Adviser/ HS TEACHER', 'teacher', NULL, 1, '2026-09-23 11:28:03', '2026-09-23 11:42:39', NULL, NULL, 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
+(230, 'Gerald', '$2y$10$GRKf/z5Vy5DEm339bHgoMeXDY7LcxWkzjaYExiw1GwZx558MmPWZS', 'Delos Santos Gerald V.', 'gerald@gmail.com', 'usr_6ab3482a0ff224.35204052.jpg', 'Staff', 'GUIDANCE STAFF/ SPORTS PROGRAM MANAGER/ SDRRM OFFICER', 'staff', NULL, 1, '2026-09-23 11:31:54', '2026-09-24 10:48:38', NULL, NULL, 'self', 'self', 0, '1st Semester', 'approved', NULL, NULL, NULL, NULL, NULL),
+(232, 'Raffy', '$2y$10$E3E8KCvHAQeBq3AZbG/Tfuz5ABvL7kBSMvOE1bTnnCpYMzUvDH6s6', 'Arevalo Raffy E.', 'raffy@gmail.com', 'usr_6ab34934f240f1.26407181.jpg', 'Staff', 'School Registrar/ ADMIN COORDINATOR', 'staff', NULL, 1, '2026-09-23 11:36:21', '2026-09-23 11:36:38', NULL, NULL, 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
+(233, 'Amelia', '$2y$10$B3ILoeABU7l6AIvjvHRfyOnaE.NJlnlmoJtINwJcNiGnPte8YM/7e', 'Candolita Amelia C.', 'amelia@gmail.com', 'usr_6ab34c5cea1ef0.90072910.jpg', 'Staff', 'Bookkeeper', 'staff', NULL, 1, '2026-09-23 11:49:49', '2026-09-23 11:50:55', NULL, NULL, 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
+(234, 'Jessie', '$2y$10$vCT8odfTibas8JCtgrzNM.FUfmSMBmFSExV79im.0meZQ8AWq5BWG', 'Aquillo Jessie A.', 'jessie@gmail.com', 'usr_6ab34ceaaa0f73.47035302.jpg', 'Staff', 'VE/CLE COORDINATOR/ HS TEACHER', 'staff', NULL, 1, '2026-09-23 11:52:10', '2026-09-23 11:52:55', NULL, NULL, 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
+(235, 'john', '$2y$10$IDejaBEkRwZY9uEti3fksOV3LWLtlgON7lXo2NLjVgyX/JOpKwM5C', 'Amelia C. Candolita', 'john@gmail.com', NULL, 'Student', 'Student', 'student', 'college', 0, '2026-09-23 16:05:55', '2026-09-24 11:20:11', 'College', '4th Year College', 'self', 'self', 0, NULL, 'blocked', NULL, NULL, NULL, NULL, NULL),
+(236, 'Lorraine', '$2y$10$Nk6Rv1yLiqnYF5S/T4fsbOyd6VLKR5Snog3HDp35fa7pkZSDebBsG', 'Lorraine R. Sabay', 'lorraine@gmail.com', 'adm_6ab46d4f554d89.08860627.jpg', 'Student', NULL, 'superadmin', NULL, 1, '2026-09-24 08:22:39', '2026-09-24 14:36:32', NULL, NULL, 'self', 'self', 1, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
+(237, 'Michel', '$2y$10$oyyMVA80ce7KnMFXg9uxi.xCTKIZMR8xWW2zH1sQvJsEoXnhtmp8W', 'John Michel Sardañas', 'michel@gmail.com', NULL, 'Student', 'Student', 'student', 'college', 1, '2026-09-24 11:22:29', '2026-09-24 11:22:36', 'College', '4th Year College', 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
+(238, 'Hannah', '$2y$10$7G8dzT9rUZHQl1xvJlXTHubTMqjt5wd6iAWQChY3LQvTEBSz/7nDK', 'Hannah Mae Solangon', 'hannah@gmail.com', NULL, 'Student', 'Student', 'student', 'college', 1, '2026-09-24 11:27:31', '2026-09-24 11:29:35', 'College', '4th Year College', 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL),
+(240, 'Dimmy', '$2y$10$RV3/dcsS7Z4SSIR65K7hrez1ybQrvrsn7E7nxErE39ckCp9U60l6y', 'Damaso Dim Mark', 'damasodimmark@gmail.com', NULL, 'Student', 'Student', 'student', 'college', 1, '2026-09-24 16:22:50', '2026-09-24 16:23:13', 'College', '4th Year College', 'self', 'self', 0, NULL, 'approved', NULL, NULL, NULL, NULL, NULL);
 
 -- --------------------------------------------------------
 
@@ -1789,6 +1955,13 @@ CREATE TABLE `user_preferences` (
   `show_result_details` tinyint(1) NOT NULL DEFAULT 1,
   `compact_dashboard` tinyint(1) NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `user_preferences`
+--
+
+INSERT INTO `user_preferences` (`user_id`, `email_on_designation_update`, `email_on_new_evaluation`, `updated_at`, `show_result_details`, `compact_dashboard`) VALUES
+(170, 1, 1, '2026-09-21 21:31:41', 1, 0);
 
 -- --------------------------------------------------------
 
@@ -1864,8 +2037,6 @@ INSERT INTO `user_questions` (`id`, `user_id`, `target_type`, `eval_type`, `cate
 (66, 96, 'Staff', 'student', 'fgdfg', 'fghfgh', 6, '2026-07-26 06:50:55', '2026-08-15 04:35:11'),
 (67, 127, 'Staff', 'student', 'Professionalism', 'informs the class in advance of any schedule of the day or directives from the office *', 1, '2026-07-29 08:33:21', '2026-08-15 04:35:11'),
 (68, 127, 'Staff', 'student', 'Professionalism', 'Arrives at class on time.', 2, '2026-07-29 08:34:05', '2026-08-15 04:35:11'),
-(73, 144, 'Staff', 'student', 'General', 'integrates the school’s Vision, Mission, Objectives and Core Values in the lesson for the day', 1, '2026-08-06 05:25:56', '2026-08-15 04:35:11'),
-(75, 144, 'Staff', 'student', 'Cooperaton', 'Demonstrates punctuality, excellent attendance *', 2, '2026-08-12 07:48:24', '2026-08-15 04:35:11'),
 (79, 158, 'Principal', 'school_head', 'General', 'integrates the school’s Vision, Mission, Objectives and Core Values in the lesson for the day *', 2, '2026-08-16 05:06:49', '2026-08-16 05:06:49'),
 (80, 157, 'Dean', 'school_head', 'Cooperaton', 'Demonstrates punctuality, excellent attendance *', 3, '2026-08-16 05:28:39', '2026-08-16 05:28:39'),
 (82, 157, 'Dean', 'school_head', 'Cooperaton', 'Demonstrates punctuality, excellent attendance *', 4, '2026-08-16 08:30:46', '2026-08-16 08:30:46'),
@@ -1920,16 +2091,6 @@ INSERT INTO `user_questions` (`id`, `user_id`, `target_type`, `eval_type`, `cate
 (140, 176, 'Multi-Role', 'student', 'Personnel / Registrar', 'Treats students and personnel respectfully.', 8, '2026-08-20 09:49:03', '2026-08-20 09:49:03'),
 (141, 176, 'Multi-Role', 'student', 'Personnel / Registrar', 'Follows appropriate procedures when handling official records.', 9, '2026-08-20 09:49:14', '2026-08-20 09:49:14'),
 (142, 176, 'Multi-Role', 'student', 'Personnel / Registrar', 'Performs registrar and personnel-related responsibilities professionally.', 10, '2026-08-20 09:49:23', '2026-08-20 09:49:23'),
-(143, 144, 'Multi-Role', 'student', 'Teaching & Student Support', 'Clearly explains lessons and course-related concepts.', 3, '2026-08-20 09:54:16', '2026-08-20 09:54:16'),
-(144, 144, 'Multi-Role', 'student', 'Teaching & Student Support', 'Provides appropriate guidance to 4th Year College students.', 4, '2026-08-20 09:54:29', '2026-08-20 09:54:29'),
-(145, 144, 'Multi-Role', 'student', 'Teaching & Student Support', 'Demonstrates adequate knowledge of the subject being taught.', 5, '2026-08-20 09:54:40', '2026-08-20 09:54:40'),
-(146, 144, 'Multi-Role', 'student', 'Teaching & Student Support', 'Encourages students to participate in learning activities.', 6, '2026-08-20 09:54:47', '2026-08-20 09:54:47'),
-(147, 144, 'Multi-Role', 'student', 'Teaching & Student Support', 'Provides helpful feedback regarding student work.', 7, '2026-08-20 09:55:04', '2026-08-20 09:55:04'),
-(148, 144, 'Multi-Role', 'student', 'Teaching & Student Support', 'Communicates instructions clearly.', 8, '2026-08-20 09:55:12', '2026-08-20 09:55:12'),
-(149, 144, 'Multi-Role', 'student', 'Teaching & Student Support', 'Responds appropriately to students\' academic concerns.', 9, '2026-08-20 09:55:22', '2026-08-20 09:55:22'),
-(150, 144, 'Multi-Role', 'student', 'Teaching & Student Support', 'Uses appropriate activities to support student learning.', 10, '2026-08-20 09:55:31', '2026-08-20 09:55:31'),
-(151, 144, 'Multi-Role', 'student', 'Teaching & Student Support', 'Treats students fairly and respectfully.', 11, '2026-08-20 09:55:49', '2026-08-20 09:55:49'),
-(152, 144, 'Multi-Role', 'student', 'Teaching & Student Support', 'Performs her teaching assignment responsibly.', 12, '2026-08-20 09:55:59', '2026-08-20 09:55:59'),
 (153, 158, 'Principal', 'school_head', 'Administrative Functions', 'integrates the school’s Vision, Mission, Objectives and Core Values in the lesson for the day *', 3, '2026-08-21 03:58:02', '2026-08-21 03:58:02'),
 (154, 158, 'Principal', 'ea', 'Leadership & Direction', 'Provides clear direction and leadership for the school.', 1, '2026-08-23 02:07:58', '2026-08-23 02:07:58'),
 (155, 158, 'Principal', 'ea', 'Leadership & Direction', 'Makes decisions that support the institution’s goals and policies.', 2, '2026-08-23 02:07:58', '2026-08-23 02:07:58'),
@@ -2046,8 +2207,6 @@ INSERT INTO `user_questions` (`id`, `user_id`, `target_type`, `eval_type`, `cate
 (270, 96, 'Staff', 'ea', 'fgdfg', 'fghfgh', 6, '2026-09-15 04:51:01', '2026-09-15 04:51:01'),
 (271, 127, 'Staff', 'ea', 'Professionalism', 'informs the class in advance of any schedule of the day or directives from the office *', 1, '2026-09-15 04:51:01', '2026-09-15 04:51:01'),
 (272, 127, 'Staff', 'ea', 'Professionalism', 'Arrives at class on time.', 2, '2026-09-15 04:51:01', '2026-09-15 04:51:01'),
-(273, 144, 'Staff', 'ea', 'General', 'integrates the school’s Vision, Mission, Objectives and Core Values in the lesson for the day', 1, '2026-09-15 04:51:01', '2026-09-15 04:51:01'),
-(274, 144, 'Staff', 'ea', 'Cooperaton', 'Demonstrates punctuality, excellent attendance *', 2, '2026-09-15 04:51:01', '2026-09-15 04:51:01'),
 (275, 172, 'Staff', 'ea', 'Staff Effectiveness', 'Performs assigned duties and responsibilities effectively.', 1, '2026-09-15 04:51:01', '2026-09-15 04:51:01'),
 (276, 172, 'Staff', 'ea', 'Staff Effectiveness', 'Completes assigned tasks accurately on time.', 2, '2026-09-15 04:51:01', '2026-09-15 04:51:01'),
 (277, 172, 'Staff', 'ea', 'Staff Effectiveness', 'Follows school policies, and procedures consistently.', 3, '2026-09-15 04:51:01', '2026-09-15 04:51:01'),
@@ -2081,7 +2240,184 @@ INSERT INTO `user_questions` (`id`, `user_id`, `target_type`, `eval_type`, `cate
 (315, 158, 'Principal', 'ea', 'Administrative Functions', 'integrates the school’s Vision, Mission, Objectives and Core Values in the lesson for the day *', 3, '2026-09-15 04:51:01', '2026-09-15 04:51:01'),
 (316, 207, 'Staff', 'ea', 'Professionalism', 'Clearly explains lessons and course-related concepts.', 1, '2026-09-15 08:23:16', '2026-09-15 08:23:16'),
 (318, 207, 'Staff', 'ea', 'General', 'Demonstrates punctuality, excellent attendance *', 1, '2026-09-17 01:05:14', '2026-09-17 01:05:14'),
-(319, 158, 'Principal', 'ea', 'Administrative Functions', 'integrates the school’s Vision, Mission, Objectives and Core Values in the lesson for the day *', 7, '2026-09-18 07:14:46', '2026-09-18 07:14:46');
+(319, 158, 'Principal', 'ea', 'Administrative Functions', 'integrates the school’s Vision, Mission, Objectives and Core Values in the lesson for the day *', 7, '2026-09-18 07:14:46', '2026-09-18 07:14:46'),
+(326, 84, 'Staff', 'general', 'Professionalism', 'Attends school on time', 1, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(327, 84, 'Staff', 'general', 'Administrative Functions', 'Implements diocesan and DepEd policies and directives.', 2, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(328, 84, 'Staff', 'general', 'Administrative Functions', 'Cooperates and works with the Director/Superintendent and ADCE.', 3, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(329, 84, 'Staff', 'general', 'Administrative Functions', 'Reviews school objectives yearly in consultation with faculty, parents, and students.', 4, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(330, 84, 'Staff', 'general', 'Administrative Functions', 'Prepares and submits a written annual report to the Board of Trustees.', 5, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(331, 84, 'Staff', 'general', 'Administrative Functions', 'Carries out school objectives and policies within existing laws and regulations.', 6, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(332, 84, 'Staff', 'general', 'Professionalism', 'Integrates faith with the learning process in line with the school mission.', 7, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(333, 84, 'Staff', 'general', 'Professionalism', 'Ensures all religious, academic, and student programs reflect the Catholic mission and school identity.', 8, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(334, 84, 'Staff', 'general', 'Professionalism', 'Implements religious instruction programs prescribed by the diocese.', 9, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(335, 84, 'Staff', 'general', 'Professionalism', 'Implements spiritual life programs for faculty and staff.', 10, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(336, 84, 'Staff', 'general', 'Professionalism', 'Implements spiritual programs for students including liturgy, prayer, recollections, retreats, service-learning, and parish relations.', 11, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(337, 80, 'Staff', 'general', 'dsgfg', 'dfhgfdh', 1, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(338, 80, 'Staff', 'general', 'dsgfg', 'dsgfdg', 2, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(339, 80, 'Staff', 'general', 'dsgfg', 'fdgfdg', 3, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(340, 96, 'Staff', 'general', 'Professionalism', 'Arrives at school on time', 1, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(341, 101, 'Staff', 'general', 'Professionalism', 'Arrives at school on time', 1, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(342, 101, 'Staff', 'general', 'Professionalism', 'integrates the school’s Vision, Mission, Objectives and Core Values in the lesson for the day', 2, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(343, 101, 'Staff', 'general', 'Professionalism', 'Demonstrates punctuality, excellent attendance', 3, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(344, 96, 'Staff', 'general', 'Professionalism', 'integrates the school’s Vision, Mission, Objectives and Core Values in the lesson for the day', 2, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(345, 96, 'Staff', 'general', 'Professionalism', 'Demonstrates punctuality, excellent attendance', 3, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(346, 96, 'Staff', 'general', 'fgdfg', 'fghfgh', 4, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(347, 127, 'Staff', 'general', 'Professionalism', 'informs the class in advance of any schedule of the day or directives from the office *', 1, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(348, 127, 'Staff', 'general', 'Professionalism', 'Arrives at class on time.', 2, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(356, 146, 'Staff', 'general', 'Staff Effectiveness', 'Performs assigned duties and responsibilities effectively.', 12, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(357, 146, 'Staff', 'general', 'Staff Effectiveness', 'Completes assigned tasks accurately on time.', 13, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(358, 146, 'Staff', 'general', 'Staff Effectiveness', 'Follows school policies, and procedures consistently.', 14, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(359, 146, 'Staff', 'general', 'Staff Effectiveness', 'Demonstrates professionalism while performing assigned duties.', 15, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(360, 146, 'Staff', 'general', 'Staff Effectiveness', 'Communicates clearly and effectively.', 16, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(361, 136, 'Staff', 'general', 'Staff Effectiveness', 'Performs assigned duties and responsibilities effectively.', 15, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(362, 136, 'Staff', 'general', 'Staff Effectiveness', 'Completes assigned tasks accurately on time.', 16, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(363, 136, 'Staff', 'general', 'Staff Effectiveness', 'Follows school policies, and procedures consistently.', 17, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(364, 136, 'Staff', 'general', 'Staff Effectiveness', 'Demonstrates professionalism while performing assigned duties.', 18, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(365, 136, 'Staff', 'general', 'Staff Effectiveness', 'Communicates clearly and effectively.', 19, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(366, 152, 'Staff', 'general', 'Staff Effectiveness', 'Performs assigned duties and responsibilities effectively.', 14, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(367, 152, 'Staff', 'general', 'Staff Effectiveness', 'Completes assigned tasks accurately on time.', 15, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(368, 152, 'Staff', 'general', 'Staff Effectiveness', 'Follows school policies, and procedures consistently.', 16, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(369, 152, 'Staff', 'general', 'Staff Effectiveness', 'Demonstrates professionalism while performing assigned duties.', 17, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(370, 152, 'Staff', 'general', 'Staff Effectiveness', 'Communicates clearly and effectively.', 18, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(371, 181, 'Staff', 'general', 'Staff Effectiveness', 'Performs assigned duties and responsibilities effectively.', 1, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(372, 181, 'Staff', 'general', 'Staff Effectiveness', 'Completes assigned tasks accurately on time.', 2, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(373, 181, 'Staff', 'general', 'Staff Effectiveness', 'Follows school policies, and procedures consistently.', 3, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(374, 181, 'Staff', 'general', 'Staff Effectiveness', 'Demonstrates professionalism while performing assigned duties.', 4, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(375, 181, 'Staff', 'general', 'Staff Effectiveness', 'Communicates clearly and effectively.', 5, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(376, 198, 'Staff', 'general', 'Professionalism', 'Demonstrates effective teaching strategies and methods.', 1, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(377, 207, 'Staff', 'general', 'Professionalism', 'Clearly explains lessons and course-related concepts.', 1, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(378, 207, 'Staff', 'general', 'General', 'Demonstrates punctuality, excellent attendance *', 1, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(379, 80, 'Staff', 'general', 'General', 'receives all collections of the school and acknowledges the same by issuing official receipts for such.  *', 1, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(380, 80, 'Staff', 'general', 'General', 'is cordial and accommodating to parents and students * 5', 2, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(381, 80, 'Staff', 'general', 'General', 'Is honest and truthful in every transactions *', 3, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(382, 80, 'Staff', 'general', 'General', 'attends to office duty regularly and avoids being absent *', 4, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(383, 75, 'Staff', 'general', 'General', 'receives, processes, releases on time  school records of students.  *', 1, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(384, 75, 'Staff', 'general', 'General', 'prepares and keeps all students’ records up-to-date such as Permanent Record (School Form 10), Transfer Credentials, Certifications, Diploma, Report on Promotion (School Form 5) and Enrolment Reports.      *', 2, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(385, 75, 'Staff', 'general', 'General', 'prepares and submits academic records of graduating students to the DepEd to secure Special Order for graduation.  *', 3, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(386, 81, 'Staff', 'general', 'General', 'performs records management *', 1, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(387, 81, 'Staff', 'general', 'General', 'conducts library orientation for students    *', 2, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(388, 81, 'Staff', 'general', 'General', 'assists students/staff in the proper use of the library particularly on research works *', 3, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(389, 84, 'Staff', 'general', 'Professionalism', 'integrates the school’s Vision, Mission, Objectives and Core Values in the lesson for the day *', 1, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(390, 136, 'Staff', 'general', 'Work Performance', 'Completes tasks accurately and on time.', 2, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(391, 136, 'Staff', 'general', 'Work Performance', 'Demonstrates knowledge of assigned responsibilities.', 3, '2026-09-19 09:02:41', '2026-09-19 09:02:41');
+INSERT INTO `user_questions` (`id`, `user_id`, `target_type`, `eval_type`, `category`, `question_text`, `sort_order`, `created_at`, `date_added`) VALUES
+(392, 136, 'Staff', 'general', 'Work Performance', 'Maintains quality and consistency in work.', 4, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(393, 136, 'Staff', 'general', 'Work Performance', 'Handles work-related responsibilities efficiently.', 5, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(394, 136, 'Staff', 'general', 'Work Performance', 'Takes initiative in completing assigned tasks.', 6, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(395, 136, 'Staff', 'general', 'Work Performance', 'Follows established procedures and guidelines.', 7, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(422, 210, 'Principal', 'general', 'Leadership & Governance', 'integrates the school’s Vision, Mission, Objectives and Core Values in the lesson for the day *', 0, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(424, 210, 'Principal', 'general', 'Communication', 'Clearly explains lessons and course-related concepts.', 0, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(426, 210, 'Principal', 'general', 'Professionalism', 'Demonstrates punctuality, excellent attendance.', 0, '2026-09-19 09:02:41', '2026-09-19 09:02:41'),
+(439, 225, 'Staff', 'general', 'Job Performance & Service', 'Maintains the cleanliness and proper condition of assigned facilities.', 0, '2026-09-23 03:59:39', '2026-09-23 03:59:39'),
+(440, 225, 'Staff', 'general', 'Job Performance & Service', 'Ensures that computer laboratory equipment is available and functional.', 0, '2026-09-23 03:59:50', '2026-09-23 03:59:50'),
+(441, 225, 'Staff', 'general', 'Job Performance & Service', 'Responds promptly to maintenance or equipment concerns.', 0, '2026-09-23 03:59:57', '2026-09-23 03:59:57'),
+(442, 225, 'Staff', 'general', 'Job Performance & Service', 'Monitors the proper use of laboratory facilities and equipment.', 0, '2026-09-23 04:00:02', '2026-09-23 04:00:02'),
+(443, 225, 'Staff', 'general', 'Job Performance & Service', 'Performs assigned facility and laboratory tasks efficiently.', 0, '2026-09-23 04:00:10', '2026-09-23 04:00:10'),
+(444, 225, 'Staff', 'general', 'Professionalism & Responsibility', 'Follows proper procedures when handling equipment and facilities.', 0, '2026-09-23 04:00:18', '2026-09-23 04:00:18'),
+(445, 225, 'Staff', 'general', 'Professionalism & Responsibility', 'Keeps accurate records of equipment and maintenance activities.', 0, '2026-09-23 04:00:27', '2026-09-23 04:00:27'),
+(446, 225, 'Staff', 'general', 'Professionalism & Responsibility', 'Coordinates effectively with school personnel regarding facility concerns.', 0, '2026-09-23 04:00:36', '2026-09-23 04:00:36'),
+(447, 225, 'Staff', 'general', 'Professionalism & Responsibility', 'Demonstrates responsibility in maintaining a safe environment.', 0, '2026-09-23 04:00:46', '2026-09-23 04:00:46'),
+(448, 225, 'Staff', 'general', 'Professionalism & Responsibility', 'Performs duties in a professional and dependable manner.', 0, '2026-09-23 04:00:52', '2026-09-23 04:00:52'),
+(455, 234, 'Staff', 'general', 'Teaching Performance & Service', 'Explains lessons and instructions clearly.', 0, '2026-09-23 04:04:17', '2026-09-23 04:04:17'),
+(456, 234, 'Staff', 'general', 'Teaching Performance & Service', 'Demonstrates adequate knowledge of the subject matter.', 0, '2026-09-23 04:04:24', '2026-09-23 04:04:24'),
+(457, 234, 'Staff', 'general', 'Teaching Performance & Service', 'Uses appropriate teaching strategies and learning activities.', 0, '2026-09-23 04:04:30', '2026-09-23 04:04:30'),
+(458, 234, 'Staff', 'general', 'Teaching Performance & Service', 'Provides useful feedback on student performance.', 0, '2026-09-23 04:04:37', '2026-09-23 04:04:37'),
+(459, 234, 'Staff', 'general', 'Teaching Performance & Service', 'Encourages students to actively participate in learning.', 0, '2026-09-23 04:04:43', '2026-09-23 04:04:43'),
+(460, 234, 'Staff', 'general', 'Professionalism & Responsibility', 'Treats students fairly and respectfully.', 0, '2026-09-23 04:04:50', '2026-09-23 04:04:50'),
+(461, 234, 'Staff', 'general', 'Professionalism & Responsibility', 'Manages classroom activities effectively.', 0, '2026-09-23 04:04:56', '2026-09-23 04:04:56'),
+(462, 234, 'Staff', 'general', 'Professionalism & Responsibility', 'Maintains professional relationships with students and colleagues.', 0, '2026-09-23 04:05:08', '2026-09-23 04:05:08'),
+(463, 234, 'Staff', 'general', 'Professionalism & Responsibility', 'Performs teaching and coordination responsibilities responsibly.', 0, '2026-09-23 04:05:13', '2026-09-23 04:05:13'),
+(464, 234, 'Staff', 'general', 'Professionalism & Responsibility', 'Demonstrates commitment to students\' learning and development.', 0, '2026-09-23 04:05:18', '2026-09-23 04:05:18'),
+(465, 232, 'Staff', 'general', 'Service & Administrative Performance', 'Processes student records and documents accurately.', 0, '2026-09-23 04:05:42', '2026-09-23 04:05:42'),
+(466, 232, 'Staff', 'general', 'Service & Administrative Performance', 'Provides timely assistance to students and personnel.', 0, '2026-09-23 04:05:47', '2026-09-23 04:05:47'),
+(467, 232, 'Staff', 'general', 'Service & Administrative Performance', 'Communicates registration procedures and requirements clearly.', 0, '2026-09-23 04:05:53', '2026-09-23 04:05:53'),
+(468, 232, 'Staff', 'general', 'Service & Administrative Performance', 'Maintains organized and updated records.', 0, '2026-09-23 04:05:58', '2026-09-23 04:05:58'),
+(469, 232, 'Staff', 'general', 'Service & Administrative Performance', 'Responds effectively to registration-related concerns.', 0, '2026-09-23 04:06:04', '2026-09-23 04:06:04'),
+(470, 232, 'Staff', 'general', 'Professionalism & Responsibility', 'Maintains confidentiality of student information.', 0, '2026-09-23 04:06:10', '2026-09-23 04:06:10'),
+(471, 232, 'Staff', 'general', 'Professionalism & Responsibility', 'Handles documents carefully and responsibly.', 0, '2026-09-23 04:06:19', '2026-09-23 04:06:19'),
+(472, 232, 'Staff', 'general', 'Professionalism & Responsibility', 'Follows established administrative procedures.', 0, '2026-09-23 04:06:25', '2026-09-23 04:06:25'),
+(473, 232, 'Staff', 'general', 'Professionalism & Responsibility', 'Coordinates effectively with other school offices.', 0, '2026-09-23 04:06:29', '2026-09-23 04:06:29'),
+(474, 232, 'Staff', 'general', 'Professionalism & Responsibility', 'Performs assigned responsibilities accurately and professionally.', 0, '2026-09-23 04:06:35', '2026-09-23 04:06:35'),
+(475, 233, 'Staff', 'general', 'Financial Performance & Service', 'Records financial transactions accurately.', 0, '2026-09-23 04:07:00', '2026-09-23 04:07:00'),
+(476, 233, 'Staff', 'general', 'Financial Performance & Service', 'Maintains organized financial records.', 0, '2026-09-23 04:07:05', '2026-09-23 04:07:05'),
+(477, 233, 'Staff', 'general', 'Financial Performance & Service', 'Processes financial documents in a timely manner.', 0, '2026-09-23 04:07:12', '2026-09-23 04:07:12'),
+(478, 233, 'Staff', 'general', 'Financial Performance & Service', 'Provides accurate financial information when needed.', 0, '2026-09-23 04:07:17', '2026-09-23 04:07:17'),
+(479, 233, 'Staff', 'general', 'Financial Performance & Service', 'Properly manages receipts, vouchers, and supporting documents.', 0, '2026-09-23 04:07:24', '2026-09-23 04:07:24'),
+(483, 233, 'Staff', 'general', 'Professionalism & Responsibility', 'Maintains confidentiality of financial information.', 0, '2026-09-23 04:08:22', '2026-09-23 04:08:22'),
+(484, 233, 'Staff', 'general', 'Professionalism & Responsibility', 'Follows established accounting and financial procedures.', 0, '2026-09-23 04:08:29', '2026-09-23 04:08:29'),
+(485, 233, 'Staff', 'general', 'Professionalism & Responsibility', 'Demonstrates attention to detail in financial tasks.', 0, '2026-09-23 04:08:58', '2026-09-23 04:08:58'),
+(486, 233, 'Staff', 'general', 'Professionalism & Responsibility', 'Coordinates effectively with administrators and other personnel.', 0, '2026-09-23 04:09:04', '2026-09-23 04:09:04'),
+(487, 233, 'Staff', 'general', 'Professionalism & Responsibility', 'Handles financial responsibilities honestly and professionally.', 0, '2026-09-23 04:09:09', '2026-09-23 04:09:09'),
+(488, 230, 'Staff', 'general', 'Professionalism & Responsibility', 'Maintains confidentiality when handling sensitive concerns.', 0, '2026-09-23 04:09:37', '2026-09-23 04:09:37'),
+(490, 230, 'Staff', 'general', 'Professionalism & Responsibility', 'Coordinates effectively with school personnel during programs and emergencies.', 0, '2026-09-23 04:09:50', '2026-09-23 04:09:50'),
+(491, 230, 'Staff', 'general', 'Professionalism & Responsibility', 'Promotes safety and responsible participation in activities.', 0, '2026-09-23 04:10:21', '2026-09-23 04:10:21'),
+(492, 230, 'Staff', 'general', 'Professionalism & Responsibility', 'Follows established school safety and program procedures.', 0, '2026-09-23 04:10:26', '2026-09-23 04:10:26'),
+(493, 230, 'Staff', 'general', 'Professionalism & Responsibility', 'Performs assigned responsibilities reliably and professionally.', 0, '2026-09-23 04:10:31', '2026-09-23 04:10:31'),
+(494, 230, 'Staff', 'general', 'Program Performance & Service', 'Provides appropriate assistance to students and school personnel.', 0, '2026-09-23 04:10:37', '2026-09-23 04:10:37'),
+(495, 230, 'Staff', 'general', 'Program Performance & Service', 'Organizes assigned programs and activities effectively.', 0, '2026-09-23 04:10:44', '2026-09-23 04:10:44'),
+(496, 230, 'Staff', 'general', 'Program Performance & Service', 'Responds appropriately to student or program-related concerns.', 0, '2026-09-23 04:10:48', '2026-09-23 04:10:48'),
+(497, 230, 'Staff', 'general', 'Program Performance & Service', 'Coordinates activities, schedules, and resources efficiently.', 0, '2026-09-23 04:10:53', '2026-09-23 04:10:53'),
+(498, 230, 'Staff', 'general', 'Program Performance & Service', 'Supports the successful implementation of school programs.', 0, '2026-09-23 04:10:59', '2026-09-23 04:10:59'),
+(499, 226, 'Staff', 'general', 'Maintenance Performance & Service', 'Maintains school facilities in clean and functional condition.', 0, '2026-09-23 04:11:24', '2026-09-23 04:11:24'),
+(500, 226, 'Staff', 'general', 'Maintenance Performance & Service', 'Responds promptly to maintenance requests.', 0, '2026-09-23 04:11:29', '2026-09-23 04:11:29'),
+(501, 226, 'Staff', 'general', 'Maintenance Performance & Service', 'Performs repairs and maintenance tasks properly.', 0, '2026-09-23 04:11:36', '2026-09-23 04:11:36'),
+(502, 226, 'Staff', 'general', 'Maintenance Performance & Service', 'Regularly checks facilities for possible problems or hazards.', 0, '2026-09-23 04:11:45', '2026-09-23 04:11:45'),
+(503, 226, 'Staff', 'general', 'Maintenance Performance & Service', 'Completes assigned maintenance tasks efficiently.', 0, '2026-09-23 04:11:49', '2026-09-23 04:11:49'),
+(504, 226, 'Staff', 'general', 'Professionalism & Responsibility', 'Uses tools and equipment properly and safely.', 0, '2026-09-23 04:12:01', '2026-09-23 04:12:01'),
+(505, 226, 'Staff', 'general', 'Professionalism & Responsibility', 'Reports facility problems that require further assistance.', 0, '2026-09-23 04:12:04', '2026-09-23 04:12:04'),
+(506, 226, 'Staff', 'general', 'Professionalism & Responsibility', 'Coordinates effectively with school personnel.', 0, '2026-09-23 04:12:10', '2026-09-23 04:12:10'),
+(507, 226, 'Staff', 'general', 'Professionalism & Responsibility', 'Helps maintain a safe environment for students and staff.', 0, '2026-09-23 04:12:16', '2026-09-23 04:12:16'),
+(508, 226, 'Staff', 'general', 'General', 'Performs maintenance duties responsibly and professionally.', 0, '2026-09-23 04:12:24', '2026-09-23 04:12:24'),
+(509, 218, 'Staff', 'general', 'Library Service & Performance', 'Maintains an organized and orderly library.', 0, '2026-09-23 04:13:45', '2026-09-23 04:13:45'),
+(510, 218, 'Staff', 'general', 'Library Service & Performance', 'Assists users in locating appropriate library resources.', 0, '2026-09-23 04:13:52', '2026-09-23 04:13:52'),
+(511, 218, 'Staff', 'general', 'Library Service & Performance', 'Maintains accurate borrowing and return records.', 0, '2026-09-23 04:13:57', '2026-09-23 04:13:57'),
+(512, 218, 'Staff', 'general', 'Library Service & Performance', 'Keeps library materials properly organized and maintained.', 0, '2026-09-23 04:14:02', '2026-09-23 04:14:02'),
+(513, 218, 'Staff', 'general', 'Library Service & Performance', 'Provides helpful and timely assistance to library users.', 0, '2026-09-23 04:14:09', '2026-09-23 04:14:09'),
+(514, 218, 'Staff', 'general', 'Professionalism & Responsibility', 'Enforces library rules fairly and consistently.', 0, '2026-09-23 04:14:14', '2026-09-23 04:14:14'),
+(515, 218, 'Staff', 'general', 'Professionalism & Responsibility', 'Promotes proper care and use of library resources.', 0, '2026-09-23 04:14:20', '2026-09-23 04:14:20'),
+(516, 218, 'Staff', 'general', 'Professionalism & Responsibility', 'Maintains a quiet, safe, and conducive library environment.', 0, '2026-09-23 04:14:26', '2026-09-23 04:14:26'),
+(517, 218, 'Staff', 'general', 'Professionalism & Responsibility', 'Communicates respectfully with students and personnel.', 0, '2026-09-23 04:14:36', '2026-09-23 04:14:36'),
+(518, 218, 'Staff', 'general', 'General', 'Performs library responsibilities efficiently and professionally.', 0, '2026-09-23 04:14:40', '2026-09-23 04:14:40'),
+(519, 215, 'Staff', 'general', 'Academic Performance & Participation', 'Completes academic requirements responsibly.', 0, '2026-09-23 04:15:21', '2026-09-23 04:15:21'),
+(520, 215, 'Staff', 'general', 'Academic Performance & Participation', 'Participates actively in classroom and learning activities.', 0, '2026-09-23 04:15:30', '2026-09-23 04:15:30'),
+(521, 215, 'Staff', 'general', 'Academic Performance & Participation', 'Demonstrates willingness to learn new knowledge and skills.', 0, '2026-09-23 04:15:38', '2026-09-23 04:15:38'),
+(522, 215, 'Staff', 'general', 'Academic Performance & Participation', 'Manages academic responsibilities effectively.', 0, '2026-09-23 04:15:43', '2026-09-23 04:15:43'),
+(523, 215, 'Staff', 'general', 'Academic Performance & Participation', 'Applies learned knowledge appropriately during academic activities.', 0, '2026-09-23 04:15:47', '2026-09-23 04:15:47'),
+(524, 215, 'Staff', 'general', 'Conduct & Professionalism', 'Demonstrates respect toward teachers, staff, and fellow students.', 0, '2026-09-23 04:15:53', '2026-09-23 04:15:53'),
+(525, 215, 'Staff', 'general', 'Conduct & Professionalism', 'Follows school rules and established procedures.', 0, '2026-09-23 04:16:03', '2026-09-23 04:16:03'),
+(526, 215, 'Staff', 'general', 'Conduct & Professionalism', 'Communicates appropriately with others.', 0, '2026-09-23 04:16:08', '2026-09-23 04:16:08'),
+(527, 215, 'Staff', 'general', 'Conduct & Professionalism', 'Cooperates effectively during group activities.', 0, '2026-09-23 04:16:14', '2026-09-23 04:16:14'),
+(528, 215, 'Staff', 'general', 'Conduct & Professionalism', 'Demonstrates responsible and professional behavior.', 0, '2026-09-23 04:16:20', '2026-09-23 04:16:20'),
+(529, 158, 'Principal', 'general', 'Leadership & Supervision', 'Provides clear direction for the high school division.', 0, '2026-09-23 04:24:14', '2026-09-23 04:24:14'),
+(530, 158, 'Principal', 'general', 'Leadership & Supervision', 'Monitors the implementation of high school academic programs.', 0, '2026-09-23 04:24:19', '2026-09-23 04:24:19'),
+(531, 158, 'Principal', 'general', 'Leadership & Supervision', 'Ensures that high school policies and procedures are properly followed.', 0, '2026-09-23 04:24:23', '2026-09-23 04:24:23'),
+(532, 158, 'Principal', 'general', 'Leadership & Supervision', 'Addresses concerns involving high school students, faculty, and staff appropriately.', 0, '2026-09-23 04:24:28', '2026-09-23 04:24:28'),
+(533, 158, 'Principal', 'general', 'Leadership & Supervision', 'Oversees the effective implementation of high school activities and programs.', 0, '2026-09-23 04:24:33', '2026-09-23 04:24:33'),
+(534, 158, 'Principal', 'general', 'School Management & Student Development', 'Promotes a positive and supportive environment for high school students.', 0, '2026-09-23 04:24:39', '2026-09-23 04:24:39'),
+(535, 158, 'Principal', 'general', 'School Management & Student Development', 'Communicates high school policies and expectations clearly.', 0, '2026-09-23 04:24:44', '2026-09-23 04:24:44'),
+(536, 158, 'Principal', 'general', 'School Management & Student Development', 'Coordinates effectively with high school faculty and staff.', 0, '2026-09-23 04:24:48', '2026-09-23 04:24:48'),
+(537, 158, 'Principal', 'general', 'School Management & Student Development', 'Supports programs that promote student development and achievement.', 0, '2026-09-23 04:24:54', '2026-09-23 04:24:54'),
+(538, 158, 'Principal', 'general', 'School Management & Student Development', 'Demonstrates accountability in managing high school operations.', 0, '2026-09-23 04:24:59', '2026-09-23 04:24:59'),
+(539, 157, 'Dean', 'general', 'Academic Leadership', 'Provides clear direction for the college academic programs.', 0, '2026-09-23 04:25:57', '2026-09-23 04:25:57'),
+(540, 157, 'Dean', 'general', 'Academic Leadership', 'Monitors the implementation of college-level curricula and academic requirements.', 0, '2026-09-23 04:26:02', '2026-09-23 04:26:02'),
+(541, 157, 'Dean', 'general', 'Academic Leadership', 'Coordinates effectively with college faculty regarding academic matters.', 0, '2026-09-23 04:26:05', '2026-09-23 04:26:05'),
+(542, 157, 'Dean', 'general', 'Academic Leadership', 'Addresses academic concerns of college students appropriately.', 0, '2026-09-23 04:26:09', '2026-09-23 04:26:09'),
+(543, 157, 'Dean', 'general', 'Academic Leadership', 'Supports the continuous improvement of college teaching and learning.', 0, '2026-09-23 04:26:13', '2026-09-23 04:26:13'),
+(544, 157, 'Dean', 'general', 'Faculty & College Management', 'Monitors faculty compliance with college academic responsibilities.', 0, '2026-09-23 04:26:56', '2026-09-23 04:26:56'),
+(545, 157, 'Dean', 'general', 'Faculty & College Management', 'Communicates college policies and academic requirements clearly.', 0, '2026-09-23 04:27:01', '2026-09-23 04:27:01'),
+(546, 157, 'Dean', 'general', 'Faculty & College Management', 'Coordinates college schedules, activities, and academic programs effectively.', 0, '2026-09-23 04:27:09', '2026-09-23 04:27:09'),
+(547, 157, 'Dean', 'general', 'Faculty & College Management', 'Promotes a professional and supportive environment for college students and faculty.', 0, '2026-09-23 04:27:14', '2026-09-23 04:27:14'),
+(548, 157, 'Dean', 'general', 'Faculty & College Management', 'Demonstrates accountability in managing college academic operations.', 0, '2026-09-23 04:27:19', '2026-09-23 04:27:19'),
+(549, 236, 'EA', 'general', 'Administrative Support & Coordination', 'Provides timely and organized administrative support to school management.', 0, '2026-09-23 04:27:57', '2026-09-23 04:27:57'),
+(550, 236, 'EA', 'general', 'Administrative Support & Coordination', 'Coordinates meetings, schedules, and official activities effectively.', 0, '2026-09-23 04:28:01', '2026-09-23 04:28:01'),
+(551, 236, 'EA', 'general', 'Administrative Support & Coordination', 'Prepares and organizes documents and administrative records accurately.', 0, '2026-09-23 04:28:04', '2026-09-23 04:28:04'),
+(552, 236, 'EA', 'general', 'Administrative Support & Coordination', 'Communicates information and instructions clearly to faculty, staff, and other stakeholders.', 0, '2026-09-23 04:28:09', '2026-09-23 04:28:09'),
+(553, 236, 'EA', 'general', 'Administrative Support & Coordination', 'Responds promptly to administrative requests and concerns.', 0, '2026-09-23 04:28:13', '2026-09-23 04:28:13'),
+(554, 236, 'EA', 'general', 'Professionalism & Office Management', 'Maintains confidentiality of official and sensitive information.', 0, '2026-09-23 04:28:21', '2026-09-23 04:28:21'),
+(555, 236, 'EA', 'general', 'Professionalism & Office Management', 'Demonstrates accuracy and attention to detail in administrative tasks.', 0, '2026-09-23 04:28:26', '2026-09-23 04:28:26'),
+(556, 236, 'EA', 'general', 'Professionalism & Office Management', 'Coordinates effectively with different school offices and personnel.', 0, '2026-09-23 04:28:32', '2026-09-23 04:28:32'),
+(557, 236, 'EA', 'general', 'Professionalism & Office Management', 'Manages assigned responsibilities in an organized and dependable manner.', 0, '2026-09-23 04:28:39', '2026-09-23 04:28:39'),
+(558, 236, 'EA', 'general', 'Professionalism & Office Management', 'Demonstrates professionalism and courtesy when dealing with students, faculty, staff, and administrators.', 0, '2026-09-23 04:28:48', '2026-09-23 04:28:48');
 
 -- --------------------------------------------------------
 
@@ -2114,7 +2450,6 @@ INSERT INTO `user_question_categories` (`id`, `user_id`, `target_type`, `eval_ty
 (10, 127, 'Staff', 'student', 'Professionalism', 1),
 (12, 136, 'Staff', 'student', 'Professionalism', 1),
 (13, 152, 'Staff', 'student', 'Professionalism', 1),
-(14, 144, 'Staff', 'student', 'Cooperaton', 1),
 (20, 157, 'Dean', 'school_head', 'Cooperaton', 2),
 (27, 157, 'Dean', 'school_head', 'Administrative Functions', 3),
 (28, 158, 'Principal', 'school_head', 'Administrative Functions', 2),
@@ -2128,7 +2463,6 @@ INSERT INTO `user_question_categories` (`id`, `user_id`, `target_type`, `eval_ty
 (40, 160, 'Multi-Role', 'student', 'Teaching & Technical Support', 2),
 (41, 136, 'Multi-Role', 'student', 'Facilities & Laboratory Management', 2),
 (42, 176, 'Multi-Role', 'student', 'Personnel / Registrar', 1),
-(43, 144, 'Multi-Role', 'student', 'Teaching & Student Support', 2),
 (44, 146, 'Staff', 'student', 'Professionalism', 3),
 (45, 146, 'Staff', 'student', 'Cooperaton', 4),
 (46, 172, 'Staff', 'student', 'Staff Effectiveness', 2),
@@ -2156,7 +2490,6 @@ INSERT INTO `user_question_categories` (`id`, `user_id`, `target_type`, `eval_ty
 (69, 127, 'Staff', 'ea', 'Professionalism', 1),
 (70, 136, 'Staff', 'ea', 'Professionalism', 1),
 (71, 152, 'Staff', 'ea', 'Professionalism', 1),
-(72, 144, 'Staff', 'ea', 'Cooperaton', 1),
 (73, 172, 'Staff', 'ea', 'Professionalism', 1),
 (74, 146, 'Staff', 'ea', 'Professionalism', 3),
 (75, 146, 'Staff', 'ea', 'Cooperaton', 4),
@@ -2170,7 +2503,63 @@ INSERT INTO `user_question_categories` (`id`, `user_id`, `target_type`, `eval_ty
 (94, 157, 'Dean', 'ea', 'Administrative Functions', 3),
 (95, 157, 'Dean', 'ea', 'Professionalism', 4),
 (96, 158, 'Principal', 'ea', 'Administrative Functions', 2),
-(97, 207, 'Staff', 'ea', 'Professionalism', 1);
+(97, 207, 'Staff', 'ea', 'Professionalism', 1),
+(98, 172, 'Staff', 'general', 'Work Performance', 1),
+(99, 172, 'Staff', 'general', 'Service Quality', 3),
+(100, 172, 'Staff', 'general', 'Professionalism', 4),
+(101, 172, 'Staff', 'general', 'Communication', 5),
+(102, 172, 'Staff', 'general', 'Teamwork', 6),
+(103, 84, 'Staff', 'general', 'Professionalism', 1),
+(104, 84, 'Staff', 'general', 'Administrative Functions', 2),
+(105, 80, 'Staff', 'general', 'dsgfg', 1),
+(106, 96, 'Staff', 'general', 'Professionalism', 1),
+(107, 101, 'Staff', 'general', 'Professionalism', 1),
+(108, 96, 'Staff', 'general', 'fgdfg', 4),
+(109, 127, 'Staff', 'general', 'Professionalism', 1),
+(112, 172, 'Staff', 'general', 'Staff Effectiveness', 1),
+(113, 146, 'Staff', 'general', 'Staff Effectiveness', 12),
+(114, 136, 'Staff', 'general', 'Staff Effectiveness', 15),
+(115, 152, 'Staff', 'general', 'Staff Effectiveness', 14),
+(116, 181, 'Staff', 'general', 'Staff Effectiveness', 1),
+(117, 198, 'Staff', 'general', 'Professionalism', 1),
+(118, 207, 'Staff', 'general', 'Professionalism', 1),
+(119, 207, 'Staff', 'general', 'General', 1),
+(120, 80, 'Staff', 'general', 'General', 1),
+(121, 75, 'Staff', 'general', 'General', 1),
+(122, 81, 'Staff', 'general', 'General', 1),
+(123, 136, 'Staff', 'general', 'Work Performance', 2),
+(135, 158, 'Principal', 'general', 'General', 2),
+(136, 210, 'Principal', 'general', 'Leadership & Governance', 0),
+(137, 210, 'Principal', 'general', 'Communication', 0),
+(138, 210, 'Principal', 'general', 'Professionalism', 0),
+(147, 225, 'Staff', 'general', 'Job Performance & Service', 0),
+(148, 225, 'Staff', 'general', 'Professionalism & Responsibility', 0),
+(149, 234, 'Staff', 'general', 'Teaching Performance & Service', 0),
+(150, 234, 'Staff', 'general', 'Professionalism & Responsibility', 0),
+(151, 232, 'Staff', 'general', 'Service & Administrative Performance', 0),
+(152, 232, 'Staff', 'general', 'Professionalism & Responsibility', 0),
+(153, 233, 'Staff', 'general', 'Financial Performance & Service', 0),
+(154, 233, 'Staff', 'general', 'Professionalism & Responsibility', 0),
+(155, 230, 'Staff', 'general', 'Program Performance & Service', 0),
+(157, 230, 'Staff', 'general', 'Professionalism & Responsibility', 0),
+(159, 230, 'Staff', 'general', 'General', 0),
+(160, 226, 'Staff', 'general', 'Maintenance Performance & Service', 0),
+(161, 226, 'Staff', 'general', 'Professionalism & Responsibility', 0),
+(162, 226, 'Staff', 'general', 'General', 0),
+(165, 218, 'Staff', 'general', 'Library Service & Performance', 0),
+(166, 218, 'Staff', 'general', 'Professionalism & Responsibility', 0),
+(167, 218, 'Staff', 'general', 'General', 0),
+(168, 215, 'Staff', 'general', 'Academic Performance & Participation', 0),
+(169, 215, 'Staff', 'general', 'Conduct & Professionalism', 0),
+(170, 215, 'Staff', 'general', 'General', 0),
+(171, 158, 'Principal', 'general', 'Leadership & Supervision', 0),
+(172, 158, 'Principal', 'general', 'School Management & Student Development', 0),
+(176, 157, 'Dean', 'general', 'General', 0),
+(177, 157, 'Dean', 'general', 'Academic Leadership', 0),
+(178, 157, 'Dean', 'general', 'Faculty & College Management', 0),
+(179, 236, 'EA', 'general', 'General', 0),
+(180, 236, 'EA', 'general', 'Administrative Support & Coordination', 0),
+(181, 236, 'EA', 'general', 'Professionalism & Office Management', 0);
 
 -- --------------------------------------------------------
 
@@ -2189,20 +2578,17 @@ CREATE TABLE `user_year_levels` (
 --
 
 INSERT INTO `user_year_levels` (`id`, `user_id`, `year_level`) VALUES
-(164, 136, '4th Year College'),
-(146, 139, 'Grade 11'),
-(145, 139, 'Grade 8'),
-(172, 144, '4th Year College'),
-(159, 164, '1st Year College'),
-(160, 164, '3rd Year College'),
-(161, 164, '4th Year College'),
-(158, 164, 'Grade 12'),
-(168, 170, 'Grade 11'),
-(140, 183, '4th Year College'),
-(139, 194, '4th Year College'),
-(175, 207, '4th Year College'),
-(174, 207, 'Grade 9'),
-(176, 209, '4th Year College');
+(211, 216, '4th Year College'),
+(210, 216, 'Grade 11'),
+(221, 217, '4th Year College'),
+(220, 217, 'Grade 11'),
+(219, 217, 'Grade 7'),
+(216, 220, 'Grade 11'),
+(215, 220, 'Grade 7'),
+(225, 222, '4th Year College'),
+(229, 225, '4th Year College'),
+(228, 225, 'Grade 12'),
+(224, 230, '4th Year College');
 
 --
 -- Indexes for dumped tables
@@ -2256,6 +2642,14 @@ ALTER TABLE `appointments`
   ADD KEY `idx_appointments_service_date` (`service_id`,`appointment_date`),
   ADD KEY `idx_appointments_status` (`status`),
   ADD KEY `fk_appointments_customer` (`customer_id`);
+
+--
+-- Indexes for table `auth_attempts`
+--
+ALTER TABLE `auth_attempts`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_ident` (`kind`,`identifier`,`attempted_at`),
+  ADD KEY `idx_ip` (`kind`,`ip`,`attempted_at`);
 
 --
 -- Indexes for table `business_hours`
@@ -2425,6 +2819,12 @@ ALTER TABLE `questionnaire_forms`
   ADD KEY `fk_qf_creator` (`created_by`);
 
 --
+-- Indexes for table `questionnaire_migrations`
+--
+ALTER TABLE `questionnaire_migrations`
+  ADD PRIMARY KEY (`migration_key`);
+
+--
 -- Indexes for table `questionnaire_questions`
 --
 ALTER TABLE `questionnaire_questions`
@@ -2494,6 +2894,14 @@ ALTER TABLE `staff_availability`
 ALTER TABLE `staff_services`
   ADD PRIMARY KEY (`staff_id`,`service_id`),
   ADD KEY `idx_staff_services_service_staff` (`service_id`,`staff_id`);
+
+--
+-- Indexes for table `student_security_answers`
+--
+ALTER TABLE `student_security_answers`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_user_slot` (`user_id`,`slot`),
+  ADD KEY `idx_user` (`user_id`);
 
 --
 -- Indexes for table `system_archives`
@@ -2583,7 +2991,7 @@ ALTER TABLE `user_year_levels`
 -- AUTO_INCREMENT for table `activity_log`
 --
 ALTER TABLE `activity_log`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=33;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=61;
 
 --
 -- AUTO_INCREMENT for table `admin_permissions`
@@ -2601,7 +3009,7 @@ ALTER TABLE `admin_users`
 -- AUTO_INCREMENT for table `analytics_archive`
 --
 ALTER TABLE `analytics_archive`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=19;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=21;
 
 --
 -- AUTO_INCREMENT for table `analytics_reports`
@@ -2614,6 +3022,12 @@ ALTER TABLE `analytics_reports`
 --
 ALTER TABLE `appointments`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `auth_attempts`
+--
+ALTER TABLE `auth_attempts`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=73;
 
 --
 -- AUTO_INCREMENT for table `business_hours`
@@ -2643,13 +3057,13 @@ ALTER TABLE `evaluation_answers`
 -- AUTO_INCREMENT for table `evaluation_periods`
 --
 ALTER TABLE `evaluation_periods`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
 
 --
 -- AUTO_INCREMENT for table `evaluation_questions`
 --
 ALTER TABLE `evaluation_questions`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=244;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=273;
 
 --
 -- AUTO_INCREMENT for table `evaluation_reminders`
@@ -2673,7 +3087,7 @@ ALTER TABLE `evaluation_submissions`
 -- AUTO_INCREMENT for table `evaluation_tracker`
 --
 ALTER TABLE `evaluation_tracker`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=128;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=163;
 
 --
 -- AUTO_INCREMENT for table `faculty_levels`
@@ -2691,7 +3105,7 @@ ALTER TABLE `login_confirmations`
 -- AUTO_INCREMENT for table `notifications`
 --
 ALTER TABLE `notifications`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=53;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=83;
 
 --
 -- AUTO_INCREMENT for table `password_resets`
@@ -2715,7 +3129,7 @@ ALTER TABLE `peer_evaluation_submissions`
 -- AUTO_INCREMENT for table `questionnaire_answers`
 --
 ALTER TABLE `questionnaire_answers`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=648;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1201;
 
 --
 -- AUTO_INCREMENT for table `questionnaire_forms`
@@ -2733,7 +3147,7 @@ ALTER TABLE `questionnaire_questions`
 -- AUTO_INCREMENT for table `question_categories`
 --
 ALTER TABLE `question_categories`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4384;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4391;
 
 --
 -- AUTO_INCREMENT for table `rating_certifications`
@@ -2745,7 +3159,7 @@ ALTER TABLE `rating_certifications`
 -- AUTO_INCREMENT for table `role_change_log`
 --
 ALTER TABLE `role_change_log`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=19;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=39;
 
 --
 -- AUTO_INCREMENT for table `school_head_evaluation_assignments`
@@ -2772,10 +3186,16 @@ ALTER TABLE `staff_availability`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT for table `student_security_answers`
+--
+ALTER TABLE `student_security_answers`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=37;
+
+--
 -- AUTO_INCREMENT for table `system_archives`
 --
 ALTER TABLE `system_archives`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- AUTO_INCREMENT for table `system_documents`
@@ -2793,7 +3213,7 @@ ALTER TABLE `teaching_assignments`
 -- AUTO_INCREMENT for table `users`
 --
 ALTER TABLE `users`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=211;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=241;
 
 --
 -- AUTO_INCREMENT for table `user_management_log`
@@ -2805,19 +3225,19 @@ ALTER TABLE `user_management_log`
 -- AUTO_INCREMENT for table `user_questions`
 --
 ALTER TABLE `user_questions`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=320;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=559;
 
 --
 -- AUTO_INCREMENT for table `user_question_categories`
 --
 ALTER TABLE `user_question_categories`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=98;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=182;
 
 --
 -- AUTO_INCREMENT for table `user_year_levels`
 --
 ALTER TABLE `user_year_levels`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=177;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=230;
 
 --
 -- Constraints for dumped tables

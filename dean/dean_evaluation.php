@@ -515,6 +515,7 @@ include __DIR__ . '/includes/dean_sidebar.php';
 
     <?php endif; ?>
 </main>
+<script src="../admin/eval_status_poll.js" defer></script>
 </body>
 <link rel="stylesheet" href="includes/dean_light_theme.css" id="dean-light-theme-final"/>
 </html>

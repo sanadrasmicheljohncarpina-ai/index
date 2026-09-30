@@ -389,7 +389,7 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible{
                        placeholder="Enter your password" required autocomplete="current-password"/>
                 <i class="fa-solid fa-lock f-icon"></i>
                 <button type="button" class="toggle-pw" onclick="togglePw()" aria-label="Show password">
-                    <i class="fa-solid fa-eye" id="eyeIcon"></i>
+                    <i class="fa-solid fa-eye-slash" id="eyeIcon"></i>
                 </button>
             </div>
         </div>
@@ -419,7 +419,7 @@ function togglePw() {
     const visible = pw.type === 'password';
 
     pw.type = visible ? 'text' : 'password';
-    ic.className = visible ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye';
+    ic.className = visible ? 'fa-solid fa-eye' : 'fa-solid fa-eye-slash';
     if (toggle) toggle.setAttribute('aria-label', visible ? 'Hide password' : 'Show password');
 }
 

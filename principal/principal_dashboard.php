@@ -1222,6 +1222,7 @@ main, main.main, .main, .main-content, .content, .page-content {
   }
 }
 </style>
+<script src="../admin/eval_status_poll.js" defer></script>
 </body>
 </html>
 

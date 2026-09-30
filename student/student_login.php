@@ -162,8 +162,8 @@ body{min-height:100vh;background:#0A192F;font-family:'DM Sans',sans-serif;color:
                        placeholder="Enter your password" required
                        autocomplete="current-password"/>
                 <i class="fa-solid fa-lock f-icon"></i>
-                <button type="button" class="toggle-pw" onclick="togglePw()">
-                    <i class="fa-solid fa-eye" id="eyeIcon"></i>
+                <button type="button" class="toggle-pw" onclick="togglePw()" aria-label="Show password" title="Show password">
+                    <i class="fa-solid fa-eye-slash" id="eyeIcon"></i>
                 </button>
             </div>
         </div>
@@ -190,9 +190,18 @@ body{min-height:100vh;background:#0A192F;font-family:'DM Sans',sans-serif;color:
 
 <script>
 function togglePw() {
-    const pw = document.getElementById('password'), ic = document.getElementById('eyeIcon');
-    pw.type = pw.type === 'password' ? 'text' : 'password';
-    ic.className = pw.type === 'password' ? 'fa-solid fa-eye' : 'fa-solid fa-eye-slash';
+    const pw = document.getElementById('password');
+    const ic = document.getElementById('eyeIcon');
+    const btn = document.querySelector('.toggle-pw');
+    const showing = pw.type === 'password';
+
+    pw.type = showing ? 'text' : 'password';
+    ic.className = showing ? 'fa-solid fa-eye' : 'fa-solid fa-eye-slash';
+
+    if (btn) {
+        btn.setAttribute('aria-label', showing ? 'Hide password' : 'Show password');
+        btn.setAttribute('title', showing ? 'Hide password' : 'Show password');
+    }
 }
 
 const loginForm = document.querySelector('.login-card form');

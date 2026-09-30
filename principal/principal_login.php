@@ -228,8 +228,8 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
                 <input class="form-input" type="password" id="password" name="password"
                        placeholder="Enter your password" required autocomplete="new-password"/>
                 <i class="fa-solid fa-lock f-icon"></i>
-                <button type="button" class="toggle-pw" onclick="togglePw()">
-                    <i class="fa-solid fa-eye" id="eyeIcon"></i>
+                <button type="button" class="toggle-pw" onclick="togglePw()" aria-label="Show password" title="Show password">
+                    <i class="fa-solid fa-eye-slash" id="eyeIcon"></i>
                 </button>
             </div>
         </div>
@@ -252,8 +252,12 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
 <script>
 function togglePw() {
     const pw = document.getElementById('password'), ic = document.getElementById('eyeIcon');
-    pw.type = pw.type === 'password' ? 'text' : 'password';
-    ic.className = pw.type === 'password' ? 'fa-solid fa-eye' : 'fa-solid fa-eye-slash';
+    const showing = pw.type === 'password';
+    pw.type = showing ? 'text' : 'password';
+    ic.className = showing ? 'fa-solid fa-eye' : 'fa-solid fa-eye-slash';
+    const label = showing ? 'Hide password' : 'Show password';
+    const btn = ic.closest('.toggle-pw');
+    if (btn) { btn.setAttribute('aria-label', label); btn.setAttribute('title', label); }
 }
 </script>
 <style id="principal-white-theme-final">

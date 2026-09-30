@@ -267,13 +267,13 @@ $evSubQ = dashboard_query($mysqli, "
     LEFT JOIN users evaluator ON evaluator.id = et.evaluator_id
     LEFT JOIN users target ON target.id = et.target_user_id
     WHERE et.status IN ('submitted','approved','archived')
-      -- Confidential: evaluations OF the Executive Assistant (upward_to_ea, or
-      -- school_head rows whose target is the EA account) must not reveal the
-      -- evaluator in System Logs or the live bell notifications. The rows stay
-      -- in evaluation_tracker, so results/analytics are unaffected.
+      -- Confidential: ANY evaluation whose target is the Executive Assistant
+      -- account (admin/superadmin/executive_assistant), whatever its eval_type,
+      -- must not reveal the evaluator in System Logs or the live bell
+      -- notifications. The rows stay in evaluation_tracker, so
+      -- results/analytics are unaffected.
       AND et.eval_type <> 'upward_to_ea'
-      AND NOT (et.eval_type = 'school_head'
-               AND COALESCE(target.role, '') IN ('admin','superadmin','executive_assistant'))" . $levelClause . "
+      AND COALESCE(target.role, '') NOT IN ('admin','superadmin','executive_assistant')" . $levelClause . "
     ORDER BY et.submitted_at DESC
     LIMIT 10
 ");

@@ -16,7 +16,7 @@ require_once '../shared/system_settings_service.php';
 require_once '../shared/QuestionnaireService.php';
         // ── AUTH GUARD ────────────────────────────────────────────────
         if (empty($_SESSION['user_id']) || $_SESSION['role'] !== 'staff') {
-            header("Location: faculty_login.php"); exit;
+            header("Location: staff_login.php"); exit;
         }
 
         $user_id     = $_SESSION['user_id'];
@@ -1622,6 +1622,15 @@ body.light-theme .peer-card,
 body.light-theme .role-card,
 body.light-theme .section-card,
 body.light-theme .stat-card,
+
+/* Required-rating feedback */
+.eval-validation-alert{display:none;margin:0 0 12px;padding:11px 14px;border-radius:9px;border:1px solid rgba(240,84,84,.34);background:rgba(240,84,84,.10);color:#fca5a5;font-size:13px;line-height:1.5;}
+.eval-validation-alert.show{display:block;}
+.eval-validation-alert strong{color:#fff;}
+.eval-question-row.eval-unanswered{background:rgba(240,84,84,.06);}
+.eval-question-row.eval-unanswered td:first-child{border-left:3px solid #f87171;}
+.eval-progress{display:inline-flex;align-items:center;padding:6px 10px;margin-right:auto;border-radius:7px;background:rgba(255,255,255,.05);color:var(--muted);font-size:12px;font-weight:600;}
+.eval-progress.is-complete{color:#86efac;background:rgba(34,197,94,.10);}
 body.light-theme .eval-modal,
 body.light-theme .eval-item,
 body.light-theme .ea-table-card,
@@ -1997,7 +2006,7 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
             <div class="sidebar-brand portal-brand">
                 <div class="portal-brand-logo"><img src="../image/pbi_logo" alt="PBI" onerror="this.style.display='none'"/></div>
                 <div class="portal-brand-copy">
-                    <strong>Staff Portal</strong>
+                    <strong>Staff Workspace</strong>
                     <span>Evaluation Workspace</span>
                 </div>
             </div>
@@ -2047,7 +2056,7 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
             </nav>
 
             <div class="sidebar-footer">
-                <a href="../logout.php" class="btn-logout-side" onclick="return confirm('Log out of your staff session?')">
+                <a href="staff_logout.php" class="btn-logout-side" onclick="return confirm('Log out of your staff session?')">
                     <i class="fa-solid fa-power-off"></i><span>Log Out</span>
                 </a>
             </div>
@@ -2594,7 +2603,9 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
                     <?= htmlspecialchars($staff_eval_feature_label) ?> · <?= htmlspecialchars($staff_eval_target['target_label']) ?> · responses are confidential.
                 </p>
 
-                <form method="POST" action="staff_dashboard.php?page=staff_eval_form&tid=<?= (int)$staff_eval_target['id'] ?>">
+                <form method="POST" action="staff_dashboard.php?page=staff_eval_form&tid=<?= (int)$staff_eval_target['id'] ?>" id="staffEvalForm" novalidate>
+                    <div class="eval-validation-alert" id="staffEvalValidation" role="alert" aria-live="assertive"></div>
+                    <div class="eval-progress" id="staffEvalProgress" aria-live="polite">0 of 0 questions answered</div>
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
                     <input type="hidden" name="target_id" value="<?= (int)$staff_eval_target['id'] ?>">
                     <input type="hidden" name="submit_staff_evaluation" value="1">
@@ -2606,9 +2617,9 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
                                 <thead><tr><th>Question</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th></tr></thead>
                                 <tbody>
                                 <?php foreach ($questions as $q): ?>
-                                <tr>
+                                <tr class="eval-question-row staff-eval-question-row">
                                     <td><div class="compact-eval-qtext"><span class="compact-eval-qno"><?= $staffQNo++ ?>.</span><?= htmlspecialchars($q['question_text']) ?></div></td>
-                                    <?php for($r=5;$r>=1;$r--): $optId='staff_r_' . (int)$q['id'] . '_' . $r; ?><td><div class="compact-eval-rating"><input type="radio" name="ratings[<?= (int)$q['id'] ?>]" id="<?= $optId ?>" value="<?= $r ?>" required><label for="<?= $optId ?>"><?= $r ?></label></div></td><?php endfor; ?>
+                                    <?php for($r=5;$r>=1;$r--): $optId='staff_r_' . (int)$q['id'] . '_' . $r; ?><td><div class="compact-eval-rating"><input type="radio" name="ratings[<?= (int)$q['id'] ?>]" id="<?= $optId ?>" value="<?= $r ?>"><label for="<?= $optId ?>"><?= $r ?></label></div></td><?php endfor; ?>
                                 </tr>
                                 <?php endforeach; ?>
                                 </tbody>
@@ -2628,7 +2639,7 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
                             <i class="fa-solid fa-circle-info" style="color:#60a5fa;margin-right:5px"></i>
                             Rate each question 1 (Never) to 5 (Always).
                         </span>
-                        <button type="submit" class="btn-submit" onclick="return checkStaffAll()">
+                        <button type="submit" class="btn-submit" >
                             <i class="fa-solid fa-paper-plane"></i> Submit Evaluation
                         </button>
                     </div>
@@ -2641,18 +2652,74 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
             const radio=document.querySelector('input[name="ratings['+id+']"][value="'+val+'"]');
             if (radio) radio.checked=true;
         }
-        function checkStaffAll(){
-            const form=document.querySelector('form[action*="staff_eval_form"]');
-            if(!form) return false;
-            const groups=new Set([...form.querySelectorAll('input[type="radio"][name^="ratings["]')].map(i=>i.name));
-            for(const name of groups){
-                if(!form.querySelector('input[name="'+CSS.escape(name)+'"]:checked')){
-                    alert('Please rate every question before submitting.');
-                    return false;
-                }
+        function validateRatingForm(form, alertBoxId) {
+    if (!form) return false;
+    const radios = [...form.querySelectorAll('input[type="radio"][name^="ratings["]')];
+    const groups = [...new Set(radios.map(r => r.name))];
+    const missing = groups.filter(name => !form.querySelector('input[name="' + CSS.escape(name) + '"]:checked'));
+    const alertBox = document.getElementById(alertBoxId);
+    form.querySelectorAll('.eval-question-row.eval-unanswered').forEach(row => row.classList.remove('eval-unanswered'));
+
+    if (!groups.length) {
+        if (alertBox) { alertBox.innerHTML = '<strong>No questions found.</strong> Please close and try again.'; alertBox.classList.add('show'); }
+        return false;
+    }
+    if (missing.length) {
+        const labels=[];
+        missing.forEach(name => {
+            const input=form.querySelector('input[name="'+CSS.escape(name)+'"]');
+            const row=input ? input.closest('tr') : null;
+            if(row){
+                row.classList.add('eval-unanswered');
+                const q=row.querySelector('.compact-eval-qno');
+                labels.push(q ? q.textContent.replace(/[^0-9]/g,'') : '?');
             }
-            return groups.size>0;
+        });
+        const questionWord=missing.length===1?'question is':'questions are';
+        if(alertBox){
+            alertBox.innerHTML='<strong>Please complete all required questions.</strong> '+missing.length+' '+questionWord+' unanswered.'+(labels.length?' Missing: <strong>Q'+labels.join(', Q')+'.</strong>':'');
+            alertBox.classList.add('show');
+            alertBox.scrollIntoView({behavior:'smooth',block:'center'});
         }
+        const firstRow=form.querySelector('.eval-question-row.eval-unanswered');
+        if(firstRow) setTimeout(()=>firstRow.scrollIntoView({behavior:'smooth',block:'center'}),80);
+        return false;
+    }
+    if(alertBox) alertBox.classList.remove('show');
+    return true;
+}
+function updateRatingProgress(form, counterId, alertId) {
+    const counter=document.getElementById(counterId);
+    if(!form || !counter) return;
+    const groups=[...new Set([...form.querySelectorAll('input[type="radio"][name^="ratings["]')].map(r=>r.name))];
+    const answered=groups.filter(name=>form.querySelector('input[name="'+CSS.escape(name)+'"]:checked')).length;
+    counter.textContent=answered+' of '+groups.length+' questions answered';
+    counter.classList.toggle('is-complete',groups.length>0 && answered===groups.length);
+    if(groups.length && answered===groups.length) document.getElementById(alertId)?.classList.remove('show');
+}
+function checkStaffAll(){ return validateRatingForm(document.getElementById('staffEvalForm'),'staffEvalValidation'); }
+function checkAll(){ return validateRatingForm(document.getElementById('evalForm'),'peerEvalValidation'); }
+
+const staffEvalForm=document.getElementById('staffEvalForm');
+if(staffEvalForm){
+    staffEvalForm.addEventListener('change',function(e){
+        if(!e.target.matches('input[type="radio"][name^="ratings["]')) return;
+        const row=e.target.closest('.eval-question-row'); if(row) row.classList.remove('eval-unanswered');
+        updateRatingProgress(staffEvalForm,'staffEvalProgress','staffEvalValidation');
+    });
+    staffEvalForm.addEventListener('submit',function(e){ if(!checkStaffAll()) e.preventDefault(); });
+    updateRatingProgress(staffEvalForm,'staffEvalProgress','staffEvalValidation');
+}
+const peerEvalForm=document.getElementById('evalForm');
+if(peerEvalForm){
+    peerEvalForm.addEventListener('change',function(e){
+        if(!e.target.matches('input[type="radio"][name^="ratings["]')) return;
+        const row=e.target.closest('.eval-question-row'); if(row) row.classList.remove('eval-unanswered');
+        updateRatingProgress(peerEvalForm,'peerEvalProgress','peerEvalValidation');
+    });
+    peerEvalForm.addEventListener('submit',function(e){ if(!checkAll()) e.preventDefault(); });
+    updateRatingProgress(peerEvalForm,'peerEvalProgress','peerEvalValidation');
+}
         </script>
 
         <!-- ══════════ PEER EVALUATION — LOCKED FOR NON-TEACHING STAFF ══════════ -->
@@ -2807,7 +2874,9 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
             <?php endforeach; ?>
         </div>
 
-        <form method="POST" action="staff_dashboard.php?page=peer_eval&tid=<?= $peer_target['id'] ?>&group=<?= urlencode($peer_eval_group) ?>" id="evalForm">
+        <form method="POST" action="staff_dashboard.php?page=peer_eval&tid=<?= $peer_target['id'] ?>&group=<?= urlencode($peer_eval_group) ?>" id="evalForm" novalidate>
+            <div class="eval-validation-alert" id="peerEvalValidation" role="alert" aria-live="assertive"></div>
+            <div class="eval-progress" id="peerEvalProgress" aria-live="polite">0 of 0 questions answered</div>
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>"/>
             <input type="hidden" name="submit_peer" value="1"/>
             <input type="hidden" name="target_id"   value="<?= $peer_target['id'] ?>"/>
@@ -2820,9 +2889,9 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
                     <thead><tr><th>Question</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th></tr></thead>
                     <tbody>
                     <?php foreach($cat_qs as $q): ?>
-                    <tr>
+                    <tr class="eval-question-row peer-eval-question-row">
                         <td><div class="compact-eval-qtext"><span class="compact-eval-qno"><?= $qno++ ?>.</span><?= htmlspecialchars($q['question_text']) ?></div></td>
-                        <?php for($r=5;$r>=1;$r--): $optId='peer_r_' . (int)$q['id'] . '_' . $r; ?><td><div class="compact-eval-rating"><input type="radio" name="ratings[<?= (int)$q['id'] ?>]" id="<?= $optId ?>" value="<?= $r ?>" required><label for="<?= $optId ?>"><?= $r ?></label></div></td><?php endfor; ?>
+                        <?php for($r=5;$r>=1;$r--): $optId='peer_r_' . (int)$q['id'] . '_' . $r; ?><td><div class="compact-eval-rating"><input type="radio" name="ratings[<?= (int)$q['id'] ?>]" id="<?= $optId ?>" value="<?= $r ?>"><label for="<?= $optId ?>"><?= $r ?></label></div></td><?php endfor; ?>
                     </tr>
                     <?php endforeach; ?>
                     </tbody>
@@ -2837,7 +2906,7 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
 
             <div class="submit-row">
                 <span style="font-size:13px;color:var(--muted);"><i class="fa-solid fa-circle-info" style="color:#60a5fa;margin-right:5px"></i>Rate each question 1 (Never) to 5 (Always). All required.</span>
-                <button type="submit" class="btn-submit" onclick="return checkAll()"><i class="fa-solid fa-paper-plane"></i> Submit Evaluation</button>
+                <button type="submit" class="btn-submit" ><i class="fa-solid fa-paper-plane"></i> Submit Evaluation</button>
             </div>
         </form>
         <?php endif; ?>
@@ -3237,5 +3306,6 @@ document.addEventListener('DOMContentLoaded', function() {
         </script>
 
         <?php $mysqli->close(); ?>
+        <script src="../admin/eval_status_poll.js" defer></script>
         </body>
         </html>
