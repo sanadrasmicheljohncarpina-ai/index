@@ -194,7 +194,7 @@ $yearLevelsByLevel = [
 $tab = $_GET['tab'] ?? 'students';
 if (!in_array($tab, ['students','faculty','dean','principal'], true)) $tab = 'students';
 $scopeFilter = $_GET['scope'] ?? 'all';
-if (!in_array($scopeFilter, ['all','hs','college','none'], true)) $scopeFilter = 'all';
+if (!in_array($scopeFilter, ['all','hs','college'], true)) $scopeFilter = 'all';
 $people = trackerLoadPeople($mysqli);
 $studentCount = 0;
 $sc = $mysqli->query("SELECT COUNT(*) FROM users WHERE role='student' AND is_active=1");
@@ -316,7 +316,6 @@ if ($summaryRes) {
             $k = $r['scope_key'];
             if ($scopeFilter === 'hs' && !in_array($k, ['hs','both'], true)) continue;
             if ($scopeFilter === 'college' && !in_array($k, ['college','both'], true)) continue;
-            if ($scopeFilter === 'none' && $k !== 'none') continue;
         }
         if ($search !== '' && stripos($r['full_name'], $search) === false) continue;
         $rows[] = $r;
@@ -506,7 +505,7 @@ html[data-theme="dark"] .et-tab.active{color:#fff}
                 <a class="et-btn <?=$level==='senior_high'?'active':''?>" href="?tab=students&level=senior_high&status=<?=urlencode($status)?>&search=<?=urlencode($search)?>">Senior High School</a>
                 <a class="et-btn <?=$level==='college'?'active':''?>" href="?tab=students&level=college&status=<?=urlencode($status)?>&search=<?=urlencode($search)?>">College</a>
             <?php elseif ($tab==='faculty'): ?>
-                <?php foreach (['all'=>'All Faculty','hs'=>'High School','college'=>'College','none'=>'No assignment'] as $sk=>$sl): ?>
+                <?php foreach (['all'=>'All Faculty','hs'=>'High School','college'=>'College'] as $sk=>$sl): ?>
                     <a class="et-btn <?=$scopeFilter===$sk?'active':''?>" href="?tab=faculty&scope=<?=$sk?>&status=<?=urlencode($status)?>&search=<?=urlencode($search)?>"><?=$sl?></a>
                 <?php endforeach; ?>
             <?php endif; ?>
@@ -542,13 +541,12 @@ html[data-theme="dark"] .et-tab.active{color:#fff}
             <div class="et-empty">No <?= $tab==='faculty' ? 'faculty' : htmlspecialchars($tab) ?> accounts match the selected filters.</div>
         <?php else: ?>
             <table>
-                <thead><tr><th style="width:24%">EVALUATOR</th><th style="width:20%">TEACHING SCOPE</th><th style="width:10%">REQUIRED</th><th style="width:11%">COMPLETED</th><th style="width:14%">STATUS</th><th style="width:18%">PROGRESS</th><th style="width:3%"></th></tr></thead>
+                <thead><tr><th style="width:38%">EVALUATOR</th><th style="width:12%">REQUIRED</th><th style="width:14%">COMPLETED</th><th style="width:16%">STATUS</th><th style="width:17%">PROGRESS</th><th style="width:3%"></th></tr></thead>
                 <tbody>
                 <?php foreach ($rows as $r):
                     $photo = trim((string)($r['photo'] ?? ''));
                     $stateClass = $r['state']==='completed' ? 'st-completed' : ($r['state']==='in_progress' ? 'st-progress' : 'st-start');
                     $stateLabel = $r['state']==='completed' ? 'Completed' : ($r['state']==='in_progress' ? 'In Progress' : 'Not Started');
-                    $levelClass = ['college'=>'lvl-col','hs'=>'lvl-jhs','both'=>'lvl-shs','none'=>'st-start'][$r['scope_key']] ?? 'lvl-jhs';
                 ?>
                     <tr>
                         <td>
@@ -559,7 +557,6 @@ html[data-theme="dark"] .et-tab.active{color:#fff}
                                 <div><div class="et-name"><?=htmlspecialchars($r['full_name'])?></div><div class="et-mini"><?=htmlspecialchars($r['sub'])?></div></div>
                             </div>
                         </td>
-                        <td><span class="et-level-pill <?=$levelClass?>"><?=htmlspecialchars($r['scope_label'])?></span></td>
                         <td><?=$r['required']?></td>
                         <td><?=$r['done']?> / <?=$r['required']?></td>
                         <td><span class="et-status <?=$stateClass?>"><?=$stateLabel?></span></td>

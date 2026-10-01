@@ -82,7 +82,7 @@ function display_role($role) {
 $isExecutiveAssistant = ($_SESSION['role'] ?? '') === 'superadmin';
 $workspaceTitle = $isExecutiveAssistant ? 'Executive Assistant Workspace' : 'Administrative Workspace';
 $workspaceSubtitle = $isExecutiveAssistant
-    ? 'Employee Performance Evaluation Management System.'
+    ? 'Employee Performance Evaluation & Management System.'
     : 'Manage evaluation operations, personnel, and reporting.';
 
 // Keep dashboard submission metrics scoped to the period selected in System
