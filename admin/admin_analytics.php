@@ -1881,6 +1881,25 @@ button, .btn { font-weight:700; }
 a { color:inherit; }
 </style>
 <?php include __DIR__.'/analytics_dark_head.php'; ?>
+<style id="generate-report-dark-fix">
+/* Generate Report button: loaded after analytics_dark_head.php so the dark theme's
+   link colour cannot turn the label the same blue as the button background. */
+html[data-theme="dark"] table.results-table td a.rt-generate-btn,
+html[data-theme="dark"] table.results-table td a.rt-generate-btn:link,
+html[data-theme="dark"] table.results-table td a.rt-generate-btn:visited,
+html[data-theme="dark"] table.results-table td a.rt-generate-btn:hover,
+html[data-theme="dark"] table.results-table td a.rt-generate-btn:focus,
+html[data-theme="dark"] table.results-table td a.rt-generate-btn *{
+    color:#fff !important;
+    -webkit-text-fill-color:#fff !important;
+    text-decoration:none !important;
+}
+html[data-theme="dark"] table.results-table td a.rt-generate-btn{
+    background:var(--accent,#2563EB) !important;
+    border-color:var(--accent,#2563EB) !important;
+}
+html[data-theme="dark"] table.results-table td a.rt-generate-btn:hover{opacity:.88;}
+</style>
 </head><body>
 <script src="admin_ajax.php"></script>
 <script>

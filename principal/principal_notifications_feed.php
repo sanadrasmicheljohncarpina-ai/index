@@ -95,19 +95,48 @@ function principal_build_notifications(mysqli $mysqli, int $userId, ?array $sett
     $structureActive = array_key_exists('school_head_applicable', $settings)
         ? !empty($settings['school_head_applicable'])
         : ss_school_head_role_applicable($settings, 'principal');
-    $period_id_int   = $settings['period_id'] ?? 0;
+    $period_id_int   = (int)($settings['period_id'] ?? 0);
     $hasPeriod       = $period_id_int > 0;
 
     $daysRemaining = null;
-    if ($settings['eval_end']) {
+    if (!empty($settings['eval_end'])) {
         $daysRemaining = (int)ceil((strtotime($settings['eval_end']) - strtotime(date('Y-m-d'))) / 86400);
     }
 
     $out = [];
 
     // Schedule-driven notices straight from the shared service.
-    foreach ($settings['notifications'] as $n) {
+    foreach ((array)($settings['notifications'] ?? []) as $n) {
+        if (!is_string($n) || $n === '') continue;
         $out[] = ['id' => 'sys-' . substr(md5($n), 0, 10), 'text' => $n, 'level' => 'info'];
+    }
+
+    // Executive Assistant notices: academic period and evaluation schedule.
+    // The id includes the announced values, so a change by the EA produces a
+    // new id (fresh unread notice) while unchanged settings are not re-announced.
+    if ($hasPeriod) {
+        $eaYear = trim((string)($settings['academic_year'] ?? ''));
+        $eaTerm = trim((string)($settings['academic_term'] ?? ''));
+        if ($eaYear !== '') {
+            $eaPeriod = $eaTerm !== '' ? $eaYear . ' · ' . $eaTerm : $eaYear;
+            $out[] = [
+                'id'    => 'ea-period-' . substr(md5($eaPeriod), 0, 10),
+                'text'  => 'The Executive Assistant set the academic period to ' . $eaPeriod . '.',
+                'level' => 'info',
+                'icon'  => 'fa-calendar-days',
+            ];
+        }
+        $eaStart = trim((string)($settings['eval_start_display'] ?? ''));
+        $eaEnd   = trim((string)($settings['eval_end_display'] ?? ''));
+        if ($eaStart !== '' && $eaEnd !== '') {
+            $eaRange = $eaStart . ' – ' . $eaEnd;
+            $out[] = [
+                'id'    => 'ea-schedule-' . substr(md5($eaRange), 0, 10),
+                'text'  => 'The Executive Assistant set the evaluation schedule: ' . $eaRange . '.',
+                'level' => 'info',
+                'icon'  => 'fa-clock',
+            ];
+        }
     }
 
     if (!$structureActive) {
@@ -174,6 +203,43 @@ function principal_build_notifications(mysqli $mysqli, int $userId, ?array $sett
             'text'  => 'No active evaluation period yet — figures stay at 0% until one is opened.',
             'level' => 'info',
         ];
+    }
+
+    // Keep recent submitted evaluation events visible in the Principal bell,
+    // matching the Dean feed while limiting staff/faculty targets to this
+    // Principal's Basic Education scope. Include this Principal's own received
+    // evaluations so their personal results are surfaced as well.
+    if ($hasPeriod) {
+        try {
+            $recent = $mysqli->query("SELECT et.id, et.eval_type, et.submitted_at,
+                    target.full_name AS target_name
+                FROM evaluation_tracker et
+                JOIN users target ON target.id=et.target_user_id
+                WHERE et.period_id={$period_id_int}
+                  AND et.submitted_at IS NOT NULL
+                  AND target.is_active=1
+                  AND target.account_status='approved'
+                  AND ((target.role IN ('teacher','staff') AND target.academic_level IN ($scopeAcademicIn))
+                       OR (target.role='principal' AND target.id=" . (int)$userId . "))
+                  AND et.eval_type IN ('student','peer','faculty_peer','staff_peer')
+                ORDER BY et.submitted_at DESC, et.id DESC
+                LIMIT 12");
+            if ($recent) {
+                while ($event = $recent->fetch_assoc()) {
+                    $kind = in_array($event['eval_type'] ?? '', ['peer','faculty_peer','staff_peer'], true)
+                        ? 'Peer-to-Peer' : 'Student';
+                    $out[] = [
+                        'id' => 'evaluation-' . (int)$event['id'],
+                        'text' => "New {$kind} evaluation received for " . ($event['target_name'] ?? 'personnel') . '.',
+                        'level' => 'good',
+                        'created_at' => $event['submitted_at'] ?? null,
+                    ];
+                }
+                $recent->free();
+            }
+        } catch (Throwable $e) {
+            error_log('principal notification evaluation events: ' . $e->getMessage());
+        }
     }
 
     if ($hasPeriod && $daysRemaining !== null && $daysRemaining >= 0 && $daysRemaining <= 3) {

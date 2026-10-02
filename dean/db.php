@@ -80,3 +80,6 @@ if ($__hasSession && $mysqli->errno === 0) {
 
 // ---- Shared service layer ----
 require_once dirname(__DIR__) . '/shared/AuthenticationService.php';
+
+require_once dirname(__DIR__) . '/shared/maintenance_gate.php';
+enforce_maintenance_gate($mysqli);

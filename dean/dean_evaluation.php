@@ -279,7 +279,7 @@ $photo_src = !empty($me['photo']) ? '../image/' . $me['photo'] : '../image/pbi_l
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>PBI — Dean Evaluation</title>
+<title>PBI — Evaluate Others</title>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <style>
@@ -470,7 +470,7 @@ include __DIR__ . '/includes/dean_sidebar.php';
 <main class="main dean-internal-scroll">
     <div class="page-header">
         <div>
-            <div class="page-title">My Evaluation</div>
+            <div class="page-title">Evaluate Others</div>
             <div class="page-sub">Pandan Bay Institute — <?= HIGHER_ED_LABEL ?> Division</div>
         </div>
         <div class="period-badge <?= htmlspecialchars($settings['status']['cls']) ?>">

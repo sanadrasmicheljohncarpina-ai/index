@@ -116,7 +116,8 @@ body{min-height:100vh;background:radial-gradient(circle at 50% 42%,rgba(255,255,
 .card-header{text-align:center;margin-bottom:28px;}
 .logo-ring{width:72px;height:72px;border-radius:50%;display:block;object-fit:cover;border:2.5px solid var(--teal);box-shadow:0 0 14px rgba(245,158,11,.16),0 0 26px rgba(13,148,136,.34),0 0 42px rgba(13,148,136,.10);margin:0 auto 16px;}
 .card-title{font-family:'Rajdhani',sans-serif;font-size:26px;font-weight:700;letter-spacing:2px;color:#fff;text-transform:uppercase;}
-.card-subtitle{font-size:12px;color:var(--muted);letter-spacing:1.2px;text-transform:uppercase;margin-top:4px;}
+.card-subtitle{font-size:12px;color:var(--muted);letter-spacing:1.2px;text-transform:uppercase;line-height:1.55;text-wrap:balance;}
+.role-pill{display:inline-flex;align-items:center;justify-content:center;gap:6px;margin-top:10px;padding:4px 14px;border-radius:20px;background:rgba(13,148,136,.14);border:1px solid rgba(45,212,191,.38);color:#2DD4BF;font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;}
 .divider{height:1px;background:linear-gradient(90deg,transparent,rgba(13,148,136,.45),transparent);margin-bottom:24px;}
 .form-group{margin-bottom:18px;}
 .form-label{display:block;font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:7px;}
@@ -144,8 +145,8 @@ body{min-height:100vh;background:radial-gradient(circle at 50% 42%,rgba(255,255,
 <div class="login-card">
     <div class="card-header">
         <img class="logo-ring" src="../image/pbi_logo" alt="PBI Logo"/>
-        <div class="card-title">Staff Access</div>
-        <div class="card-subtitle">Pandan Bay Institute Inc.</div>
+        <div class="card-subtitle">Employee Performance Evaluation &amp; Management System</div>
+        <div class="role-pill"><i class="fa-solid fa-id-badge"></i> Staff Access</div>
     </div>
     <div class="divider"></div>
 

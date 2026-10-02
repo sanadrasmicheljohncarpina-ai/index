@@ -161,7 +161,7 @@ $mysqli->close();
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>PBI — View Results</title>
+<title>PBI — Feedback's Received</title>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <style>
@@ -312,7 +312,7 @@ include __DIR__ . '/includes/dean_sidebar.php';
 
 <main class="main dean-internal-scroll">
     <div class="page-header">
-        <div class="page-title">View Results</div>
+        <div class="page-title">Feedback's Received</div>
         <div class="page-sub">Your evaluation results from authorized evaluators this period.</div>
     </div>
 

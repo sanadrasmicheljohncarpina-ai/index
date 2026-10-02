@@ -19,3 +19,6 @@ define('UPLOAD_DIR', dirname(__DIR__) . '/image/');
 
 // Relative URL used in HTML <img src=""> tags inside admin pages
 define('UPLOAD_URL', '../image/');
+
+require_once dirname(__DIR__) . '/shared/maintenance_gate.php';
+enforce_maintenance_gate($mysqli);

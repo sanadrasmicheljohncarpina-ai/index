@@ -510,6 +510,114 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible{
 @media(prefers-reduced-motion:reduce){
     .login-card,.reg-card{transition:none;}
 }
+
+/* =====================================================================
+   Card lighting — same treatment as the Faculty / Staff registration
+   pages (lit top edge, soft vertical gradient, inner highlight, glowing
+   logo, inset fields, glossy button), kept in the Dean violet.
+   ===================================================================== */
+:root{--violet-edge:#C4B5FD;--input-bg:#0B1A32;--input-bg-hover:#0D2038;}
+html{background:var(--dark-blue);color-scheme:dark;}
+body{
+    background:
+        radial-gradient(circle at 50% 36%,rgba(255,255,255,.028),transparent 34%),
+        radial-gradient(circle at 88% 82%,rgba(43,108,176,.11),transparent 30%),
+        radial-gradient(circle at 8% 12%,rgba(124,95,217,.10),transparent 26%),
+        var(--dark-blue);
+    background-attachment:fixed;
+}
+body::before{display:none;}
+.bg-grid{
+    background-image:
+        repeating-linear-gradient(45deg,rgba(124,95,217,.08) 0,rgba(124,95,217,.08) 1px,transparent 1px,transparent 26px),
+        repeating-linear-gradient(-45deg,rgba(124,95,217,.05) 0,rgba(124,95,217,.05) 1px,transparent 1px,transparent 26px);
+}
+.hex-deco{opacity:.46;filter:drop-shadow(0 0 10px rgba(124,95,217,.05));}
+
+/* Card: gradient body, lit top edge, inner highlight, violet halo */
+.reg-card{
+    background:linear-gradient(180deg,#1D3555 0%,#172A45 38%,#122238 100%);
+    border:1px solid rgba(124,95,217,.30);
+    box-shadow:
+        0 30px 80px rgba(0,0,0,.50),
+        0 0 0 1px rgba(124,95,217,.08),
+        inset 0 1px 0 rgba(255,255,255,.07),
+        0 0 60px rgba(124,95,217,.07);
+}
+.reg-card::before{
+    content:"";position:absolute;top:-1px;left:14%;right:14%;height:2px;border-radius:2px;pointer-events:none;
+    background:linear-gradient(90deg,transparent,rgba(196,181,253,.95),rgba(43,108,176,.85),transparent);
+}
+.reg-card:hover{
+    border-color:rgba(156,133,240,.45);
+    box-shadow:
+        0 30px 80px rgba(0,0,0,.55),
+        0 0 0 1px rgba(124,95,217,.10),
+        inset 0 1px 0 rgba(255,255,255,.07),
+        0 0 80px rgba(124,95,217,.11);
+}
+
+/* Header: ringed, glowing logo + stronger divider */
+.logo-ring{
+    border:2px solid var(--violet);
+    box-shadow:0 0 0 4px rgba(124,95,217,.12),0 0 24px rgba(124,95,217,.36);
+}
+.divider{background:linear-gradient(90deg,transparent,rgba(124,95,217,.55),transparent);}
+
+/* Photo panel */
+.photo-box{
+    background:linear-gradient(135deg,rgba(124,95,217,.12),rgba(10,27,46,.80) 55%);
+    border:1px solid rgba(160,179,198,.18);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 8px 22px rgba(0,0,0,.22);
+}
+.photo-preview{
+    border-color:rgba(124,95,217,.6);
+    box-shadow:0 0 0 5px rgba(124,95,217,.08),inset 0 2px 8px rgba(0,0,0,.4);
+}
+.photo-preview:hover{
+    border-color:var(--violet-h);
+    box-shadow:0 0 0 5px rgba(124,95,217,.16),inset 0 2px 8px rgba(0,0,0,.4);
+}
+.photo-preview:hover .ph-icon{color:#fff;}
+.btn-photo{background:rgba(124,95,217,.15);border-color:rgba(124,95,217,.42);color:var(--violet-edge);}
+.btn-photo:hover{background:rgba(124,95,217,.26);border-color:rgba(156,133,240,.6);transform:translateY(-1px);}
+
+/* Fields: inset depth, hover lift, glowing focus ring */
+.form-input{
+    background:var(--input-bg);
+    border-color:rgba(255,255,255,.12);
+    box-shadow:inset 0 2px 6px rgba(0,0,0,.30);
+}
+.form-input:hover:not(:focus){
+    background:var(--input-bg-hover);
+    border-color:rgba(255,255,255,.20);
+}
+.form-input:focus{
+    background:var(--input-bg-hover);
+    border-color:var(--violet);
+    box-shadow:inset 0 2px 6px rgba(0,0,0,.22),0 0 0 3px rgba(124,95,217,.22);
+}
+.input-wrap:focus-within .f-icon{color:var(--violet-edge);}
+.toggle-pw:hover{color:#fff;}
+.strength-bar{background:rgba(255,255,255,.09);box-shadow:inset 0 1px 2px rgba(0,0,0,.4);}
+
+/* Info note + button + footer */
+.form-note{background:rgba(124,95,217,.08);border-color:rgba(124,95,217,.22);}
+.btn-register{
+    background:linear-gradient(180deg,#9078E8 0%,#7C5FD9 55%,#6A4FC8 100%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.24),0 10px 26px rgba(124,95,217,.36);
+    transition:transform .15s,box-shadow .2s,filter .2s;
+}
+.btn-register:hover{
+    background:linear-gradient(180deg,#9078E8 0%,#7C5FD9 55%,#6A4FC8 100%);
+    filter:brightness(1.08);transform:translateY(-1px);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 14px 32px rgba(124,95,217,.44);
+}
+.btn-register:active{transform:translateY(1px);}
+.btn-register:disabled{filter:none;opacity:.72;}
+.card-footer{border-top-color:rgba(255,255,255,.08);}
+.card-footer a{color:var(--violet-h);}
+.back-btn{background:rgba(124,95,217,.15);border-color:rgba(124,95,217,.34);color:var(--violet-edge);}
 </style>
 </head>
 <body>
@@ -530,7 +638,7 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible{
   <div class="card-header">
     <img class="logo-ring" src="../image/pbi_logo" alt="PBI Logo"/>
     <div class="card-title">Dean Registration</div>
-    <div class="card-subtitle">Pandan Bay Institute — Evaluation System</div>
+    <div class="card-subtitle">Employee Performance Evaluation &amp; Management System</div>
   </div>
   <div class="divider"></div>
 

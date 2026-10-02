@@ -43,6 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } elseif (!password_verify($password, $user['password_hash'])) {
                     $error = 'Incorrect username or password. Please try again.';
                 } else {
+
                     // Keep compatibility with installations that do/don't have
                     // the optional must_change_password column.
                     $mustChangePassword = false;
@@ -96,11 +97,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>PBI — Teacher & Staff Login</title>
+<title>PBI — Faculty Login</title>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <style>
-:root{--dark-blue:#0A192F;--blue-mid:#172A45;--teal:#2563EB;--teal-hover:#1D4ED8;--light:#E0E6F0;--muted:#A0B3C6;--radius:10px;--shadow:0 8px 32px rgba(0,0,0,0.45);}
+:root{--dark-blue:#0A192F;--blue-mid:#172A45;--teal:#2563EB;--teal-hover:#3B82F6;--light:#E0E6F0;--muted:#A0B3C6;--radius:10px;--shadow:0 8px 32px rgba(0,0,0,0.45);}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 body{min-height:100vh;background:radial-gradient(circle at 50% 42%,rgba(255,255,255,.028),transparent 34%),radial-gradient(circle at 88% 82%,rgba(43,108,176,.11),transparent 30%),radial-gradient(circle at 8% 12%,rgba(37,99,235,.08),transparent 26%),#08182d;font-family:'DM Sans',sans-serif;color:var(--light);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;}
 .bg-grid{display:block;position:fixed;inset:0;z-index:0;background-image:radial-gradient(circle at 50% 45%,rgba(37,99,235,.045),transparent 38%),repeating-linear-gradient(45deg,rgba(37,99,235,.055) 0px,rgba(37,99,235,.055) 1px,transparent 1px,transparent 26px),repeating-linear-gradient(-45deg,rgba(37,99,235,.035) 0px,rgba(37,99,235,.035) 1px,transparent 1px,transparent 26px);}
@@ -112,7 +113,8 @@ body{min-height:100vh;background:radial-gradient(circle at 50% 42%,rgba(255,255,
 .card-header{text-align:center;margin-bottom:28px;}
 .logo-ring{width:72px;height:72px;border-radius:50%;display:block;object-fit:cover;border:2.5px solid var(--teal);box-shadow:0 0 14px rgba(245,158,11,.16),0 0 26px rgba(37,99,235,.34),0 0 42px rgba(37,99,235,.10);margin:0 auto 16px;}
 .card-title{font-family:'Rajdhani',sans-serif;font-size:26px;font-weight:700;letter-spacing:2px;color:#fff;text-transform:uppercase;}
-.card-subtitle{font-size:12px;color:var(--muted);letter-spacing:1.2px;text-transform:uppercase;margin-top:4px;}
+.card-subtitle{font-size:12px;color:var(--muted);letter-spacing:1.2px;text-transform:uppercase;line-height:1.55;text-wrap:balance;}
+.role-pill{display:inline-flex;align-items:center;justify-content:center;gap:6px;margin-top:10px;padding:4px 14px;border-radius:20px;background:rgba(37,99,235,.14);border:1px solid rgba(96,165,250,.38);color:#60A5FA;font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;}
 .divider{height:1px;background:linear-gradient(90deg,transparent,rgba(37,99,235,.45),transparent);margin-bottom:24px;}
 .form-group{margin-bottom:18px;}
 .form-label{display:block;font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:7px;}
@@ -140,8 +142,8 @@ body{min-height:100vh;background:radial-gradient(circle at 50% 42%,rgba(255,255,
 <div class="login-card">
     <div class="card-header">
         <img class="logo-ring" src="../image/pbi_logo" alt="PBI Logo"/>
-        <div class="card-title">Faculty Access</div>
-        <div class="card-subtitle">Pandan Bay Institute Inc.</div>
+        <div class="card-subtitle">Employee Performance Evaluation &amp; Management System</div>
+        <div class="role-pill"><i class="fa-solid fa-id-badge"></i> Faculty Access</div>
     </div>
     <div class="divider"></div>
 

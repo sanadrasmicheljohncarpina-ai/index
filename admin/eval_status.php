@@ -56,6 +56,7 @@ try {
     // in admin_dashboard.php (precedence: maintenance > draft > manual
     // override > automatic schedule).
     $state = 'unconfigured';
+    $nextTransition = null;
     if (!empty($sys['maintenance'])) {
         $state = 'maintenance';
     } elseif (($sys['publish_state'] ?? 'published') === 'draft') {
@@ -73,9 +74,15 @@ try {
             $endDt   = !empty($sys['eval_end'])   ? ss_parse_datetime($sys['eval_end'])   : null;
             if ($startDt && $endDt && $endDt > $startDt) {
                 $now = ss_now()->getTimestamp();
-                if ($now < $startDt->getTimestamp())      $state = 'scheduled';
-                elseif ($now >= $endDt->getTimestamp())   $state = 'ended';
-                else                                      $state = 'open';
+                if ($now < $startDt->getTimestamp()) {
+                    $state = 'scheduled';
+                    $nextTransition = $startDt->getTimestamp();
+                } elseif ($now >= $endDt->getTimestamp()) {
+                    $state = 'ended';
+                } else {
+                    $state = 'open';
+                    $nextTransition = $endDt->getTimestamp();
+                }
             }
         }
     }
@@ -141,6 +148,9 @@ try {
         'period_id'   => $periodId,
         'token'       => $token,
         'server_time' => time(),
+        'server_time_ms' => (int) floor(microtime(true) * 1000),
+        'next_transition' => $nextTransition,
+        'maintenance' => !empty($sys['maintenance']),
     ]);
 } catch (Throwable $e) {
     error_log('eval_status failed: ' . $e->getMessage());

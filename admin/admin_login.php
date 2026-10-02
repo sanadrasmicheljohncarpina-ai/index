@@ -237,7 +237,14 @@ body::before{background:linear-gradient(180deg,rgba(15,30,51,.12),transparent 30
 }
 
 .card-title{color:#F3F7FB!important;}
-.card-subtitle{color:#92A7BF!important;}
+.card-subtitle{color:#92A7BF!important;text-wrap:balance;}
+.card-header .card-subtitle{margin-top:0;}
+.role-pill{
+    display:inline-flex;align-items:center;justify-content:center;gap:6px;
+    margin-top:10px;padding:4px 14px;border-radius:20px;
+    background:rgba(47,110,226,.14);border:1px solid rgba(98,144,230,.42);
+    color:#8DB4FF;font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;
+}
 .divider{background:linear-gradient(90deg,transparent,rgba(93,145,204,.36),transparent)!important;}
 .form-label{color:#98ADC3!important;}
 .required,.req{color:#F87171!important;}
@@ -330,8 +337,8 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible{
     <div class="card-header">
         <img class="logo-img" src="../image/pbi_logo" alt="PBI Logo"
              onerror="this.style.display='none'"/>
-        <div class="card-title">ADMIN PORTAL</div>
-        <div class="card-subtitle">Pandan Bay Institute &mdash; Control Panel</div>
+        <div class="card-subtitle">Employee Performance Evaluation &amp; Management System</div>
+        <div class="role-pill"><i class="fa-solid fa-user-shield"></i> Admin Access</div>
     </div>
     <div class="divider"></div>
 
@@ -382,9 +389,6 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible{
 
     <div class="register-row">
         Don't have an account? <a href="admin_register.php">Register here</a>
-    </div>
-    <div class="card-footer">
-            <span class="secure-badge"><i class="fa-solid fa-circle-check"></i> Secured &amp; Encrypted Connection</span>
     </div>
 </div>
 

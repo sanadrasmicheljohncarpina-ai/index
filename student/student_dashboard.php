@@ -497,6 +497,29 @@ if (!$academic_year_label) {
     $academic_year_label = $ayStart . '-' . ($ayStart + 1);
 }
 
+// ── EA NOTICES (bell) ───────────────────────────────────────────────
+// What the Executive Assistant has set: academic period and evaluation
+// schedule. Each id embeds the announced values, so an EA change creates a
+// new unread notice and unchanged settings are never re-announced. Read
+// state is kept per browser (localStorage), like the other dashboards.
+$student_bell_notices = [];
+if (!empty($active_period_semester)) {
+    $bellPeriod = $academic_year_label . ' · ' . $active_period_semester;
+    $student_bell_notices[] = [
+        'id'   => 'ea-period-' . substr(md5($bellPeriod), 0, 10),
+        'text' => 'The Executive Assistant set the academic period to ' . $bellPeriod . '.',
+        'icon' => 'fa-calendar-days',
+    ];
+}
+if ($period_opens_label !== 'Not set' && $period_closes_label !== 'Not set') {
+    $bellRange = $period_opens_label . ' – ' . $period_closes_label;
+    $student_bell_notices[] = [
+        'id'   => 'ea-schedule-' . substr(md5($bellRange), 0, 10),
+        'text' => 'The Executive Assistant set the evaluation schedule: ' . $bellRange . '.',
+        'icon' => 'fa-clock',
+    ];
+}
+
 // Academic Structure: derived from the period's own semester value --
 // a 'School Year' period is the once-per-year Basic Ed (JHS/SHS) window;
 // anything else (1st/2nd Semester, Summer) is the per-term Higher Ed
@@ -1579,6 +1602,20 @@ body.light-theme .eval-form-table td{border-bottom:1px solid #eef2f7!important;}
 .workspace-pill{display:inline-flex;align-items:center;gap:7px;padding:9px 13px;border:1px solid var(--border);border-radius:18px;background:var(--mid);color:var(--light);font-size:12px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.12);white-space:nowrap;}
 .workspace-pill i{color:var(--gold-h);}
 .workspace-pill.muted{background:rgba(255,255,255,.04);color:var(--muted);font-weight:600;}
+.notif-bell-wrap{position:relative;}
+.notif-bell{position:relative;width:38px;height:38px;border-radius:50%;border:1px solid var(--border);background:var(--mid);color:var(--light);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:15px;}
+.notif-bell .notif-badge{position:absolute;top:-4px;right:-4px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:#ef4444;color:#fff;font-size:10px;font-weight:700;display:none;align-items:center;justify-content:center;}
+.notif-dropdown{position:absolute;top:calc(100% + 8px);right:0;width:320px;max-width:calc(100vw - 32px);background:var(--mid);border:1px solid var(--border);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.5);z-index:120;display:none;overflow:hidden;}
+.notif-dropdown.open{display:block;}
+.notif-dd-head{padding:12px 14px;font-size:13px;font-weight:700;color:var(--light);border-bottom:1px solid var(--border);}
+.notif-dd-list{list-style:none;margin:0;padding:6px;max-height:320px;overflow-y:auto;}
+.notif-dd-list li{display:flex;gap:10px;align-items:flex-start;padding:10px;border-radius:8px;font-size:12.5px;line-height:1.5;color:var(--light);}
+.notif-dd-list li i{color:var(--gold-h);margin-top:3px;}
+.notif-dd-list li.unseen{background:rgba(217,154,43,.08);}
+.notif-dd-empty{padding:18px 14px;font-size:12.5px;color:var(--muted);text-align:center;}
+body.light-theme .notif-bell{color:#1E293B!important;background:#FFFFFF!important;}
+body.light-theme .notif-dropdown{background:#FFFFFF!important;}
+body.light-theme .notif-dd-head,body.light-theme .notif-dd-list li{color:#1E293B!important;}
 .view-content.active{animation:fadeIn .16s ease;}
 .dashboard-welcome{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:15px;}
 .page-title{font-family:'Rajdhani',sans-serif;font-size:25px;line-height:1.2;font-weight:700;color:#fff!important;margin-bottom:4px;}
@@ -1692,6 +1729,24 @@ body.light-theme .stat-card:nth-child(4) i{background:#DBEAFE!important;color:#1
 body.light-theme .dash-cta-icon{background:#FEF3C7!important;color:#B45309!important;}
 
 @media print{html,body{background:#fff!important;}}
+
+/* ── Sidebar Log Out (sits directly below Settings) ── */
+.side-logout-wrap{margin:14px 12px 0;padding-top:12px;border-top:1px solid rgba(255,255,255,.08);}
+body .sidebar .side-nav-item.side-nav-logout{
+    margin:0;text-decoration:none;
+    color:#FCA5A5!important;
+    background:rgba(239,68,68,.08)!important;
+    border:1px solid rgba(239,68,68,.22);
+}
+body .sidebar .side-nav-item.side-nav-logout i{color:#F87171!important;}
+body .sidebar .side-nav-item.side-nav-logout span{color:inherit!important;}
+body .sidebar .side-nav-item.side-nav-logout:hover{
+    background:rgba(239,68,68,.16)!important;
+    border-color:rgba(239,68,68,.40);
+    color:#FECACA!important;
+}
+body .sidebar .side-nav-item.side-nav-logout:hover i{color:#FCA5A5!important;}
+body .sidebar .side-nav-item.side-nav-logout:focus-visible{outline:2px solid #F87171;outline-offset:2px;}
 </style>
 </head>
 <body class="light-theme">
@@ -1757,7 +1812,7 @@ body.light-theme .dash-cta-icon{background:#FEF3C7!important;color:#B45309!impor
             <i class="fa-solid fa-house"></i><span>Dashboard</span>
         </div>
         <div class="side-nav-item" id="nav-evaluate" onclick="switchView('evaluate')">
-            <i class="fa-solid fa-star-half-stroke"></i><span>Evaluation</span>
+            <i class="fa-solid fa-star-half-stroke"></i><span>Assigned Evaluations</span>
             <?php if ($total_pending > 0): ?><span class="side-nav-badge"><?= $total_pending ?></span><?php endif; ?>
         </div>
         <div class="side-nav-item" id="nav-history" onclick="switchView('history')">
@@ -1770,6 +1825,12 @@ body.light-theme .dash-cta-icon{background:#FEF3C7!important;color:#B45309!impor
         </div>
         <div class="side-nav-item<?= $land_on_settings ? ' active' : '' ?>" id="nav-settings" onclick="switchView('settings')">
             <i class="fa-solid fa-gear"></i><span>Settings</span>
+        </div>
+
+        <div class="side-logout-wrap">
+            <a href="../logout.php" class="side-nav-item side-nav-logout">
+                <i class="fa-solid fa-right-from-bracket"></i><span>Log Out</span>
+            </a>
         </div>
     </aside>
 
@@ -1792,6 +1853,16 @@ body.light-theme .dash-cta-icon{background:#FEF3C7!important;color:#B45309!impor
                         <div class="workspace-pill muted">
                             <i class="fa-solid fa-rotate"></i>
                             Updated <?= date('M j, Y') ?>
+                        </div>
+                        <div class="notif-bell-wrap">
+                            <button type="button" class="notif-bell" id="notifBellBtn" aria-haspopup="true" aria-expanded="false" aria-label="Notifications">
+                                <i class="fa-solid fa-bell"></i>
+                                <span class="notif-badge" id="notifBadge"></span>
+                            </button>
+                            <div class="notif-dropdown" id="notifDropdown" role="menu" aria-hidden="true">
+                                <div class="notif-dd-head">Notifications</div>
+                                <ul class="notif-dd-list" id="notifList"></ul>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1882,7 +1953,7 @@ body.light-theme .dash-cta-icon{background:#FEF3C7!important;color:#B45309!impor
                 <div class="dash-cta-icon"><i class="fa-solid fa-star-half-stroke"></i></div>
                 <div class="dash-cta-text">
                     <h3><?= $total_pending > 0 ? "You have $total_pending evaluation" . ($total_pending !== 1 ? 's' : '') . " left" : "All evaluations complete" ?></h3>
-                    <p><?= $total_pending > 0 ? 'Head over to the Evaluate section to keep going.' : 'Thank you for completing all your evaluations!' ?></p>
+                    <p><?= $total_pending > 0 ? 'Head over to Assigned Evaluations to keep going.' : 'Thank you for completing all your evaluations!' ?></p>
                 </div>
                 <button class="btn-primary-cta" onclick="switchView('<?= $total_pending > 0 ? 'evaluate' : 'history' ?>')">
                     <i class="fa-solid <?= $total_pending > 0 ? 'fa-arrow-right' : 'fa-clock-rotate-left' ?>"></i>
@@ -1893,7 +1964,7 @@ body.light-theme .dash-cta-icon{background:#FEF3C7!important;color:#B45309!impor
 
         <!-- ══════════════ EVALUATE VIEW ══════════════ -->
         <div class="view-content" id="view-evaluate">
-            <div class="page-title">Faculty &amp; Staff Evaluation</div>
+            <div class="page-title">Assigned Evaluations</div>
             <div class="page-sub">Select a category to see who is available for evaluation. Faculty and Staff are evaluated separately based on their current assignment.</div>
             <div class="student-eval-note"><i class="fa-solid fa-circle-info"></i><span>Your responses are recorded for the active evaluation period. Review each rating before you submit.</span></div>
 
@@ -2211,14 +2282,6 @@ body.light-theme .dash-cta-icon{background:#FEF3C7!important;color:#B45309!impor
                     <div class="alert alert-error" id="pwMismatch" style="display:none;"><i class="fa-solid fa-circle-exclamation"></i> New passwords do not match.</div>
                     <button type="submit" class="btn-primary-cta" id="updatePwBtn"><i class="fa-solid fa-key"></i> Update Password</button>
                 </form>
-            </div>
-
-            <div class="gl-card">
-                <h3><i class="fa-solid fa-right-from-bracket"></i> Account</h3>
-                <p style="margin-bottom:14px;">Sign out of your student evaluation account on this device.</p>
-                <a href="../logout.php" class="btn-logout">
-                    <i class="fa-solid fa-right-from-bracket"></i> Log out
-                </a>
             </div>
         </div>
 
@@ -2578,6 +2641,67 @@ document.addEventListener('DOMContentLoaded', function() {
     localStorage.setItem('pbi_theme', theme);
     applyAppearance(theme);
 });
+</script>
+<script>
+(function(){
+    const items = <?= json_encode($student_bell_notices, JSON_UNESCAPED_UNICODE) ?>;
+    const STORE_KEY = 'pbiStudentNotifications_<?= (int)$student_id ?>';
+    const btn = document.getElementById('notifBellBtn');
+    const dd  = document.getElementById('notifDropdown');
+    const list = document.getElementById('notifList');
+    const badge = document.getElementById('notifBadge');
+    if (!btn || !dd || !list || !badge) return;
+
+    let seen = {};
+    try { seen = JSON.parse(localStorage.getItem(STORE_KEY) || '{}') || {}; } catch(e){ seen = {}; }
+    function save(){ try { localStorage.setItem(STORE_KEY, JSON.stringify(seen)); } catch(e){} }
+
+    function render(){
+        list.innerHTML = '';
+        if (!items.length) {
+            const li = document.createElement('li');
+            li.className = 'notif-dd-empty';
+            li.textContent = 'No notifications yet.';
+            list.appendChild(li);
+        }
+        let unread = 0;
+        items.forEach(function(n){
+            const isNew = !seen[n.id];
+            if (isNew) unread++;
+            const li = document.createElement('li');
+            if (isNew) li.className = 'unseen';
+            const icon = document.createElement('i');
+            icon.className = 'fa-solid ' + (/^fa-[a-z0-9-]+$/.test(n.icon || '') ? n.icon : 'fa-circle-info');
+            const span = document.createElement('span');
+            span.textContent = n.text;
+            li.appendChild(icon); li.appendChild(span);
+            list.appendChild(li);
+        });
+        if (unread > 0) { badge.textContent = unread > 9 ? '9+' : String(unread); badge.style.display = 'flex'; }
+        else { badge.style.display = 'none'; }
+    }
+    function close(){ dd.classList.remove('open'); btn.setAttribute('aria-expanded','false'); dd.setAttribute('aria-hidden','true'); }
+
+    btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        const open = dd.classList.toggle('open');
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        dd.setAttribute('aria-hidden', open ? 'false' : 'true');
+        if (open) {
+            // Keep the "new" highlight for this view, then mark everything read.
+            items.forEach(function(n){ seen[n.id] = 1; });
+            save();
+            badge.style.display = 'none';
+        } else {
+            render();
+        }
+    });
+    document.addEventListener('click', function(e){
+        if (!dd.contains(e.target) && e.target !== btn) { if (dd.classList.contains('open')) { close(); render(); } }
+    });
+    document.addEventListener('keydown', function(e){ if (e.key === 'Escape') { close(); render(); } });
+    render();
+})();
 </script>
 <script src="../admin/eval_status_poll.js" data-busy-selector="#evalModal.open" defer></script>
 </body>

@@ -49,6 +49,7 @@
 
   var baseline = null;      // token from the first successful response
   var timer = null;
+  var transitionTimer = null;
   var inFlight = null;
   var stopped = false;
   var dirty = false;        // user has typed/selected something in a form
@@ -133,6 +134,17 @@
     safeRefresh();
   }
 
+  // Reload shortly after the exact server-configured open/close boundary.
+  // Periodic polling remains as a fallback for settings changed while a page
+  // is open or for browsers that throttle timers in the background.
+  function scheduleTransition(d) {
+    clearTimeout(transitionTimer);
+    if (!d || !Number.isFinite(Number(d.next_transition)) || !Number.isFinite(Number(d.server_time_ms))) return;
+    var serverOffset = Number(d.server_time_ms) - Date.now();
+    var delay = Number(d.next_transition) * 1000 - (Date.now() + serverOffset) + 2000;
+    if (delay > 0) transitionTimer = setTimeout(poll, delay);
+  }
+
   /* ── Polling ───────────────────────────────────────────────────────────── */
   function poll() {
     if (stopped || document.hidden) return schedule();
@@ -149,6 +161,7 @@
       })
       .then(function (d) {
         if (!d || !d.token) return;
+        scheduleTransition(d);
         if (baseline === null) { baseline = d; return; }
         if (d.token !== baseline.token) {
           var prev = baseline;

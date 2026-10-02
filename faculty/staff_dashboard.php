@@ -20,6 +20,7 @@ require_once '../shared/QuestionnaireService.php';
         }
 
         $user_id     = $_SESSION['user_id'];
+        require_once '../shared/notification_message.php';
         $full_name   = $_SESSION['full_name']   ?? 'Staff';
         $designation = $_SESSION['designation'] ?? 'Staff';
 
@@ -236,7 +237,7 @@ function staff_schedule_is_open(mysqli $mysqli): bool {
 
             if (empty($new_desig)) {
                 $_SESSION['toast_error'] = "Designation cannot be empty.";
-            } elseif ($new_desig === $old_desig) {
+            } elseif (preg_replace('/\s+/', ' ', mb_strtolower($new_desig)) === preg_replace('/\s+/', ' ', mb_strtolower(trim((string)$old_desig)))) {
                 $_SESSION['toast_error'] = "That is already your current designation.";
             } else {
                 $stmt = $mysqli->prepare("UPDATE users SET designation=? WHERE id=?");
@@ -245,12 +246,8 @@ function staff_schedule_is_open(mysqli $mysqli): bool {
                 $designation = $new_desig;
                 $_SESSION['designation'] = $new_desig;
 
-                // Notify admin
-                $message = $full_name . ' updated their designation from "' . $old_desig . '" to "' . $new_desig . '".';
-                $extra   = json_encode(['user_id'=>$user_id,'full_name'=>$full_name,'role'=>'staff','old_desig'=>$old_desig,'new_desig'=>$new_desig]);
-                $nstmt   = $mysqli->prepare("INSERT INTO notifications (type, user_id, message, extra_data) VALUES ('designation_update', ?, ?, ?)");
-                $nstmt->bind_param("iss", $user_id, $message, $extra);
-                $nstmt->execute(); $nstmt->close();
+                // No self-notification: the person just made this change themselves.
+                // The admin is still informed through role_change_log below.
 
                 // Also log to role_change_log so it shows up in the admin dashboard's
                 // System Audits box and notification bell.
@@ -1015,12 +1012,16 @@ $tracker_id = $mysqli->insert_id; $trk->close();
         // ── MY NOTIFICATIONS (bell) ──────────────────────────────────
         $my_notifications = [];
         $unread_count     = 0;
-        $nq = $mysqli->prepare("SELECT id, type, message, is_read, created_at FROM notifications WHERE user_id=? ORDER BY created_at DESC, id DESC LIMIT 15");
+        $nq = $mysqli->prepare("SELECT id, type, message, extra_data, is_read, created_at FROM notifications WHERE user_id=? ORDER BY created_at DESC, id DESC LIMIT 15");
         $nq->bind_param("i", $user_id);
         $nq->execute();
         $nres = $nq->get_result();
         if ($nres) $my_notifications = $nres->fetch_all(MYSQLI_ASSOC);
         $nq->close();
+        foreach ($my_notifications as &$notification) {
+            $notification['message'] = notification_message_for_view($notification, (int)$user_id);
+        }
+        unset($notification);
         foreach ($my_notifications as $n) if (empty($n['is_read'])) $unread_count++;
 
         // ── DESIGNATION SUGGESTIONS ───────────────────────────────────
@@ -1192,12 +1193,15 @@ body.light-theme .welcome-bar h2,
         .notif-btn{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:15px;cursor:pointer;transition:all .2s;position:relative;}
         .notif-btn:hover,.notif-btn.has-unread{color:#facc15;border-color:rgba(250,204,21,.4);background:rgba(250,204,21,.08);}
         .notif-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;border-radius:9px;background:#ef4444;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px;border:2px solid var(--mid);}
-        .notif-dropdown{position:absolute;top:calc(100% + 10px);right:0;width:320px;background:var(--mid);border:1px solid var(--border);border-radius:14px;box-shadow:0 16px 48px rgba(0,0,0,.55);opacity:0;visibility:hidden;transform:translateY(-8px);transition:all .2s ease;z-index:120;overflow:hidden;}
+        .notif-dropdown{position:absolute;top:calc(100% + 10px);right:0;width:min(320px,calc(100vw - 24px));max-height:min(70vh,560px);display:flex;flex-direction:column;background:var(--mid);border:1px solid var(--border);border-radius:14px;box-shadow:0 16px 48px rgba(0,0,0,.55);opacity:0;visibility:hidden;transform:translateY(-8px);transition:all .2s ease;z-index:120;overflow:hidden;}
         .notif-dropdown.show{opacity:1;visibility:visible;transform:translateY(0);}
         .notif-header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);}
         .notif-header-title{font-size:13px;font-weight:700;color:#fff;display:flex;align-items:center;gap:7px;}
         .notif-mark-read{font-size:11px;color:var(--teal-hover);cursor:pointer;font-weight:600;background:none;border:none;font-family:'DM Sans',sans-serif;padding:0;}
-        .notif-list{max-height:340px;overflow-y:auto;}
+        .notif-list{flex:1 1 auto;min-height:0;max-height:100%;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:rgba(148,163,184,.55) transparent;}
+        .notif-list::-webkit-scrollbar{width:7px;}
+        .notif-list::-webkit-scrollbar-track{background:transparent;}
+        .notif-list::-webkit-scrollbar-thumb{background:rgba(148,163,184,.55);border-radius:8px;}
         .notif-item{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-bottom:1px solid rgba(255,255,255,.05);position:relative;}
         .notif-item:last-child{border-bottom:none;}
         .notif-item.unread{background:rgba(99,102,241,.07);}
@@ -1618,11 +1622,6 @@ body.light-theme .ea-tab.active .count{
     background:rgba(99,102,241,.16);
     color:#3730A3;
 }
-body.light-theme .peer-card,
-body.light-theme .role-card,
-body.light-theme .section-card,
-body.light-theme .stat-card,
-
 /* Required-rating feedback */
 .eval-validation-alert{display:none;margin:0 0 12px;padding:11px 14px;border-radius:9px;border:1px solid rgba(240,84,84,.34);background:rgba(240,84,84,.10);color:#fca5a5;font-size:13px;line-height:1.5;}
 .eval-validation-alert.show{display:block;}
@@ -2034,18 +2033,18 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
 
                 <div class="nav-section-label sidebar-section-secondary">Evaluation</div>
                 <a href="staff_dashboard.php?page=my_results" class="nav-link <?= $page==='my_results'?'active':'' ?>">
-                    <i class="fa-solid fa-chart-bar"></i><span>My Results</span>
+                    <i class="fa-solid fa-chart-bar"></i><span>Feedback's Received</span>
                 </a>
                 <?php if (!$staff_has_teaching_assignment): ?>
                 <a href="staff_dashboard.php?page=staff_eval" class="nav-link <?= in_array($page,['staff_eval','staff_eval_form'])?'active':'' ?>">
-                    <i class="fa-solid fa-users"></i><span>Staff Evaluation</span>
+                    <i class="fa-solid fa-users"></i><span>Assigned Evaluation</span>
                     <?php if (!empty($staff_eval_targets) && $page==='staff_eval'): ?>
                     <span class="side-nav-badge"><?= count($staff_eval_targets) ?></span>
                     <?php endif; ?>
                 </a>
                 <?php else: ?>
                 <a href="staff_dashboard.php?page=peer" class="nav-link <?= in_array($page,['peer','peer_eval','staff_eval','staff_eval_form'])?'active':'' ?>">
-                    <i class="fa-solid fa-people-arrows"></i><span>Peer Evaluation</span>
+                    <i class="fa-solid fa-people-arrows"></i><span>Evaluate Others</span>
                 </a>
                 <?php endif; ?>
 
@@ -2116,10 +2115,10 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
                 </button>
                 <div class="nav-page-title">
                     <?php
-                    $titles = ['dashboard'=>'Dashboard','profile'=>'Role & Designation','my_results'=>'My Evaluation Results',
-                        'staff_eval'=> $staff_has_teaching_assignment ? 'Peer Evaluation' : 'Staff Evaluation',
-                        'staff_eval_form'=> $staff_has_teaching_assignment ? 'Peer Evaluation' : 'Staff Evaluation',
-                        'peer'=>'Peer Evaluation','peer_eval'=>'Peer Evaluation','settings'=>'Settings'];
+                    $titles = ['dashboard'=>'Dashboard','profile'=>'Role & Designation','my_results'=>"Feedback's Received",
+                        'staff_eval'=> $staff_has_teaching_assignment ? 'Evaluate Others' : 'Assigned Evaluation',
+                        'staff_eval_form'=> $staff_has_teaching_assignment ? 'Evaluate Others' : 'Assigned Evaluation',
+                        'peer'=>'Evaluate Others','peer_eval'=>'Evaluate Others','settings'=>'Settings'];
                     echo $titles[$page] ?? 'Dashboard';
                     ?>
                 </div>
@@ -3143,6 +3142,15 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             if (type === 'designation_update') {
                 return { icon: 'fa-id-badge', color: '#2B6CB0' };
+            }
+            if (type === 'teaching_assignment') {
+                return { icon: 'fa-chalkboard-user', color: '#2B6CB0' };
+            }
+            if (type === 'academic_period') {
+                return { icon: 'fa-calendar-days', color: '#2B6CB0' };
+            }
+            if (type === 'evaluation_schedule') {
+                return { icon: 'fa-clock', color: '#2B6CB0' };
             }
             return { icon: 'fa-bell', color: 'var(--teal-hover)' };
         }

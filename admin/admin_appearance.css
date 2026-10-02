@@ -1189,11 +1189,6 @@ html[data-theme="dark"] .questionnaire-icon{
 html[data-theme="dark"] .manage-card{
   color:var(--accent)!important;
 }
-html[data-theme="dark"] .card-ea .manage-card{
-  background:rgba(15,159,110,.12)!important;
-  color:#66dfb5!important;
-  border-color:rgba(15,159,110,.28)!important;
-}
 html[data-theme="dark"] .qcat{
   background:rgba(217,145,33,.12)!important;
   color:#f0c878!important;

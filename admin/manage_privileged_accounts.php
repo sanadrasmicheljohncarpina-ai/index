@@ -351,6 +351,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reset
     redirect_back($viewRole, $viewStatus, $ylFilter, $levelFilter);
 }
 
+// ── Notify a Teacher/Staff member when the EA changes their year-level (teaching) assignment ──
+function pbi_notify_year_level_change(mysqli $mysqli, int $uid, array $old, array $new): void {
+    sort($old); sort($new);
+    if ($old === $new) return; // nothing actually changed
+    if (empty($new)) {
+        $msg = 'The Executive Assistant removed your teaching assignment.';
+    } elseif (empty($old)) {
+        $msg = 'The Executive Assistant assigned you to teach: ' . implode(', ', $new) . '.';
+    } else {
+        $msg = 'The Executive Assistant updated your teaching assignment: ' . implode(', ', $new) . '.';
+    }
+    $stmt = $mysqli->prepare("INSERT INTO notifications (type, user_id, message) VALUES ('teaching_assignment', ?, ?)");
+    if (!$stmt) return; // notifications table missing: never block the assignment itself
+    $stmt->bind_param("is", $uid, $msg);
+    $stmt->execute();
+    $stmt->close();
+}
+
+function pbi_current_year_levels(mysqli $mysqli, array $uids): array {
+    $out = [];
+    foreach ($uids as $u) $out[(int)$u] = [];
+    if (empty($uids)) return $out;
+    $ph = implode(',', array_fill(0, count($uids), '?'));
+    $stmt = $mysqli->prepare("SELECT user_id, year_level FROM user_year_levels WHERE user_id IN ($ph)");
+    if (!$stmt) return $out;
+    $ids = array_map('intval', $uids);
+    $stmt->bind_param(str_repeat('i', count($ids)), ...$ids);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    while ($res && ($r = $res->fetch_assoc())) $out[(int)$r['user_id']][] = $r['year_level'];
+    $stmt->close();
+    return $out;
+}
+
 // ── ASSIGN YEAR LEVELS (single, Teacher/Staff only) ──────────────
 // Replaces self-select: the Super Admin now sets which year level(s) an
 // employee is responsible for / teaching. Supports multiple per employee.
@@ -359,6 +393,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'assig
 
     $uid = intval($_POST['user_id'] ?? 0);
     $selected = array_values(array_intersect($_POST['year_levels'] ?? [], $year_levels));
+    $oldLevels = pbi_current_year_levels($mysqli, [$uid])[$uid] ?? [];
 
     $mysqli->begin_transaction();
     $del = $mysqli->prepare("DELETE FROM user_year_levels WHERE user_id=?");
@@ -375,6 +410,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'assig
         $ins->close();
     }
     $mysqli->commit();
+    pbi_notify_year_level_change($mysqli, $uid, $oldLevels, $selected);
 
     $_SESSION['toast'] = !empty($selected)
         ? "Year level(s) assigned: " . implode(', ', $selected) . "."
@@ -392,6 +428,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'bulk_
     if (empty($uids)) {
         $_SESSION['toast_error'] = "No accounts selected.";
     } else {
+        $oldByUser = pbi_current_year_levels($mysqli, $uids);
         $mysqli->begin_transaction();
         $placeholders = implode(',', array_fill(0, count($uids), '?'));
         $del = $mysqli->prepare("DELETE FROM user_year_levels WHERE user_id IN ($placeholders)");
@@ -410,6 +447,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'bulk_
             $ins->close();
         }
         $mysqli->commit();
+        foreach ($uids as $u) {
+            pbi_notify_year_level_change($mysqli, (int)$u, $oldByUser[(int)$u] ?? [], $selected);
+        }
 
         $n = count($uids);
         $_SESSION['toast'] = !empty($selected)

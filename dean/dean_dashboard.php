@@ -11,6 +11,7 @@ session_set_cookie_params([
 session_start();
 require_once 'db.php';
 require_once dirname(__DIR__) . '/shared/system_settings_service.php';
+require_once __DIR__ . '/dean_ea_notices.php';
 require_once dirname(__DIR__) . '/shared/ea_personnel_service.php';
 require_once 'school_head_structure_gate.php';
 
@@ -103,6 +104,11 @@ if ($structureActive) {
 // ── NOTIFICATIONS ─────────────────────────────────────────────────────
 // Generic schedule-driven notices come straight from the shared service.
 $notifications = $settings['notifications'];
+
+// Executive Assistant notices: academic period and evaluation schedule.
+foreach (dean_ea_notices($settings) as $eaNotice) {
+    $notifications[] = $eaNotice;
+}
 
 // Seed the bell with the latest submitted evaluation events as well as the
 // current status notices. The browser poll keeps these events visible.
@@ -517,7 +523,7 @@ include __DIR__ . '/includes/dean_sidebar.php';
                     </div>
                     <ul class="notif-list" id="notifList">
                         <?php foreach ($notifications as $n): ?>
-                            <li><i class="fa-solid fa-circle-exclamation"></i> <?= htmlspecialchars($n) ?></li>
+                            <li><i class="fa-solid fa-circle-exclamation"></i> <?= htmlspecialchars(is_array($n) ? ($n['text'] ?? '') : $n) ?></li>
                         <?php endforeach; ?>
                     </ul>
                 </div>
@@ -698,6 +704,7 @@ include __DIR__ . '/includes/dean_sidebar.php';
                 map.set(item.key, Object.assign({}, previous, item));
             } else {
                 item.read = false;
+                if (!item.created_at) item.created_at = new Date().toISOString();
                 map.set(item.key, item);
                 fresh.push(item.key);
             }
@@ -719,7 +726,12 @@ include __DIR__ . '/includes/dean_sidebar.php';
             const li = document.createElement('li');
             if (item.type === 'evaluation') li.classList.add('notif-evaluation');
             const icon = document.createElement('i');
-            icon.className = item.type === 'evaluation' ? 'fa-solid fa-clipboard-check' : 'fa-solid fa-circle-exclamation';
+            const ICONS = {
+                evaluation:  'fa-solid fa-clipboard-check',
+                ea_period:   'fa-solid fa-calendar-days',
+                ea_schedule: 'fa-solid fa-clock'
+            };
+            icon.className = ICONS[item.type] || 'fa-solid fa-circle-exclamation';
             li.appendChild(icon);
             li.appendChild(document.createTextNode(' ' + item.text));
             list.appendChild(li);

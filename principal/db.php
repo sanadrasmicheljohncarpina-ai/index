@@ -25,6 +25,9 @@ define('UPLOAD_DIR', dirname(__DIR__) . '/image/');
 // Relative URL used in HTML <img src=""> tags inside principal pages
 define('UPLOAD_URL', '../image/');
 
+require_once dirname(__DIR__) . '/shared/maintenance_gate.php';
+enforce_maintenance_gate($mysqli);
+
 // ---- Self-healing schema check (matches your ALTER TABLE-on-load pattern) ----
 // Confirms education_level is VARCHAR (not the old 3-value ENUM) and that
 // employee_id exists, in case this environment hasn't been migrated yet.

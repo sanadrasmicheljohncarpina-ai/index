@@ -60,9 +60,9 @@ if (!function_exists('render_principal_sidebar')) {
 
         $links = [
             'dashboard'   => ['principal_dashboard.php',          'fa-house',            'Dashboard'],
-            'evaluations' => ['principal_evaluations.php',        'fa-clipboard-list',   'My Evaluation'],
+            'evaluations' => ['principal_evaluations.php',        'fa-clipboard-list',   'Evaluate Others'],
             'tracker'     => ['principal_evaluation_tracker.php', 'fa-satellite-dish',   'Evaluation Tracker'],
-            'results'     => ['principal_results.php',            'fa-chart-bar',        'View Results'],
+            'results'     => ['principal_results.php',            'fa-chart-bar',        "Feedback's Received"],
             'reports'     => ['principal_reports.php',             'fa-chart-line',      'Evaluation Reports'],
             'settings'    => ['principal_account_settings.php',   'fa-gear',            'Settings'],
         ];

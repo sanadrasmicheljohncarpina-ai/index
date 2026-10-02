@@ -14,6 +14,7 @@ require_once '../shared/eligibility.php';
 require_once '../shared/EvaluationContextService.php';
 require_once '../shared/system_settings_service.php';
 require_once '../shared/QuestionnaireService.php';
+require_once '../shared/notification_message.php';
 qn_migrate_legacy_once($mysqli);
 
 if (empty($_SESSION['user_id']) || $_SESSION['role'] !== 'teacher') {
@@ -818,7 +819,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_designation'])
 
     if (empty($new_desig)) {
         $_SESSION['toast_error'] = "Designation cannot be empty.";
-    } elseif ($new_desig === $old_desig) {
+    } elseif (preg_replace('/\s+/', ' ', mb_strtolower($new_desig)) === preg_replace('/\s+/', ' ', mb_strtolower(trim((string)$old_desig)))) {
         $_SESSION['toast_error'] = "That's already your current designation.";
     } else {
         $stmt = $mysqli->prepare("UPDATE users SET designation=? WHERE id=?");
@@ -828,11 +829,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_designation'])
         $_SESSION['designation'] = $new_desig;
         $designation = $new_desig;
 
-        $message = htmlspecialchars($full_name) . " updated their designation from \"{$old_desig}\" to \"{$new_desig}\".";
-        $extra = json_encode(['user_id'=>$user_id,'full_name'=>$full_name,'role'=>'teacher','old_desig'=>$old_desig,'new_desig'=>$new_desig]);
-        $nstmt = $mysqli->prepare("INSERT INTO notifications (type, user_id, message, extra_data) VALUES ('designation_update', ?, ?, ?)");
-        $nstmt->bind_param("iss", $user_id, $message, $extra);
-        $nstmt->execute(); $nstmt->close();
+        // No self-notification here: the person just made this change themselves.
+        // The admin is still informed through role_change_log below.
 
         // Also log to role_change_log so it shows up in the admin dashboard's
         // System Audits box and notification bell.
@@ -915,12 +913,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_notifications_re
 // ── MY NOTIFICATIONS (bell) ──────────────────────────────────
 $my_notifications = [];
 $unread_count     = 0;
-$nq = $mysqli->prepare("SELECT id, type, message, is_read, created_at FROM notifications WHERE user_id=? ORDER BY created_at DESC, id DESC LIMIT 15");
+$nq = $mysqli->prepare("SELECT id, type, message, extra_data, is_read, created_at FROM notifications WHERE user_id=? ORDER BY created_at DESC, id DESC LIMIT 15");
 $nq->bind_param("i", $user_id);
 $nq->execute();
 $nres = $nq->get_result();
 if ($nres) $my_notifications = $nres->fetch_all(MYSQLI_ASSOC);
 $nq->close();
+foreach ($my_notifications as &$notification) {
+    $notification['message'] = notification_message_for_view($notification, (int)$user_id);
+}
+unset($notification);
 foreach ($my_notifications as $n) if (empty($n['is_read'])) $unread_count++;
 
 $desig_suggestions = ['Teacher','Registrar','Cashier','Bookkeeper','Librarian','Guidance','Nurse','Personnel','Adviser','Coordinator','Department Head'];
@@ -1145,16 +1147,17 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .empty-state{text-align:center;padding:44px 20px;color:var(--muted);}
 .empty-state i{font-size:36px;opacity:.25;display:block;margin-bottom:12px;}
 .empty-state p{font-size:13px;}
-.peer-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:16px;}
-.peer-card{background:var(--mid);border:2px solid var(--border);border-radius:var(--radius);padding:18px 12px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;transition:all .2s;}
+.peer-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:16px;align-items:stretch;}
+.peer-card{background:var(--mid);border:2px solid var(--border);border-radius:var(--radius);padding:18px 12px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:8px;text-align:center;transition:all .2s;height:100%;box-sizing:border-box;}
 .peer-card:hover:not(.done){border-color:var(--teal);transform:translateY(-3px);box-shadow:0 6px 20px rgba(0,0,0,.3);}
 .peer-card.done{opacity:.6;cursor:not-allowed;border-color:rgba(34,197,94,.3);}
 .peer-photo{width:68px;height:68px;border-radius:50%;object-fit:cover;border:2px solid var(--border);}
 .peer-photo-ph{width:68px;height:68px;border-radius:50%;background:var(--inner);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:22px;}
-.peer-name{font-size:13px;font-weight:600;color:#fff;line-height:1.3;}
-.peer-desig{font-size:11px;color:var(--muted);}
-.done-badge{background:rgba(34,197,94,.14);color:#4ade80;border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;}
-.btn-eval-peer{width:100%;padding:7px 0;border:none;border-radius:7px;background:var(--teal);color:#fff;font-size:12px;font-weight:700;cursor:pointer;transition:background .2s;font-family:'DM Sans',sans-serif;}
+.peer-photo,.peer-photo-ph{flex-shrink:0;}
+.peer-name{font-size:13px;font-weight:600;color:#fff;line-height:1.3;min-height:2.6em;display:flex;align-items:center;justify-content:center;width:100%;}
+.peer-desig{font-size:11px;color:var(--muted);line-height:1.35;width:100%;flex:1 1 auto;display:flex;align-items:flex-start;justify-content:center;}
+.done-badge{background:rgba(34,197,94,.14);color:#4ade80;border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;margin-top:auto;display:inline-flex;align-items:center;gap:4px;min-height:29px;box-sizing:border-box;}
+.btn-eval-peer{margin-top:auto;width:100%;padding:7px 0;border:none;border-radius:7px;background:var(--teal);color:#fff;font-size:12px;font-weight:700;cursor:pointer;transition:background .2s;font-family:'DM Sans',sans-serif;}
 .btn-eval-peer:hover{background:var(--teal-hover);}
 .btn-eval-peer:disabled{opacity:.45;cursor:not-allowed;}
 .back-link{display:inline-flex;align-items:center;gap:7px;background:var(--inner);border:1px solid var(--border);color:var(--light);padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;margin-bottom:18px;transition:background .2s;}
@@ -1257,12 +1260,15 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .notif-btn{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:15px;cursor:pointer;transition:all .2s;position:relative;}
 .notif-btn:hover,.notif-btn.has-unread{color:#facc15;border-color:rgba(250,204,21,.4);background:rgba(250,204,21,.08);}
 .notif-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;border-radius:9px;background:#ef4444;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px;border:2px solid var(--mid);}
-.notif-dropdown{position:absolute;top:calc(100% + 10px);right:0;width:320px;background:var(--mid);border:1px solid var(--border);border-radius:14px;box-shadow:0 16px 48px rgba(0,0,0,.55);opacity:0;visibility:hidden;transform:translateY(-8px);transition:all .2s ease;z-index:120;overflow:hidden;}
+.notif-dropdown{position:absolute;top:calc(100% + 10px);right:0;width:min(320px,calc(100vw - 24px));max-height:min(70vh,560px);display:flex;flex-direction:column;background:var(--mid);border:1px solid var(--border);border-radius:14px;box-shadow:0 16px 48px rgba(0,0,0,.55);opacity:0;visibility:hidden;transform:translateY(-8px);transition:all .2s ease;z-index:120;overflow:hidden;}
 .notif-dropdown.show{opacity:1;visibility:visible;transform:translateY(0);}
 .notif-header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);}
 .notif-header-title{font-size:13px;font-weight:700;color:#fff;display:flex;align-items:center;gap:7px;}
 .notif-mark-read{font-size:11px;color:var(--teal-hover);cursor:pointer;font-weight:600;background:none;border:none;font-family:'DM Sans',sans-serif;padding:0;}
-.notif-list{max-height:340px;overflow-y:auto;}
+.notif-list{flex:1 1 auto;min-height:0;max-height:100%;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:rgba(148,163,184,.55) transparent;}
+.notif-list::-webkit-scrollbar{width:7px;}
+.notif-list::-webkit-scrollbar-track{background:transparent;}
+.notif-list::-webkit-scrollbar-thumb{background:rgba(148,163,184,.55);border-radius:8px;}
 .notif-item{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-bottom:1px solid rgba(255,255,255,.05);position:relative;}
 .notif-item:last-child{border-bottom:none;}
 .notif-item.unread{background:rgba(13,148,136,.07);}
@@ -1420,10 +1426,6 @@ body.light-theme .dd-appearance-val{
     color:#52677A;
     background:#EEF2F8;
 }
-body.light-theme .peer-card,
-body.light-theme .role-card,
-body.light-theme .section-card,
-body.light-theme .stat-card,
 /* Required-rating feedback for peer evaluations */
 .eval-validation-alert{display:none;margin:0 0 12px;padding:11px 14px;border-radius:9px;border:1px solid rgba(240,84,84,.34);background:rgba(240,84,84,.10);color:#fca5a5;font-size:13px;line-height:1.5;}
 .eval-validation-alert.show{display:block;}
@@ -1897,10 +1899,10 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
 
         <div class="nav-section-label sidebar-section-secondary">Evaluation</div>
         <a href="faculty_dashboard.php?page=my_results" class="nav-link <?= $page==='my_results'?'active':'' ?>">
-            <i class="fa-solid fa-chart-bar"></i><span>My Results</span>
+            <i class="fa-solid fa-chart-bar"></i><span>Feedback's Received</span>
         </a>
         <a href="faculty_dashboard.php?page=peer" class="nav-link <?= in_array($page,['peer','peer_eval'])?'active':'' ?>">
-            <i class="fa-solid fa-users-viewfinder"></i><span>My Evaluation</span>
+            <i class="fa-solid fa-users-viewfinder"></i><span>Evaluate Others</span>
             <?php if ($page==='peer' && (!empty($peers_all) || !empty($school_heads))): ?>
             <span class="side-nav-badge"><?= (count($peers_all) - count($done_peers)) + (count($school_heads) - count($done_school_heads)) ?></span>
             <?php endif; ?>
@@ -1971,7 +1973,7 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
             <i class="fa-solid fa-bars"></i>
         </button>
         <div class="nav-page-title">
-            <?php $titles=['dashboard'=>'Dashboard','profile'=>'Role & Designation','my_results'=>'My Results','peer'=>'Evaluation','peer_eval'=>'Evaluate','settings'=>'Settings'];
+            <?php $titles=['dashboard'=>'Dashboard','profile'=>'Role & Designation','my_results'=>"Feedback's Received",'peer'=>'Evaluate Others','peer_eval'=>'Evaluate','settings'=>'Settings'];
             echo $titles[$page] ?? 'Dashboard'; ?>
         </div>
     </div>
@@ -2809,6 +2811,15 @@ function notificationVisual(type) {
     }
     if (type === 'designation_update') {
         return { icon: 'fa-id-badge', color: '#2B6CB0' };
+    }
+    if (type === 'teaching_assignment') {
+        return { icon: 'fa-chalkboard-user', color: '#2B6CB0' };
+    }
+    if (type === 'academic_period') {
+        return { icon: 'fa-calendar-days', color: '#2B6CB0' };
+    }
+    if (type === 'evaluation_schedule') {
+        return { icon: 'fa-clock', color: '#2B6CB0' };
     }
     return { icon: 'fa-bell', color: 'var(--teal-hover)' };
 }

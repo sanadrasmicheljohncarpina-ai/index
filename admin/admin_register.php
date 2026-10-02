@@ -108,291 +108,201 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>PBI Admin — Create Account</title>
-<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+<link rel="stylesheet" href="admin_appearance.css">
+<script src="admin_appearance.js"></script>
 <style>
 :root{
-    --dark-blue:#14100A;
-    --blue-mid:#EFE6D0;
-    --blue-inner:#E9DFC6;
-    --blue-accent:#C9A227;
-    --blue-hover:#9C7A12;
-    --light:#2B2416;
-    --muted:#7A6F58;
-    --radius:10px;
-    --shadow:0 8px 32px rgba(120,100,60,.18);
+    --navy-deep:#091727;
+    --input-bg:#0B1B2E;
+    --input-bg-hover:#0D2035;
+    --input-border:#29405A;
+    --text:#E7EEF7;
+    --label:#98ADC3;
+    --muted:#8FA6BE;
+    --blue:#2F6EE2;
+    --blue-hover:#3D7BF0;
+    --blue-light:#8DB4FF;
+    --gold:#F2C94C;
+    --gold-hover:#FFD866;
+    --gold-ring:#C9A227;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{min-height:100%;background:var(--dark-blue)}
+html{min-height:100%;background:var(--navy-deep);color-scheme:dark}
 body{
-    min-height:100vh;
+    min-height:100vh;display:flex;align-items:center;justify-content:center;
+    padding:14px 20px;position:relative;overflow-x:hidden;
+    font-family:'DM Sans',sans-serif;color:var(--text);
     background:
-        radial-gradient(circle at 10% 10%,rgba(201,162,39,.16),transparent 32%),
-        radial-gradient(circle at 90% 90%,rgba(240,202,90,.11),transparent 30%),
-        var(--dark-blue);
+        radial-gradient(circle at 10% 8%,rgba(47,110,226,.14),transparent 30%),
+        radial-gradient(circle at 90% 90%,rgba(242,201,76,.08),transparent 28%),
+        var(--navy-deep);
     background-attachment:fixed;
-    font-family:'DM Sans',sans-serif;color:var(--light);
-    display:flex;align-items:center;justify-content:center;
-    padding:24px;position:relative;overflow-x:hidden;
 }
-
-/* Decorative background + ambient lighting — same composition as the Student and
-   Dean portals, kept in the Admin blue identity. */
 body::before{
     content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
-    background:linear-gradient(180deg,rgba(20,15,8,.05),transparent 26%,rgba(120,100,60,.06));
+    background:linear-gradient(180deg,rgba(15,30,51,.12),transparent 30%,rgba(47,110,226,.04));
 }
 .bg-grid{
     position:fixed;inset:0;z-index:0;pointer-events:none;
     background-image:
-        repeating-linear-gradient(45deg,rgba(201,162,39,.075) 0,rgba(201,162,39,.075) 1px,transparent 1px,transparent 26px),
-        repeating-linear-gradient(-45deg,rgba(201,162,39,.055) 0,rgba(201,162,39,.055) 1px,transparent 1px,transparent 26px);
+        repeating-linear-gradient(45deg,rgba(79,129,184,.055) 0,rgba(79,129,184,.055) 1px,transparent 1px,transparent 26px),
+        repeating-linear-gradient(-45deg,rgba(79,129,184,.04) 0,rgba(79,129,184,.04) 1px,transparent 1px,transparent 26px);
 }
 .hex-deco{position:fixed;z-index:0;pointer-events:none;opacity:.5}
 .hex-1{top:-60px;left:-60px}
 .hex-2{bottom:-70px;right:-70px}
 
+/* ── Card: lit top edge, soft vertical gradient and inner highlight give it depth ── */
 .reg-card{
-    position:relative;z-index:10;width:min(100%,580px);
-    padding:28px 36px 22px;
-    background:rgba(255,252,244,.92);
-    backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
-    border:1px solid rgba(20,15,8,.14);border-radius:16px;
-    box-shadow:0 24px 70px rgba(120,100,60,.14),0 0 0 1px rgba(20,15,8,.04),0 0 90px rgba(201,162,39,.10);
+    position:relative;z-index:10;width:min(100%,540px);
+    padding:24px 32px 18px;
+    background:linear-gradient(180deg,#152A47 0%,#0F2038 36%,#0B192C 100%);
+    border:1px solid rgba(152,178,207,.20);border-radius:20px;
+    box-shadow:
+        0 30px 80px rgba(0,0,0,.55),
+        0 0 0 1px rgba(255,255,255,.02),
+        inset 0 1px 0 rgba(255,255,255,.07),
+        0 0 90px rgba(47,110,226,.08);
     transition:border-color .3s ease,box-shadow .3s ease;
     animation:cardIn .65s cubic-bezier(.22,1,.36,1) both;
 }
-.reg-card:hover{border-color:rgba(240,202,90,.30);box-shadow:0 24px 70px rgba(120,100,60,.14),0 0 0 1px rgba(20,15,8,.04),0 0 100px rgba(201,162,39,.17)}
-@keyframes cardIn{from{opacity:0;transform:translateY(24px) scale(.98)}to{opacity:1;transform:none}}
-.card-header{text-align:center;margin-bottom:16px}
-.logo-img{
-    width:58px;height:58px;border-radius:50%;object-fit:cover;display:block;
-    border:2px solid var(--blue-accent);box-shadow:0 0 18px rgba(201,162,39,.36);
-    margin:0 auto 9px;
+.reg-card::before{
+    content:"";position:absolute;top:-1px;left:14%;right:14%;height:2px;border-radius:2px;
+    background:linear-gradient(90deg,transparent,rgba(98,144,230,.95),rgba(242,201,76,.75),transparent);
 }
-.card-title{font-family:'Rajdhani',sans-serif;font-size:23px;font-weight:700;letter-spacing:1.55px;color:#1F1B12;text-transform:uppercase}
-.card-subtitle{font-size:10.5px;color:var(--muted);letter-spacing:.95px;text-transform:uppercase;margin-top:2px}
-.divider{height:1px;background:linear-gradient(90deg,transparent,rgba(201,162,39,.36),transparent);margin-bottom:14px}
-.alert{display:flex;align-items:flex-start;gap:10px;border-radius:10px;padding:10px 12px;font-size:11px;line-height:1.5;margin-bottom:14px}
-.alert-error{background:rgba(248,113,113,.10);border:1px solid rgba(248,113,113,.30);color:#C0392B}
+.reg-card:hover{
+    border-color:rgba(98,144,201,.36);
+    box-shadow:0 30px 80px rgba(0,0,0,.58),0 0 0 1px rgba(255,255,255,.02),inset 0 1px 0 rgba(255,255,255,.07),0 0 100px rgba(47,110,226,.13);
+}
+@keyframes cardIn{from{opacity:0;transform:translateY(24px) scale(.98)}to{opacity:1;transform:none}}
+
+/* ── Header ── */
+.card-header{text-align:center}
+.logo-img{
+    width:48px;height:48px;border-radius:50%;object-fit:cover;display:block;margin:0 auto 10px;
+    border:2.5px solid var(--gold-ring);box-shadow:0 0 0 4px rgba(201,162,39,.10),0 0 26px rgba(201,162,39,.38);
+}
+.card-subtitle{
+    margin:0 auto;
+    font-size:11px;font-weight:500;line-height:1.5;letter-spacing:1.1px;text-transform:uppercase;
+    color:#92A7BF;text-wrap:balance;
+}
+.role-pill{
+    display:inline-flex;align-items:center;justify-content:center;gap:6px;
+    margin-top:8px;padding:3px 12px;border-radius:20px;
+    background:rgba(47,110,226,.14);border:1px solid rgba(98,144,230,.42);
+    color:var(--blue-light);font-size:10.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;
+}
+.divider{height:1px;margin:12px 0 12px;background:linear-gradient(90deg,transparent,rgba(93,145,204,.38),transparent)}
+
+/* ── Alerts ── */
+.alert{display:flex;align-items:flex-start;gap:10px;border-radius:10px;padding:11px 14px;font-size:12.5px;line-height:1.5;margin-bottom:14px}
+.alert-error{background:rgba(248,113,113,.10);border:1px solid rgba(248,113,113,.28);color:#FCA5A5}
+
+/* ── Sections ── */
+.section{margin-bottom:12px}
+.section-title{
+    display:flex;align-items:center;gap:9px;margin-bottom:8px;
+    font-size:10.5px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;color:#7F95B0;
+}
+.section-title i{color:#5C8FE8;font-size:11px}
+.section-title::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,rgba(98,144,201,.32),transparent)}
+
+/* ── Photo panel ── */
 .photo-upload-area{
     display:grid;grid-template-columns:auto 1fr;align-items:center;gap:12px;
-    padding:10px 12px;margin-bottom:15px;border-radius:10px;
-    background:rgba(0,0,0,.02);border:1px solid rgba(20,15,8,.10);
+    padding:10px 12px;border-radius:12px;
+    background:linear-gradient(135deg,rgba(47,110,226,.10),rgba(10,27,46,.80) 55%);
+    border:1px solid rgba(152,178,207,.18);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 8px 22px rgba(0,0,0,.22);
 }
 .photo-preview{
-    width:64px;height:64px;border-radius:50%;background:var(--blue-inner);
-    border:2px dashed rgba(201,162,39,.52);overflow:hidden;display:flex;
-    align-items:center;justify-content:center;cursor:pointer;transition:.2s;flex-shrink:0;
+    width:50px;height:50px;border-radius:50%;background:#0A1B2E;
+    border:2px dashed rgba(79,129,184,.60);overflow:hidden;display:flex;
+    align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;
+    box-shadow:0 0 0 5px rgba(47,110,226,.07),inset 0 2px 8px rgba(0,0,0,.4);
+    transition:border-color .2s,box-shadow .2s;
 }
-.photo-preview:hover{border-color:var(--blue-hover);box-shadow:0 0 0 4px rgba(201,162,39,.10)}
+.photo-preview:hover{border-color:var(--blue);box-shadow:0 0 0 5px rgba(47,110,226,.14),inset 0 2px 8px rgba(0,0,0,.4)}
 .photo-preview img{width:100%;height:100%;object-fit:cover;display:none}
-.photo-preview .ph-icon{color:var(--muted);font-size:20px;transition:.2s}
-.photo-preview:hover .ph-icon{color:var(--blue-hover)}
-.photo-info p{font-size:12px;color:#1F1B12;font-weight:700;margin-bottom:3px}
-.photo-info span{font-size:9.5px;color:var(--muted);line-height:1.35}
+.photo-preview .ph-icon{color:#91A8BF;font-size:16px;transition:color .2s}
+.photo-preview:hover .ph-icon{color:#BDD0E4}
+.photo-info p{font-size:12.5px;font-weight:700;color:#E6EDF6;margin-bottom:2px}
+.photo-info span{font-size:11px;line-height:1.4;color:var(--muted)}
 .btn-photo{
-    display:inline-flex;align-items:center;gap:6px;margin-top:6px;padding:6px 9px;border-radius:7px;
-    background:rgba(201,162,39,.13);border:1px solid rgba(201,162,39,.34);color:var(--blue-hover);
-    font:600 9.5px 'DM Sans',sans-serif;cursor:pointer;transition:.2s;
+    display:inline-flex;align-items:center;gap:7px;margin-top:5px;padding:5px 10px;border-radius:7px;
+    background:rgba(242,201,76,.09);border:1px solid rgba(242,201,76,.32);color:var(--gold);
+    font:600 11px 'DM Sans',sans-serif;cursor:pointer;transition:background .2s,border-color .2s,transform .15s;
 }
-.btn-photo:hover{background:rgba(201,162,39,.20);border-color:rgba(201,162,39,.55)}
+.btn-photo:hover{background:rgba(242,201,76,.16);border-color:rgba(242,201,76,.55);transform:translateY(-1px)}
 input[type="file"]{display:none}
-.form-row{display:grid;grid-template-columns:1fr 1fr;gap:11px 10px}
+
+/* ── Fields ──  (!important on the input skin so admin_appearance.css can't turn them white) */
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px 10px}
 .form-row .full{grid-column:1/-1}
 .form-group{display:flex;flex-direction:column;gap:4px}
-.form-label{font-size:9.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
-.required{color:#C0392B;font-weight:700;margin-left:2px}
+.form-label{font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--label)!important}
+.required{color:#F87171!important;font-weight:700;margin-left:3px}
 .input-wrap{position:relative}
-.f-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:11.5px;pointer-events:none;transition:color .2s}
-.form-input{
-    width:100%;min-height:43px;padding:10px 38px 10px 35px;
-    background:rgba(0,0,0,.045);border:1px solid rgba(20,15,8,.13);border-radius:8px;
-    color:var(--light);font:500 12px 'DM Sans',sans-serif;outline:none;
+.reg-card .input-wrap .f-icon{
+    position:absolute!important;left:14px!important;top:50%;transform:translateY(-50%);width:18px!important;text-align:center!important;
+    font-size:12px;color:#92A7BF!important;pointer-events:none;z-index:2!important;transition:color .2s;
+}
+.reg-card .input-wrap .form-input{
+    width:100%;height:40px!important;min-height:0!important;padding:0 40px 0 40px!important;
+    background:var(--input-bg)!important;border:1px solid var(--input-border)!important;border-radius:9px!important;
+    color:var(--text)!important;font:500 12.5px 'DM Sans',sans-serif!important;outline:none;
+    box-shadow:inset 0 2px 6px rgba(0,0,0,.32)!important;
     transition:border-color .2s,box-shadow .2s,background .2s;
 }
-.form-input::placeholder{color:rgba(122,111,88,.70)}
-.form-input:hover:not(:focus){border-color:rgba(240,202,90,.42);background:rgba(0,0,0,.05)}
-.form-input:focus{border-color:var(--blue-accent);background:rgba(0,0,0,.055);box-shadow:0 0 0 3px rgba(201,162,39,.18)}
-.input-wrap:focus-within .f-icon{color:var(--blue-hover)}
-.toggle-pw{position:absolute;right:9px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:11.5px;padding:4px}
-.toggle-pw:hover{color:var(--blue-hover)}
-.pw-strength{height:3px;border-radius:99px;margin-top:5px;background:rgba(20,15,8,.10);transition:all .3s}
-.pw-hint{font-size:9px;color:var(--muted);margin-top:2px;min-height:12px}
-.btn-main{
-    width:100%;min-height:45px;margin-top:11px;padding:10px 13px;background:var(--blue-accent);
-    border:none;border-radius:8px;color:#fff;font:700 13.5px 'DM Sans',sans-serif;letter-spacing:.3px;cursor:pointer;
-    display:flex;align-items:center;justify-content:center;gap:9px;
-    box-shadow:0 7px 20px rgba(201,162,39,.30);
-    transition:background .2s,transform .15s,box-shadow .2s;
+.reg-card .input-wrap .form-input::placeholder{color:rgba(154,175,197,.50)!important}
+.reg-card .input-wrap .form-input:hover:not(:focus){background:var(--input-bg-hover)!important;border-color:#345473!important}
+.reg-card .input-wrap .form-input:focus{background:var(--input-bg-hover)!important;border-color:var(--blue)!important;box-shadow:inset 0 2px 6px rgba(0,0,0,.25),0 0 0 3px rgba(47,110,226,.22)!important}
+.reg-card .input-wrap:focus-within .f-icon{color:#B7C9DB!important}
+.reg-card .input-wrap .toggle-pw{
+    position:absolute!important;right:9px!important;top:50%;transform:translateY(-50%);z-index:3!important;
+    width:28px!important;height:30px!important;display:flex!important;align-items:center;justify-content:center;
+    background:none!important;border:none!important;border-radius:6px;color:#92A7BF!important;font-size:13px;cursor:pointer;
 }
-.btn-main:hover{background:var(--blue-hover);transform:translateY(-1px);box-shadow:0 10px 28px rgba(201,162,39,.38)}
+.reg-card .input-wrap .toggle-pw i{display:block!important}
+.reg-card .input-wrap .toggle-pw:hover{color:#B7C9DB!important}
+
+/* ── Password strength meter ── */
+.pw-meter-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--label)}
+.pw-hint{font-size:11px;letter-spacing:.4px;min-height:14px}
+.pw-strength{height:5px;border-radius:99px;overflow:hidden;background:rgba(152,178,207,.14);box-shadow:inset 0 1px 2px rgba(0,0,0,.4)}
+.pw-strength span{display:block;height:100%;width:0;border-radius:99px;transition:width .3s,background .3s}
+
+/* ── Button ── */
+.btn-main{
+    width:100%;height:44px;margin-top:2px;display:flex;align-items:center;justify-content:center;gap:10px;
+    background:linear-gradient(180deg,#3D7BF0 0%,#2F6EE2 55%,#2860CC 100%);
+    border:none;border-radius:10px;color:#fff;font:700 13px 'DM Sans',sans-serif;letter-spacing:.6px;cursor:pointer;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 10px 26px rgba(47,110,226,.38);
+    transition:transform .15s,box-shadow .2s,filter .2s;
+}
+.btn-main:hover{transform:translateY(-1px);filter:brightness(1.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.26),0 14px 32px rgba(47,110,226,.46)}
 .btn-main:active{transform:translateY(1px)}
-.card-footer{text-align:center;margin-top:12px;padding-top:10px;border-top:1px solid rgba(20,15,8,.09);font-size:10.5px;line-height:1.5;color:var(--muted)}
-.card-footer a{color:var(--blue-hover);font-weight:700;text-decoration:none;text-underline-offset:3px}
-.card-footer a:hover{text-decoration:underline}
-.secure-badge{display:inline-flex;align-items:center;gap:5px;font-size:9px;color:#8A7C61;margin-top:4px}
-.secure-badge i{color:#16A34A;font-size:9px}
 
-button:focus-visible,a:focus-visible,.photo-preview:focus-visible{outline:3px solid rgba(240,202,90,.38);outline-offset:2px}
-@media(prefers-reduced-motion:reduce){.login-card,.reg-card{animation:none;transition:none}.btn-main,.photo-preview{transition:none}}
-@media(max-width:700px){body{padding:16px 12px;align-items:flex-start;overflow-y:auto}.reg-card{padding:24px 18px 18px;margin:auto 0}.hex-1,.hex-2{opacity:.24}}
-@media(max-height:760px) and (min-width:701px){body{align-items:flex-start;overflow-y:auto;padding-top:16px;padding-bottom:16px}.reg-card{margin:auto 0}}
-@media(max-width:520px){.form-row{grid-template-columns:1fr;gap:10px}.form-row .full{grid-column:auto}}
-@media(max-width:480px){.logo-img{width:54px;height:54px}.card-title{font-size:21px}}
+/* ── Footer ── */
+.card-footer{text-align:center;margin-top:12px;padding-top:12px;border-top:1px solid rgba(152,178,207,.12);font-size:12px;color:var(--muted)}
+.card-footer a{color:var(--gold);font-weight:700;text-decoration:none}
+.card-footer a:hover{color:var(--gold-hover);text-decoration:underline;text-underline-offset:3px}
 
-/* Final input icon alignment fix: keep icons inside their own visual space. */
-.input-wrap .f-icon{
-    left:14px!important;
-    z-index:2!important;
-    width:18px!important;
-    text-align:center!important;
-}
-.input-wrap .form-input{
-    padding-left:46px!important;
-    padding-right:46px!important;
-}
-.input-wrap .toggle-pw{
-    right:12px!important;
-    z-index:3!important;
-    width:26px!important;
-    height:30px!important;
-    display:flex!important;
-    align-items:center!important;
-    justify-content:center!important;
-}
-.input-wrap .toggle-pw i{display:block!important;}
-</style>
+button:focus-visible,a:focus-visible,.photo-preview:focus-visible,.btn-photo:focus-within{outline:3px solid rgba(79,144,231,.38);outline-offset:2px}
 
-<link rel="stylesheet" href="admin_appearance.css">
-<script src="admin_appearance.js"></script>
-
-<style id="pbi-auth-navy-theme">
-/* PBI Admin authentication theme — matched to the Executive Assistant
-   navigation/sidebar navy palette shown in the current UI reference. */
-:root{
-    --auth-navy:#0F1E33;
-    --auth-navy-deep:#091727;
-    --auth-navy-panel:#12263E;
-    --auth-navy-input:#0B1B2E;
-    --auth-border:#29405A;
-    --auth-border-soft:rgba(152,178,207,.18);
-    --auth-text:#E7EEF7;
-    --auth-muted:#9AAFC5;
-    --auth-gold:#F2C94C;
-    --auth-gold-hover:#FFD866;
-    --auth-blue:#2F6EE2;
-    --auth-blue-hover:#3D7BF0;
+@media(prefers-reduced-motion:reduce){.reg-card{animation:none;transition:none}.btn-main,.btn-photo{transition:none}}
+@media(max-width:640px){
+    body{padding:16px 12px;align-items:flex-start}
+    .reg-card{padding:30px 20px 22px;margin:auto 0}
+    .hex-1,.hex-2{opacity:.24}
 }
-
-html,body{background:var(--auth-navy-deep)!important;color:var(--auth-text)!important;}
-html{color-scheme:dark!important;}
-body{
-    background:
-        radial-gradient(circle at 10% 8%,rgba(47,110,226,.13),transparent 30%),
-        radial-gradient(circle at 90% 90%,rgba(242,201,76,.08),transparent 28%),
-        repeating-linear-gradient(45deg,rgba(79,129,184,.045) 0,rgba(79,129,184,.045) 1px,transparent 1px,transparent 26px),
-        repeating-linear-gradient(-45deg,rgba(79,129,184,.035) 0,rgba(79,129,184,.035) 1px,transparent 1px,transparent 26px),
-        var(--auth-navy-deep)!important;
-}
-body::before{background:linear-gradient(180deg,rgba(15,30,51,.12),transparent 30%,rgba(47,110,226,.035))!important;}
-.bg-grid{
-    background-image:
-        repeating-linear-gradient(45deg,rgba(79,129,184,.055) 0,rgba(79,129,184,.055) 1px,transparent 1px,transparent 26px),
-        repeating-linear-gradient(-45deg,rgba(79,129,184,.04) 0,rgba(79,129,184,.04) 1px,transparent 1px,transparent 26px)!important;
-}
-
-.login-card,.reg-card{
-    background:rgba(15,30,51,.96)!important;
-    border:1px solid rgba(152,178,207,.18)!important;
-    box-shadow:0 24px 70px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.025),0 0 80px rgba(47,110,226,.07)!important;
-    color:var(--auth-text)!important;
-}
-.login-card:hover,.reg-card:hover{
-    border-color:rgba(98,144,201,.36)!important;
-    box-shadow:0 24px 70px rgba(0,0,0,.48),0 0 0 1px rgba(255,255,255,.025),0 0 90px rgba(47,110,226,.11)!important;
-}
-
-.card-title{color:#F3F7FB!important;}
-.card-subtitle{color:#92A7BF!important;}
-.divider{background:linear-gradient(90deg,transparent,rgba(93,145,204,.36),transparent)!important;}
-.form-label{color:#98ADC3!important;}
-.required,.req{color:#F87171!important;}
-
-.form-input{
-    background:var(--auth-navy-input)!important;
-    border-color:var(--auth-border)!important;
-    color:var(--auth-text)!important;
-}
-.form-input::placeholder{color:rgba(154,175,197,.50)!important;}
-.form-input:hover:not(:focus){
-    background:#0D2035!important;
-    border-color:#345473!important;
-}
-.form-input:focus{
-    background:#0D2035!important;
-    border-color:var(--auth-blue)!important;
-    box-shadow:0 0 0 3px rgba(47,110,226,.20)!important;
-}
-.f-icon,.toggle-pw{color:#92A7BF!important;}
-.input-wrap:focus-within .f-icon,.toggle-pw:hover{color:#B7C9DB!important;}
-
-.forgot-row a,.register-row a,.card-footer a{color:var(--auth-gold)!important;}
-.forgot-row a:hover,.register-row a:hover,.card-footer a:hover{color:var(--auth-gold-hover)!important;}
-
-.btn-main{
-    background:var(--auth-blue)!important;
-    box-shadow:0 8px 22px rgba(47,110,226,.30)!important;
-}
-.btn-main:hover{
-    background:var(--auth-blue-hover)!important;
-    box-shadow:0 10px 28px rgba(47,110,226,.38)!important;
-}
-
-.alert-error{
-    background:rgba(248,113,113,.10)!important;
-    border-color:rgba(248,113,113,.28)!important;
-    color:#FCA5A5!important;
-}
-.alert-success{
-    background:rgba(34,197,94,.09)!important;
-    border-color:rgba(34,197,94,.24)!important;
-    color:#86EFAC!important;
-}
-
-.card-footer{border-top-color:rgba(152,178,207,.12)!important;color:var(--auth-muted)!important;}
-.secure-badge{color:#8FA6BE!important;}
-.secure-badge i{color:#4ADE80!important;}
-
-.photo-upload-area{
-    background:rgba(10,27,46,.78)!important;
-    border-color:rgba(152,178,207,.17)!important;
-}
-.photo-preview{
-    background:#0A1B2E!important;
-    border-color:rgba(79,129,184,.55)!important;
-}
-.photo-preview:hover{border-color:var(--auth-blue)!important;box-shadow:0 0 0 4px rgba(47,110,226,.12)!important;}
-.photo-preview .ph-icon{color:#91A8BF!important;}
-.photo-preview:hover .ph-icon{color:#BDD0E4!important;}
-.photo-info p{color:#E6EDF6!important;}
-.photo-info span{color:#8FA6BE!important;}
-.btn-photo{
-    background:rgba(242,201,76,.08)!important;
-    border-color:rgba(242,201,76,.30)!important;
-    color:var(--auth-gold)!important;
-}
-.btn-photo:hover{
-    background:rgba(242,201,76,.14)!important;
-    border-color:rgba(242,201,76,.50)!important;
-}
-
-.pw-strength{background:rgba(152,178,207,.12)!important;}
-.pw-hint{color:#8FA6BE!important;}
-
-button:focus-visible,a:focus-visible,.photo-preview:focus-visible{
-    outline:3px solid rgba(79,144,231,.35)!important;
-    outline-offset:2px;
+@media(max-width:540px){
+    .form-row{grid-template-columns:1fr;gap:14px}
+    .form-row .full{grid-column:auto}
+    .photo-upload-area{gap:14px;padding:14px}
 }
 </style>
 
@@ -406,14 +316,14 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible{
 <div class="reg-card">
     <div class="card-header">
         <img class="logo-img" src="../image/pbi_logo" alt="PBI Logo"/>
-        <div class="card-title">ADMIN REGISTRATION</div>
-        <div class="card-subtitle">Pandan Bay Institute &mdash; Control Panel</div>
+        <div class="card-subtitle">Employee Performance Evaluation &amp; Management System</div>
+        <div class="role-pill"><i class="fa-solid fa-user-shield"></i> Admin Access</div>
     </div>
     <div class="divider"></div>
 
     <?php if ($error): ?>
-    <div class="alert alert-error">
-        <i class="fa-solid fa-circle-exclamation" style="flex-shrink:0;margin-top:1px"></i>
+    <div class="alert alert-error" role="alert">
+        <i class="fa-solid fa-circle-exclamation" style="flex-shrink:0;margin-top:2px"></i>
         <span><?= htmlspecialchars($error) ?></span>
     </div>
     <?php endif; ?>
@@ -421,77 +331,89 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible{
     <form method="POST" action="admin_register.php" enctype="multipart/form-data" autocomplete="off">
 
         <!-- Profile Photo -->
-        <div class="photo-upload-area">
-            <div class="photo-preview" id="photoPreview" onclick="document.getElementById('photoFile').click()">
-                <img id="photoImg" src="" alt="Preview"/>
-                <i class="fa-solid fa-camera ph-icon" id="phIcon"></i>
-            </div>
-            <div class="photo-info">
-                <p>Profile Photo</p>
-                <span>Clear photo for identification · max 10 MB</span><br>
-                <label class="btn-photo" for="photoFile">
-                    <i class="fa-solid fa-upload"></i> Choose Photo
-                </label>
-                <input type="file" id="photoFile" name="photo"
-                       accept="image/jpeg,image/png,image/webp,image/gif"
-                       onchange="previewPhoto(this)"/>
+        <div class="section">
+            <div class="photo-upload-area">
+                <div class="photo-preview" id="photoPreview" onclick="document.getElementById('photoFile').click()">
+                    <img id="photoImg" src="" alt="Preview"/>
+                    <i class="fa-solid fa-camera ph-icon" id="phIcon"></i>
+                </div>
+                <div class="photo-info">
+                    <p>Profile Photo</p>
+                    <span>Clear photo for identification · max 10 MB</span><br>
+                    <label class="btn-photo" for="photoFile">
+                        <i class="fa-solid fa-upload"></i> Choose Photo
+                    </label>
+                    <input type="file" id="photoFile" name="photo"
+                           accept="image/jpeg,image/png,image/webp,image/gif"
+                           onchange="previewPhoto(this)"/>
+                </div>
             </div>
         </div>
 
-        <div class="form-row">
-            <!-- Name -->
-            <div class="form-group full">
-                <label class="form-label">Full Name<span class="required">*</span></label>
-                <div class="input-wrap">
-                    <i class="fa-solid fa-user f-icon"></i>
-                    <input class="form-input" type="text" name="full_name" placeholder="Juan dela Cruz"
-                           value="<?= htmlspecialchars($_POST['full_name'] ?? '') ?>" required/>
+        <!-- Account details -->
+        <div class="section">
+            <div class="section-title"><i class="fa-solid fa-id-card"></i> Account Details</div>
+            <div class="form-row">
+                <div class="form-group full">
+                    <label class="form-label" for="full_name">Full Name<span class="required">*</span></label>
+                    <div class="input-wrap">
+                        <i class="fa-solid fa-user f-icon"></i>
+                        <input class="form-input" type="text" id="full_name" name="full_name" placeholder="Juan dela Cruz"
+                               value="<?= htmlspecialchars($_POST['full_name'] ?? '') ?>" required/>
+                    </div>
                 </div>
-            </div>
 
-            <!-- Username -->
-            <div class="form-group">
-                <label class="form-label">Username<span class="required">*</span></label>
-                <div class="input-wrap">
-                    <i class="fa-solid fa-at f-icon"></i>
-                    <input class="form-input" type="text" name="username" placeholder="Choose a username"
-                           value="<?= htmlspecialchars($_POST['username'] ?? '') ?>" required autocomplete="off"/>
+                <div class="form-group">
+                    <label class="form-label" for="username">Username<span class="required">*</span></label>
+                    <div class="input-wrap">
+                        <i class="fa-solid fa-at f-icon"></i>
+                        <input class="form-input" type="text" id="username" name="username" placeholder="Choose a username"
+                               value="<?= htmlspecialchars($_POST['username'] ?? '') ?>" required autocomplete="off"/>
+                    </div>
                 </div>
-            </div>
 
-            <!-- Email -->
-            <div class="form-group">
-                <label class="form-label">Email Address<span class="required">*</span></label>
-                <div class="input-wrap">
-                    <i class="fa-solid fa-envelope f-icon"></i>
-                    <input class="form-input" type="email" name="email" placeholder="admin@pandanbay.edu.ph"
-                           value="<?= htmlspecialchars($_POST['email'] ?? '') ?>" required/>
+                <div class="form-group">
+                    <label class="form-label" for="email">Email Address<span class="required">*</span></label>
+                    <div class="input-wrap">
+                        <i class="fa-solid fa-envelope f-icon"></i>
+                        <input class="form-input" type="email" id="email" name="email" placeholder="admin@pandanbay.edu.ph"
+                               value="<?= htmlspecialchars($_POST['email'] ?? '') ?>" required/>
+                    </div>
                 </div>
             </div>
+        </div>
 
-            <!-- Password -->
-            <div class="form-group">
-                <label class="form-label">Password<span class="required">*</span></label>
-                <div class="input-wrap">
-                    <i class="fa-solid fa-lock f-icon"></i>
-                    <input class="form-input" type="password" id="pw" name="password"
-                           placeholder="Min. 8 characters" required oninput="checkStrength(this.value)"/>
-                    <button type="button" class="toggle-pw" onclick="togglePw('pw','eye1',this)" aria-label="Show password" title="Show password">
-                        <i class="fa-solid fa-eye-slash" id="eye1"></i>
-                    </button>
+        <!-- Security -->
+        <div class="section">
+            <div class="section-title"><i class="fa-solid fa-shield-halved"></i> Security</div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label" for="pw">Password<span class="required">*</span></label>
+                    <div class="input-wrap">
+                        <i class="fa-solid fa-lock f-icon"></i>
+                        <input class="form-input" type="password" id="pw" name="password"
+                               placeholder="Min. 8 characters" required oninput="checkStrength(this.value)"/>
+                        <button type="button" class="toggle-pw" onclick="togglePw('pw','eye1',this)" aria-label="Show password" title="Show password">
+                            <i class="fa-solid fa-eye-slash" id="eye1"></i>
+                        </button>
+                    </div>
                 </div>
-                <div class="pw-strength" id="pw-bar"></div>
-                <div class="pw-hint"     id="pw-hint"></div>
-            </div>
-            <div class="form-group">
-                <label class="form-label">Confirm Password<span class="required">*</span></label>
-                <div class="input-wrap">
-                    <i class="fa-solid fa-lock f-icon"></i>
-                    <input class="form-input" type="password" id="pw2" name="confirm_password"
-                           placeholder="Repeat password" required/>
-                    <button type="button" class="toggle-pw" onclick="togglePw('pw2','eye2',this)" aria-label="Show password" title="Show password">
-                        <i class="fa-solid fa-eye-slash" id="eye2"></i>
-                    </button>
+
+                <div class="form-group">
+                    <label class="form-label" for="pw2">Confirm Password<span class="required">*</span></label>
+                    <div class="input-wrap">
+                        <i class="fa-solid fa-lock f-icon"></i>
+                        <input class="form-input" type="password" id="pw2" name="confirm_password"
+                               placeholder="Repeat password" required/>
+                        <button type="button" class="toggle-pw" onclick="togglePw('pw2','eye2',this)" aria-label="Show password" title="Show password">
+                            <i class="fa-solid fa-eye-slash" id="eye2"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="full">
+                    <div class="pw-meter-top"><span>Password Strength</span><span class="pw-hint" id="pw-hint"></span></div>
+                    <div class="pw-strength" id="pw-bar"><span id="pw-fill"></span></div>
                 </div>
             </div>
         </div>
@@ -502,8 +424,7 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible{
     </form>
 
     <div class="card-footer">
-        Already have an account? <a href="admin_login.php">Sign in here</a><br>
-        <span class="secure-badge"><i class="fa-solid fa-circle-check"></i> Secured &amp; Encrypted Connection</span>
+        Already have an account? <a href="admin_login.php">Sign in here</a>
     </div>
 </div>
 
@@ -532,7 +453,7 @@ function previewPhoto(input) {
     }
 }
 function checkStrength(val) {
-    const bar = document.getElementById('pw-bar'), hint = document.getElementById('pw-hint');
+    const fill = document.getElementById('pw-fill'), hint = document.getElementById('pw-hint');
     let score = 0;
     if (val.length >= 8)           score++;
     if (/[A-Z]/.test(val))         score++;
@@ -540,10 +461,12 @@ function checkStrength(val) {
     if (/[^A-Za-z0-9]/.test(val))  score++;
     const colors = ['#ff4444','#ff8800','#f0c040','#32B98A'];
     const labels = ['Weak','Fair','Good','Strong'];
-    if (!val) { bar.style.background = 'rgba(20,15,8,.10)'; hint.textContent = ''; return; }
-    bar.style.background = colors[score - 1] || colors[0];
-    hint.textContent     = labels[score - 1] || 'Weak';
-    hint.style.color     = colors[score - 1] || colors[0];
+    if (!val) { fill.style.width = '0'; hint.textContent = ''; return; }
+    const level = Math.max(score, 1);
+    fill.style.width      = (level * 25) + '%';
+    fill.style.background = colors[level - 1];
+    hint.textContent      = labels[level - 1];
+    hint.style.color      = colors[level - 1];
 }
 </script>
 </body>

@@ -30,9 +30,9 @@ $profileFallbackSrc = '../image/pbi_logo';
 
 $navItems = [
     'dashboard'  => ['dean_dashboard.php',          'fa-gauge',           'Dashboard'],
-    'evaluation' => ['dean_evaluation.php',         'fa-clipboard-check', 'My Evaluation'],
+    'evaluation' => ['dean_evaluation.php',         'fa-clipboard-check', 'Evaluate Others'],
     'tracker'    => ['dean_evaluation_tracker.php', 'fa-satellite-dish',  'Evaluation Tracker'],
-    'results'    => ['dean_results.php',            'fa-star-half-stroke','View Results'],
+    'results'    => ['dean_results.php',            'fa-star-half-stroke',"Feedback's Received"],
     'reports'    => ['dean_reports.php',            'fa-chart-line',      'Evaluation Reports'],
     'settings'   => ['dean_account_settings.php',   'fa-gear',            'Account Settings'],
 ];

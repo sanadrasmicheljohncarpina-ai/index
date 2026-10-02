@@ -356,8 +356,7 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible{
 <div class="login-card">
     <div class="card-header">
         <img class="logo-ring" src="../image/pbi_logo" alt="PBI Logo"/>
-        <div class="card-title">Dean Portal</div>
-        <div class="card-subtitle">Pandan Bay Institute — Evaluation System</div>
+        <div class="card-subtitle">Employee Performance Evaluation & Management System</div>
         <div class="role-pill"><i class="fa-solid fa-user-tie"></i> Dean Access</div>
     </div>
     <div class="divider"></div>

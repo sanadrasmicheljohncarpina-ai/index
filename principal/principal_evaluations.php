@@ -370,7 +370,7 @@ function principal_eval_qs(array $overrides = []): string {
 
 $mysqli->close();
 
-html_head_open('PBI — Principal Evaluations');
+html_head_open('PBI — Evaluate Others');
 ?>
 <style>
 /* Page-local additions: compact, normal tabs matching Principal Reports. */
@@ -792,7 +792,7 @@ main.main::before {
 <main class="main">
     <div class="page-header">
         <div>
-            <div class="page-title">My Evaluation</div>
+            <div class="page-title">Evaluate Others</div>
             <div class="page-sub">Evaluate Faculty &amp; Executive Assistants — <?= htmlspecialchars($scopeLabel) ?></div>
         </div>
         <?php render_period_badge($settings); ?>

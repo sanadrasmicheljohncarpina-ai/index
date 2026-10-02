@@ -1833,16 +1833,16 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { display:none !important; widt
             <li class="nav-section-label">MAIN</li>
             <li><a href="#" id="link-dashboard" onclick="showPage('dashboard',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-house icon"></i></span> <span>Dashboard</span></a></li>
             <li><a href="#" id="link-reports"   onclick="showPage('reports',this);return false;"   class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-file-signature icon"></i></span> <span>Questionnaire</span></a></li>
-            <li><a href="#" id="link-tracker" onclick="showPage('tracker',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-user-check icon"></i></span> <span>Evaluation Tracker</span></a></li>
-            <li><a href="#" id="link-ea-eval" onclick="showPage('ea_eval',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-user-tie icon"></i></span> <span><?= $isExecutiveAssistant ? 'My Evaluations' : 'EA Evaluations' ?></span></a></li>
+            <li><a href="#" id="link-tracker" onclick="showPage('tracker',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-satellite-dish icon"></i></span> <span>Evaluation Tracker</span></a></li>
+            <li><a href="#" id="link-ea-eval" onclick="showPage('ea_eval',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-clipboard-check icon"></i></span> <span><?= $isExecutiveAssistant ? 'Evaluate Others' : 'EA Evaluations' ?></span></a></li>
             <?php if ($isExecutiveAssistant): ?>
-            <li><a href="#" id="link-ea-results" onclick="showPage('ea_results',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-eye icon"></i></span> <span>View Results</span></a></li>
+            <li><a href="#" id="link-ea-results" onclick="showPage('ea_results',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-star-half-stroke icon"></i></span> <span>Feedback's Received</span></a></li>
             <?php endif; ?>
             <li><a href="#" id="link-analytics" onclick="showPage('analytics',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-chart-line icon"></i></span> <span>Evaluation Reports</span></a></li>
 
             <li class="nav-section-label">ADMINISTRATION</li>
             <?php if (($_SESSION['role'] ?? '') === 'superadmin'): ?>
-            <li><a href="#" id="link-registrations" onclick="showPage('registrations',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-user-lock icon"></i></span> <span>Account Management</span></a></li>
+            <li><a href="#" id="link-registrations" onclick="showPage('registrations',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-users-gear icon"></i></span> <span>Account Management</span></a></li>
             <?php endif; ?>
             <li><a href="#" id="link-system_logs" onclick="showPage('system_logs',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-clock-rotate-left icon"></i></span> <span>System Logs</span></a></li>
             <li><a href="#" id="link-settings" onclick="showPage('settings',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-gear icon"></i></span> <span>Settings</span></a></li>
@@ -3052,6 +3052,7 @@ html.density-comfortable body:has(.pbi-dashboard-container) .pbi-dashboard-conta
 }
 </style>
 
+<script src="eval_status_poll.js" defer></script>
 </body>
 </html>
 <?php if($mysqli->ping())$mysqli->close();?>

@@ -8,6 +8,24 @@ if (empty($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', ['admin','
     exit('Unauthorized.');
 }
 
+// ── Notify Teacher/Staff accounts about period or schedule changes made by the EA ──
+function ss_notify_faculty_staff(mysqli $mysqli, string $type, string $message): void {
+    $hasStatus = $mysqli->query("SHOW COLUMNS FROM users LIKE 'account_status'");
+    $statusSql = ($hasStatus && $hasStatus->num_rows > 0) ? " AND (account_status = 'approved' OR account_status IS NULL)" : '';
+    $stmt = $mysqli->prepare("INSERT INTO notifications (type, user_id, message) SELECT ?, id, ? FROM users WHERE role IN ('teacher','staff')" . $statusSql);
+    if (!$stmt) return; // never block saving settings because of notifications
+    $stmt->bind_param('ss', $type, $message);
+    $stmt->execute();
+    $stmt->close();
+}
+function ss_fmt_manila(string $v): string {
+    if ($v === '') return '';
+    try {
+        $d = new DateTime($v, new DateTimeZone('Asia/Manila'));
+        return $d->format('M j, Y g:i A');
+    } catch (Exception $e) { return $v; }
+}
+
 // Keep the database-backed evaluation period in sync with the configured schedule.
 ss_sync_from_database($mysqli);
 
@@ -36,6 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
 
     $ruleKeys = ['rule_only_during_period','rule_edit_after_submit','rule_one_submission','rule_require_all','rule_auto_lock','rule_countdown','rule_prevent_late'];
     if ($saveMsg === '') {
+    $oldSys = $sys;
     $new = [
         'acad_year'=>$acad_year,
         'acad_structure'=>$acad_structure,
@@ -53,6 +72,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
     }
     $sys = ss_raw($mysqli);
     ss_sync_evaluation_period($mysqli, $sys);
+
+    // Tell Faculty and Staff what the EA changed (only when something actually changed).
+    $periodChanged = (string)($oldSys['acad_year'] ?? '') !== (string)$acad_year
+        || (string)($oldSys['acad_structure'] ?? '') !== (string)$acad_structure
+        || (string)($oldSys['acad_term'] ?? '') !== (string)$acad_term;
+    if ($periodChanged) {
+        ss_notify_faculty_staff($mysqli, 'academic_period',
+            'The Executive Assistant set the academic period to ' . $acad_year . ' · ' . $acad_term . '.');
+    }
+    $scheduleChanged = (string)($oldSys['eval_start'] ?? '') !== (string)$eval_start
+        || (string)($oldSys['eval_end'] ?? '') !== (string)$eval_end;
+    if ($scheduleChanged && $eval_start !== '' && $eval_end !== '') {
+        ss_notify_faculty_staff($mysqli, 'evaluation_schedule',
+            'The Executive Assistant set the evaluation schedule: ' . ss_fmt_manila($eval_start) . ' – ' . ss_fmt_manila($eval_end) . '.');
+    }
+
     $saveMsg = 'System & Period Settings saved.';
     }
 }

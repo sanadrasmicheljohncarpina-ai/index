@@ -22,6 +22,7 @@ require_once 'db.php';
 require_once dirname(__DIR__) . '/shared/system_settings_service.php';
 require_once dirname(__DIR__) . '/shared/ea_personnel_service.php';
 require_once 'school_head_structure_gate.php';
+require_once __DIR__ . '/dean_ea_notices.php';
 
 header('Content-Type: application/json');
 
@@ -43,6 +44,11 @@ $period_id_int    = $settings['period_id'] ?? 0;
 $evalOpen         = !empty($settings['school_head_is_open']);
 
 $notifications = $settings['notifications'];
+
+// Executive Assistant notices: academic period and evaluation schedule.
+foreach (dean_ea_notices($settings) as $eaNotice) {
+    $notifications[] = $eaNotice;
+}
 
 // Recent submitted evaluations are durable notifications: the same events
 // are returned on every poll while they remain among the latest activity, so

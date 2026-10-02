@@ -267,10 +267,10 @@ a.stat-link:hover .stat-card{border-color:rgba(217,154,43,.45);transform:transla
 .bell-head h3{font-family:'Rajdhani',sans-serif;font-size:16px;color:#fff;font-weight:700;}
 .bell-head button{background:none;border:none;color:var(--amber-h);font-size:11px;font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:.4px;}
 .bell-head button:hover{text-decoration:underline;}
-.bell-list{list-style:none;font-size:13px;flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;padding:0 3px 2px 0;scrollbar-width:thin;scrollbar-color:rgba(148,163,184,.45) transparent;}
+.bell-list{list-style:none;font-size:13px;flex:1 1 auto;min-height:0;max-height:100%;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;padding:0 3px 2px 0;scrollbar-width:thin;scrollbar-color:rgba(148,163,184,.55) transparent;}
 .bell-list::-webkit-scrollbar{width:7px;}
 .bell-list::-webkit-scrollbar-track{background:transparent;}
-.bell-list::-webkit-scrollbar-thumb{background:rgba(148,163,184,.45);border-radius:8px;}
+.bell-list::-webkit-scrollbar-thumb{background:rgba(148,163,184,.55);border-radius:8px;}
 .bell-list::-webkit-scrollbar-thumb:hover{background:rgba(148,163,184,.7);}
 .bell-list li{padding:10px 11px;border-radius:9px;display:flex;align-items:flex-start;gap:10px;line-height:1.45;color:var(--light);}
 .bell-list li+li{margin-top:4px;}
@@ -813,7 +813,7 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
                     <ul class="bell-list" id="bellList">
                         <?php foreach ($notifications as $n): ?>
                         <li class="lv-<?= htmlspecialchars($n['level']) ?>" data-id="<?= htmlspecialchars($n['id']) ?>">
-                            <i class="fa-solid fa-circle-exclamation"></i>
+                            <i class="fa-solid <?= htmlspecialchars($n['icon'] ?? (['warn'=>'fa-triangle-exclamation','good'=>'fa-circle-check'][$n['level']] ?? 'fa-circle-info')) ?>"></i>
                             <span><?= htmlspecialchars($n['text']) ?></span>
                         </li>
                         <?php endforeach; ?>
@@ -912,16 +912,18 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
 /* =========================================================================
    Notification bell — live polling
    -------------------------------------------------------------------------
-   Refreshes from principal_notifications.php every 30s and while the tab is
+   Refreshes from principal_notifications.php every 10s and while the tab is
    visible only, so a dashboard left open on a spare monitor overnight is not
    hammering the DB. Read-state is per-browser (localStorage) — there is no
    notifications table to persist it server-side yet, so "read" does not
    follow the Principal to another device.
    ========================================================================= */
 (function(){
-    const POLL_MS   = 30000;
+    const POLL_MS   = 10000;
     const ENDPOINT  = 'principal_notifications.php';
-    const SEEN_KEY  = 'pbi_principal_seen_notifs';
+    const STORE_KEY = 'pbi_principal_notifications_<?= (int)($_SESSION['user_id'] ?? 0) ?>';
+    const MAX_ITEMS = 40;
+    const ICONS     = { warn:'fa-triangle-exclamation', good:'fa-circle-check', info:'fa-circle-info' };
 
     const bell   = document.getElementById('bell');
     const btn    = document.getElementById('bellBtn');
@@ -934,22 +936,43 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
 
     let timer = null;
 
-    function readSeen(){
-        try { return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || '[]')); }
-        catch (e) { return new Set(); }
+    let stored = loadStored();
+    function loadStored(){
+        try {
+            const parsed = JSON.parse(localStorage.getItem(STORE_KEY) || '[]');
+            return Array.isArray(parsed) ? parsed.filter(n => n && n.id && n.text) : [];
+        } catch (e) { return []; }
     }
-    function writeSeen(set){
-        try { localStorage.setItem(SEEN_KEY, JSON.stringify([...set])); } catch (e) {}
+    function saveStored(){
+        try { localStorage.setItem(STORE_KEY, JSON.stringify(stored.slice(0, MAX_ITEMS))); } catch (e) {}
     }
-    function currentIds(){
-        return [...list.querySelectorAll('li[data-id]')].map(li => li.dataset.id);
+    function normalize(n){
+        n = n || {};
+        return { id:String(n.id || ''), text:String(n.text || ''), level:ICONS[n.level] ? n.level : 'info', icon:/^fa-[a-z0-9-]+$/.test(n.icon || '') ? n.icon : '', created_at:n.created_at || null };
+    }
+    function merge(items){
+        const map = new Map(stored.map(n => [String(n.id), n]));
+        const fresh = [];
+        (Array.isArray(items) ? items : []).map(normalize).forEach(n => {
+            if (!n.id || !n.text) return;
+            const previous = map.get(n.id);
+            if (previous) map.set(n.id, Object.assign({}, previous, n, {read:!!previous.read}));
+            else { n.read = false; if (!n.created_at) n.created_at = new Date().toISOString(); map.set(n.id, n); fresh.push(n.id); }
+        });
+        stored = Array.from(map.values()).sort((a,b) => {
+            const da = a.created_at ? new Date(a.created_at).getTime() : 0;
+            const db = b.created_at ? new Date(b.created_at).getTime() : 0;
+            return db - da;
+        }).slice(0, MAX_ITEMS);
+        saveStored();
+        return fresh;
     }
 
     function refreshBadge(){
-        const seen = readSeen();
         let unread = 0;
         list.querySelectorAll('li[data-id]').forEach(li => {
-            const isNew = !seen.has(li.dataset.id);
+            const item = stored.find(n => String(n.id) === li.dataset.id);
+            const isNew = !item || !item.read;
             li.classList.toggle('unseen', isNew);
             if (isNew) unread++;
         });
@@ -959,30 +982,23 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
     }
 
     function render(items){
-        const before = new Set(currentIds());
+        const before = new Set(stored.map(n => String(n.id)));
         const nearTop = list.scrollTop < 24;
-        list.innerHTML = items.map(n => {
+        const arrived = merge(items);
+        list.innerHTML = stored.map(n => {
             const div = document.createElement('div');
             div.textContent = n.text;
-            return '<li class="lv-' + n.level + '" data-id="' + n.id + '">' +
-                   '<i class="fa-solid fa-circle-exclamation"></i><span>' +
+            const lv = ICONS[n.level] ? n.level : 'info';
+            const idEsc = String(n.id).replace(/"/g, '&quot;');
+            return '<li class="lv-' + lv + (n.read ? '' : ' unseen') + '" data-id="' + idEsc + '">' +
+                   '<i class="fa-solid ' + (n.icon || ICONS[lv]) + '"></i><span>' +
                    div.innerHTML + '</span></li>';
         }).join('');
-
-        // Prune read-state for items that no longer exist, so the key does
-        // not grow forever across a school year.
-        const live = new Set(items.map(n => n.id));
-        const seen = readSeen();
-        let changed = false;
-        seen.forEach(id => { if (!live.has(id)) { seen.delete(id); changed = true; } });
-        if (changed) writeSeen(seen);
-
-        const arrived = items.some(n => !before.has(n.id));
         // Keep the newest items at the top on a normal refresh, but do not
         // yank the user back to the top once they have scrolled to older updates.
         if (nearTop) list.scrollTop = 0;
         refreshBadge();
-        if (arrived && before.size) {
+        if (arrived.length && before.size) {
             btn.classList.remove('pulse');
             void btn.offsetWidth;          // restart the animation
             btn.classList.add('pulse');
@@ -991,12 +1007,13 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
 
     async function poll(){
         try {
-            const res = await fetch(ENDPOINT, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' });
+            const res = await fetch(ENDPOINT + '?_=' + Date.now(), { headers: { 'Accept': 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
             if (res.status === 401) { foot.textContent = 'Session expired — reload'; stop(); return; }
+            if (!res.ok) throw new Error('http ' + res.status);
             const data = await res.json();
             if (!data.ok) throw new Error('feed');
-            render(data.items || []);
-            foot.textContent = 'Updated ' + new Date(data.ts * 1000).toLocaleTimeString();
+            render(data.items || data.notifications || []);
+            foot.textContent = 'Updated ' + new Date((data.ts || Date.now() / 1000) * 1000).toLocaleTimeString();
         } catch (e) {
             foot.textContent = 'Offline — retrying';
         }
@@ -1014,7 +1031,15 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
     });
     markBtn.addEventListener('click', e => {
         e.stopPropagation();
-        writeSeen(new Set(currentIds()));
+        stored = stored.map(n => Object.assign({}, n, {read:true}));
+        saveStored();
+        refreshBadge();
+    });
+    list.addEventListener('click', e => {
+        const li = e.target.closest('li[data-id]');
+        if (!li) return;
+        stored = stored.map(n => String(n.id) === li.dataset.id ? Object.assign({}, n, {read:true}) : n);
+        saveStored();
         refreshBadge();
     });
     document.addEventListener('click', e => {
@@ -1033,8 +1058,9 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
         if (document.hidden) { stop(); } else { poll(); start(); }
     });
 
-    refreshBadge();
+    render(<?= json_encode($notifications) ?>);
     start();
+    poll();   // sync right away instead of waiting a full 30s for the first refresh
 })();
 </script>
 <style id="principal-white-theme-final">

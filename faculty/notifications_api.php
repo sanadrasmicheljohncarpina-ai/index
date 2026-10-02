@@ -11,6 +11,7 @@ session_set_cookie_params([
 ]);
 session_start();
 require_once 'db.php';
+require_once dirname(__DIR__) . '/shared/notification_message.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -42,7 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_notifications_re
 
 $notifications = [];
 $unread_count = 0;
-$stmt = $mysqli->prepare('SELECT id, type, message, is_read, created_at FROM notifications WHERE user_id=? ORDER BY created_at DESC, id DESC LIMIT 15');
+$stmt = $mysqli->prepare('SELECT id, type, message, extra_data, is_read, created_at FROM notifications WHERE user_id=? ORDER BY created_at DESC, id DESC LIMIT 15');
 if ($stmt) {
     $stmt->bind_param('i', $user_id);
     $stmt->execute();
@@ -51,6 +52,8 @@ if ($stmt) {
         while ($row = $result->fetch_assoc()) {
             $row['id'] = (int)$row['id'];
             $row['is_read'] = (int)$row['is_read'];
+            $row['message'] = notification_message_for_view($row, $user_id);
+            unset($row['extra_data']);
             $row['created_at_label'] = date('M d, Y g:i A', strtotime($row['created_at']));
             $notifications[] = $row;
             if (!$row['is_read']) $unread_count++;
