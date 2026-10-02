@@ -3,19 +3,26 @@
 // Place this file inside: htdocs/index/principal/
 // Include in every principal PHP file with: require_once 'db.php';
 
-// Defaults match the local XAMPP setup; override with environment variables
-// (DB_HOST, DB_USER, DB_PASS, DB_NAME, DB_PORT) for any non-local deployment.
+// Production values are loaded from hosting environment variables or root .env.php.
+// XAMPP defaults remain available automatically for local development.
+require_once dirname(__DIR__) . '/shared/app_config.php';
+$cfg = app_config();
+
 $mysqli = new mysqli(
-    getenv('DB_HOST') ?: "localhost",
-    getenv('DB_USER') ?: "root",
-    getenv('DB_PASS') !== false ? getenv('DB_PASS') : "",
-    getenv('DB_NAME') ?: "evaluation",
-    (int)(getenv('DB_PORT') ?: 3306)
+    $cfg['DB_HOST'],
+    $cfg['DB_USER'],
+    $cfg['DB_PASS'],
+    $cfg['DB_NAME'],
+    $cfg['DB_PORT']
 );
 if ($mysqli->connect_errno) {
-    die("Database connection failed: " . $mysqli->connect_error);
+    if (app_is_production()) {
+        http_response_code(503);
+        exit('Database service is temporarily unavailable.');
+    }
+    exit('Database connection failed: ' . $mysqli->connect_error);
 }
-$mysqli->set_charset("utf8mb4");
+$mysqli->set_charset('utf8mb4');
 
 // Absolute path to the shared image folder
 // principal/ is one level inside index/, so go up one level
