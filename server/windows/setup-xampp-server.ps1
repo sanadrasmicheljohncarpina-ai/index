@@ -97,12 +97,12 @@ Ensure-TextLine -Path $HostsFile -Line '127.0.0.1 www.school-evaluation.com'
 
 Write-Step 'Validating Apache configuration...'
 
-$test = & $ApacheExe -t 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Host $test
+$test = & cmd.exe /c ""$ApacheExe" -t 2>&1"
+$apacheTestExitCode = $LASTEXITCODE
+Write-Host ($test | Out-String).Trim()
+if ($apacheTestExitCode -ne 0) {
     throw ('Apache configuration validation failed. Backups are available in: ' + $backupDir)
 }
-Write-Host $test
 
 if ($OpenFirewall) {
     Write-Step 'Opening TCP/80 in Windows Firewall (HTTP only)...'
@@ -117,7 +117,7 @@ if ($OpenFirewall) {
 
 if ($RestartApache) {
     Write-Step 'Restarting Apache...'
-    & $ApacheExe -k restart 2>&1 | Write-Host
+    & cmd.exe /c ""$ApacheExe" -k restart 2>&1" | Write-Host
     if ($LASTEXITCODE -ne 0) {
         Write-Warning 'Apache restart command did not report success. Use the XAMPP Control Panel to stop/start Apache and inspect its log.'
     }
