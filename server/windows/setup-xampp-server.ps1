@@ -117,9 +117,16 @@ if ($OpenFirewall) {
 
 if ($RestartApache) {
     Write-Step 'Restarting Apache...'
-    & cmd.exe /c ""$ApacheExe" -k restart 2>&1" | Write-Host
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning 'Apache restart command did not report success. Use the XAMPP Control Panel to stop/start Apache and inspect its log.'
+
+    $apacheService = Get-Service -Name 'Apache2.4' -ErrorAction SilentlyContinue
+
+    if ($apacheService) {
+        Restart-Service -Name 'Apache2.4' -Force
+        Write-Host 'Apache2.4 Windows service restarted.'
+    }
+    else {
+        Write-Warning 'Apache is not installed as a Windows service on this XAMPP installation.'
+        Write-Host 'Use the XAMPP Control Panel to Stop then Start Apache.'
     }
 }
 
