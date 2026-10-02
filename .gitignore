@@ -3,6 +3,7 @@
 .env
 .env.*
 !.env.example
+!.env.example.php
 
 # IDE / editor files
 
