@@ -758,6 +758,18 @@ $HEALTH_ITEMS = [
     .pbi-confirm-btn.cancel:hover{background:#EEF3FA;}
     .pbi-confirm-btn.ok{background:var(--blue-accent);border:1px solid var(--blue-accent);color:#fff;}
     .pbi-confirm-btn.ok:hover{filter:brightness(1.08);}
+    .pbi-unsaved-card{max-width:440px;}
+    .pbi-unsaved-title{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:800;color:var(--text-dark);margin-bottom:8px;}
+    .pbi-unsaved-title i{color:#D97706;}
+    .pbi-unsaved-sub{font-size:13px;color:var(--text-dim);line-height:1.5;margin-bottom:12px;}
+    .pbi-unsaved-list{list-style:none;margin:0 0 18px;padding:10px 12px;max-height:190px;overflow:auto;background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;font-size:12.5px;color:#7A5A0A;line-height:1.5;}
+    .pbi-unsaved-list li{padding:3px 0;}
+    .pbi-unsaved-list li + li{border-top:1px dashed #F5E1A4;}
+    .pbi-unsaved-actions{display:flex;gap:8px;flex-wrap:wrap;}
+    .pbi-unsaved-actions .pbi-confirm-btn{flex:1 1 auto;white-space:nowrap;}
+    .pbi-confirm-btn.danger{background:#fff;border:1px solid #FECACA;color:#B91C1C;}
+    .pbi-confirm-btn.danger:hover{background:#FEF2F2;}
+    .pbi-confirm-btn:disabled{opacity:.6;cursor:wait;}
     .settings-modal{background:var(--card-bg);border:1px solid var(--card-border);border-radius:18px;width:100%;max-width:580px;max-height:92vh;overflow-y:auto;box-shadow:0 24px 64px rgba(15,23,42,.35);transform:scale(.96);transition:transform .25s cubic-bezier(.22,1,.36,1);}
     .modal-overlay.show .settings-modal{transform:scale(1);}
     .sm-header{padding:22px 24px 18px;border-bottom:1px solid var(--card-border);display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,rgba(73,104,200,.08),transparent);}
@@ -1868,6 +1880,20 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { display:none !important; widt
     </div>
 </div>
 
+<!-- Unsaved Settings changes: shown when leaving Settings via the sidebar -->
+<div class="pbi-confirm-overlay" id="pbiUnsavedOverlay">
+    <div class="pbi-confirm-card pbi-unsaved-card">
+        <div class="pbi-unsaved-title"><i class="fa-solid fa-triangle-exclamation"></i> Unsaved changes</div>
+        <div class="pbi-unsaved-sub">You edited <strong>System &amp; Period Settings</strong> but haven't saved yet. These changes are not live until you save:</div>
+        <ul class="pbi-unsaved-list" id="pbiUnsavedList"></ul>
+        <div class="pbi-unsaved-actions">
+            <button type="button" class="pbi-confirm-btn cancel" id="pbiUnsavedStay">Keep editing</button>
+            <button type="button" class="pbi-confirm-btn danger" id="pbiUnsavedDiscard">Discard changes</button>
+            <button type="button" class="pbi-confirm-btn ok" id="pbiUnsavedSave">Save &amp; continue</button>
+        </div>
+    </div>
+</div>
+
 <!-- Notification dropdown — OUTSIDE nav, position:fixed -->
 <div class="notif-dropdown" id="notifDropdown">
     <div class="notif-header">
@@ -2476,9 +2502,13 @@ function pbiConfirm(message, opts){
     });
 }
 function pbiConfirmLogout(link){
-    pbiConfirm('Terminate your administrative session?', {okLabel:'OK'}).then(function(ok){
-        if(ok) window.location.href=link.href;
-    });
+    var cur=document.querySelector('.page.active');
+    var go=function(){
+        pbiConfirm('Terminate your administrative session?', {okLabel:'OK'}).then(function(ok){
+            if(ok) window.location.href=link.href;
+        });
+    };
+    if(cur&&cur.id==='settings') pbiGuardUnsaved(go); else go();
     return false; // stop the link's default navigation until confirmed
 }
 
@@ -2570,7 +2600,62 @@ function openArchive(){
     window.addEventListener('load', syncAllFrames);
 })();
 
+/* ── UNSAVED SETTINGS GUARD ──────────────────────────────────────
+   Settings lives in an iframe that stays loaded while you visit other tabs, so
+   edits would silently sit there unsaved. Before leaving the Settings page (any
+   sidebar link, dashboard shortcut, or logout) ask the Settings page whether it
+   has unsaved changes and, if so, offer Save / Discard / Keep editing. */
+function pbiSettingsWin(){
+    var f=document.getElementById('settingsFrame');
+    try{ return f ? f.contentWindow : null; }catch(e){ return null; }
+}
+function pbiGuardUnsaved(proceed){
+    var w=pbiSettingsWin(), st=null;
+    try{ st=(w&&typeof w.pbiUnsavedState==='function') ? w.pbiUnsavedState() : null; }catch(e){ st=null; }
+    if(!st||!st.dirty){ proceed(); return; }
+
+    var ov=document.getElementById('pbiUnsavedOverlay'), list=document.getElementById('pbiUnsavedList');
+    var stay=document.getElementById('pbiUnsavedStay'), discard=document.getElementById('pbiUnsavedDiscard'), save=document.getElementById('pbiUnsavedSave');
+    list.innerHTML='';
+    (st.changes&&st.changes.length?st.changes:['Some fields were changed']).forEach(function(c){
+        var li=document.createElement('li'); li.textContent=c; list.appendChild(li);
+    });
+    function close(){ ov.classList.remove('show'); save.disabled=false; discard.disabled=false; save.textContent='Save & continue'; }
+    ov.classList.add('show');
+    ov._close=close;
+    stay.onclick=close;
+    discard.onclick=function(){
+        close();
+        try{ w.pbiDiscardSystemSettings(); }catch(e){}
+        proceed();
+    };
+    save.onclick=function(){
+        save.disabled=true; discard.disabled=true; save.textContent='Saving…';
+        Promise.resolve(w.pbiSaveSystemSettings()).then(function(ok){
+            close();
+            if(ok) proceed();   // if validation/saving failed, stay on Settings so it can be fixed
+        }).catch(close);
+    };
+}
+document.addEventListener('keydown',function(e){
+    if(e.key!=='Escape') return;
+    var ov=document.getElementById('pbiUnsavedOverlay');
+    if(ov&&ov.classList.contains('show')&&ov._close) ov._close();
+});
+document.addEventListener('click',function(e){
+    var ov=document.getElementById('pbiUnsavedOverlay');
+    if(ov&&e.target===ov&&ov._close) ov._close();
+});
+
 function showPage(pageId,element){
+    var cur=document.querySelector('.page.active');
+    if(cur&&cur.id==='settings'&&pageId!=='settings'){
+        pbiGuardUnsaved(function(){ _showPageNow(pageId,element); });
+        return;
+    }
+    _showPageNow(pageId,element);
+}
+function _showPageNow(pageId,element){
     document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
     document.getElementById(pageId)?.classList.add('active');
     document.querySelectorAll('.nav-menu .nav-item:not(.logout)').forEach(l=>l.classList.remove('active'));
@@ -3049,6 +3134,83 @@ html.density-comfortable body:has(.pbi-dashboard-container) .pbi-dashboard-conta
   .page-content{padding-top:4px!important;}
   .pbi-dashboard-meta{justify-content:flex-start!important;white-space:normal!important;padding-right:0!important;}
   .dashboard-notification-control{top:8px!important;right:8px!important;}
+}
+</style>
+
+<style id="dashboard-grounded-layout">
+/* ------------------------------------------------------------------
+   Grounded dashboard layout (loaded last on purpose)
+   - Removes the "floating" look: no vertically-centred bordered card.
+   - The workspace is anchored to the top and fills the area beside the sidebar.
+   - Consistent outer margins and one shared rhythm between sections.
+   Tweak --dg-gutter (side margin) and --dg-gap (space between sections) below.
+   ------------------------------------------------------------------ */
+:root{--dg-gutter:40px;--dg-gap:20px;--dg-top:30px;--dg-max:1480px;--dg-bg:#F4F7FB;}
+
+/* Tinted workspace edge-to-edge (light theme only; dark theme keeps its own colours) */
+html:not([data-theme="dark"]) body:has(#dashboard.active){background:var(--dg-bg)!important;}
+
+/* Anchor to the top instead of centring; let the page fill the viewport */
+html body:has(#dashboard.active) .page-content{
+    display:block!important;
+    justify-content:flex-start!important;
+    min-height:100vh!important;
+    padding:var(--dg-top) var(--dg-gutter) 48px!important;
+}
+
+/* The workspace itself is no longer a bordered, rounded, floating panel */
+html body #dashboard.active,
+html body #dashboard.page.active{
+    background:transparent!important;
+    border:0!important;
+    border-radius:0!important;
+    box-shadow:none!important;
+    overflow:visible!important;
+    min-height:0!important;
+    height:auto!important;
+}
+
+/* Centred content column with equal side margins */
+html body:has(#dashboard.active) .pbi-dashboard-container{
+    width:100%!important;
+    max-width:var(--dg-max)!important;
+    margin:0 auto!important;
+    padding:0!important;
+    min-height:0!important;
+}
+
+/* Heading gets room to breathe above the cards */
+html body:has(#dashboard.active) .pbi-dashboard-heading{
+    margin:0 0 26px!important;
+    padding:0!important;
+}
+html body:has(#dashboard.active) .dashboard-notification-control{top:2px!important;right:0!important;}
+
+/* One consistent vertical rhythm between sections */
+html body:has(#dashboard.active) .pbi-stats-row{gap:var(--dg-gap)!important;margin:0 0 var(--dg-gap)!important;}
+html body:has(#dashboard.active) .pbi-period-box{margin:0 0 var(--dg-gap)!important;}
+html body:has(#dashboard.active) .pbi-bottom-row{gap:var(--dg-gap)!important;margin:0!important;align-items:stretch!important;}
+
+/* Matching card surface everywhere: same radius, border and soft shadow */
+html body:has(#dashboard.active) .pbi-stat-card,
+html body:has(#dashboard.active) .pbi-period-box,
+html body:has(#dashboard.active) .pbi-panel{
+    border:1px solid #E3EAF3!important;
+    border-radius:16px!important;
+    background:#FFFFFF!important;
+    box-shadow:0 1px 2px rgba(16,24,40,.04),0 6px 18px rgba(16,24,40,.05)!important;
+}
+html body:has(#dashboard.active) .pbi-period-box{padding:22px 26px!important;}
+html body:has(#dashboard.active) .pbi-panel{padding:22px 24px!important;}
+
+/* Smaller screens: tighter margins */
+@media(max-width:1180px){
+    :root{--dg-gutter:28px;--dg-gap:16px;}
+}
+@media(max-width:760px){
+    :root{--dg-gutter:16px;--dg-gap:12px;--dg-top:18px;}
+    html body:has(#dashboard.active) .pbi-panel,
+    html body:has(#dashboard.active) .pbi-period-box{padding:16px!important;}
 }
 </style>
 

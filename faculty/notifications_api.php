@@ -25,6 +25,20 @@ if (empty($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', ['teacher'
 
 $user_id = (int) $_SESSION['user_id'];
 
+function notif_muted_types_sql(array $prefs): string {
+    $map = ['notify_evaluation_schedule'=>'evaluation_schedule','notify_teaching_assignment'=>'teaching_assignment','notify_academic_period'=>'academic_period'];
+    $m = [];
+    foreach ($map as $key => $type) { if (isset($prefs[$key]) && (int)$prefs[$key] === 0) $m[] = "'" . $type . "'"; }
+    return $m ? ' AND type NOT IN (' . implode(',', $m) . ')' : '';
+}
+
+$prefs = [];
+try {
+    $pst = $mysqli->prepare('SELECT * FROM user_preferences WHERE user_id=? LIMIT 1');
+    if ($pst) { $pst->bind_param('i', $user_id); $pst->execute(); $prefs = $pst->get_result()->fetch_assoc() ?: []; $pst->close(); }
+} catch (Throwable $e) { $prefs = []; }
+$muted_sql = notif_muted_types_sql($prefs);
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_notifications_read'])) {
     $csrf = (string)($_POST['csrf_token'] ?? '');
     if (empty($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $csrf)) {
@@ -43,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_notifications_re
 
 $notifications = [];
 $unread_count = 0;
-$stmt = $mysqli->prepare('SELECT id, type, message, extra_data, is_read, created_at FROM notifications WHERE user_id=? ORDER BY created_at DESC, id DESC LIMIT 15');
+$stmt = $mysqli->prepare('SELECT id, type, message, extra_data, is_read, created_at FROM notifications WHERE user_id=?' . $muted_sql . ' ORDER BY created_at DESC, id DESC LIMIT 15');
 if ($stmt) {
     $stmt->bind_param('i', $user_id);
     $stmt->execute();

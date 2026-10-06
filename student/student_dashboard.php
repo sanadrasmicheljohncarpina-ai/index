@@ -475,7 +475,7 @@ function student_dashboard_parse_period_dt(string $raw, DateTimeZone $tz): ?Date
 }
 function student_dashboard_format_period_dt(?DateTimeImmutable $dt, string $tzName): string {
     if (!$dt) return 'Not set';
-    return $dt->format('F j, Y') . ' · ' . $dt->format('g:i A') . ' (' . $tzName . ')';
+    return $dt->format('F j, Y') . ' · ' . $dt->format('g:i A');
 }
 $period_opens_label  = student_dashboard_format_period_dt(student_dashboard_parse_period_dt($periodSettings['eval_start'] ?? '', $period_tz), $period_tz_name);
 $period_closes_label = student_dashboard_format_period_dt(student_dashboard_parse_period_dt($periodSettings['eval_end'] ?? '', $period_tz), $period_tz_name);
@@ -1747,9 +1747,115 @@ body .sidebar .side-nav-item.side-nav-logout:hover{
 }
 body .sidebar .side-nav-item.side-nav-logout:hover i{color:#FCA5A5!important;}
 body .sidebar .side-nav-item.side-nav-logout:focus-visible{outline:2px solid #F87171;outline-offset:2px;}
+
+/* ── Log Out confirmation modal ── */
+.logout-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:400;display:none;align-items:center;justify-content:center;padding:20px;}
+.logout-modal-overlay.open{display:flex;}
+.logout-modal{background:var(--mid);border:1px solid var(--border);border-radius:18px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,.6);padding:28px 26px 22px;text-align:center;}
+.logout-modal-icon{width:56px;height:56px;margin:0 auto 14px;border-radius:50%;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);display:flex;align-items:center;justify-content:center;color:#f87171;font-size:22px;}
+.logout-modal-title{font-family:'Rajdhani',sans-serif;font-size:22px;font-weight:700;color:#fff;margin-bottom:6px;}
+.logout-modal-text{font-size:13.5px;color:var(--muted);line-height:1.5;margin-bottom:22px;}
+.logout-modal-actions{display:flex;gap:10px;}
+.logout-modal-actions .btn-logout-cancel{flex:1;padding:11px;background:var(--inner);border:1px solid var(--border);border-radius:var(--radius);color:var(--light);font-size:14px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;}
+.logout-modal-actions .btn-logout-cancel:hover{background:rgba(255,255,255,.06);}
+.logout-modal-actions .btn-logout-confirm{flex:1;padding:11px;background:#dc2626;border:none;border-radius:var(--radius);color:#fff;font-size:14px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-family:'DM Sans',sans-serif;}
+.logout-modal-actions .btn-logout-confirm:hover{background:#b91c1c;}
+body.light-theme .logout-modal-title{color:#0f172a!important;}
+
+/* ── Sidebar: fixed in place on desktop (never scrolls with the page) ── */
+@media(min-width:901px){
+    .app-shell{padding-left:248px;}
+    .sidebar{
+        position:fixed!important;top:0;left:0;bottom:0;
+        height:100vh;min-height:0!important;
+        overflow-y:auto;overscroll-behavior:contain;
+        z-index:60;
+    }
+    .sidebar::-webkit-scrollbar{width:0;height:0;}
+    .sidebar{scrollbar-width:none;}
+}
+
+/* ── Assigned Evaluations: even person cards, Evaluate buttons aligned ── */
+.members-grid{align-items:stretch;}
+.person-card{display:flex;flex-direction:column;align-items:stretch;height:100%;}
+.person-card .person-avatar,.person-card .person-avatar-ph{flex-shrink:0;}
+.person-card .person-name{min-height:2.6em;display:flex;align-items:center;justify-content:center;}
+.person-card .person-desig{margin-bottom:11px;line-height:1.35;}
+.person-card .eval-btn{margin-top:auto;flex-shrink:0;}
+.person-card .person-desig + .eval-btn{margin-top:auto;}
+
+/* ── Current Evaluation Period card: single aligned row ── */
+.period-info-grid{grid-template-columns:1fr 1.2fr 1fr .8fr 1.6fr 1.6fr;align-items:start;gap:20px 24px;}
+.period-info-val{white-space:nowrap;}
+@media(max-width:1280px){
+    .period-info-grid{grid-template-columns:repeat(3,minmax(0,1fr));}
+}
+@media(max-width:600px){
+    .period-info-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+    .period-info-val{white-space:normal;}
+}
+
+/* Dashboard-only heading: other tabs keep just the semester/updated/bell row */
+.content-topbar.not-dashboard .workspace-kicker,
+.content-topbar.not-dashboard .workspace-title-block{display:none;}
+.workspace-meta{margin-left:auto;}
+@media(max-width:1100px){.workspace-meta{margin-left:0;}}
+.content-topbar.not-dashboard .workspace-title-row{justify-content:flex-end;}
+
+/* ── Assigned Evaluations: large category tabs (matches the EA evaluation page) ── */
+/* Always a 3-column track so 2 tabs keep the same size as 3 (no stretching). */
+body .category-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:16px!important;margin-bottom:22px;}
+@media(max-width:760px){body .category-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;}}
+body .category-grid .cat-btn{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    min-height:185px!important;padding:24px 18px 22px!important;
+    border-radius:16px;overflow:visible;
+    border:1px solid var(--border)!important;
+}
+body .category-grid .cat-btn::after{
+    content:"";position:absolute;left:0;right:0;bottom:0;height:4px;
+    background:var(--cat-color,#D97706);border-radius:0 0 16px 16px;
+}
+body .category-grid .cat-icon{
+    width:64px;height:64px;margin:0 0 12px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;font-size:26px;
+    background:color-mix(in srgb,var(--cat-color,#D97706) 14%,transparent);
+}
+body .category-grid .cat-name{font-size:21px;margin-bottom:3px;}
+body .category-grid .cat-meta{font-size:13px;}
+body .category-grid .cat-done-pill{margin-top:10px;font-size:11px;padding:3px 11px;}
+body.light-theme .category-grid .cat-btn.active{
+    background:color-mix(in srgb,var(--cat-color,#D97706) 9%,#fff)!important;
+}
+body .category-grid .cat-btn.active{
+    border-color:color-mix(in srgb,var(--cat-color,#D97706) 45%,transparent)!important;
+}
+@media(max-width:600px){
+    body .category-grid{grid-template-columns:1fr!important;gap:12px!important;}
+    body .category-grid .cat-btn{min-height:180px!important;padding:22px 16px 22px!important;}
+    body .category-grid .cat-icon{width:64px;height:64px;font-size:26px;}
+    body .category-grid .cat-name{font-size:21px;}
+}
+
+/* Note banner under the page subtitle was pulled up over the text */
+body.light-theme .student-eval-note{margin:14px 0 22px!important;}
+.page-sub{margin-bottom:0;line-height:1.5;}
 </style>
 </head>
 <body class="light-theme">
+
+<!-- LOG OUT CONFIRMATION MODAL -->
+<div class="logout-modal-overlay" id="logoutModal" role="dialog" aria-modal="true" aria-labelledby="logoutModalTitle" onclick="if(event.target===this)closeLogoutConfirm()">
+    <div class="logout-modal">
+        <div class="logout-modal-icon"><i class="fa-solid fa-right-from-bracket"></i></div>
+        <div class="logout-modal-title" id="logoutModalTitle">Log out?</div>
+        <div class="logout-modal-text">Are you sure you want to log out? You'll need to sign in again to access your dashboard.</div>
+        <div class="logout-modal-actions">
+            <button type="button" class="btn-logout-cancel" id="logoutCancelBtn" onclick="closeLogoutConfirm()">Cancel</button>
+            <a href="../logout.php" class="btn-logout-confirm"><i class="fa-solid fa-right-from-bracket"></i> Log Out</a>
+        </div>
+    </div>
+</div>
 
 <!-- PHOTO UPLOAD MODAL -->
 <div class="photo-modal-overlay" id="photoModal">
@@ -1813,7 +1919,6 @@ body .sidebar .side-nav-item.side-nav-logout:focus-visible{outline:2px solid #F8
         </div>
         <div class="side-nav-item" id="nav-evaluate" onclick="switchView('evaluate')">
             <i class="fa-solid fa-star-half-stroke"></i><span>Assigned Evaluations</span>
-            <?php if ($total_pending > 0): ?><span class="side-nav-badge"><?= $total_pending ?></span><?php endif; ?>
         </div>
         <div class="side-nav-item" id="nav-history" onclick="switchView('history')">
             <i class="fa-solid fa-clock-rotate-left"></i><span>Evaluation History</span>
@@ -1828,7 +1933,7 @@ body .sidebar .side-nav-item.side-nav-logout:focus-visible{outline:2px solid #F8
         </div>
 
         <div class="side-logout-wrap">
-            <a href="../logout.php" class="side-nav-item side-nav-logout">
+            <a href="../logout.php" class="side-nav-item side-nav-logout" id="sideLogoutLink" onclick="openLogoutConfirm(event)">
                 <i class="fa-solid fa-right-from-bracket"></i><span>Log Out</span>
             </a>
         </div>
@@ -1836,12 +1941,12 @@ body .sidebar .side-nav-item.side-nav-logout:focus-visible{outline:2px solid #F8
 
     <div class="main">
 
-        <div class="content-topbar">
+        <div class="content-topbar<?= $land_on_settings ? ' not-dashboard' : '' ?>" id="contentTopbar">
             <button class="hamburger-btn" onclick="toggleSidebar()" aria-label="Open navigation"><i class="fa-solid fa-bars"></i></button>
             <div class="workspace-heading">
                 <div class="workspace-kicker"><i class="fa-solid fa-chart-line"></i> Dashboard Overview</div>
                 <div class="workspace-title-row">
-                    <div>
+                    <div class="workspace-title-block">
                         <div class="workspace-title">Student Evaluation Workspace</div>
                         <div class="workspace-subtitle">Complete your assigned faculty and staff evaluations in one place.</div>
                     </div>
@@ -1869,12 +1974,6 @@ body .sidebar .side-nav-item.side-nav-logout:focus-visible{outline:2px solid #F8
             </div>
         </div>
 
-        <?php if ($submit_success): ?>
-        <div class="alert alert-success"><i class="fa-solid fa-circle-check"></i> <?= htmlspecialchars($submit_success) ?></div>
-        <?php endif; ?>
-        <?php if ($submit_error): ?>
-        <div class="alert alert-error"><i class="fa-solid fa-circle-exclamation"></i> <?= htmlspecialchars($submit_error) ?></div>
-        <?php endif; ?>
         <?php if (!$student_year_level): ?>
         <div class="alert alert-error"><i class="fa-solid fa-circle-exclamation"></i> Your account has no year level set. Please contact the admin so faculty/staff can be assigned to you correctly.</div>
         <?php endif; ?>
@@ -1967,6 +2066,12 @@ body .sidebar .side-nav-item.side-nav-logout:focus-visible{outline:2px solid #F8
             <div class="page-title">Assigned Evaluations</div>
             <div class="page-sub">Select a category to see who is available for evaluation. Faculty and Staff are evaluated separately based on their current assignment.</div>
             <div class="student-eval-note"><i class="fa-solid fa-circle-info"></i><span>Your responses are recorded for the active evaluation period. Review each rating before you submit.</span></div>
+            <?php if ($submit_success): ?>
+            <div class="alert alert-success"><i class="fa-solid fa-circle-check"></i> <?= htmlspecialchars($submit_success) ?></div>
+            <?php endif; ?>
+            <?php if ($submit_error): ?>
+            <div class="alert alert-error"><i class="fa-solid fa-circle-exclamation"></i> <?= htmlspecialchars($submit_error) ?></div>
+            <?php endif; ?>
 
             <?php
             // Build the top-level display list: Faculty, Staff, Principal, and Dean.
@@ -2004,7 +2109,7 @@ body .sidebar .side-nav-item.side-nav-logout:focus-visible{outline:2px solid #F8
                 ?>
                 <div class="cat-btn <?= $all_done ? 'all-done' : '' ?>"
                      id="catbtn_<?= $slug ?>" onclick="togglePanel('<?= $slug ?>')"
-                     style="border-color:<?= $color ?>33;">
+                     style="--cat-color:<?= $color ?>;">
                     <div class="cat-icon" style="color:<?= $color ?>;"><i class="fa-solid <?= $icon ?>"></i></div>
                     <div class="cat-name"><?= htmlspecialchars($group_name) ?></div>
                     <div class="cat-meta"><?= $total ?> member<?= $total !== 1 ? 's' : '' ?></div>
@@ -2259,7 +2364,7 @@ body .sidebar .side-nav-item.side-nav-logout:focus-visible{outline:2px solid #F8
                             <label for="cur_pw">Current Password</label>
                             <div class="pw-wrap">
                                 <input type="password" id="cur_pw" name="current_password" required autocomplete="current-password"/>
-                                <button type="button" class="pw-toggle" onclick="togglePw('cur_pw','ic1')"><i class="fa-solid fa-eye" id="ic1"></i></button>
+                                <button type="button" class="pw-toggle" onclick="togglePw('cur_pw','ic1')"><i class="fa-solid fa-eye-slash" id="ic1"></i></button>
                             </div>
                         </div>
                         <div></div>
@@ -2267,14 +2372,14 @@ body .sidebar .side-nav-item.side-nav-logout:focus-visible{outline:2px solid #F8
                             <label for="new_pw">New Password</label>
                             <div class="pw-wrap">
                                 <input type="password" id="new_pw" name="new_password" required minlength="8" maxlength="72" autocomplete="new-password"/>
-                                <button type="button" class="pw-toggle" onclick="togglePw('new_pw','ic2')"><i class="fa-solid fa-eye" id="ic2"></i></button>
+                                <button type="button" class="pw-toggle" onclick="togglePw('new_pw','ic2')"><i class="fa-solid fa-eye-slash" id="ic2"></i></button>
                             </div>
                         </div>
                         <div class="settings-field">
                             <label for="confirm_pw">Confirm New Password</label>
                             <div class="pw-wrap">
                                 <input type="password" id="confirm_pw" name="confirm_password" required minlength="8" maxlength="72" autocomplete="new-password"/>
-                                <button type="button" class="pw-toggle" onclick="togglePw('confirm_pw','ic3')"><i class="fa-solid fa-eye" id="ic3"></i></button>
+                                <button type="button" class="pw-toggle" onclick="togglePw('confirm_pw','ic3')"><i class="fa-solid fa-eye-slash" id="ic3"></i></button>
                             </div>
                         </div>
                     </div>
@@ -2322,6 +2427,10 @@ let questionsLoaded = false;
 
 // ── Sidebar view switching ──
 function switchView(view) {
+    // The "Dashboard Overview / Student Evaluation Workspace" heading belongs
+    // to the Dashboard tab only; every other tab has its own page title.
+    const topbar = document.getElementById('contentTopbar');
+    if (topbar) topbar.classList.toggle('not-dashboard', view !== 'dashboard');
     document.querySelectorAll('.view-content').forEach(v => v.classList.remove('active'));
     document.getElementById('view-' + view)?.classList.add('active');
     document.querySelectorAll('.side-nav-item').forEach(i => i.classList.remove('active'));
@@ -2334,7 +2443,7 @@ function switchView(view) {
 function togglePw(inputId, iconId) {
     const input = document.getElementById(inputId), icon = document.getElementById(iconId);
     input.type = input.type === 'password' ? 'text' : 'password';
-    icon.className = input.type === 'password' ? 'fa-solid fa-eye' : 'fa-solid fa-eye-slash';
+    icon.className = input.type === 'password' ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye';
 }
 
 // ── Settings: change password form guard ──
@@ -2363,6 +2472,18 @@ function closeSidebarMobile() {
 }
 
 // ── Photo modal ──
+function openLogoutConfirm(e) {
+    if (e) e.preventDefault();
+    document.getElementById('logoutModal').classList.add('open');
+    var c = document.getElementById('logoutCancelBtn'); if (c) c.focus();
+}
+function closeLogoutConfirm() {
+    document.getElementById('logoutModal').classList.remove('open');
+}
+document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape') closeLogoutConfirm();
+});
+
 function openPhotoModal() {
     document.getElementById('photoModal').classList.add('open');
     document.body.style.overflow = 'hidden';

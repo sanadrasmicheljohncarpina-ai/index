@@ -453,8 +453,9 @@ function ss_h($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
   .toast{
     position: fixed;
-    bottom: 24px; left: 50%;
-    transform: translateX(-50%) translateY(20px);
+    top: 18px; left: 50%;
+    z-index: 1000;
+    transform: translateX(-50%) translateY(-20px);
     background: var(--surface-3);
     border: 1px solid var(--border-strong);
     color: var(--text);
@@ -613,13 +614,8 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
 
   <?php if ($saveMsg): ?><div class="maint-banner show" style="margin-bottom:14px"><strong><?=ss_h($saveMsg)?></strong></div><?php endif; ?>
 
-  <div class="top">
-    <div>
-      <p class="page-title">System &amp; Period Settings</p>
-      <p class="page-sub">Configure academic terms and evaluation windows for College/University, JHS, and SHS. Evaluation scheduling timezone: <b>Asia/Manila</b>.</p>
-    </div>
-    <button class="btn btn-primary" id="saveBtnTop" style="display:none">Save System Settings</button>
-  </div>
+  <!-- Hidden hook: the script below attaches a click handler to this button -->
+  <button class="btn btn-primary" id="saveBtnTop" style="display:none">Save System Settings</button>
 
   <!-- Live snapshot, styled like the stat cards -->
   <div class="stat-row">
@@ -669,10 +665,7 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
         </label>
         <div class="select-wrap"><select id="academicTerm"></select></div>
       </div>
-      <div class="field-row">
-        <div class="field-label">Period meaning</div>
-        <div class="field-help">The selected Academic Term controls the <b>Dean evaluation</b>. The same Academic Year is used for the <b>Principal evaluation</b>, whose period is always <b>School Year</b>.</div>
-      </div>
+
     </div>
   </div>
 
@@ -691,10 +684,7 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
         <label class="field-label" for="evalCloses">Evaluation Closes</label>
         <input type="datetime-local" id="evalCloses" value="<?=ss_h($sys['eval_end'] ?? '')?>" />
       </div>
-      <div class="field-row">
-        <div class="field-label">Scheduling Timezone</div>
-        <div class="field-help"><b>Asia/Manila</b> — all scheduled opening, closing, and submission-boundary checks use this timezone.</div>
-      </div>
+
       <div class="toggle-row">
         <div class="toggle-copy">
           <div class="field-label">Automatic Schedule</div>
@@ -927,19 +917,29 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
   // it hides this iframe, and beforeunload below covers a refresh,
   // browser-back, or closing the tab outright.
   let isDirty = false;
+  function postDirty(d){
+    try { parent.postMessage({type:'system-settings-dirty', dirty:d}, '*'); } catch(e){}
+  }
+  // markDirty() is wired to every field. It re-compares the form with the values it
+  // had when it was loaded/last saved, so changing something back to its original
+  // value correctly clears the "unsaved" state.
   function markDirty(){
-    if (isDirty) return;
-    isDirty = true;
-    try { parent.postMessage({type:'system-settings-dirty', dirty:true}, '*'); } catch(e){}
+    const d = getChanges().length > 0;
+    if (d === isDirty) return;
+    isDirty = d;
+    postDirty(d);
   }
   function clearDirty(){
+    takeBaseline();
     isDirty = false;
-    try { parent.postMessage({type:'system-settings-dirty', dirty:false}, '*'); } catch(e){}
+    postDirty(false);
   }
   [els.structure, els.term, els.opens, els.closes, els.auto, els.maintenance, els.controlModes]
     .forEach(el => el.addEventListener('change', markDirty));
   [els.year, els.opens, els.closes].forEach(el => el.addEventListener('input', markDirty));
   window.isSystemSettingsDirty = () => isDirty;
+  window.getSystemSettingsChanges = () => getChanges();
+  window.discardSystemSettingsChanges = () => { isDirty = false; postDirty(false); };
   window.addEventListener('beforeunload', (e) => {
     if (!isDirty) return;
     e.preventDefault();
@@ -963,8 +963,36 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
     row.querySelector('input[type="checkbox"]').addEventListener('change', markDirty);
   });
 
+  // ── CHANGE SNAPSHOT (what exactly is unsaved) ──────────────
+  const onOff = v => v ? 'On' : 'Off';
+  const FIELD_DEFS = [
+    { label: 'Academic Year',      get: () => els.year.value.trim(), fmt: v => v || 'Not set' },
+    { label: 'Academic Structure', get: () => els.structure.value,   fmt: v => STRUCTURE_LABEL[v] || v },
+    { label: 'Academic Term',      get: () => els.term.value },
+    { label: 'Evaluation Opens',   get: () => els.opens.value,  fmt: v => v ? formatDateTime(v) : 'Not set' },
+    { label: 'Evaluation Closes',  get: () => els.closes.value, fmt: v => v ? formatDateTime(v) : 'Not set' },
+    { label: 'Automatic Schedule', get: () => els.auto.checked, fmt: onOff },
+    { label: 'Evaluation Access',  get: () => getControlMode(), fmt: v => MODE_LABEL[v] || v },
+    { label: 'Maintenance Mode',   get: () => els.maintenance.checked, fmt: onOff },
+  ].concat(RULES.map(r => ({ label: r.label, get: () => document.getElementById('rule_' + r.id).checked, fmt: onOff })));
+  let baseline = null;
+  function takeBaseline(){ baseline = FIELD_DEFS.map(d => d.get()); }
+  function getChanges(){
+    if (!baseline) return [];
+    const out = [];
+    FIELD_DEFS.forEach((d, i) => {
+      const now = d.get();
+      if (now !== baseline[i]) {
+        const f = d.fmt || (v => String(v));
+        out.push(d.label + ': ' + f(baseline[i]) + ' \u2192 ' + f(now));
+      }
+    });
+    return out;
+  }
+
   populateTerms(<?=json_encode($sys['acad_term'] ?? '1st Semester')?>);
   render();
+  takeBaseline();
   try { parent.postMessage({type:'system-settings-dirty', dirty:false}, '*'); } catch(e){}
 
   function showToast(text) {
@@ -982,11 +1010,11 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
     const closeValue = els.closes.value.trim();
     if ((openValue && !closeValue) || (!openValue && closeValue)) {
       showToast('Please set both opening and closing times.');
-      return;
+      return Promise.resolve(false);
     }
     if (openValue && closeValue && parseManilaLocal(closeValue) <= parseManilaLocal(openValue)) {
       showToast('Closing time must be after opening time (Asia/Manila).');
-      return;
+      return Promise.resolve(false);
     }
     fd.append('eval_start', openValue);
     fd.append('eval_end', closeValue);
@@ -994,10 +1022,10 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
     if (els.auto.checked) fd.append('auto_schedule','1');
     if (els.maintenance.checked) fd.append('maintenance','1');
     RULES.forEach(rule => { if (document.getElementById('rule_'+rule.id).checked) fd.append(rule.id,'1'); });
-    fetch('system_settings.php',{method:'POST',body:fd,credentials:'same-origin'})
+    return fetch('system_settings.php',{method:'POST',body:fd,credentials:'same-origin'})
       .then(r=>r.ok?r.text():Promise.reject(new Error('save failed')))
-      .then(()=>{ clearDirty(); showToast('System settings saved'); })
-      .catch(()=>showToast('Unable to save system settings'));
+      .then(()=>{ clearDirty(); showToast('System settings saved'); return true; })
+      .catch(()=>{ showToast('Unable to save system settings'); return false; });
   }
   document.getElementById('saveBtn').addEventListener('click', saveSystemSettings);
   document.getElementById('saveBtnTop').addEventListener('click', saveSystemSettings);

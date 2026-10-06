@@ -43,6 +43,32 @@ function qxm_selected_user_scope(string $scope, int $userId): ?string {
         : ($scope === 'ea' ? 'EA' : null));
 }
 
+function qxm_category_options(array $cats, ?string $selected = null): void {
+    $names = [];
+    foreach ($cats as $c) $names[(string)$c['category_name']] = true;
+    $names = array_keys($names);
+    if (!in_array('General', $names, true)) $names[] = 'General'; // fallback only if no General category exists
+    foreach ($names as $n) {
+        echo '<option value="' . qxm_e($n) . '"' . ($selected !== null && $n === $selected ? ' selected' : '') . '>' . qxm_e($n) . '</option>';
+    }
+}
+function qxm_render_filterbar(string $targetId, array $cats, string $scope, int $userId, string $csrf, string $renameAction, string $deleteAction, bool $show = true): void {
+    if (!$show) return;
+    $ctx = ['csrf'=>$csrf,'scope'=>$scope,'user_id'=>$userId,'rename'=>$renameAction,'delete'=>$deleteAction];
+    echo '<div class="filterbar" data-filter-target="' . qxm_e($targetId) . '" data-ctx="' . qxm_e(json_encode($ctx)) . '">';
+    echo '<button type="button" class="filter-pill active" data-filter="all">All</button>';
+    foreach ($cats as $cat) {
+        $name = (string)$cat['category_name'];
+        $id = (int)$cat['id'];
+        echo '<span class="pill-group" data-cat-id="' . $id . '" data-cat-name="' . qxm_e($name) . '">';
+        echo '<button type="button" class="filter-pill" data-filter="' . qxm_e($name) . '">' . qxm_e($name) . '</button>';
+        echo '<button type="button" class="pill-icon pill-edit" title="Rename category" aria-label="Rename category"><i class="fa-solid fa-pen"></i></button>';
+        echo '<button type="button" class="pill-icon pill-del" title="Delete category" aria-label="Delete category"><i class="fa-solid fa-xmark"></i></button>';
+        echo '</span>';
+    }
+    echo '</div>';
+}
+
 $selectedUser = isset($_GET['user_id']) ? (int)$_GET['user_id'] : (isset($_POST['user_id']) ? (int)$_POST['user_id'] : 0);
 $message = (string)($_GET['msg'] ?? '');
 
@@ -257,6 +283,7 @@ $labels = qn_scope_labels();
 $counts = qn_question_counts($mysqli);
 
 $facultyQuestions = qn_get_faculty_questions($mysqli);
+usort($facultyQuestions, fn($x, $y) => (int)$y['id'] <=> (int)$x['id']); // newest first
 
 $facultyUsers = [];
 $staffUsers = [];
@@ -313,6 +340,7 @@ if ($selectedUser > 0 && $scope !== 'faculty') {
     }
     if ($selectedPerson && $selectedTargetType) {
         $personQuestions = qn_get_person_questions($mysqli, $selectedUser, $selectedTargetType);
+        usort($personQuestions, fn($x, $y) => (int)$y['id'] <=> (int)$x['id']); // newest first
         $stmt = $mysqli->prepare("SELECT id, category_name, 0 AS sort_order
                                   FROM user_question_categories
                                   WHERE user_id=? AND target_type=? AND eval_type='general'
@@ -366,6 +394,12 @@ $selectedPersonName = $selectedPerson['full_name'] ?? '';
 .qxm-modal h3{margin:0 0 8px;font-size:16px;color:var(--text)}
 .qxm-modal p{margin:0 0 20px;font-size:13px;color:var(--muted);line-height:1.5}
 .qxm-modal-actions{display:flex;justify-content:flex-end;gap:8px}
+.pill-group{display:inline-flex;align-items:center;gap:2px}
+.pill-icon{border:0;background:transparent;color:#94a3b8;width:22px;height:22px;border-radius:50%;font-size:10px;cursor:pointer;display:none;align-items:center;justify-content:center;padding:0}
+.pill-group:hover .pill-icon,.pill-group:focus-within .pill-icon{display:inline-flex}
+.pill-icon:hover{background:#f1f5f9;color:#334155}.pill-del:hover{background:#fef2f2;color:var(--danger)}
+@media(hover:none){.pill-icon{display:inline-flex}}
+.qxm-modal.rename{max-width:400px}.qxm-modal.rename .qxm-modal-icon{background:#eff6ff;color:var(--blue)}.qxm-modal.rename .field{margin-bottom:16px}
 </style>
 
 <link rel="stylesheet" href="admin_appearance.css?v=<?= (int)@filemtime(__DIR__ . '/admin_appearance.css') ?>">
@@ -448,31 +482,6 @@ html[data-theme="dark"] .card-ea .manage-card{
       <div class="card">
       <div class="cardhead"><h2>Faculty question bank</h2></div>
       <div class="cardbody">
-        <div class="notice">This is one centralized Faculty questionnaire. Student, Peer-to-Peer, Dean, Principal, and other applicable Faculty evaluations read this same bank.</div>
-        <div class="catbar">
-          <?php foreach ($facultyCategories as $cat): ?>
-            <span class="chip">
-              <details style="display:inline">
-                <summary class="btn small" style="display:inline-block"><?= qxm_e($cat['category_name']) ?></summary>
-                <form method="post" class="form" style="min-width:240px">
-                  <input type="hidden" name="csrf_token" value="<?= qxm_e($csrf) ?>">
-                  <input type="hidden" name="scope" value="faculty">
-                  <input type="hidden" name="category_id" value="<?= (int)$cat['id'] ?>">
-                  <input type="hidden" name="action" value="rename_shared_category">
-                  <input class="field" name="category_name" value="<?= qxm_e($cat['category_name']) ?>" required>
-                  <button class="btn small" type="submit">Rename</button>
-                </form>
-              </details>
-              <form method="post" style="display:inline" onsubmit="return qxmConfirm(this,'Delete this category?','Questions in it will move to General.');">
-                <input type="hidden" name="csrf_token" value="<?= qxm_e($csrf) ?>">
-                <input type="hidden" name="scope" value="faculty">
-                <input type="hidden" name="category_id" value="<?= (int)$cat['id'] ?>">
-                <input type="hidden" name="action" value="delete_shared_category">
-                <button class="btn small danger" type="submit">×</button>
-              </form>
-            </span>
-          <?php endforeach; ?>
-        </div>
         <div class="manage-actions">
           <div class="manage-action">
             <div class="manage-action-title">Add category</div>
@@ -486,7 +495,7 @@ html[data-theme="dark"] .card-ea .manage-card{
             <form method="post" class="form">
               <input type="hidden" name="csrf_token" value="<?= qxm_e($csrf) ?>"><input type="hidden" name="scope" value="faculty"><input type="hidden" name="action" value="add_question">
               <div class="question-add-fields">
-                <select class="select" name="category"><?php foreach($facultyCategories as $cat): ?><option><?= qxm_e($cat['category_name']) ?></option><?php endforeach; ?><option>General</option></select>
+                <select class="select" name="category"><?php qxm_category_options($facultyCategories); ?></select>
                 <textarea class="field" name="question_text" placeholder="Enter a Faculty evaluation question..." required></textarea>
                 <button class="btn primary" type="submit">Add Question</button>
               </div>
@@ -495,14 +504,7 @@ html[data-theme="dark"] .card-ea .manage-card{
         </div>
         <div style="border-top:1px solid var(--line);margin:4px 0 0;padding-top:18px">
           <div class="toolbar"><div><strong><?= count($facultyQuestions) ?> questions</strong><div class="subtle">Shared across all applicable Faculty evaluations</div></div></div>
-          <?php if ($facultyQuestions): ?>
-          <div class="filterbar" data-filter-target="faculty-question-list">
-            <button type="button" class="filter-pill active" data-filter="all">All</button>
-            <?php foreach ($facultyCategories as $cat): ?>
-              <button type="button" class="filter-pill" data-filter="<?= qxm_e($cat['category_name']) ?>"><?= qxm_e($cat['category_name']) ?></button>
-            <?php endforeach; ?>
-          </div>
-          <?php endif; ?>
+          <?php qxm_render_filterbar("faculty-question-list", $facultyCategories, "faculty", 0, $csrf, "rename_shared_category", "delete_shared_category", (bool)$facultyQuestions || (bool)$facultyCategories); ?>
           <div class="list" id="faculty-question-list">
           <?php if (!$facultyQuestions): ?><div class="empty"><i class="fa-regular fa-clipboard"></i><div>No Faculty questions yet.</div></div><?php endif; ?>
           <?php foreach ($facultyQuestions as $q): ?>
@@ -512,7 +514,7 @@ html[data-theme="dark"] .card-ea .manage-card{
                 <details><summary class="btn small" style="display:inline-block">Edit</summary>
                   <form method="post" class="form" style="width:min(700px,100%)">
                     <input type="hidden" name="csrf_token" value="<?= qxm_e($csrf) ?>"><input type="hidden" name="scope" value="faculty"><input type="hidden" name="action" value="update_question"><input type="hidden" name="question_id" value="<?= (int)$q['id'] ?>">
-                    <select class="select" name="category"><?php foreach($facultyCategories as $cat): ?><option <?= ($cat['category_name']===$q['category'])?'selected':'' ?>><?= qxm_e($cat['category_name']) ?></option><?php endforeach; ?><option value="General" <?= (!$q['category'] || $q['category']==='General')?'selected':'' ?>>General</option></select>
+                    <select class="select" name="category"><?php qxm_category_options($facultyCategories, $q['category'] ?: 'General'); ?></select>
                     <textarea class="field" name="question_text" required><?= qxm_e($q['question_text']) ?></textarea>
                     <button class="btn primary" type="submit">Save</button>
                   </form>
@@ -561,28 +563,6 @@ html[data-theme="dark"] .card-ea .manage-card{
           <?php if (!$selectedPerson): ?>
             <div class="empty"><i class="fa-solid fa-hand-pointer"></i><div>Select a target to manage its questionnaire.</div></div>
           <?php else: ?>
-            <div class="catbar">
-              <?php foreach($personCategories as $cat): ?>
-                <span class="chip">
-                  <details style="display:inline">
-                    <summary class="btn small" style="display:inline-block"><?= qxm_e($cat['category_name']) ?></summary>
-                    <form method="post" class="form" style="min-width:240px">
-                      <input type="hidden" name="csrf_token" value="<?= qxm_e($csrf) ?>">
-                      <input type="hidden" name="scope" value="<?= qxm_e($scope) ?>">
-                      <input type="hidden" name="user_id" value="<?= (int)$selectedUser ?>">
-                      <input type="hidden" name="category_id" value="<?= (int)$cat['id'] ?>">
-                      <input type="hidden" name="action" value="rename_user_category">
-                      <input class="field" name="category_name" value="<?= qxm_e($cat['category_name']) ?>" required>
-                      <button class="btn small" type="submit">Rename</button>
-                    </form>
-                  </details>
-                  <form method="post" style="display:inline" onsubmit="return qxmConfirm(this,'Delete this category?','Questions in it will move to General.');">
-                    <input type="hidden" name="csrf_token" value="<?= qxm_e($csrf) ?>"><input type="hidden" name="scope" value="<?= qxm_e($scope) ?>"><input type="hidden" name="user_id" value="<?= (int)$selectedUser ?>"><input type="hidden" name="category_id" value="<?= (int)$cat['id'] ?>"><input type="hidden" name="action" value="delete_user_category">
-                    <button class="btn small danger" type="submit">×</button>
-                  </form>
-                </span>
-              <?php endforeach; ?>
-            </div>
             <div class="manage-actions">
               <div class="manage-action">
                 <div class="manage-action-title">Add category</div>
@@ -596,7 +576,7 @@ html[data-theme="dark"] .card-ea .manage-card{
                 <form method="post" class="form">
                   <input type="hidden" name="csrf_token" value="<?= qxm_e($csrf) ?>"><input type="hidden" name="scope" value="<?= qxm_e($scope) ?>"><input type="hidden" name="user_id" value="<?= (int)$selectedUser ?>"><input type="hidden" name="action" value="add_question">
                   <div class="question-add-fields">
-                    <select class="select" name="category"><?php foreach($personCategories as $cat): ?><option><?= qxm_e($cat['category_name']) ?></option><?php endforeach; ?><option>General</option></select>
+                    <select class="select" name="category"><?php qxm_category_options($personCategories); ?></select>
                     <textarea class="field" name="question_text" placeholder="Enter a question for this target..." required></textarea>
                     <button class="btn primary" type="submit">Add Question</button>
                   </div>
@@ -605,14 +585,7 @@ html[data-theme="dark"] .card-ea .manage-card{
             </div>
             <div style="border-top:1px solid var(--line);margin-top:4px;padding-top:16px">
               <div class="subtle" style="margin-bottom:10px"><strong><?= count($personQuestions) ?></strong> questions</div>
-              <?php if ($personQuestions): ?>
-              <div class="filterbar" data-filter-target="person-question-list">
-                <button type="button" class="filter-pill active" data-filter="all">All</button>
-                <?php foreach($personCategories as $cat): ?>
-                  <button type="button" class="filter-pill" data-filter="<?= qxm_e($cat['category_name']) ?>"><?= qxm_e($cat['category_name']) ?></button>
-                <?php endforeach; ?>
-              </div>
-              <?php endif; ?>
+              <?php qxm_render_filterbar("person-question-list", $personCategories, $scope, (int)$selectedUser, $csrf, "rename_user_category", "delete_user_category", (bool)$personQuestions || (bool)$personCategories); ?>
               <div class="list" id="person-question-list">
               <?php if (!$personQuestions): ?><div class="empty"><i class="fa-regular fa-clipboard"></i><div>No questions assigned yet.</div></div><?php endif; ?>
               <?php foreach($personQuestions as $q): ?>
@@ -622,7 +595,7 @@ html[data-theme="dark"] .card-ea .manage-card{
                     <details><summary class="btn small" style="display:inline-block">Edit</summary>
                       <form method="post" class="form" style="width:min(700px,100%)">
                         <input type="hidden" name="csrf_token" value="<?= qxm_e($csrf) ?>"><input type="hidden" name="scope" value="<?= qxm_e($scope) ?>"><input type="hidden" name="user_id" value="<?= (int)$selectedUser ?>"><input type="hidden" name="action" value="update_question"><input type="hidden" name="question_id" value="<?= (int)$q['id'] ?>">
-                        <select class="select" name="category"><?php foreach($personCategories as $cat): ?><option <?= $cat['category_name']===$q['category']?'selected':'' ?>><?= qxm_e($cat['category_name']) ?></option><?php endforeach; ?><option value="General" <?= (!$q['category'] || $q['category']==='General')?'selected':'' ?>>General</option></select>
+                        <select class="select" name="category"><?php qxm_category_options($personCategories, $q['category'] ?: 'General'); ?></select>
                         <textarea class="field" name="question_text" required><?= qxm_e($q['question_text']) ?></textarea>
                         <button class="btn primary" type="submit">Save</button>
                       </form>
@@ -653,6 +626,30 @@ html[data-theme="dark"] .card-ea .manage-card{
     </div>
   </div>
 </div>
+<div class="qxm-modal-backdrop" id="qxm-rename-backdrop">
+  <form class="qxm-modal rename" method="post" id="qxm-rename-form">
+    <div class="qxm-modal-icon"><i class="fa-solid fa-pen"></i></div>
+    <h3>Rename category</h3>
+    <p>Questions in this category will be updated to the new name.</p>
+    <input type="hidden" name="csrf_token" value="">
+    <input type="hidden" name="scope" value="">
+    <input type="hidden" name="user_id" value="">
+    <input type="hidden" name="category_id" value="">
+    <input type="hidden" name="action" value="">
+    <input class="field" name="category_name" id="qxm-rename-input" maxlength="120" required>
+    <div class="qxm-modal-actions">
+      <button type="button" class="btn small" id="qxm-rename-cancel">Cancel</button>
+      <button type="submit" class="btn small primary">Save</button>
+    </div>
+  </form>
+</div>
+<form method="post" id="qxm-delcat-form" style="display:none">
+  <input type="hidden" name="csrf_token" value="">
+  <input type="hidden" name="scope" value="">
+  <input type="hidden" name="user_id" value="">
+  <input type="hidden" name="category_id" value="">
+  <input type="hidden" name="action" value="">
+</form>
 <script>
 var qxmPendingForm = null;
 function qxmConfirm(form, title, text) {
@@ -695,6 +692,46 @@ document.querySelectorAll('.filterbar').forEach(function (bar) {
       row.style.display = match ? '' : 'none';
     });
   });
+});
+
+function qxmFill(form, ctx, catId) {
+  form.csrf_token.value = ctx.csrf;
+  form.scope.value = ctx.scope;
+  form.user_id.value = ctx.user_id || '';
+  form.category_id.value = catId;
+}
+document.querySelectorAll('.filterbar').forEach(function (bar) {
+  var ctx = {};
+  try { ctx = JSON.parse(bar.getAttribute('data-ctx') || '{}'); } catch (e) {}
+  bar.addEventListener('click', function (e) {
+    var group = e.target.closest('.pill-group');
+    if (!group) return;
+    var id = group.getAttribute('data-cat-id');
+    var name = group.getAttribute('data-cat-name');
+    if (e.target.closest('.pill-edit')) {
+      var f = document.getElementById('qxm-rename-form');
+      qxmFill(f, ctx, id);
+      f.elements['action'].value = ctx.rename;
+      var inp = document.getElementById('qxm-rename-input');
+      inp.value = name;
+      document.getElementById('qxm-rename-backdrop').classList.add('open');
+      inp.focus(); inp.select();
+    } else if (e.target.closest('.pill-del')) {
+      var d = document.getElementById('qxm-delcat-form');
+      qxmFill(d, ctx, id);
+      d.elements['action'].value = ctx.delete;
+      qxmConfirm(d, 'Delete "' + name + '"?', 'Questions in it will move to General.');
+    }
+  });
+});
+document.getElementById('qxm-rename-cancel').addEventListener('click', function () {
+  document.getElementById('qxm-rename-backdrop').classList.remove('open');
+});
+document.getElementById('qxm-rename-backdrop').addEventListener('click', function (e) {
+  if (e.target === this) this.classList.remove('open');
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') document.getElementById('qxm-rename-backdrop').classList.remove('open');
 });
 </script>
 </body>

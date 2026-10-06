@@ -95,7 +95,7 @@ if ($valid && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     <i class="fa-solid fa-lock f-icon"></i>
                     <input class="form-input" type="password" id="pw1" name="password" placeholder="Min. 8 characters"
                            required minlength="8" maxlength="72" autocomplete="new-password" autofocus/>
-                    <button type="button" class="toggle-pw" onclick="togglePw('pw1','e1')" aria-label="Show password"><i class="fa-solid fa-eye" id="e1"></i></button>
+                    <button type="button" class="toggle-pw" onclick="togglePw('pw1','e1')" aria-label="Show password"><i class="fa-solid fa-eye-slash" id="e1"></i></button>
                 </div>
             </div>
             <div class="form-group">
@@ -104,7 +104,7 @@ if ($valid && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     <i class="fa-solid fa-lock f-icon"></i>
                     <input class="form-input" type="password" id="pw2" name="confirm_password" placeholder="Re-enter password"
                            required minlength="8" maxlength="72" autocomplete="new-password"/>
-                    <button type="button" class="toggle-pw" onclick="togglePw('pw2','e2')" aria-label="Show password"><i class="fa-solid fa-eye" id="e2"></i></button>
+                    <button type="button" class="toggle-pw" onclick="togglePw('pw2','e2')" aria-label="Show password"><i class="fa-solid fa-eye-slash" id="e2"></i></button>
                 </div>
             </div>
             <div class="alert alert-error" id="mismatch" style="display:none"><i class="fa-solid fa-circle-exclamation"></i><span>Passwords do not match.</span></div>
@@ -117,7 +117,7 @@ if ($valid && $_SERVER['REQUEST_METHOD'] === 'POST') {
 function togglePw(id, ic){
     const e = document.getElementById(id), i = document.getElementById(ic);
     e.type = e.type === 'password' ? 'text' : 'password';
-    i.className = e.type === 'password' ? 'fa-solid fa-eye' : 'fa-solid fa-eye-slash';
+    i.className = e.type === 'password' ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye';
 }
 const rf = document.getElementById('resetForm');
 if (rf) {

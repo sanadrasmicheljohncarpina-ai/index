@@ -565,24 +565,60 @@ $mysqli->query("CREATE TABLE IF NOT EXISTS user_preferences (
 // Keep preferences compatible with older installations.
 $mysqli->query("ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS show_result_details TINYINT(1) NOT NULL DEFAULT 1");
 $mysqli->query("ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS compact_dashboard TINYINT(1) NOT NULL DEFAULT 0");
+$mysqli->query("ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS notify_evaluation_schedule TINYINT(1) NOT NULL DEFAULT 1");
+$mysqli->query("ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS notify_teaching_assignment TINYINT(1) NOT NULL DEFAULT 1");
+$mysqli->query("ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS notify_academic_period TINYINT(1) NOT NULL DEFAULT 1");
 
-$prefStmt = $mysqli->prepare("SELECT email_on_designation_update, email_on_new_evaluation, show_result_details, compact_dashboard FROM user_preferences WHERE user_id=? LIMIT 1");
+$prefStmt = $mysqli->prepare("SELECT * FROM user_preferences WHERE user_id=? LIMIT 1");
 $prefStmt->bind_param('i', $user_id);
 $prefStmt->execute();
-$user_prefs = $prefStmt->get_result()->fetch_assoc() ?: ['email_on_designation_update'=>1,'email_on_new_evaluation'=>1,'show_result_details'=>1,'compact_dashboard'=>0];
+$user_prefs = array_merge(['show_result_details'=>1,'compact_dashboard'=>0,'notify_evaluation_schedule'=>1,'notify_teaching_assignment'=>1,'notify_academic_period'=>1], $prefStmt->get_result()->fetch_assoc() ?: []);
+function notif_muted_types_sql(array $prefs): string {
+    $map = ['notify_evaluation_schedule'=>'evaluation_schedule','notify_teaching_assignment'=>'teaching_assignment','notify_academic_period'=>'academic_period'];
+    $m = [];
+    foreach ($map as $key => $type) { if (isset($prefs[$key]) && (int)$prefs[$key] === 0) $m[] = "'" . $type . "'"; }
+    return $m ? ' AND type NOT IN (' . implode(',', $m) . ')' : '';
+}
+
 $prefStmt->close();
 
 // Save personal dashboard preferences.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_preferences'])) {
-    if (!csrf_check()) { $_SESSION['toast_error'] = 'Your session expired. Please try again.'; header('Location: ' . __FILE__ . '?page=settings'); exit; }
-    $p1 = isset($_POST['email_on_designation_update']) ? 1 : 0;
-    $p2 = isset($_POST['email_on_new_evaluation']) ? 1 : 0;
-    $p3 = isset($_POST['show_result_details']) ? 1 : 0;
-    $p4 = isset($_POST['compact_dashboard']) ? 1 : 0;
-    $up = $mysqli->prepare("INSERT INTO user_preferences (user_id,email_on_designation_update,email_on_new_evaluation,show_result_details,compact_dashboard) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE email_on_designation_update=VALUES(email_on_designation_update),email_on_new_evaluation=VALUES(email_on_new_evaluation),show_result_details=VALUES(show_result_details),compact_dashboard=VALUES(compact_dashboard)");
-    $up->bind_param('iiiii', $user_id, $p1, $p2, $p3, $p4); $up->execute(); $up->close();
+    if (!csrf_check()) { $_SESSION['toast_error'] = 'Your session expired. Please try again.'; header('Location: faculty_dashboard.php?page=settings'); exit; }
+    $n1 = isset($_POST['notify_evaluation_schedule']) ? 1 : 0; $n2 = isset($_POST['notify_teaching_assignment']) ? 1 : 0; $n3 = isset($_POST['notify_academic_period']) ? 1 : 0;
+$up = $mysqli->prepare("INSERT INTO user_preferences (user_id,notify_evaluation_schedule,notify_teaching_assignment,notify_academic_period) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE notify_evaluation_schedule=VALUES(notify_evaluation_schedule),notify_teaching_assignment=VALUES(notify_teaching_assignment),notify_academic_period=VALUES(notify_academic_period)");
+$up->bind_param('iiii', $user_id, $n1, $n2, $n3); $up->execute(); $up->close();
     $_SESSION['toast'] = 'Settings saved successfully.';
-    header('Location: ' . __FILE__ . '?page=settings'); exit;
+    header('Location: faculty_dashboard.php?page=settings'); exit;
+}
+
+// ── UPDATE ACCOUNT NAME (editable from Settings → Account Overview) ──
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_account_name'])) {
+    if (!csrf_check()) {
+        $_SESSION['toast_error'] = 'Your session expired. Please try again.';
+        header('Location: faculty_dashboard.php?page=settings'); exit;
+    }
+    $new_name = trim(preg_replace('/\s+/u', ' ', (string)($_POST['full_name'] ?? '')));
+    if ($new_name === '') {
+        $_SESSION['toast_error'] = 'Account name cannot be empty.';
+    } elseif (mb_strlen($new_name) > 100) {
+        $_SESSION['toast_error'] = 'Account name must be 100 characters or fewer.';
+    } elseif (preg_match('/[\x00-\x1F\x7F<>]/u', $new_name)) {
+        $_SESSION['toast_error'] = 'Account name contains invalid characters.';
+    } elseif ($new_name === (string)($_SESSION['full_name'] ?? '')) {
+        $_SESSION['toast'] = 'Account name is unchanged.';
+    } else {
+        $nm = $mysqli->prepare("UPDATE users SET full_name=? WHERE id=?");
+        $nm->bind_param('si', $new_name, $user_id);
+        if ($nm->execute()) {
+            $_SESSION['full_name'] = $new_name;
+            $_SESSION['toast'] = 'Account name updated successfully.';
+        } else {
+            $_SESSION['toast_error'] = 'Could not update your account name. Please try again.';
+        }
+        $nm->close();
+    }
+    header('Location: faculty_dashboard.php?page=settings'); exit;
 }
 
 // ── ENSURE A UNIQUE CONSTRAINT BACKS THE DUPLICATE-EVAL CHECK ──
@@ -913,7 +949,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_notifications_re
 // ── MY NOTIFICATIONS (bell) ──────────────────────────────────
 $my_notifications = [];
 $unread_count     = 0;
-$nq = $mysqli->prepare("SELECT id, type, message, extra_data, is_read, created_at FROM notifications WHERE user_id=? ORDER BY created_at DESC, id DESC LIMIT 15");
+$nq = $mysqli->prepare("SELECT id, type, message, extra_data, is_read, created_at FROM notifications WHERE user_id=?" . notif_muted_types_sql($user_prefs) . " ORDER BY created_at DESC, id DESC LIMIT 15");
 $nq->bind_param("i", $user_id);
 $nq->execute();
 $nres = $nq->get_result();
@@ -1370,6 +1406,16 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .account-fact{background:var(--mid);border:1px solid var(--border);border-radius:10px;padding:12px;}
 .account-fact label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:4px;}
 .account-fact b{color:var(--light);font-size:12.5px;}
+.account-name-view{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.account-name-edit{border:0;background:transparent;color:var(--teal-hover);cursor:pointer;padding:4px 6px;border-radius:6px;font-size:12px;}
+.account-name-edit:hover{background:rgba(13,148,136,.14);}
+.account-name-form input[type=text]{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border);background:var(--inner);color:var(--light);border-radius:8px;font-size:12.5px;outline:none;}
+.account-name-form input[type=text]:focus{border-color:var(--teal);}
+.account-name-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px;}
+.account-name-save,.account-name-cancel{border-radius:8px;font-size:11.5px;font-weight:700;padding:6px 12px;cursor:pointer;}
+.account-name-save{border:0;background:var(--teal);color:#fff;}
+.account-name-save:hover{background:var(--teal-hover);}
+.account-name-cancel{background:transparent;color:var(--muted);border:1px solid var(--border);}
 @media(max-width:760px){.settings-grid{grid-template-columns:1fr}.settings-card.full{grid-column:auto}.account-facts{grid-template-columns:1fr}}
 
 
@@ -1829,6 +1875,8 @@ body.light-theme .setting-row span{color:#5B7186;}
 body.light-theme .account-fact{background:#F8FAFC;border-color:rgba(15,31,61,.08);}
 body.light-theme .account-fact label{color:#5B7186;}
 body.light-theme .account-fact b{color:#16263B;}
+body.light-theme .account-name-form input[type=text]{background:#fff;color:#16263B;border-color:rgba(15,31,61,.18);}
+body.light-theme .account-name-cancel{color:#5B7186;border-color:rgba(15,31,61,.18);}
 body.light-theme .settings-page-title{color:#16263B;}
 body.light-theme .settings-page-subtitle{color:#5B7186;}
 body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-color:#D8E3EF;}
@@ -1899,7 +1947,7 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
 
         <div class="nav-section-label sidebar-section-secondary">Evaluation</div>
         <a href="faculty_dashboard.php?page=my_results" class="nav-link <?= $page==='my_results'?'active':'' ?>">
-            <i class="fa-solid fa-chart-bar"></i><span>Feedback's Received</span>
+            <i class="fa-solid fa-chart-bar"></i><span>Evaluations Received</span>
         </a>
         <a href="faculty_dashboard.php?page=peer" class="nav-link <?= in_array($page,['peer','peer_eval'])?'active':'' ?>">
             <i class="fa-solid fa-users-viewfinder"></i><span>Evaluate Others</span>
@@ -1973,7 +2021,7 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
             <i class="fa-solid fa-bars"></i>
         </button>
         <div class="nav-page-title">
-            <?php $titles=['dashboard'=>'Dashboard','profile'=>'Role & Designation','my_results'=>"Feedback's Received",'peer'=>'Evaluate Others','peer_eval'=>'Evaluate','settings'=>'Settings'];
+            <?php $titles=['dashboard'=>'Dashboard','profile'=>'Role & Designation','my_results'=>"Evaluations Received",'peer'=>'Evaluate Others','peer_eval'=>'Evaluate','settings'=>'Settings'];
             echo $titles[$page] ?? 'Dashboard'; ?>
         </div>
     </div>
@@ -2110,61 +2158,6 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
     </div>
 </div>
 
-<?php if (!empty($my_scores)): ?>
-<div class="section-card">
-    <div class="section-title"><i class="fa-solid fa-layer-group" style="color:var(--teal)"></i> Performance by Category</div>
-    <?php foreach ($my_scores as $cs):
-        $pct = round(($cs['avg_cat']/5)*100);
-        $col = $cs['avg_cat']>=4?'#4ade80':($cs['avg_cat']>=3?'#facc15':'#f87171');
-    ?>
-    <div class="cat-row">
-        <div class="cat-name"><?= htmlspecialchars($cs['category']) ?></div>
-        <div class="cat-bar-bg"><div class="cat-bar-fill" style="width:<?= $pct ?>%;background:<?= $col ?>"></div></div>
-        <div class="cat-score" style="color:<?= $col ?>"><?= number_format($cs['avg_cat'],2) ?></div>
-    </div>
-    <?php endforeach; ?>
-</div>
-<?php endif; ?>
-
-<div class="section-card">
-    <div class="section-title">
-        <i class="fa-solid fa-clock-rotate-left" style="color:var(--accent)"></i> Evaluations Received
-    </div>
-
-    <button type="button" class="btn-view-all-evals" id="viewEvalsBtn" onclick="toggleRecentEvals()">
-        <i class="fa-solid fa-eye"></i> View Evaluations Received
-        <i class="fa-solid fa-chevron-down" id="recentEvalsCaret" style="transition:transform .2s;margin-left:auto;"></i>
-    </button>
-
-    <div id="recentEvalsList" style="display:none;margin-top:14px;">
-    <?php if (empty($recent_subs)): ?>
-        <div class="empty-state">
-            <i class="fa-solid fa-inbox"></i>
-            <p>No evaluations received yet this period.</p>
-        </div>
-    <?php else: foreach ($recent_subs as $s):
-            $col = $s['overall_score']>=4?'#4ade80':($s['overall_score']>=3?'#facc15':'#f87171');
-            $period_lbl = $s['period_label'] ?? $s['semester'] ?? '';
-        ?>
-        <div class="eval-item eval-item-clickable" onclick="openEvalDetails(<?= (int)$s['tracker_id'] ?>)">
-            <div class="eval-item-left">
-                <div class="anon"><i class="fa-solid fa-eye-slash" style="color:var(--muted)"></i> Anonymous Evaluator</div>
-                <div class="meta">
-                    <?= date('M d, Y', strtotime($s['submitted_at'])) ?><?= $period_lbl ? ' · ' . htmlspecialchars($period_lbl) : '' ?>
-                </div>
-            </div>
-            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
-                <div class="score-pill" style="background:<?= $col ?>1a;color:<?= $col ?>;border:1px solid <?= $col ?>44">
-                    <?= number_format($s['overall_score'],2) ?> / 5
-                </div>
-                <button type="button" class="btn-view-details" onclick="event.stopPropagation(); openEvalDetails(<?= (int)$s['tracker_id'] ?>)">
-                    View Details <i class="fa-solid fa-chevron-right"></i>
-                </button>
-            </div>
-        </div>
-    <?php endforeach; endif; ?>
-    </div>
-</div>
 
 </div>
 
@@ -2276,7 +2269,30 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
 <div class="settings-card full">
             <div class="settings-card-head"><div class="sicon"><i class="fa-solid fa-user-shield"></i></div><div><h3>Account Overview</h3><p>Your access is controlled by the system administrator.</p></div></div>
             <div class="account-facts">
-                <div class="account-fact"><label>Account Name</label><b><?= htmlspecialchars($full_name) ?></b></div>
+                <div class="account-fact account-name-fact">
+                    <label>Account Name</label>
+                    <div class="account-name-view" id="accountNameView">
+                        <b><?= htmlspecialchars($full_name) ?></b>
+                        <button type="button" class="account-name-edit" onclick="toggleAccountNameEdit(true)" title="Edit account name" aria-label="Edit account name"><i class="fa-solid fa-pen"></i></button>
+                    </div>
+                    <form method="post" action="faculty_dashboard.php?page=settings" class="account-name-form" id="accountNameForm" style="display:none;" autocomplete="off">
+                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
+                        <input type="hidden" name="update_account_name" value="1">
+                        <input type="text" name="full_name" id="accountNameInput" maxlength="100" required value="<?= htmlspecialchars($full_name) ?>" placeholder="Last Name, First Name M.I.">
+                        <div class="account-name-actions">
+                            <button type="button" class="account-name-cancel" onclick="toggleAccountNameEdit(false)">Cancel</button>
+                            <button type="submit" class="account-name-save"><i class="fa-solid fa-check"></i> Save</button>
+                        </div>
+                    </form>
+                    <script>
+                    function toggleAccountNameEdit(on){
+                        var v=document.getElementById('accountNameView'), f=document.getElementById('accountNameForm'), i=document.getElementById('accountNameInput');
+                        v.style.display = on ? 'none' : 'flex';
+                        f.style.display = on ? 'block' : 'none';
+                        if(on){ i.focus(); i.select(); } else { i.value = <?= json_encode($full_name, JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>; }
+                    }
+                    </script>
+                </div>
                 <div class="account-fact"><label>System Role</label><b>Faculty</b></div>
                 <div class="account-fact"><label>Evaluation Access</label><b>Peer Evaluation</b></div>
             </div>
@@ -2287,9 +2303,7 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
             <form method="POST">
                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
                 <input type="hidden" name="save_preferences" value="1">
-                <div class="setting-row"><div><strong>Designation updates</strong><span>Notify me when designation changes are recorded.</span></div><label class="setting-toggle"><input type="checkbox" name="email_on_designation_update" <?= !empty($user_prefs['email_on_designation_update'])?'checked':'' ?>><span class="slider"></span></label></div>
-                <div class="setting-row"><div><strong>New evaluation results</strong><span>Notify me when a new evaluation is received.</span></div><label class="setting-toggle"><input type="checkbox" name="email_on_new_evaluation" <?= !empty($user_prefs['email_on_new_evaluation'])?'checked':'' ?>><span class="slider"></span></label></div>
-                <div class="setting-row"><div><strong>Evaluation details</strong><span>Allow detailed evaluation entries to appear in My Results.</span></div><label class="setting-toggle"><input type="checkbox" name="show_result_details" <?= !empty($user_prefs['show_result_details'])?'checked':'' ?>><span class="slider"></span></label></div>
+                <div class="setting-row"><div><strong>Evaluation schedule</strong><span>Notify me when the evaluation opens, closes, or its schedule changes.</span></div><label class="setting-toggle"><input type="checkbox" name="notify_evaluation_schedule" <?= !empty($user_prefs['notify_evaluation_schedule'])?'checked':'' ?>><span class="slider"></span></label></div><div class="setting-row"><div><strong>Year level assignment</strong><span>Notify me when I am assigned to a specific year level.</span></div><label class="setting-toggle"><input type="checkbox" name="notify_teaching_assignment" <?= !empty($user_prefs['notify_teaching_assignment'])?'checked':'' ?>><span class="slider"></span></label></div><div class="setting-row"><div><strong>School year &amp; semester</strong><span>Notify me when the active school year or semester changes.</span></div><label class="setting-toggle"><input type="checkbox" name="notify_academic_period" <?= !empty($user_prefs['notify_academic_period'])?'checked':'' ?>><span class="slider"></span></label></div>
                 <div class="settings-actions"><button class="settings-save" type="submit"><i class="fa-solid fa-check"></i> Save Preferences</button></div>
             </form>
         </div>
@@ -2317,6 +2331,38 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
 
 <?php elseif ($page === 'my_results'): ?>
 
+<div class="section-card">
+    <div class="section-title"><i class="fa-solid fa-chart-bar" style="color:var(--teal)"></i> Your Evaluation Summary</div>
+    <div style="display:flex;gap:28px;flex-wrap:wrap;margin-bottom:20px;">
+        <div>
+            <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:5px;">Overall Average</div>
+            <div style="font-size:36px;font-weight:700;color:<?= $my_avg===null?'#6b7280':($my_avg>=4?'#4ade80':($my_avg>=3?'#facc15':'#f87171')) ?>">
+                <?= $my_avg !== null ? number_format($my_avg,2) : '—' ?><span style="font-size:16px;color:var(--muted)"> / 5</span>
+            </div>
+        </div>
+        <div>
+            <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:5px;">Total Responses</div>
+            <div style="font-size:36px;font-weight:700;color:var(--teal-hover)"><?= $my_total ?></div>
+        </div>
+    </div>
+    <?php if (!empty($my_scores)): ?>
+    <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin:0 0 14px;padding-top:18px;border-top:1px solid var(--border);">Performance by Category</div>
+    <?php foreach ($my_scores as $cs):
+        $pct = round(($cs['avg_cat']/5)*100);
+        $col = $cs['avg_cat']>=4?'#4ade80':($cs['avg_cat']>=3?'#facc15':'#f87171');
+    ?>
+    <div class="cat-row">
+        <div class="cat-name"><?= htmlspecialchars($cs['category']) ?></div>
+        <div class="cat-bar-bg"><div class="cat-bar-fill" style="width:<?= $pct ?>%;background:<?= $col ?>"></div></div>
+        <div class="cat-score" style="color:<?= $col ?>"><?= number_format($cs['avg_cat'],2) ?></div>
+    </div>
+    <?php endforeach; ?>
+    <?php else: ?>
+    <div class="empty-state"><i class="fa-solid fa-chart-simple"></i><p>No category data available yet.</p></div>
+    <?php endif; ?>
+</div>
+
+<div class="section-card">
 <div class="section-card">
     <div class="section-title">
         <i class="fa-solid fa-list" style="color:var(--accent)"></i> Evaluations Received (Anonymous)
@@ -2359,7 +2405,7 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
             <div class="score-pill" style="background:<?= $col ?>1a;color:<?= $col ?>;border:1px solid <?= $col ?>44">
                 <?= number_format($s['overall_score'],2) ?> / 5
             </div>
-            <?php if (!empty($user_prefs['show_result_details'])): ?>
+            <?php if (true): ?>
             <button type="button" class="btn-view-details" onclick="event.stopPropagation(); openEvalDetails(<?= (int)$s['tracker_id'] ?>)">
                 View Details <i class="fa-solid fa-chevron-right"></i>
             </button>
@@ -2368,6 +2414,7 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
     </div>
     <?php endwhile; $allStmt->close(); endif; ?>
     </div>
+</div>
 </div>
 
 <!-- ══════════ EVALUATION — STEP 1: CHOOSE GROUP ══════════ -->

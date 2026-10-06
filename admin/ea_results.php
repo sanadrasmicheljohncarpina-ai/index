@@ -173,6 +173,33 @@ $overallValues = array_values(array_filter(array_map(
 ), static fn($v) => $v !== null));
 $overallReceivedScore = $overallValues ? round(array_sum($overallValues) / count($overallValues), 2) : null;
 
+// Category averages across every received evaluation (powers the summary card).
+$categoryScores = [];
+if ($evaluations) {
+    $trackerIds = implode(',', array_map(static fn($r) => (int)$r['id'], $evaluations));
+    $catRes = $mysqli->query("
+        SELECT
+            COALESCE(eq.category, uq.category, 'General') AS category,
+            ROUND(AVG(qa.answer_score), 2) AS avg_cat
+        FROM questionnaire_answers qa
+        LEFT JOIN evaluation_questions eq
+            ON qa.question_source='evaluation' AND eq.id=qa.question_id
+        LEFT JOIN user_questions uq
+            ON qa.question_source='user'
+           AND uq.id=COALESCE(qa.user_question_id, qa.question_id)
+        WHERE qa.tracker_id IN ($trackerIds)
+          AND qa.answer_score IS NOT NULL
+        GROUP BY category
+        ORDER BY category
+    ");
+    if ($catRes) $categoryScores = $catRes->fetch_all(MYSQLI_ASSOC);
+}
+
+function score_color(?float $score): string {
+    if ($score === null) return '#6b7280';
+    return $score >= 4 ? '#4ade80' : ($score >= 3 ? '#facc15' : '#f87171');
+}
+
 function score_class(?float $score): string {
     if ($score === null) return 'score-neutral';
     if ($score >= 4.5) return 'score-high';
@@ -186,7 +213,7 @@ function score_class(?float $score): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Feedback's Received — PBI</title>
+<title>Evaluations Received — PBI</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -247,9 +274,28 @@ body{min-height:100vh}
 .comments .label{font-size:15px;font-weight:800;margin-bottom:10px}
 .comments .text{font-size:13px;color:#354C63;line-height:1.55;white-space:pre-wrap}
 .loading{text-align:center;padding:50px 20px;color:var(--muted)}
+.section-card{background:var(--card);border:1px solid var(--border-soft);border-radius:20px;padding:26px 28px;margin-bottom:22px;box-shadow:0 4px 18px rgba(30,82,144,.05)}
+.section-card .section-card{margin-bottom:0;padding:24px 28px;box-shadow:none}
+.section-card-title{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:800;margin:0 0 18px;color:var(--text)}
+.section-card-title i{color:var(--accent)}
+.sum-stats{display:flex;gap:34px;flex-wrap:wrap;margin-bottom:22px}
+.sum-label{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:5px}
+.sum-value{font-size:36px;font-weight:700;line-height:1.15}
+.sum-value small{font-size:16px;color:var(--muted);font-weight:500}
+.cat-heading{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin:0 0 14px;padding-top:18px;border-top:1px solid var(--border-soft)}
+.cat-row{display:flex;align-items:center;gap:14px;margin-bottom:12px}
+.cat-name{font-size:13.5px;color:#1b2b40;width:240px;flex-shrink:0}
+.cat-bar-bg{flex:1;height:7px;background:#E8EEF5;border-radius:4px;overflow:hidden}
+.cat-bar-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,#C17D19,#F3BA54)}
+.cat-score{font-size:13.5px;font-weight:700;width:42px;text-align:right;flex-shrink:0}
+.btn-view-all-evals{width:100%;display:flex;align-items:center;gap:10px;background:var(--accent-bg);border:1px solid var(--accent-border);color:var(--accent);border-radius:12px;padding:15px 18px;font-size:14.5px;font-weight:700;cursor:pointer;font-family:inherit}
+.btn-view-all-evals:hover{background:#FFF2D9}
+.btn-view-all-evals .caret{margin-left:auto;transition:transform .2s}
+.btn-view-all-evals.open .caret{transform:rotate(180deg)}
 @media(max-width:760px){
   .wrap{padding:22px 16px 32px}.page-head{align-items:flex-start}.stats{width:100%}.stat{flex:1;min-width:130px}
   .result-card{align-items:flex-start;flex-direction:column}.right{width:100%;justify-content:space-between}
+  .section-card{padding:20px 18px}.cat-row{flex-wrap:wrap}.cat-name{width:100%}.cat-bar-bg{flex:1}
   .detail-grid{grid-template-columns:1fr}.category-row{grid-template-columns:1fr 1fr 48px;gap:10px}.category-name{grid-column:1 / -1}
 }
 </style>
@@ -264,21 +310,48 @@ body{min-height:100vh}
             <h1>Evaluations Received</h1>
             <p>Anonymous evaluations submitted by authorized evaluators of your EA account.</p>
         </div>
-        <div class="stats">
-            <div class="stat">
-                <div class="stat-label">Total Received</div>
-                <div class="stat-value"><?= $totalReceived ?></div>
-            </div>
-            <div class="stat">
-                <div class="stat-label">Average Score</div>
-                <div class="stat-value"><?= $overallReceivedScore !== null ? number_format($overallReceivedScore, 2) . ' / 5' : '—' ?></div>
-            </div>
-        </div>
     </div>
 
-    <div class="banner"><i class="fa-solid fa-eye-slash"></i> View Evaluations Received</div>
+    <div class="section-card">
+        <div class="section-card-title"><i class="fa-solid fa-chart-bar"></i> Your Evaluation Summary</div>
+        <div class="sum-stats">
+            <div>
+                <div class="sum-label">Overall Average</div>
+                <div class="sum-value" style="color:var(--accent)">
+                    <?= $overallReceivedScore !== null ? number_format($overallReceivedScore, 2) : '—' ?><small> / 5</small>
+                </div>
+            </div>
+            <div>
+                <div class="sum-label">Total Responses</div>
+                <div class="sum-value" style="color:var(--text)"><?= (int)$totalReceived ?></div>
+            </div>
+        </div>
+        <?php if ($categoryScores): ?>
+            <div class="cat-heading">Performance by Category</div>
+            <?php foreach ($categoryScores as $cs):
+                $catAvg = (float)$cs['avg_cat'];
+                $pct = round(($catAvg / 5) * 100);
+            ?>
+            <div class="cat-row">
+                <div class="cat-name"><?= $escape($cs['category']) ?></div>
+                <div class="cat-bar-bg"><div class="cat-bar-fill" style="width:<?= $pct ?>%"></div></div>
+                <div class="cat-score" style="color:var(--accent)"><?= number_format($catAvg, 2) ?></div>
+            </div>
+            <?php endforeach; ?>
+        <?php else: ?>
+            <div class="empty" style="padding:30px 20px"><i class="fa-solid fa-chart-simple"></i><strong>No category data available yet.</strong></div>
+        <?php endif; ?>
+    </div>
 
-    <div class="results">
+    <div class="section-card">
+    <div class="section-card">
+        <div class="section-card-title"><i class="fa-solid fa-list"></i> Evaluations Received (Anonymous)</div>
+        <button type="button" class="btn-view-all-evals" id="viewAllEvalsBtn" onclick="toggleAllEvals()">
+            <i class="fa-solid fa-eye"></i> View Evaluations Received
+            <i class="fa-solid fa-chevron-down caret"></i>
+        </button>
+
+        <div class="results" id="allEvalsList" style="display:none;margin-top:14px;">
         <?php if (!$evaluations): ?>
             <div class="empty">
                 <i class="fa-regular fa-comment-dots"></i>
@@ -304,6 +377,8 @@ body{min-height:100vh}
                 </div>
             <?php endforeach; ?>
         <?php endif; ?>
+        </div>
+    </div>
     </div>
 </div>
 
@@ -380,6 +455,13 @@ function openDetails(id){
             detailContent.className='loading';
             detailContent.innerHTML = `<div style="color:#B42318">${esc(err.message || 'Unable to load this evaluation.')}</div>`;
         });
+}
+function toggleAllEvals(){
+    const list = document.getElementById('allEvalsList');
+    const btn = document.getElementById('viewAllEvalsBtn');
+    const open = list.style.display === 'none';
+    list.style.display = open ? 'flex' : 'none';
+    btn.classList.toggle('open', open);
 }
 function closeDetails(){
     backdrop.classList.remove('open');

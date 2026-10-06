@@ -22,49 +22,114 @@ if ($_SESSION['role'] === 'admin') {
 ss_sync_from_database($mysqli);
 
 
+/* ───────── Student "required evaluations" ─────────
+   This mirrors the student portal (student/student_dashboard.php) rule for rule, so the
+   tracker's REQUIRED number always equals what the student sees under Assigned Evaluations:
+     • Faculty = teachers (+ staff who carry a teaching/year-level assignment) whose assignment
+                 matches the student's level + year level; College students additionally need the
+                 teacher's assigned_period to equal the active period's semester.
+     • Staff   = staff accounts with NO teaching/year-level assignment (institution-wide).
+     • School head = Dean for College students, Principal for Junior/Senior High students (one each).
+   Each required item is keyed "userId|context" (context: teacher | staff | school_head).        */
 function levelVariants(string $level): array {
-    $level = strtolower(trim($level));
-    if (in_array($level, ['junior_high','senior_high','elementary'], true)) return ['basic education'];
-    if ($level === 'college') return ['college','higher education','college / university','college/university'];
-    return [$level];
+    $k = strtolower(trim($level));
+    $college = ['college','higher education','college / university','college/university'];
+    $map = [
+        'elementary' => ['basic education'], 'junior_high' => ['basic education'],
+        'senior_high' => ['basic education'], 'basic education' => ['basic education'],
+        'college' => $college, 'higher education' => $college,
+        'college / university' => $college, 'college/university' => $college,
+    ];
+    return array_values(array_unique(array_map('strtolower', $map[$k] ?? [$k])));
 }
 
-function trackerHasAssignment(mysqli $db, int $uid): bool {
-    $st=$db->prepare("SELECT 1 FROM (SELECT user_id FROM user_year_levels WHERE user_id=? UNION ALL SELECT user_id FROM teaching_assignments WHERE user_id=?) x LIMIT 1");
-    $st->bind_param('ii',$uid,$uid); $st->execute(); $ok=(bool)$st->get_result()->fetch_row(); $st->close(); return $ok;
+function trackerIsCollegeLevel(string $level): bool {
+    return in_array(strtolower(trim($level)), ['college','higher education','college / university','college/university'], true);
 }
 
-function trackerMatchesAssignment(mysqli $db, int $uid, array $variants, string $year): bool {
-    if (!$year || !$variants) return false;
-    $ph=implode(',',array_fill(0,count($variants),'?'));
-    $st=$db->prepare("SELECT 1 FROM (SELECT ta.user_id FROM teaching_assignments ta WHERE ta.user_id=? AND LOWER(TRIM(ta.education_level)) IN ($ph) AND LOWER(TRIM(ta.year_level))=LOWER(TRIM(?)) UNION SELECT uyl.user_id FROM user_year_levels uyl WHERE uyl.user_id=? AND LOWER(TRIM(uyl.year_level))=LOWER(TRIM(?))) x");
-    $types='i'.str_repeat('s',count($variants)).'s' . 'is';
-    $args=array_merge([$uid],$variants,[$year,$uid,$year]);
-    $st->bind_param($types,...$args); $st->execute(); $ok=(bool)$st->get_result()->fetch_row(); $st->close(); return $ok;
-}
+/* Loaded once per request: every possible evaluatee plus their assignments. */
+function trackerRoster(mysqli $db): array {
+    static $roster = null;
+    if ($roster !== null) return $roster;
 
-function requiredCount(mysqli $db,array $student):int{
-    $contexts=[];
-    $year=trim((string)($student['year_level']??''));
-    $level=trim((string)($student['education_level']??''));
-    $variants=levelVariants($level);
+    $assign = []; // uid => ['ta' => [[edu, year], ...], 'uyl' => [year, ...]]
+    $q = $db->query("SELECT user_id, LOWER(TRIM(education_level)) AS e, LOWER(TRIM(year_level)) AS y FROM teaching_assignments");
+    if ($q) { while ($r = $q->fetch_assoc()) { $assign[(int)$r['user_id']]['ta'][] = [(string)$r['e'], (string)$r['y']]; } $q->free(); }
+    $q = $db->query("SELECT user_id, LOWER(TRIM(year_level)) AS y FROM user_year_levels");
+    if ($q) { while ($r = $q->fetch_assoc()) { $assign[(int)$r['user_id']]['uyl'][] = (string)$r['y']; } $q->free(); }
 
-    $h=$db->query("SELECT id FROM users WHERE role IN ('principal','dean') AND is_active=1 AND account_status='approved'");
-    if($h){while($r=$h->fetch_assoc())$contexts[(int)$r['id'].'|school_head']=true;$h->free();}
+    $staff = [];
+    $q = $db->query("SELECT id, role, secondary_role, assigned_period FROM users
+                     WHERE role IN ('teacher','staff','faculty') AND is_active=1
+                       AND (account_status='approved' OR source='admin_nologin')");
+    if ($q) { while ($u = $q->fetch_assoc()) { $u['id'] = (int)$u['id']; $staff[] = $u; } $q->free(); }
 
-    $s=$db->query("SELECT id,role,designation FROM users WHERE role IN ('teacher','staff','faculty') AND is_active=1 AND (account_status='approved' OR source='admin_nologin')");
-    if($s){
-        while($u=$s->fetch_assoc()){
-            $uid=(int)$u['id'];
-            $ht=($u['role'] ?? '') === 'teacher'; $hs=($u['role'] ?? '') === 'staff';
-            $hasAssign=trackerHasAssignment($db,$uid);
-            $match=($year!=='' && $level!=='' && $hasAssign) ? trackerMatchesAssignment($db,$uid,$variants,$year) : false;
-            if($ht && $match) $contexts[$uid.'|teacher']=true;
-            if($hs && (!$hasAssign || $match)) $contexts[$uid.'|staff']=true;
-        }
-        $s->free();
+    $heads = ['principal' => null, 'dean' => null];
+    foreach (array_keys($heads) as $role) {
+        $st = $db->prepare("SELECT id FROM users WHERE role=? AND is_active=1 LIMIT 1");
+        if ($st) { $st->bind_param('s', $role); $st->execute(); $row = $st->get_result()->fetch_assoc(); $st->close(); if ($row) $heads[$role] = (int)$row['id']; }
     }
-    return count($contexts);
+    return $roster = ['assign' => $assign, 'staff' => $staff, 'heads' => $heads];
+}
+
+function trackerRequiredKeys(mysqli $db, array $student, ?string $periodSemester): array {
+    $roster = trackerRoster($db);
+    $level = trim((string)($student['education_level'] ?? ''));
+    $year  = trim((string)($student['year_level'] ?? ''));
+    $yearKey = strtolower($year);
+    $variants = levelVariants($level);
+    $isCollege = trackerIsCollegeLevel($level);
+    $isJhsShs  = in_array(strtolower($level), ['junior_high','senior_high'], true);
+    $keys = [];
+
+    foreach ($roster['staff'] as $u) {
+        $uid = $u['id'];
+        $a = $roster['assign'][$uid] ?? null;
+        $hasAssign = $a !== null;
+        $isTeacher = ec_has_teacher_function($u);
+        $isStaff   = ec_has_staff_function($u);
+
+        $match = false;
+        if ($hasAssign && $level !== '' && $year !== '') {
+            foreach (($a['ta'] ?? []) as [$e, $y]) { if ($y === $yearKey && in_array($e, $variants, true)) { $match = true; break; } }
+            if (!$match) foreach (($a['uyl'] ?? []) as $y) { if ($y === $yearKey) { $match = true; break; } }
+        }
+
+        $semesterOk = true;
+        if ($isCollege) {
+            $semesterOk = $periodSemester !== null && trim($periodSemester) !== ''
+                && trim((string)($u['assigned_period'] ?? '')) === trim($periodSemester);
+        }
+
+        if (($isTeacher || ($isStaff && $hasAssign)) && $match && $semesterOk) $keys[$uid . '|teacher'] = true;
+        if ($isStaff && !$hasAssign) $keys[$uid . '|staff'] = true;
+    }
+
+    if ($isJhsShs && $roster['heads']['principal']) $keys[$roster['heads']['principal'] . '|school_head'] = true;
+    if ($isCollege && $roster['heads']['dean'])     $keys[$roster['heads']['dean'] . '|school_head'] = true;
+    return $keys;
+}
+
+/* [required, done, lastSubmission] for one student, counting only submissions that match a required item. */
+function trackerStudentProgress(mysqli $db, array $student, int $periodId, ?string $periodSemester): array {
+    $required = trackerRequiredKeys($db, $student, $periodSemester);
+    $done = 0; $last = null;
+    if ($periodId && $required) {
+        $st = $db->prepare("SELECT target_user_id, evaluation_context, MAX(submitted_at)
+                            FROM evaluation_tracker
+                            WHERE evaluator_id=? AND period_id=? AND eval_type='student' AND status='submitted'
+                            GROUP BY target_user_id, evaluation_context");
+        if ($st) {
+            $sid = (int)$student['id'];
+            $st->bind_param('ii', $sid, $periodId); $st->execute(); $st->bind_result($tid, $ctx, $at);
+            while ($st->fetch()) {
+                $key = (int)$tid . '|' . ($ctx ?: 'teacher');
+                if (isset($required[$key])) { $done++; if ($last === null || $at > $last) $last = $at; }
+            }
+            $st->close();
+        }
+    }
+    return [count($required), $done, $last];
 }
 
 /* ───────── Evaluator tabs (Faculty / Dean / Principal) ─────────
@@ -182,8 +247,9 @@ if($ctxCol&&$ctxCol->num_rows===0){
     $mysqli->query("ALTER TABLE evaluation_tracker ADD COLUMN evaluation_context VARCHAR(30) NOT NULL DEFAULT 'teacher'");
     $mysqli->query("UPDATE evaluation_tracker et JOIN users u ON u.id=et.target_user_id SET et.evaluation_context=CASE WHEN u.role IN ('principal','dean') THEN 'school_head' WHEN u.role='staff' THEN 'staff' WHEN u.role='teacher' THEN 'teacher' ELSE et.evaluation_context END");
 }
-$period=$mysqli->query("SELECT id, period_label FROM evaluation_periods WHERE is_active=1 LIMIT 1")->fetch_assoc();
+$period=$mysqli->query("SELECT * FROM evaluation_periods WHERE is_active=1 LIMIT 1")->fetch_assoc();
 $periodId = $period ? (int)$period['id'] : 0;
+$periodSemester = isset($period['semester']) ? (string)$period['semester'] : null;
 
 // Year levels per student education level (values match users.year_level).
 $yearLevelsByLevel = [
@@ -237,23 +303,7 @@ if ($res) $res->free();
 
 $rows = [];
 foreach ($students as $student) {
-    $required = requiredCount($mysqli, $student);
-    $done = 0;
-    $last = null;
-
-    if ($periodId) {
-        $stmt = $mysqli->prepare("SELECT COUNT(DISTINCT target_user_id,evaluation_context) AS done, MAX(submitted_at) AS last_submission FROM evaluation_tracker WHERE evaluator_id=? AND period_id=? AND eval_type='student' AND status='submitted'");
-        if ($stmt) {
-            $stmt->bind_param('ii', $student['id'], $periodId);
-            $stmt->execute();
-            $stmt->bind_result($doneValue, $lastValue);
-            if ($stmt->fetch()) {
-                $done = (int)$doneValue;
-                $last = $lastValue;
-            }
-            $stmt->close();
-        }
-    }
+    [$required, $done, $last] = trackerStudentProgress($mysqli, $student, $periodId, $periodSemester);
 
     $state = statusFor($done, $required);
     if ($status !== 'all' && $state !== $status) continue;
@@ -286,18 +336,7 @@ if ($summaryRes) {
         if (!isset($summary[$lvl])) continue;
         $summary[$lvl]['total']++;
 
-        $required = requiredCount($mysqli, $student);
-        $done = 0;
-        if ($periodId) {
-            $stmt = $mysqli->prepare("SELECT COUNT(DISTINCT target_user_id) FROM evaluation_tracker WHERE evaluator_id=? AND period_id=? AND eval_type='student' AND status='submitted'");
-            if ($stmt) {
-                $stmt->bind_param('ii', $student['id'], $periodId);
-                $stmt->execute();
-                $stmt->bind_result($doneValue);
-                if ($stmt->fetch()) $done = (int)$doneValue;
-                $stmt->close();
-            }
-        }
+        [$required, $done] = trackerStudentProgress($mysqli, $student, $periodId, $periodSemester);
 
         if (statusFor($done, $required) === 'completed') $summary[$lvl]['completed']++;
         else $summary[$lvl]['pending']++;
@@ -436,6 +475,10 @@ a { color:inherit; }
 html[data-theme="dark"] .et-tabs{background:var(--panel-bg,#132238);border-color:var(--panel-border,#284260)}
 html[data-theme="dark"] .et-tab{color:var(--muted,#9FB2C9)}
 html[data-theme="dark"] .et-tab.active{color:#fff}
+.et-refresh{border:0;background:none;color:#0F9F6E;cursor:pointer;font-size:15px;line-height:1;padding:0 6px 0 0;vertical-align:middle}
+.et-refresh:hover{color:#0C7F59}
+.et-refresh.spin{animation:et-spin .8s linear infinite}
+@keyframes et-spin{to{transform:rotate(360deg)}}
 </style>
 <link rel="stylesheet" href="admin_appearance.css">
 <script src="admin_appearance.js"></script>
@@ -452,7 +495,7 @@ html[data-theme="dark"] .et-tab.active{color:#fff}
                 else echo 'Progress of the Principal evaluating High School faculty, non-teaching staff and the Executive Assistant this period.';
             ?></div>
         </div>
-        <div class="et-updated"><span>⟳</span> Last updated: <?=htmlspecialchars(date('M j, Y g:i A'))?></div>
+        <div class="et-updated"><button type="button" class="et-refresh" id="etRefresh" title="Refresh now" aria-label="Refresh now">⟳</button> Last updated: <time id="etUpdatedAt"><?=htmlspecialchars(date('M j, Y g:i A'))?></time></div>
     </div>
 
     <nav class="et-tabs" aria-label="Evaluation tracker tabs">
@@ -609,4 +652,55 @@ html[data-theme="dark"] .et-tab.active{color:#fff}
 <?php endif; ?>
     </div>
 </div>
+
+<script>
+/* Auto-refresh: re-fetches this same page (filters/tab/search preserved) and swaps
+   only the tabs, summary cards and table in place. No full reload, no flicker.
+   Change ET_REFRESH_MS to adjust how often (milliseconds). */
+(function () {
+  var ET_REFRESH_MS = 20000;
+  var busy = false, timer = null, fails = 0, lastRun = Date.now();
+  var btn = document.getElementById('etRefresh');
+  var stamp = document.getElementById('etUpdatedAt');
+
+  function userIsTyping() {
+    var a = document.activeElement;
+    return !!(a && a.classList && a.classList.contains('et-search'));
+  }
+  function swap(sel, doc) {
+    var cur = document.querySelector(sel), nxt = doc.querySelector(sel);
+    if (cur && nxt && cur.innerHTML !== nxt.innerHTML) cur.innerHTML = nxt.innerHTML;
+  }
+  function schedule() {
+    clearTimeout(timer);
+    // back off a little if requests keep failing (max 4x)
+    timer = setTimeout(function () { refresh(false); }, ET_REFRESH_MS * Math.min(1 + fails, 4));
+  }
+  function refresh(manual) {
+    if (busy) return;
+    if (!manual && (document.hidden || userIsTyping())) { schedule(); return; }
+    busy = true; lastRun = Date.now();
+    if (btn) btn.classList.add('spin');
+    fetch(location.href, { credentials: 'same-origin', cache: 'no-store', headers: { 'X-Requested-With': 'fetch' } })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+      .then(function (html) {
+        var doc = new DOMParser().parseFromString(html, 'text/html');
+        if (!doc.querySelector('.et-wrap')) throw new Error('unexpected response (session expired?)');
+        swap('.et-tabs', doc); swap('.et-cards', doc); swap('.et-table', doc);
+        var t = doc.getElementById('etUpdatedAt');
+        if (t && stamp) stamp.textContent = t.textContent;
+        fails = 0;
+      })
+      .catch(function () { fails++; })
+      .finally(function () { busy = false; if (btn) btn.classList.remove('spin'); schedule(); });
+  }
+
+  if (btn) btn.addEventListener('click', function () { refresh(true); });
+  // Refresh right away when the person comes back to this tab after a while
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && Date.now() - lastRun >= ET_REFRESH_MS) refresh(false);
+  });
+  schedule();
+})();
+</script>
 <?php $mysqli->close(); ?>

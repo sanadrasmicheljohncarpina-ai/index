@@ -91,17 +91,14 @@ $groupMeta = [
     'Principal' => [
         'icon' => 'fa-user-tie',
         'class' => 'group-principal',
-        'description' => 'Evaluate the Principal assigned to your evaluation scope.',
     ],
     'Dean' => [
         'icon' => 'fa-graduation-cap',
         'class' => 'group-dean',
-        'description' => 'Evaluate the Dean responsible for your evaluation scope.',
     ],
     'Staff' => [
         'icon' => 'fa-briefcase',
         'class' => 'group-staff',
-        'description' => 'Evaluate eligible staff members assigned to your scope.',
     ],
 ];
 
@@ -263,7 +260,6 @@ a{color:inherit}
 .group-icon{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:25px;margin-bottom:15px}
 .group-card h3{margin:0;color:var(--ea-text);font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;letter-spacing:.1px}
 .group-count{margin-top:3px;color:var(--ea-muted);font-size:13.5px}
-.group-description{max-width:310px;margin:10px 0 0;text-align:center;color:var(--ea-muted-2);font-size:11.5px;line-height:1.45}
 .group-principal .group-icon{background:var(--blue-soft);color:#3D8BFF}
 .group-principal::after{background:#3B82F6}
 .group-dean .group-icon{background:var(--gold-soft);color:#F59E0B}
@@ -370,8 +366,6 @@ html[data-theme="dark"] .btn-action.view{background:transparent}
 <main class="wrap">
   <section class="evaluation-panel">
     <h1 class="panel-title"><i class="fa-solid fa-clipboard-check"></i> Evaluation</h1>
-    <p class="panel-copy">Choose who you want to evaluate. The Executive Assistant can evaluate the Principal, Dean, or eligible Staff members.</p>
-
     <div class="step-title"><i class="fa-solid fa-bolt"></i> Step 1: Select Evaluation Group</div>
 
     <div class="group-grid">
@@ -384,15 +378,10 @@ html[data-theme="dark"] .btn-action.view{background:transparent}
           <div class="group-icon"><i class="fa-solid <?= e($meta['icon']) ?>"></i></div>
           <h3><?= e($type) ?></h3>
           <div class="group-count"><?= $count ?> <?= $count === 1 ? 'member' : 'members' ?></div>
-          <p class="group-description"><?= e($meta['description']) ?></p>
         </a>
       <?php endforeach; ?>
     </div>
 
-    <div class="info-note">
-      <i class="fa-solid fa-circle-info"></i>
-      <span>Only active and eligible personnel are shown. Staff listed here are non-teaching staff without teaching or year-level assignments.</span>
-    </div>
 
     <?php if ($justSubmitted): ?>
       <div class="alert alert-success"><i class="fa-solid fa-circle-check"></i> Evaluation submitted successfully.</div>
@@ -413,10 +402,8 @@ html[data-theme="dark"] .btn-action.view{background:transparent}
           <div class="roster-icon"><i class="fa-solid <?= e($selectedMeta['icon']) ?>"></i></div>
           <div>
             <h2><?= e($selectedType) ?></h2>
-            <p>Select a person to start or review your evaluation.</p>
           </div>
         </div>
-        <div class="roster-step">Step 2: Select Personnel</div>
       </div>
 
       <?php if (!$people): ?>

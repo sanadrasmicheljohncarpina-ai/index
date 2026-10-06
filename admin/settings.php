@@ -180,6 +180,26 @@ window.addEventListener('message', (e) => {
   const banner = document.getElementById('unsavedBanner');
   if (banner) banner.classList.remove('show');
 });
+// ---- Hooks used by the admin dashboard's sidebar (admin_dashboard.php) ----
+function systemFrameWin(){
+  const f=document.querySelector('#section-system iframe.frame');
+  return f ? f.contentWindow : null;
+}
+window.pbiUnsavedState=function(){
+  const w=systemFrameWin();
+  if(!w||typeof w.isSystemSettingsDirty!=='function') return {dirty:false,changes:[]};
+  const dirty=!!w.isSystemSettingsDirty();
+  return {dirty, changes: (dirty&&typeof w.getSystemSettingsChanges==='function') ? w.getSystemSettingsChanges() : []};
+};
+window.pbiSaveSystemSettings=function(){
+  const w=systemFrameWin();
+  return (w&&typeof w.saveSystemSettings==='function') ? Promise.resolve(w.saveSystemSettings()) : Promise.resolve(false);
+};
+window.pbiDiscardSystemSettings=function(){
+  const w=systemFrameWin();
+  try{ if(w&&typeof w.discardSystemSettingsChanges==='function') w.discardSystemSettingsChanges(); }catch(e){}
+  location.reload(); // reload so the discarded edits are not still sitting in the hidden page
+};
 function triggerSystemSettingsSave(){
   const frame=document.querySelector('#section-system iframe.frame');
   if(frame&&frame.contentWindow&&typeof frame.contentWindow.saveSystemSettings==='function'){

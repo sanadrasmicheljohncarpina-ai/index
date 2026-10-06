@@ -15,6 +15,14 @@ require_once __DIR__ . '/dean_ea_notices.php';
 require_once dirname(__DIR__) . '/shared/ea_personnel_service.php';
 require_once 'school_head_structure_gate.php';
 
+// Display-only: drop a trailing timezone label such as "(Asia/Manila)" from
+// schedule strings coming from the shared settings service.
+if (!function_exists('dean_strip_tz_label')) {
+    function dean_strip_tz_label($v) {
+        return trim((string)preg_replace('/\s*\(\s*[A-Za-z_]+(?:\/[A-Za-z_\-]+)+\s*\)/', '', (string)$v));
+    }
+}
+
 // ── AUTH GUARD ────────────────────────────────────────────
 if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'dean') {
     header("Location: dean_login.php");
@@ -258,7 +266,13 @@ body{min-height:100vh;background:var(--page-l);font-family:'DM Sans',sans-serif;
 .period-badge.gray{background:var(--input-l);border-color:var(--line-l);color:var(--muted-l);}
 .empty-note{color:var(--muted-l);font-size:13px;font-style:italic;}
 
-.period-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin-bottom:16px;}
+.period-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.6fr) minmax(0,1.6fr);gap:16px 24px;align-items:start;margin-bottom:16px;}
+.period-field{min-width:0;}
+.period-field .period-field-label{white-space:nowrap;}
+.period-field .period-badge{display:inline-flex;width:fit-content;padding:6px 18px;}
+.period-field .period-field-value.period-date{white-space:nowrap;}
+@media(max-width:1280px){.period-grid{grid-template-columns:repeat(3,minmax(0,1fr));}.period-field .period-field-value.period-date{white-space:normal;}}
+@media(max-width:600px){.period-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
 .period-field .period-field-label{font-size:11px;font-weight:700;color:var(--muted-l);text-transform:uppercase;letter-spacing:.6px;margin-bottom:5px;}
 .period-field .period-field-value{font-size:16px;font-weight:700;color:var(--text-l);}
 .period-message{font-size:13px;color:var(--muted-l);padding-top:14px;border-top:1px solid var(--line-l);}
@@ -552,11 +566,11 @@ include __DIR__ . '/includes/dean_sidebar.php';
             </div>
             <div class="period-field">
                 <div class="period-field-label">Evaluation Opens</div>
-                <div class="period-field-value"><?= $settings['eval_start_display'] !== '' ? htmlspecialchars($settings['eval_start_display']) : '—' ?></div>
+                <div class="period-field-value period-date"><?= $settings['eval_start_display'] !== '' ? htmlspecialchars(dean_strip_tz_label($settings['eval_start_display'])) : '—' ?></div>
             </div>
             <div class="period-field">
                 <div class="period-field-label">Evaluation Closes</div>
-                <div class="period-field-value"><?= $settings['eval_end_display'] !== '' ? htmlspecialchars($settings['eval_end_display']) : '—' ?></div>
+                <div class="period-field-value period-date"><?= $settings['eval_end_display'] !== '' ? htmlspecialchars(dean_strip_tz_label($settings['eval_end_display'])) : '—' ?></div>
             </div>
         </div>
         <?php
@@ -568,8 +582,8 @@ include __DIR__ . '/includes/dean_sidebar.php';
         $periodSub = is_array($periodMessage) ? ($periodMessage['sub'] ?? '') : '';
         ?>
         <div class="period-message">
-            <strong><?= htmlspecialchars($periodHeadline) ?></strong>
-            <?= htmlspecialchars($periodSub) ?>
+            <strong><?= htmlspecialchars(dean_strip_tz_label($periodHeadline)) ?></strong>
+            <?= htmlspecialchars(dean_strip_tz_label($periodSub)) ?>
         </div>
 
         <?php if ($settings['countdown_enabled'] && $evalOpen && $settings['eval_end']): ?>
