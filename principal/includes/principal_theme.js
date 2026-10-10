@@ -2,8 +2,8 @@
   'use strict';
 
   var STORAGE_KEY = 'pbi_theme';
-  var THEME_CSS = 'includes/principal_theme.css?v=20260927.3';
-  var DARK_REPAIRS_CSS = 'includes/principal_dark_repairs.css?v=20260927.3';
+  var THEME_CSS = 'includes/principal_theme.css?v=20261009.1';
+  var DARK_REPAIRS_CSS = 'includes/principal_dark_repairs.css?v=20261009.3';
 
   function savedTheme(){
     try { return localStorage.getItem(STORAGE_KEY) === 'dark' ? 'dark' : 'light'; }

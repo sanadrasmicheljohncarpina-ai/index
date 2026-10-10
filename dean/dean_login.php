@@ -15,7 +15,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($username === '' || $password === '') {
             $error = 'Please enter both username and password.';
         } else {
-            $result = ems_verify_login($mysqli, $username, $password, 'dean');
+            // Case-sensitive username: MySQL's default collation treats "Dean" and
+            // "dean" as equal, so require an exact (binary) match with the username
+            // that was typed during registration before running the normal login.
+            $exactMatch = false;
+            $exactStmt = $mysqli->prepare("SELECT 1 FROM users WHERE BINARY username = ? AND role = 'dean' LIMIT 1");
+            if ($exactStmt) {
+                $exactStmt->bind_param('s', $username);
+                $exactStmt->execute();
+                $exactStmt->store_result();
+                $exactMatch = $exactStmt->num_rows > 0;
+                $exactStmt->close();
+            }
+
+            if (!$exactMatch) {
+                $result = ['ok' => false, 'error' => 'Invalid username or password.'];
+            } else {
+                $result = ems_verify_login($mysqli, $username, $password, 'dean');
+            }
             if ($result['ok']) {
                 session_regenerate_id(true);
                 ems_start_authenticated_session($result['user']);

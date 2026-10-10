@@ -1421,17 +1421,18 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .btn-logout:hover{background:rgba(220,38,38,.15);}
 
 /* ── EVAL MODAL ── */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:200;display:none;align-items:center;justify-content:center;padding:20px;}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:200;display:none;align-items:flex-start;justify-content:center;padding:28px 16px;overflow-y:auto;}
 .modal-overlay.open{display:flex;}
-.modal{background:var(--mid);border:1px solid var(--border);border-radius:18px;width:100%;max-width:780px;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.6);}
-.modal-header{padding:24px 28px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;position:sticky;top:0;background:var(--mid);z-index:1;}
-.modal-avatar{width:52px;height:52px;border-radius:50%;object-fit:cover;border:2px solid var(--gold);}
-.modal-avatar-ph{width:52px;height:52px;border-radius:50%;background:var(--inner);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:20px;}
-.modal-name{font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;color:#fff;}
-.modal-desig{font-size:12px;color:var(--muted);}
+.modal{background:var(--mid);border:1px solid var(--border);border-radius:16px;width:100%;max-width:960px;max-height:calc(100vh - 56px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.6);}
+#evalForm{display:flex;flex-direction:column;min-height:0;flex:1;}
+.modal-header{padding:18px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;position:sticky;top:0;background:var(--mid);z-index:1;}
+.modal-avatar{width:56px;height:56px;border-radius:50%;object-fit:cover;border:2px solid var(--gold);}
+.modal-avatar-ph{width:56px;height:56px;border-radius:50%;background:var(--inner);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:20px;}
+.modal-name{font-family:'Rajdhani',sans-serif;font-size:22px;font-weight:700;color:#fff;}
+.modal-desig{font-size:13px;color:var(--muted);}
 .modal-close{margin-left:auto;background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px 8px;border-radius:6px;transition:color .2s;}
 .modal-close:hover{color:#fff;}
-.modal-body{padding:24px 28px;}
+.modal-body{padding:20px 24px;overflow-y:auto;flex:1;min-height:120px;}
 .q-category{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--gold-h);margin:20px 0 10px;padding-bottom:6px;border-bottom:1px solid rgba(217,119,6,.18);}
 .q-item{margin-bottom:18px;background:var(--inner);border-radius:10px;padding:14px 16px;}
 .q-text{font-size:14px;color:var(--light);margin-bottom:12px;line-height:1.5;display:flex;gap:6px;align-items:flex-start;}
@@ -1446,11 +1447,11 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .comment-optional{font-size:11px;color:var(--muted);font-weight:400;}
 .comment-textarea{width:100%;background:var(--dark);border:1px solid var(--border);border-radius:8px;color:var(--light);padding:12px 14px;font-size:13px;font-family:'DM Sans',sans-serif;resize:vertical;outline:none;transition:border-color .2s;line-height:1.5;}
 .comment-textarea:focus{border-color:var(--gold);}
-.comment-textarea::placeholder{color:rgba(160,179,198,.4);}
-.scale-legend{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:18px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:8px;padding:10px 14px;}
-.legend-item{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px;}
-.legend-dot{width:18px;height:18px;border-radius:4px;background:var(--gold);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0;}
-.modal-footer{padding:16px 28px 24px;display:flex;gap:12px;}
+.comment-textarea::placeholder{color:#64748b;opacity:1;}
+.scale-legend{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:18px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:16px;}
+.legend-item{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:5px;}
+.legend-dot{width:22px;height:22px;border-radius:6px;background:var(--gold);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0;}
+.modal-footer{padding:16px 24px;display:flex;gap:12px;border-top:1px solid var(--border);}
 .btn-submit{flex:1;padding:13px;background:var(--gold);border:none;border-radius:var(--radius);color:#fff;font-size:15px;font-weight:700;cursor:pointer;transition:background .2s;}
 .btn-submit:hover{background:var(--gold-h);}
 .btn-cancel-modal{padding:13px 22px;background:var(--inner);border:1px solid var(--border);border-radius:var(--radius);color:var(--light);font-size:14px;font-weight:600;cursor:pointer;transition:background .2s;}
@@ -1458,9 +1459,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .loading-qs{text-align:center;padding:40px;color:var(--muted);}
 .loading-qs i{font-size:28px;animation:spin 1s linear infinite;display:block;margin-bottom:10px;}
 .eval-validation{display:flex;align-items:flex-start;gap:9px;background:rgba(240,84,84,.11);border:1px solid rgba(240,84,84,.42);color:#ff9b9b;border-radius:9px;padding:11px 13px;margin:0 0 16px;font-size:12.5px;line-height:1.5;}
+.eval-validation[hidden]{display:none!important;}
 .eval-validation i{color:#ff7f7f;flex-shrink:0;margin-top:2px;}
 .eval-validation strong{color:#ffd0d0;}
-.eval-progress{display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(0,229,255,.06);border:1px solid rgba(0,229,255,.16);border-radius:8px;padding:9px 12px;margin:0 0 14px;color:var(--muted);font-size:11.5px;font-weight:600;}
+.eval-progress{display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(0,229,255,.06);border:1px solid rgba(0,229,255,.16);border-radius:10px;padding:11px 16px;margin:0 0 14px;color:var(--muted);font-size:13px;font-weight:600;}
 .eval-progress .progress-status{color:#00E5FF;font-weight:800;white-space:nowrap;}
 .eval-form-table tr.unanswered-question td{background:rgba(240,84,84,.06);}
 .eval-form-table tr.unanswered-question td:first-child{box-shadow:inset 3px 0 0 #ef4444;}
@@ -1489,7 +1491,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 /* Compact evaluation questionnaire table — rating cells are native radio+label
    inputs (same markup pattern as the EA evaluation table), not JS-toggled
    buttons. Colors/theme are unchanged from before. */
-.eval-form-table{width:100%;border-collapse:collapse;table-layout:fixed}.eval-form-table th{background:rgba(255,255,255,.04);color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;text-align:center;padding:10px 6px;border-bottom:1px solid var(--border)}.eval-form-table th:first-child{text-align:left;width:auto;padding-left:14px}.eval-form-table th:not(:first-child){width:52px}.eval-form-table td{padding:10px 6px;border-bottom:1px solid rgba(255,255,255,.06);vertical-align:middle;text-align:center}.eval-form-table tr:last-child td{border-bottom:none}.eval-form-table td:first-child{text-align:left;padding-left:14px;padding-right:10px}.eval-form-wrap{background:var(--mid);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin:0 0 16px}.eval-form-qtext{font-size:12.5px;line-height:1.45;color:var(--light)}.eval-form-qno{color:#00E5FF;font-weight:800;margin-right:6px}.eval-form-rating{display:flex;justify-content:center}.eval-form-rating input{position:absolute;opacity:0;pointer-events:none}.eval-form-rating label{width:34px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:7px;border:1px solid var(--border);background:var(--inner);color:var(--muted);font-size:12px;font-weight:800;cursor:pointer;transition:all .15s ease}.eval-form-rating label:hover{border-color:#00E5FF;background:rgba(0,229,255,.08)}.eval-form-rating input:checked + label{background:#00E5FF;border-color:#00E5FF;color:#07131f}.eval-form-cat{font-size:10px;text-transform:uppercase;letter-spacing:.9px;font-weight:800;color:#00E5FF;margin:18px 0 8px}.eval-form-cat:first-child{margin-top:0}@media(max-width:700px){.eval-form-table th:not(:first-child){width:44px}.eval-form-rating label{width:28px;height:28px}.eval-form-qtext{font-size:11.5px}}
+.eval-form-table{width:100%;border-collapse:collapse;table-layout:fixed}.eval-form-table th{background:rgba(255,255,255,.04);color:var(--muted);font-size:11px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;text-align:center;padding:11px 8px;border-bottom:1px solid var(--border)}.eval-form-table th:first-child{text-align:left;width:auto;padding-left:16px}.eval-form-table th:not(:first-child){width:58px}.eval-form-table td{padding:12px 8px;border-bottom:1px solid rgba(255,255,255,.06);vertical-align:middle;text-align:center}.eval-form-table tr:last-child td{border-bottom:none}.eval-form-table td:first-child{text-align:left;padding-left:16px;padding-right:10px}.eval-form-wrap{background:var(--mid);border:1px solid var(--border);border-radius:12px;overflow-x:auto;margin:0 0 16px}.eval-form-qtext{font-size:14px;line-height:1.45;color:var(--light)}.eval-form-qno{color:#00E5FF;font-weight:800;margin-right:6px}.eval-form-rating{display:flex;justify-content:center;position:relative}.eval-form-rating input{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:1px;height:1px;margin:0;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0;opacity:0;pointer-events:none}.eval-form-rating input:focus-visible + label{outline:2px solid #00E5FF;outline-offset:2px}.eval-form-rating label{width:36px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:7px;border:1px solid var(--border);background:var(--inner);color:var(--muted);font-size:13px;font-weight:800;cursor:pointer;transition:all .15s ease}.eval-form-rating label:hover{border-color:#00E5FF;background:rgba(0,229,255,.08)}.eval-form-rating input:checked + label{background:#00E5FF;border-color:#00E5FF;color:#07131f}.eval-form-cat{font-size:12px;text-transform:uppercase;letter-spacing:.8px;font-weight:800;color:#00E5FF;margin:18px 0 8px}.eval-form-cat:first-child{margin-top:0}@media(max-width:768px){.eval-form-table th:not(:first-child){width:46px}.eval-form-rating label{width:30px;height:28px}}
 
 /* ══════════════════════════════════════════════════════════════
    LIGHT THEME OVERRIDE — matches the Principal/EA dashboards'
@@ -1775,7 +1777,7 @@ body.light-theme .logout-modal-title{color:#0f172a!important;}
     .sidebar{scrollbar-width:none;}
 }
 
-/* ── Assigned Evaluations: even person cards, Evaluate buttons aligned ── */
+/* ── Evaluation others: even person cards, Evaluate buttons aligned ── */
 .members-grid{align-items:stretch;}
 .person-card{display:flex;flex-direction:column;align-items:stretch;height:100%;}
 .person-card .person-avatar,.person-card .person-avatar-ph{flex-shrink:0;}
@@ -1802,7 +1804,7 @@ body.light-theme .logout-modal-title{color:#0f172a!important;}
 @media(max-width:1100px){.workspace-meta{margin-left:0;}}
 .content-topbar.not-dashboard .workspace-title-row{justify-content:flex-end;}
 
-/* ── Assigned Evaluations: large category tabs (matches the EA evaluation page) ── */
+/* ── Evaluation others: large category tabs (matches the EA evaluation page) ── */
 /* Always a 3-column track so 2 tabs keep the same size as 3 (no stretching). */
 body .category-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:16px!important;margin-bottom:22px;}
 @media(max-width:760px){body .category-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;}}
@@ -1836,6 +1838,62 @@ body .category-grid .cat-btn.active{
     body .category-grid .cat-icon{width:64px;height:64px;font-size:26px;}
     body .category-grid .cat-name{font-size:21px;}
 }
+
+/* ── Evaluation others: member list (rows, badges, footer) ── */
+body .ev-panel{border-radius:16px;margin-bottom:32px;background:var(--mid)!important;border:1px solid var(--border)!important;box-shadow:0 10px 24px rgba(15,23,42,.06)!important;overflow:hidden;}
+.ev-head{display:flex;align-items:center;gap:14px;padding:18px 26px;border-bottom:1px solid var(--border);}
+.ev-head-icon{width:46px;height:46px;border-radius:12px;background:#eaf1ff;color:#2563eb;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;}
+.ev-head-title{font-family:'Rajdhani',sans-serif;font-size:22px;font-weight:700;color:var(--light);}
+.ev-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 18px;padding:22px 22px 24px;}
+.ev-row{display:flex;align-items:center;gap:14px;padding:16px 18px;background:var(--mid);border:1px solid var(--border);border-radius:14px;min-width:0;transition:border-color .2s,box-shadow .2s;}
+.ev-row:hover{border-color:#bfd0ee;box-shadow:0 6px 16px rgba(15,23,42,.06);}
+.ev-avatar{width:54px;height:54px;border-radius:50%;object-fit:cover;flex-shrink:0;border:1px solid var(--border);background:var(--inner);}
+.ev-avatar-ph{display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:20px;}
+.ev-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;align-items:flex-start;}
+.ev-name{font-size:15px;font-weight:700;color:var(--light);line-height:1.3;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ev-desig{font-size:13px;color:var(--muted);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ev-badge{display:inline-flex;align-items:center;gap:5px;margin-top:3px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:700;line-height:1.4;}
+.ev-badge i{font-size:10px;}
+.ev-badge-pending{background:#fff4d6;color:#b45309;border:1px solid #fde7a8;}
+.ev-badge-done{background:#e4f8ec;color:#15803d;border:1px solid #bbf0d0;}
+.ev-btn{flex-shrink:0;display:inline-flex;align-items:center;gap:7px;padding:0 20px;height:42px;border-radius:9px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit;transition:background .2s,border-color .2s;}
+.ev-btn-eval{background:#2563eb;border:1px solid #2563eb;color:#fff;}
+.ev-btn-eval:hover:not(:disabled){background:#1d4ed8;border-color:#1d4ed8;}
+.ev-btn-eval:disabled{background:#f1f5f9;border-color:#e2e8f0;color:#94a3b8;cursor:not-allowed;}
+.ev-btn-view{background:transparent;border:1px solid #cbd5e1;color:#475569;}
+.ev-btn-view:hover{background:#f1f5f9;border-color:#94a3b8;}
+.ev-foot{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 20px;padding:14px 26px;border-top:1px solid var(--border);background:var(--inner);font-size:13px;color:var(--muted);}
+.ev-foot-stats{display:flex;gap:18px;flex-wrap:wrap;}
+.ev-foot-stats strong{color:#2563eb;font-weight:700;}
+.ev-foot-stats strong.c-done{color:#15803d;}
+.ev-foot-stats strong.c-pend{color:#b45309;}
+.ev-foot-period i{margin-right:6px;}
+@media(max-width:900px){.ev-grid{grid-template-columns:1fr;padding:16px 14px 18px;}.ev-head,.ev-foot{padding-left:16px;padding-right:16px;}}
+@media(max-width:430px){.ev-row{flex-wrap:wrap;}.ev-btn{width:100%;justify-content:center;}}
+
+/* ── Evaluation others: compact sizing ── */
+.ev-head{gap:11px;padding:13px 20px;}
+.ev-head-icon{width:36px;height:36px;border-radius:10px;font-size:14px;}
+.ev-head-title{font-size:18px;}
+.ev-grid{gap:10px 14px;padding:16px 18px 18px;}
+.ev-row{gap:11px;padding:11px 14px;border-radius:12px;}
+.ev-avatar{width:42px;height:42px;}
+.ev-avatar-ph{font-size:16px;}
+.ev-info{gap:2px;}
+.ev-name{font-size:13.5px;}
+.ev-desig{font-size:11.5px;}
+.ev-badge{margin-top:2px;padding:2px 8px;font-size:10.5px;}
+.ev-badge i{font-size:9px;}
+.ev-btn{height:34px;padding:0 15px;font-size:12.5px;gap:6px;border-radius:8px;}
+.ev-foot{padding:10px 20px;font-size:12px;}
+.ev-foot-stats{gap:14px;}
+body .category-grid{gap:14px!important;margin-bottom:18px;}
+body .category-grid .cat-btn{min-height:160px!important;padding:20px 16px 18px!important;border-radius:14px;}
+body .category-grid .cat-btn::after{border-radius:0 0 14px 14px;height:3px;}
+body .category-grid .cat-icon{width:56px;height:56px;font-size:23px;margin-bottom:10px;}
+body .category-grid .cat-name{font-size:19px;}
+body .category-grid .cat-meta{font-size:12.5px;}
+body .category-grid .cat-done-pill{margin-top:8px;font-size:10.5px;padding:3px 10px;}
 
 /* Note banner under the page subtitle was pulled up over the text */
 body.light-theme .student-eval-note{margin:14px 0 22px!important;}
@@ -1896,8 +1954,7 @@ body.light-theme .student-eval-note{margin:14px 0 22px!important;}
         <div class="student-sidebar-brand">
             <img src="../image/pbi_logo" alt="PBI"/>
             <div>
-                <strong>Student Portal</strong>
-                <span>Evaluation Workspace</span>
+                <strong>Student Workspace</strong>
             </div>
         </div>
         <div class="sb-profile-wrap">
@@ -1918,7 +1975,7 @@ body.light-theme .student-eval-note{margin:14px 0 22px!important;}
             <i class="fa-solid fa-house"></i><span>Dashboard</span>
         </div>
         <div class="side-nav-item" id="nav-evaluate" onclick="switchView('evaluate')">
-            <i class="fa-solid fa-star-half-stroke"></i><span>Assigned Evaluations</span>
+            <i class="fa-solid fa-star-half-stroke"></i><span>Evaluation others</span>
         </div>
         <div class="side-nav-item" id="nav-history" onclick="switchView('history')">
             <i class="fa-solid fa-clock-rotate-left"></i><span>Evaluation History</span>
@@ -2052,7 +2109,7 @@ body.light-theme .student-eval-note{margin:14px 0 22px!important;}
                 <div class="dash-cta-icon"><i class="fa-solid fa-star-half-stroke"></i></div>
                 <div class="dash-cta-text">
                     <h3><?= $total_pending > 0 ? "You have $total_pending evaluation" . ($total_pending !== 1 ? 's' : '') . " left" : "All evaluations complete" ?></h3>
-                    <p><?= $total_pending > 0 ? 'Head over to Assigned Evaluations to keep going.' : 'Thank you for completing all your evaluations!' ?></p>
+                    <p><?= $total_pending > 0 ? 'Head over to Evaluation others to keep going.' : 'Thank you for completing all your evaluations!' ?></p>
                 </div>
                 <button class="btn-primary-cta" onclick="switchView('<?= $total_pending > 0 ? 'evaluate' : 'history' ?>')">
                     <i class="fa-solid <?= $total_pending > 0 ? 'fa-arrow-right' : 'fa-clock-rotate-left' ?>"></i>
@@ -2063,7 +2120,7 @@ body.light-theme .student-eval-note{margin:14px 0 22px!important;}
 
         <!-- ══════════════ EVALUATE VIEW ══════════════ -->
         <div class="view-content" id="view-evaluate">
-            <div class="page-title">Assigned Evaluations</div>
+            <div class="page-title">Evaluation others</div>
             <div class="page-sub">Select a category to see who is available for evaluation. Faculty and Staff are evaluated separately based on their current assignment.</div>
             <div class="student-eval-note"><i class="fa-solid fa-circle-info"></i><span>Your responses are recorded for the active evaluation period. Review each rating before you submit.</span></div>
             <?php if ($submit_success): ?>
@@ -2139,27 +2196,35 @@ body.light-theme .student-eval-note{margin:14px 0 22px!important;}
                 ]);
                 ob_start();
                 ?>
-                <div class="person-card <?= $is_done ? 'done' : '' ?>">
-                    <?php if ($is_done): ?>
-                    <span class="done-badge"><i class="fa-solid fa-check"></i> Done</span>
-                    <?php endif; ?>
+                <div class="ev-row <?= $is_done ? 'done' : '' ?>">
                     <?php if ($p['photo']): ?>
-                    <img class="person-avatar" src="../image/<?= htmlspecialchars($p['photo']) ?>"
+                    <img class="ev-avatar" src="../image/<?= htmlspecialchars($p['photo']) ?>"
                          alt="<?= htmlspecialchars($p['full_name']) ?>"/>
                     <?php else: ?>
-                    <div class="person-avatar-ph"><i class="fa-solid fa-user"></i></div>
+                    <div class="ev-avatar ev-avatar-ph"><i class="fa-solid fa-user"></i></div>
                     <?php endif; ?>
-                    <div class="person-name"><?= htmlspecialchars($p['full_name']) ?></div>
-                    <div class="person-desig"><?= htmlspecialchars($p['designation'] ?: '—') ?></div>
-                    <?php if (!$is_done && $has_questions): ?>
-                    <button type="button" class="eval-btn" onclick="openEvalFromData(this)"
+                    <div class="ev-info">
+                        <div class="ev-name"><?= htmlspecialchars($p['full_name']) ?></div>
+                        <div class="ev-desig" title="<?= htmlspecialchars($p['designation'] ?: '') ?>"><?= htmlspecialchars($p['designation'] ?: '—') ?></div>
+                        <?php if ($is_done): ?>
+                        <span class="ev-badge ev-badge-done"><i class="fa-solid fa-check"></i> Completed</span>
+                        <?php else: ?>
+                        <span class="ev-badge ev-badge-pending"><i class="fa-solid fa-hourglass-half"></i> Pending</span>
+                        <?php endif; ?>
+                    </div>
+                    <?php if ($is_done): ?>
+                    <button type="button" class="ev-btn ev-btn-view" onclick="switchView('history')">
+                        <i class="fa-regular fa-eye"></i> View
+                    </button>
+                    <?php elseif ($has_questions): ?>
+                    <button type="button" class="ev-btn ev-btn-eval" onclick="openEvalFromData(this)"
                         <?= !$period_is_open ? 'disabled title="No evaluation period is currently open"' : '' ?>
                         data-eval='<?= htmlspecialchars($eval_args, ENT_QUOTES) ?>'>
-                        <i class="fa-solid fa-star-half-stroke"></i> Evaluate
+                        <i class="fa-solid fa-pen"></i> Evaluate
                     </button>
-                    <?php elseif (!$is_done && !$has_questions): ?>
-                    <button type="button" class="eval-btn" disabled title="The admin hasn't set up evaluation questions for this person yet">
-                        <i class="fa-solid fa-hourglass-half"></i> Not available yet
+                    <?php else: ?>
+                    <button type="button" class="ev-btn ev-btn-eval" disabled title="The admin hasn't set up evaluation questions for this person yet">
+                        <i class="fa-solid fa-hourglass-half"></i> Not available
                     </button>
                     <?php endif; ?>
                 </div>
@@ -2173,18 +2238,31 @@ body.light-theme .student-eval-note{margin:14px 0 22px!important;}
                 $icon  = $group_icons[$group_name] ?? 'fa-user';
                 $color = $group_colors[$group_name] ?? '#D97706';
             ?>
-            <div class="members-panel" id="panel_<?= $slug ?>" style="border-color:<?= $color ?>44;">
-                <div class="panel-header">
-                    <i class="fa-solid <?= $icon ?> panel-header-icon" style="color:<?= $color ?>;"></i>
-                    <span class="panel-header-title"><?= htmlspecialchars($group_name) ?></span>
-                    <span class="panel-header-count">&mdash; <?= count($persons) ?> member<?= count($persons) !== 1 ? 's' : '' ?></span>
-                    <button class="panel-close-btn" onclick="closePanel('<?= $slug ?>')">
-                        <i class="fa-solid fa-xmark"></i>
-                    </button>
+            <?php
+                $panel_total = count($persons);
+                $panel_done  = count(array_filter($persons, fn($p)=>isset($done_ids[$p['id'].'|'.($p['_evaluation_context']??'teacher')])));
+                $panel_pend  = $panel_total - $panel_done;
+            ?>
+            <div class="members-panel ev-panel" id="panel_<?= $slug ?>">
+                <div class="ev-head">
+                    <span class="ev-head-icon"><i class="fa-solid <?= $icon ?>"></i></span>
+                    <span class="ev-head-title"><?= htmlspecialchars($group_name) ?></span>
                 </div>
 
-                <div class="members-grid">
+                <div class="ev-grid">
                     <?php foreach ($persons as $p) echo render_person_card($p, $done_ids, $period_is_open); ?>
+                </div>
+
+                <div class="ev-foot">
+                    <div class="ev-foot-stats">
+                        <span><strong><?= $panel_total ?></strong> member<?= $panel_total !== 1 ? 's' : '' ?></span>
+                        <span><strong class="c-done"><?= $panel_done ?></strong> completed</span>
+                        <span><strong class="c-pend"><?= $panel_pend ?></strong> pending</span>
+                    </div>
+                    <div class="ev-foot-period">
+                        <i class="fa-regular fa-calendar"></i>
+                        <?= htmlspecialchars($academic_year_label . ($active_period_semester ? ' — ' . $active_period_semester : '')) ?>
+                    </div>
                 </div>
             </div>
             <?php endforeach; ?>
@@ -2633,10 +2711,9 @@ function loadQuestions(id,context){
                 <div class="comment-label">
                     <i class="fa-solid fa-comment-dots"></i>
                     Comments, Suggestions &amp; Areas for Improvement
-                    <span class="comment-optional">(Optional)</span>
                 </div>
                 <textarea name="comment" class="comment-textarea"
-                    placeholder="Share your thoughts, suggestions, or concerns about this person's performance..."
+                    placeholder="Share your thoughts, suggestions, or concerns about this person's performance...."
                     rows="4"></textarea>
             </div>`;
             document.getElementById('modalBody').innerHTML = html;

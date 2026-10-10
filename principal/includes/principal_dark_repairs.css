@@ -897,3 +897,556 @@ html.principal-theme-dark table.data td,
 html.principal-theme-dark .optional-table td{background:#172A45!important;color:#DCE6F0!important;}
 html.principal-theme-dark table.data th,
 html.principal-theme-dark .optional-table th{background:#0F1F3D!important;color:#BFD0E0!important;}
+
+/* ===== FINAL SURFACE CLEANUP: dark mode must not leave white cards behind =====
+   These rules intentionally use only the Principal dark-theme root class so
+   the existing light workspace remains unchanged. */
+html.principal-theme-dark .main,
+html.principal-theme-dark main.main,
+html.principal-theme-dark .main-content,
+html.principal-theme-dark .content,
+html.principal-theme-dark .page-content {
+  background:#0A192F!important;
+  color:#E0E6F0!important;
+}
+html.principal-theme-dark .main .section,
+html.principal-theme-dark .main .card,
+html.principal-theme-dark .main .panel,
+html.principal-theme-dark .main .stat-card,
+html.principal-theme-dark .main .table-card,
+html.principal-theme-dark .main .content-card,
+html.principal-theme-dark .main .table-wrap,
+html.principal-theme-dark .main .table-card-wrap,
+html.principal-theme-dark .main .content-panel,
+html.principal-theme-dark .main .history-card,
+html.principal-theme-dark .main .eval-card,
+html.principal-theme-dark .main .results-card,
+html.principal-theme-dark .main .result-card,
+html.principal-theme-dark .main .feature-card,
+html.principal-theme-dark .main .period-strip,
+html.principal-theme-dark .main .filter-bar,
+html.principal-theme-dark .main .person-row,
+html.principal-theme-dark .main .target-card,
+html.principal-theme-dark .main .no-eval,
+html.principal-theme-dark .main .no-data,
+html.principal-theme-dark .main .no-evaluated,
+html.principal-theme-dark .main .no-archived,
+html.principal-theme-dark .main .evaluator-grid,
+html.principal-theme-dark .main .people-list,
+html.principal-theme-dark .main .cat-section,
+html.principal-theme-dark .main .eval-banner,
+html.principal-theme-dark .main .info-banner,
+html.principal-theme-dark .main .comment-section,
+html.principal-theme-dark .main .avg-summary,
+html.principal-theme-dark .main .standing-panel,
+html.principal-theme-dark .main .sum-card,
+html.principal-theme-dark .main .response-card,
+html.principal-theme-dark .main .ra-table-card {
+  background:#172A45!important;
+  color:#E0E6F0!important;
+  border-color:rgba(255,255,255,.09)!important;
+  box-shadow:0 4px 18px rgba(0,0,0,.22)!important;
+}
+html.principal-theme-dark .main .page-header,
+html.principal-theme-dark .main .page-header > div,
+html.principal-theme-dark .main .principal-feature-heading,
+html.principal-theme-dark .main .toolbar,
+html.principal-theme-dark .main .table-toolbar {
+  background:transparent!important;
+  color:#E0E6F0!important;
+  border-color:rgba(255,255,255,.08)!important;
+}
+html.principal-theme-dark .main .page-title,
+html.principal-theme-dark .main .page-header h1,
+html.principal-theme-dark .main .section h2,
+html.principal-theme-dark .main .section-title,
+html.principal-theme-dark .main h1,
+html.principal-theme-dark .main h2,
+html.principal-theme-dark .main h3,
+html.principal-theme-dark .main h4 {
+  color:#F4F7FB!important;
+}
+html.principal-theme-dark .main .page-sub,
+html.principal-theme-dark .main .muted,
+html.principal-theme-dark .main .helper,
+html.principal-theme-dark .main .description,
+html.principal-theme-dark .main .empty-note,
+html.principal-theme-dark .main .count-note,
+html.principal-theme-dark .main small {
+  color:#A0B3C6!important;
+}
+
+/* Evaluate Others category cards, staff/person rows and evaluation modal. */
+html.principal-theme-dark .main,
+html.principal-theme-dark .main .de-cat,
+html.principal-theme-dark .main .de-panel,
+html.principal-theme-dark .main .de-person,
+html.principal-theme-dark .main .de-modal,
+html.principal-theme-dark .main .de-modal-body,
+html.principal-theme-dark .main .de-legend,
+html.principal-theme-dark .main .de-table-wrap,
+html.principal-theme-dark .main .de-comment textarea {
+  --de-ink:#EAF0F7!important;
+  --de-muted:#A0B3C6!important;
+  --de-border:rgba(255,255,255,.10)!important;
+  --de-inner:#0F1F3D!important;
+}
+html.principal-theme-dark .main .de-cat,
+html.principal-theme-dark .main .de-panel,
+html.principal-theme-dark .main .de-person,
+html.principal-theme-dark .main .de-legend,
+html.principal-theme-dark .main .de-table-wrap {
+  background:#172A45!important;
+  color:#E0E6F0!important;
+  border-color:rgba(255,255,255,.10)!important;
+  box-shadow:0 4px 18px rgba(0,0,0,.22)!important;
+}
+html.principal-theme-dark .main .de-cat:hover,
+html.principal-theme-dark .main .de-person:hover {background:#1D3554!important;}
+html.principal-theme-dark .main .de-panel-head,
+html.principal-theme-dark .main .de-modal-head,
+html.principal-theme-dark .main .de-modal-foot {
+  background:#172A45!important;
+  border-color:rgba(255,255,255,.10)!important;
+}
+html.principal-theme-dark .main .de-cat-name,
+html.principal-theme-dark .main .de-panel-title,
+html.principal-theme-dark .main .de-person-name,
+html.principal-theme-dark .main .de-modal-name,
+html.principal-theme-dark .main .de-qtext,
+html.principal-theme-dark .main .de-comment-readonly,
+html.principal-theme-dark .main .de-summary .num {
+  color:#F4F7FB!important;
+}
+html.principal-theme-dark .main .de-cat-count,
+html.principal-theme-dark .main .de-person-desig,
+html.principal-theme-dark .main .de-pill-date,
+html.principal-theme-dark .main .de-modal-sub,
+html.principal-theme-dark .main .de-muted,
+html.principal-theme-dark .main .de-comment-label,
+html.principal-theme-dark .main .de-summary .of,
+html.principal-theme-dark .main .de-loading {
+  color:#A0B3C6!important;
+}
+html.principal-theme-dark .main .de-panel-foot {border-color:rgba(255,255,255,.10)!important;color:#A0B3C6!important;}
+html.principal-theme-dark .main .de-panel-foot b,
+html.principal-theme-dark .main .de-cat-title,
+html.principal-theme-dark .main .de-qno {color:#F0B84D!important;}
+html.principal-theme-dark .main .de-avatar {background:#0F1F3D!important;border-color:rgba(255,255,255,.12)!important;}
+html.principal-theme-dark .main .de-modal {background:#0F1F3D!important;color:#E0E6F0!important;border-color:rgba(255,255,255,.12)!important;}
+html.principal-theme-dark .main .de-modal-body {background:#0F1F3D!important;color:#E0E6F0!important;}
+html.principal-theme-dark .main .de-modal-foot .de-btn-cancel,
+html.principal-theme-dark .main .de-btn-view {
+  background:#0F1F3D!important;color:#DCE6F0!important;border-color:rgba(255,255,255,.14)!important;
+}
+html.principal-theme-dark .main .de-table,
+html.principal-theme-dark .main .de-table tbody,
+html.principal-theme-dark .main .de-table tr,
+html.principal-theme-dark .main .de-table td {
+  background:#172A45!important;color:#E0E6F0!important;border-color:rgba(255,255,255,.08)!important;
+}
+html.principal-theme-dark .main .de-table th {
+  background:#0F1F3D!important;color:#BFD0E0!important;border-color:rgba(255,255,255,.08)!important;
+}
+html.principal-theme-dark .main .de-table tr.unanswered td {background:rgba(240,84,84,.09)!important;}
+html.principal-theme-dark .main .de-rate label {
+  background:#0F1F3D!important;color:#A0B3C6!important;border-color:rgba(255,255,255,.14)!important;
+}
+html.principal-theme-dark .main .de-rate label:hover {border-color:#D99A2B!important;color:#F0B84D!important;}
+html.principal-theme-dark .main .de-rate input:checked + label,
+html.principal-theme-dark .main .de-btn-submit {background:#B8801F!important;color:#FFFFFF!important;border-color:#D99A2B!important;}
+html.principal-theme-dark .main .de-progress {background:rgba(217,154,43,.10)!important;border-color:rgba(217,154,43,.28)!important;color:#E0E6F0!important;}
+html.principal-theme-dark .main .de-progress .de-progress-status {color:#F0B84D!important;}
+html.principal-theme-dark .main .de-comment textarea,
+html.principal-theme-dark .main .de-panel-tools select {
+  background:#0F1F3D!important;color:#E0E6F0!important;border-color:rgba(255,255,255,.14)!important;
+}
+
+/* Evaluation Received modal and the content behind it. */
+html.principal-theme-dark .main .info-grid {background:transparent!important;border-color:rgba(255,255,255,.08)!important;box-shadow:none!important;}
+html.principal-theme-dark .main .info-grid > div,
+html.principal-theme-dark .main .q-result,
+html.principal-theme-dark .main .comment-modal,
+html.principal-theme-dark .main .received-item,
+html.principal-theme-dark .main .response-card {
+  background:#172A45!important;color:#E0E6F0!important;border-color:rgba(255,255,255,.09)!important;
+}
+html.principal-theme-dark .main .eval-modal,
+html.principal-theme-dark .main .eval-modal-body {background:#0F1F3D!important;color:#E0E6F0!important;border-color:rgba(255,255,255,.10)!important;}
+html.principal-theme-dark .main .eval-modal-header {background:#0F1F3D!important;border-color:rgba(255,255,255,.10)!important;}
+html.principal-theme-dark .main .info-label,
+html.principal-theme-dark .main .q-no,
+html.principal-theme-dark .main .q-score,
+html.principal-theme-dark .main .response-comment,
+html.principal-theme-dark .main .response-meta {color:#A0B3C6!important;}
+html.principal-theme-dark .main .info-value,
+html.principal-theme-dark .main .q-text,
+html.principal-theme-dark .main .modal-section-title,
+html.principal-theme-dark .main .cat-name-modal,
+html.principal-theme-dark .main .cat-score-modal {color:#EAF0F7!important;}
+html.principal-theme-dark .main .term-picker label {color:#A0B3C6!important;}
+html.principal-theme-dark .main .term-picker select,
+html.principal-theme-dark .main .term-picker option {background:#0F1F3D!important;color:#E0E6F0!important;border-color:rgba(255,255,255,.14)!important;}
+
+/* Evaluation Tracker: dark header rows, bodies, and utility surfaces. */
+html.principal-theme-dark .main .table-scroll,
+html.principal-theme-dark .main .table-wrap,
+html.principal-theme-dark .main table.data,
+html.principal-theme-dark .main table.data tbody,
+html.principal-theme-dark .main table.data tr,
+html.principal-theme-dark .main table.data td,
+html.principal-theme-dark .main .optional-table,
+html.principal-theme-dark .main .optional-table tbody,
+html.principal-theme-dark .main .optional-table tr,
+html.principal-theme-dark .main .optional-table td {
+  background:#172A45!important;color:#DCE6F0!important;border-color:rgba(255,255,255,.08)!important;
+}
+html.principal-theme-dark .main table.data thead,
+html.principal-theme-dark .main table.data thead tr,
+html.principal-theme-dark .main table.data th,
+html.principal-theme-dark .main .optional-table thead,
+html.principal-theme-dark .main .optional-table th {
+  background:#0F1F3D!important;color:#BFD0E0!important;border-color:rgba(255,255,255,.09)!important;
+}
+html.principal-theme-dark .main table.data tbody tr:nth-child(even) td,
+html.principal-theme-dark .main .optional-table tbody tr:nth-child(even) td {background:#15263F!important;}
+html.principal-theme-dark .main .table-empty,
+html.principal-theme-dark .main .filter-menu,
+html.principal-theme-dark .main .filter-field,
+html.principal-theme-dark .main .filter-menu-title {background:#0F1F3D!important;color:#E0E6F0!important;border-color:rgba(255,255,255,.10)!important;}
+html.principal-theme-dark .main .stu-name {color:#EAF0F7!important;}
+html.principal-theme-dark .main .stu-sub,
+html.principal-theme-dark .main .progress-last,
+html.principal-theme-dark .main .progress-pct,
+html.principal-theme-dark .main .table-footer {color:#A0B3C6!important;}
+html.principal-theme-dark .main .progress-track {background:rgba(255,255,255,.09)!important;}
+html.principal-theme-dark .main .stu-avatar {background:#0F1F3D!important;border-color:rgba(255,255,255,.12)!important;}
+
+/* Ensure the main shell and table headers don't flash white in dark mode. */
+html.principal-theme-dark .main table thead th,
+html.principal-theme-dark .main .table-head,
+html.principal-theme-dark .main .table-header,
+html.principal-theme-dark .main .thead,
+html.principal-theme-dark .main .subtle-head {
+  background:#0F1F3D!important;color:#BFD0E0!important;border-color:rgba(255,255,255,.09)!important;
+}
+
+/* Evaluation form modal is rendered as a sibling of main.main, not inside it.
+   Target it directly so legacy light-mode modal styles cannot leave white panels
+   behind when the Principal theme is dark. Light mode is unaffected. */
+html.principal-theme-dark .de-overlay .de-modal {
+  --de-border:rgba(255,255,255,.10)!important;
+  --de-ink:#EAF0F7!important;
+  --de-muted:#A0B3C6!important;
+  --de-inner:#172A45!important;
+  background:#0F1F3D!important;
+  color:#E0E6F0!important;
+  border-color:rgba(255,255,255,.12)!important;
+  box-shadow:0 20px 60px rgba(0,0,0,.55)!important;
+}
+html.principal-theme-dark .de-overlay .de-modal-head,
+html.principal-theme-dark .de-overlay .de-modal-body,
+html.principal-theme-dark .de-overlay .de-modal-foot {
+  background:#0F1F3D!important;
+  color:#E0E6F0!important;
+  border-color:rgba(255,255,255,.10)!important;
+}
+html.principal-theme-dark .de-overlay .de-modal-name,
+html.principal-theme-dark .de-overlay .de-qtext,
+html.principal-theme-dark .de-overlay .de-comment-readonly {
+  color:#EAF0F7!important;
+}
+html.principal-theme-dark .de-overlay .de-modal-sub,
+html.principal-theme-dark .de-overlay .de-modal-x,
+html.principal-theme-dark .de-overlay .de-modal-x:hover,
+html.principal-theme-dark .de-overlay .de-comment-label,
+html.principal-theme-dark .de-overlay .de-loading {
+  color:#A0B3C6!important;
+}
+html.principal-theme-dark .de-overlay .de-modal-head img {
+  border-color:rgba(255,255,255,.14)!important;
+}
+html.principal-theme-dark .de-overlay .de-progress {
+  background:rgba(217,154,43,.10)!important;
+  border-color:rgba(217,154,43,.28)!important;
+  color:#E0E6F0!important;
+}
+html.principal-theme-dark .de-overlay .de-progress .de-progress-status,
+html.principal-theme-dark .de-overlay .de-cat-title,
+html.principal-theme-dark .de-overlay .de-qno {
+  color:#F0B84D!important;
+}
+html.principal-theme-dark .de-overlay .de-validation {
+  background:rgba(240,84,84,.12)!important;
+  border-color:rgba(240,84,84,.32)!important;
+  color:#FCA5A5!important;
+}
+html.principal-theme-dark .de-overlay .de-legend,
+html.principal-theme-dark .de-overlay .de-table-wrap {
+  background:#172A45!important;
+  color:#DCE6F0!important;
+  border-color:rgba(255,255,255,.10)!important;
+}
+html.principal-theme-dark .de-overlay .de-table,
+html.principal-theme-dark .de-overlay .de-table tbody,
+html.principal-theme-dark .de-overlay .de-table tr,
+html.principal-theme-dark .de-overlay .de-table td {
+  background:#172A45!important;
+  color:#DCE6F0!important;
+  border-color:rgba(255,255,255,.08)!important;
+}
+html.principal-theme-dark .de-overlay .de-table th {
+  background:#0F1F3D!important;
+  color:#BFD0E0!important;
+  border-color:rgba(255,255,255,.08)!important;
+}
+html.principal-theme-dark .de-overlay .de-table tr.unanswered td {
+  background:rgba(240,84,84,.10)!important;
+  color:#EAF0F7!important;
+}
+html.principal-theme-dark .de-overlay .de-table tr.unanswered td:first-child {
+  box-shadow:inset 3px 0 0 #F87171!important;
+}
+html.principal-theme-dark .de-overlay .de-table tr.unanswered .de-qno {
+  color:#FCA5A5!important;
+}
+html.principal-theme-dark .de-overlay .de-rate label {
+  background:#0F1F3D!important;
+  color:#BFD0E0!important;
+  border-color:rgba(255,255,255,.14)!important;
+}
+html.principal-theme-dark .de-overlay .de-rate label:hover {
+  background:rgba(217,154,43,.10)!important;
+  color:#F0B84D!important;
+  border-color:#D99A2B!important;
+}
+html.principal-theme-dark .de-overlay .de-rate input:checked + label,
+html.principal-theme-dark .de-overlay .de-modal-foot .de-btn-submit {
+  background:#B8801F!important;
+  color:#FFFFFF!important;
+  border-color:#D99A2B!important;
+}
+html.principal-theme-dark .de-overlay .de-modal-foot .de-btn-cancel {
+  background:#172A45!important;
+  color:#E0E6F0!important;
+  border-color:rgba(255,255,255,.14)!important;
+}
+html.principal-theme-dark .de-overlay .de-modal-foot .de-btn-submit:hover {
+  background:#D99A2B!important;
+}
+html.principal-theme-dark .de-overlay .de-comment textarea {
+  background:#172A45!important;
+  color:#E0E6F0!important;
+  border-color:rgba(255,255,255,.14)!important;
+}
+html.principal-theme-dark .de-overlay .de-comment textarea::placeholder {
+  color:#7F93A8!important;
+}
+
+/* ===== EVALUATION REPORTS: FINAL THREE-STATE DARK MODE FIX =====
+   Screen-only so the generated report remains printer-friendly in print preview.
+   Covers: reports list, target/evaluator details after View, and cumulative sheet
+   after Generate Report. */
+@media screen {
+  html.principal-theme-dark .reports-data-panel,
+  body.dark-theme .reports-data-panel,
+  html.principal-theme-dark .reports-table-wrap,
+  body.dark-theme .reports-table-wrap,
+  html.principal-theme-dark .reports-active-filter-note,
+  body.dark-theme .reports-active-filter-note,
+  html.principal-theme-dark .reports-sub-filters,
+  body.dark-theme .reports-sub-filters,
+  html.principal-theme-dark .reports-designation-filters,
+  body.dark-theme .reports-designation-filters {
+    background:#172A45!important;
+    color:#E0E6F0!important;
+    border-color:rgba(255,255,255,.10)!important;
+    box-shadow:0 8px 24px rgba(0,0,0,.24)!important;
+  }
+
+  html.principal-theme-dark #reportsTable,
+  body.dark-theme #reportsTable,
+  html.principal-theme-dark #reportsTable tbody,
+  body.dark-theme #reportsTable tbody,
+  html.principal-theme-dark #reportsTable tbody tr,
+  body.dark-theme #reportsTable tbody tr,
+  html.principal-theme-dark #reportsTable tbody td,
+  body.dark-theme #reportsTable tbody td {
+    background:#172A45!important;
+    color:#E0E6F0!important;
+    border-color:rgba(255,255,255,.09)!important;
+  }
+  html.principal-theme-dark #reportsTable thead,
+  body.dark-theme #reportsTable thead,
+  html.principal-theme-dark #reportsTable thead tr,
+  body.dark-theme #reportsTable thead tr,
+  html.principal-theme-dark #reportsTable thead th,
+  body.dark-theme #reportsTable thead th {
+    background:#0F1F3D!important;
+    color:#BFD0E0!important;
+    border-color:rgba(255,255,255,.10)!important;
+  }
+  html.principal-theme-dark #reportsTable tbody tr:nth-child(even) td,
+  body.dark-theme #reportsTable tbody tr:nth-child(even) td { background:#15263F!important; }
+  html.principal-theme-dark #reportsTable tbody tr:hover td,
+  body.dark-theme #reportsTable tbody tr:hover td { background:#1D3554!important; }
+
+  html.principal-theme-dark #reportsTable .reports-person-name,
+  body.dark-theme #reportsTable .reports-person-name,
+  html.principal-theme-dark #reportsTable .reports-person-link,
+  body.dark-theme #reportsTable .reports-person-link { color:#F4F7FB!important; }
+  html.principal-theme-dark #reportsTable .reports-designation-cell,
+  body.dark-theme #reportsTable .reports-designation-cell,
+  html.principal-theme-dark #reportsTable .reports-date,
+  body.dark-theme #reportsTable .reports-date { color:#B7C7D7!important; }
+
+  html.principal-theme-dark .detail-eval-banner,
+  body.dark-theme .detail-eval-banner,
+  html.principal-theme-dark .detail-person-card,
+  body.dark-theme .detail-person-card,
+  html.principal-theme-dark .detail-results-panel,
+  body.dark-theme .detail-results-panel,
+  html.principal-theme-dark .detail-legend,
+  body.dark-theme .detail-legend {
+    background:#172A45!important;
+    color:#E0E6F0!important;
+    border-color:rgba(255,255,255,.10)!important;
+    box-shadow:0 8px 24px rgba(0,0,0,.24)!important;
+  }
+  html.principal-theme-dark .detail-eval-banner,
+  body.dark-theme .detail-eval-banner { background:rgba(217,154,43,.09)!important;border-color:rgba(217,154,43,.28)!important; }
+  html.principal-theme-dark .detail-eval-title,
+  body.dark-theme .detail-eval-title { color:#F0B84D!important; }
+  html.principal-theme-dark .detail-eval-sub,
+  body.dark-theme .detail-eval-sub,
+  html.principal-theme-dark .detail-person-desig,
+  body.dark-theme .detail-person-desig,
+  html.principal-theme-dark .detail-stat-label,
+  body.dark-theme .detail-stat-label,
+  html.principal-theme-dark .detail-legend-text,
+  body.dark-theme .detail-legend-text,
+  html.principal-theme-dark .detail-year-filter label,
+  body.dark-theme .detail-year-filter label,
+  html.principal-theme-dark .detail-role,
+  body.dark-theme .detail-role,
+  html.principal-theme-dark .detail-date,
+  body.dark-theme .detail-date { color:#AFC0D2!important; }
+  html.principal-theme-dark .detail-person-name,
+  body.dark-theme .detail-person-name,
+  html.principal-theme-dark .detail-results-title h2,
+  body.dark-theme .detail-results-title h2,
+  html.principal-theme-dark .detail-legend-title,
+  body.dark-theme .detail-legend-title,
+  html.principal-theme-dark .detail-evaluator,
+  body.dark-theme .detail-evaluator { color:#F4F7FB!important; }
+  html.principal-theme-dark .detail-year-filter select,
+  body.dark-theme .detail-year-filter select {
+    background:#0F1F3D!important;color:#E0E6F0!important;border-color:rgba(255,255,255,.14)!important;
+  }
+  html.principal-theme-dark .detail-results-table,
+  body.dark-theme .detail-results-table,
+  html.principal-theme-dark .detail-results-table tbody,
+  body.dark-theme .detail-results-table tbody,
+  html.principal-theme-dark .detail-results-table tbody tr,
+  body.dark-theme .detail-results-table tbody tr,
+  html.principal-theme-dark .detail-results-table tbody td,
+  body.dark-theme .detail-results-table tbody td {
+    background:#172A45!important;color:#E0E6F0!important;border-color:rgba(255,255,255,.09)!important;
+  }
+  html.principal-theme-dark .detail-results-table thead tr,
+  body.dark-theme .detail-results-table thead tr,
+  html.principal-theme-dark .detail-results-table th,
+  body.dark-theme .detail-results-table th {
+    background:#0F1F3D!important;color:#BFD0E0!important;border-color:rgba(255,255,255,.10)!important;
+  }
+  html.principal-theme-dark .detail-results-table tbody tr:nth-child(even) td,
+  body.dark-theme .detail-results-table tbody tr:nth-child(even) td { background:#15263F!important; }
+  html.principal-theme-dark .detail-results-table tbody tr:hover td,
+  body.dark-theme .detail-results-table tbody tr:hover td { background:#1D3554!important; }
+  html.principal-theme-dark .detail-actions .detail-back,
+  body.dark-theme .detail-actions .detail-back,
+  html.principal-theme-dark .detail-actions .back-btn,
+  body.dark-theme .detail-actions .back-btn {
+    background:#0F1F3D!important;color:#E0E6F0!important;border-color:rgba(255,255,255,.14)!important;
+  }
+  html.principal-theme-dark .detail-actions .detail-print,
+  body.dark-theme .detail-actions .detail-print {
+    background:#D99A2B!important;color:#0A192F!important;border-color:#D99A2B!important;
+  }
+
+  /* Generated cumulative report on screen only; @media print stays black/white. */
+  html.principal-theme-dark body.report-mode .cumulative-sheet,
+  body.dark-theme.report-mode .cumulative-sheet {
+    display:block!important;background:#0A192F!important;color:#E0E6F0!important;border-color:rgba(255,255,255,.10)!important;
+  }
+  html.principal-theme-dark body.report-mode .cumulative-sheet *,
+  body.dark-theme.report-mode .cumulative-sheet * { color:#E0E6F0!important; }
+  html.principal-theme-dark body.report-mode .cumulative-sheet .cum-topbar,
+  body.dark-theme.report-mode .cumulative-sheet .cum-topbar,
+  html.principal-theme-dark body.report-mode .cumulative-sheet .sheet-header,
+  body.dark-theme.report-mode .cumulative-sheet .sheet-header,
+  html.principal-theme-dark body.report-mode .cumulative-sheet .cum-total,
+  body.dark-theme.report-mode .cumulative-sheet .cum-total,
+  html.principal-theme-dark body.report-mode .cumulative-sheet .comment-section,
+  body.dark-theme.report-mode .cumulative-sheet .comment-section {
+    background:#172A45!important;color:#E0E6F0!important;border-color:rgba(255,255,255,.10)!important;box-shadow:none!important;
+  }
+  html.principal-theme-dark body.report-mode .cumulative-sheet .cum-topbar,
+  body.dark-theme.report-mode .cumulative-sheet .cum-topbar { background:#0F1F3D!important; }
+  html.principal-theme-dark body.report-mode .cumulative-sheet .cat-section,
+  body.dark-theme.report-mode .cumulative-sheet .cat-section { background:transparent!important;border-color:rgba(255,255,255,.10)!important; }
+  html.principal-theme-dark body.report-mode .cumulative-sheet .cat-title,
+  body.dark-theme.report-mode .cumulative-sheet .cat-title { background:transparent!important;color:#F0B84D!important;border-bottom-color:rgba(217,154,43,.30)!important; }
+  html.principal-theme-dark body.report-mode .cumulative-sheet .q-table,
+  body.dark-theme.report-mode .cumulative-sheet .q-table,
+  html.principal-theme-dark body.report-mode .cumulative-sheet .q-table tbody,
+  body.dark-theme.report-mode .cumulative-sheet .q-table tbody,
+  html.principal-theme-dark body.report-mode .cumulative-sheet .q-table tbody tr,
+  body.dark-theme.report-mode .cumulative-sheet .q-table tbody tr,
+  html.principal-theme-dark body.report-mode .cumulative-sheet .q-table td,
+  body.dark-theme.report-mode .cumulative-sheet .q-table td {
+    background:#172A45!important;color:#E0E6F0!important;border-color:rgba(255,255,255,.08)!important;
+  }
+  html.principal-theme-dark body.report-mode .cumulative-sheet .q-table thead tr,
+  body.dark-theme.report-mode .cumulative-sheet .q-table thead tr,
+  html.principal-theme-dark body.report-mode .cumulative-sheet .q-table th,
+  body.dark-theme.report-mode .cumulative-sheet .q-table th { background:#0F1F3D!important;color:#BFD0E0!important;border-color:rgba(255,255,255,.09)!important; }
+  html.principal-theme-dark body.report-mode .cumulative-sheet .q-table tbody tr:nth-child(even) td,
+  body.dark-theme.report-mode .cumulative-sheet .q-table tbody tr:nth-child(even) td { background:#15263F!important; }
+  html.principal-theme-dark body.report-mode .cumulative-sheet .q-table tbody tr:hover td,
+  body.dark-theme.report-mode .cumulative-sheet .q-table tbody tr:hover td { background:#1D3554!important; }
+  html.principal-theme-dark body.report-mode .cumulative-sheet .sheet-name,
+  body.dark-theme.report-mode .cumulative-sheet .sheet-name,
+  html.principal-theme-dark body.report-mode .cumulative-sheet .cum-date-val,
+  body.dark-theme.report-mode .cumulative-sheet .cum-date-val,
+  html.principal-theme-dark body.report-mode .cumulative-sheet .cum-total-label,
+  body.dark-theme.report-mode .cumulative-sheet .cum-total-label { color:#F4F7FB!important; }
+  html.principal-theme-dark body.report-mode .cumulative-sheet .cum-type,
+  body.dark-theme.report-mode .cumulative-sheet .cum-type,
+  html.principal-theme-dark body.report-mode .cumulative-sheet .avg-score-label,
+  body.dark-theme.report-mode .cumulative-sheet .avg-score-label { color:#F0B84D!important; }
+  html.principal-theme-dark body.report-mode .cumulative-sheet .sheet-desig,
+  body.dark-theme.report-mode .cumulative-sheet .sheet-desig,
+  html.principal-theme-dark body.report-mode .cumulative-sheet .cum-by,
+  body.dark-theme.report-mode .cumulative-sheet .cum-by,
+  html.principal-theme-dark body.report-mode .cumulative-sheet .cum-date-label,
+  body.dark-theme.report-mode .cumulative-sheet .cum-date-label,
+  html.principal-theme-dark body.report-mode .cumulative-sheet .cum-remark,
+  body.dark-theme.report-mode .cumulative-sheet .cum-remark,
+  html.principal-theme-dark body.report-mode .cumulative-sheet .no-comment,
+  body.dark-theme.report-mode .cumulative-sheet .no-comment,
+  html.principal-theme-dark body.report-mode .cumulative-sheet .avg-out-of,
+  body.dark-theme.report-mode .cumulative-sheet .avg-out-of { color:#AFC0D2!important; }
+  html.principal-theme-dark body.report-mode .cumulative-sheet .rating-badge,
+  body.dark-theme.report-mode .cumulative-sheet .rating-badge,
+  html.principal-theme-dark body.report-mode .cumulative-sheet .sheet-avatar-ph,
+  body.dark-theme.report-mode .cumulative-sheet .sheet-avatar-ph { background:#0F1F3D!important;border-color:rgba(255,255,255,.14)!important; }
+  html.principal-theme-dark body.report-mode .cumulative-sheet .rating-num,
+  body.dark-theme.report-mode .cumulative-sheet .rating-num,
+  html.principal-theme-dark body.report-mode .cumulative-sheet .avg-score-big,
+  body.dark-theme.report-mode .cumulative-sheet .avg-score-big { color:#6EE7B7!important; }
+  html.principal-theme-dark body.report-mode .cumulative-sheet .rating-lbl,
+  body.dark-theme.report-mode .cumulative-sheet .rating-lbl { color:#A7F3D0!important; }
+  html.principal-theme-dark body.report-mode .cumulative-sheet .cum-empty,
+  body.dark-theme.report-mode .cumulative-sheet .cum-empty { background:#172A45!important;color:#AFC0D2!important;border-color:rgba(255,255,255,.12)!important; }
+}

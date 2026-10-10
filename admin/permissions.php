@@ -28,8 +28,11 @@ function admin_can_edit(mysqli $mysqli, string $feature_key): bool {
         return false; // registrar or anything else: no edit rights on these admin-only features
     }
 
-    $stmt = $mysqli->prepare("SELECT admin_can_edit FROM admin_permissions WHERE feature_key = ? LIMIT 1");
-    $stmt->bind_param("s", $feature_key);
+    // Look up THIS admin's own permission row (previously the query ignored admin_user_id,
+    // so every admin got whichever row happened to come first for that feature).
+    $uid = (int)($_SESSION['user_id'] ?? 0);
+    $stmt = $mysqli->prepare("SELECT admin_can_edit FROM admin_permissions WHERE feature_key = ? AND admin_user_id = ? LIMIT 1");
+    $stmt->bind_param("si", $feature_key, $uid);
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
     $stmt->close();

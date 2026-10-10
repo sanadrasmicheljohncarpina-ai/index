@@ -360,6 +360,13 @@ html[data-theme="dark"] .btn-action.view{background:transparent}
   .person-action{width:100%}
   .person-action .btn-action{width:100%}
 }
+
+/* Evaluate / View popup (the form itself is ea_evaluate.php?embed=1) */
+.eval-overlay{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(9,17,30,.64);backdrop-filter:blur(4px)}
+.eval-overlay.open{display:flex}
+.eval-frame-wrap{width:100%;max-width:780px;height:92vh}
+.eval-frame-wrap iframe{width:100%;height:100%;border:0;background:transparent;border-radius:18px;color-scheme:normal}
+@media(max-width:700px){.eval-overlay{padding:10px}}
 </style>
 </head>
 <body class="feature-compact">
@@ -434,7 +441,7 @@ html[data-theme="dark"] .btn-action.view{background:transparent}
               </div>
 
               <div class="person-action">
-                <a class="btn-action <?= $isDone ? 'view' : 'evaluate' ?>" href="ea_evaluate.php?type=<?= urlencode($selectedType) ?>&user_id=<?= $pid ?>">
+                <a class="btn-action <?= $isDone ? 'view' : 'evaluate' ?>" href="ea_evaluate.php?type=<?= urlencode($selectedType) ?>&user_id=<?= $pid ?>" data-eval-url="ea_evaluate.php?type=<?= urlencode($selectedType) ?>&user_id=<?= $pid ?>&embed=1">
                   <i class="fa-solid <?= $isDone ? 'fa-eye' : 'fa-pen' ?>"></i>
                   <?= $isDone ? 'View' : 'Evaluate' ?>
                 </a>
@@ -452,5 +459,39 @@ html[data-theme="dark"] .btn-action.view{background:transparent}
     </section>
   <?php endif; ?>
 </main>
+
+<div class="eval-overlay" id="evalOverlay" aria-hidden="true">
+  <div class="eval-frame-wrap"><iframe id="evalFrame" title="Evaluation form" allowtransparency="true"></iframe></div>
+</div>
+<script>
+(function(){
+  var overlay = document.getElementById('evalOverlay'), frame = document.getElementById('evalFrame');
+  function open(url){
+    frame.src = url;
+    overlay.classList.add('open'); overlay.setAttribute('aria-hidden','false');
+    document.body.style.overflow = 'hidden';
+  }
+  window.closeEvalModal = function(){
+    overlay.classList.remove('open'); overlay.setAttribute('aria-hidden','true');
+    document.body.style.overflow = '';
+    frame.src = 'about:blank';
+  };
+  document.addEventListener('click', function(ev){
+    var a = ev.target.closest('a[data-eval-url]');
+    if (!a) return;
+    ev.preventDefault();
+    var url = a.getAttribute('data-eval-url');
+    try {
+      if (window.parent && window.parent !== window && typeof window.parent.openEvalModal === 'function') {
+        window.parent.openEvalModal(url);   // full-screen popup hosted by the dashboard
+        return;
+      }
+    } catch (err) {}
+    open(url);
+  });
+  overlay.addEventListener('click', function(ev){ if (ev.target === overlay) window.closeEvalModal(); });
+  document.addEventListener('keydown', function(ev){ if (ev.key === 'Escape' && overlay.classList.contains('open')) window.closeEvalModal(); });
+})();
+</script>
 </body>
 </html>

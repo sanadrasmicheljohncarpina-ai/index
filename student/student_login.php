@@ -95,6 +95,7 @@ body{min-height:100vh;background:#0A192F;font-family:'DM Sans',sans-serif;color:
 .logo-ring{width:72px;height:72px;border-radius:50%;display:block;object-fit:cover;border:2.5px solid var(--gold);box-shadow:0 0 22px rgba(217,119,6,.4);margin:0 auto 16px;}
 .card-title{font-family:'Rajdhani',sans-serif;font-size:26px;font-weight:700;letter-spacing:2px;color:#fff;text-transform:uppercase;}
 .card-subtitle{font-size:12px;color:var(--muted);letter-spacing:1.2px;text-transform:uppercase;margin-top:4px;}
+.role-pill{display:inline-flex;align-items:center;gap:6px;background:rgba(217,119,6,.15);border:1px solid rgba(217,119,6,.35);color:var(--gold-hover);font-size:11px;font-weight:700;padding:4px 14px;border-radius:20px;text-transform:uppercase;letter-spacing:.8px;margin-top:10px;}
 .divider{height:1px;background:linear-gradient(90deg,transparent,rgba(217,119,6,.4),transparent);margin-bottom:24px;}
 .form-group{margin-bottom:18px;}
 .form-label{display:block;font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:7px;}
@@ -207,8 +208,8 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid rgb
 <div class="login-card">
     <div class="card-header">
         <img class="logo-ring" src="../image/pbi_logo" alt="PBI Logo"/>
-        <div class="card-title">Student Portal</div>
-        <div class="card-subtitle">Pandan Bay Institute Inc.</div>
+        <div class="card-subtitle">Employee Performance Evaluation &amp; Management System</div>
+        <div class="role-pill"><i class="fa-solid fa-user-graduate"></i> Student Access</div>
     </div>
     <div class="divider"></div>
 

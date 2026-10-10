@@ -1,7 +1,11 @@
 <?php
 // admin/accounts.php
-session_start();
-require_once 'db.php';
+require_once 'session_bootstrap.php';   // starts session, connects DB, requires a logged-in admin-area user
+// Login + role gate: only admin / superadmin may use this page.
+if (!in_array($_SESSION['role'] ?? '', ['admin','superadmin'], true)) {
+    header('Location: admin_login.php');
+    exit;
+}
 require_once 'permissions.php';
 
 // $can_edit = false means the logged-in Admin (vice) can VIEW this page but not

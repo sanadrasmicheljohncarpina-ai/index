@@ -4,33 +4,153 @@ require_once 'principal_common.php';
 $principalId=(int)$_SESSION['user_id'];
 $history=[];$overallAvg=null;$responseCount=0;
 
-$rows=safe_rows($mysqli,"
- SELECT et.id AS tracker_id, et.remarks AS comment, et.submitted_at, ep.period_label, ep.semester, ep.school_year,
-        (SELECT AVG(qa.answer_score) FROM questionnaire_answers qa WHERE qa.tracker_id=et.id) AS score
- FROM evaluation_tracker et
- LEFT JOIN evaluation_periods ep ON ep.id=et.period_id
- WHERE et.target_user_id=?
-   AND et.status IN ('submitted','approved')
-   AND (
+// Feedback is separated per evaluation term. A term is listed when it is the active period,
+// still has live feedback for this Principal, or has feedback kept by System Archive
+// (feedback_received_keep: an identity-free copy saved when the EA archives a period).
+// $hasPeriod / $period_id_int come from principal_common.php (same source as the Dashboard).
+const PRINCIPAL_EVAL_ELIGIBLE="et.target_user_id=? AND et.status IN ('submitted','approved') AND (
      /* Faculty/Teaching Staff -> Principal submissions are stored as faculty_peer. */
      et.eval_type='faculty_peer'
      /* Keep existing/legacy upward Principal evaluations visible as well. */
      OR (et.eval_type='student' AND et.evaluation_context='school_head')
      OR et.eval_type='school_head'
-   )
- ORDER BY et.submitted_at DESC, et.id DESC
-",'i',[$principalId]);
-foreach($rows as $i=>$r){
- $pl=(!empty($r['school_year'])&&!empty($r['semester']))?($r['school_year'].' · '.$r['semester']):($r['period_label']??$r['semester']??'');
- $history[]=['tracker_id'=>(int)$r['tracker_id'],'score'=>$r['score']!==null?round((float)$r['score'],2):null,'comment'=>$r['comment']??'','submitted_at'=>$r['submitted_at']?date('M d, Y g:i A',strtotime($r['submitted_at'])):'Unknown date','period_label'=>$pl];
-}
-$responseCount=count($history);
-if($responseCount){$vals=array_values(array_filter(array_map(fn($x)=>$x['score'],$history),fn($v)=>$v!==null));if($vals)$overallAvg=round(array_sum($vals)/count($vals),2);}
+   )";
 
-html_head_open("PBI — Feedback's Received");
+$termIds=[];
+if(!empty($hasPeriod)) $termIds[(int)$period_id_int]=true;
+foreach(safe_rows($mysqli,"SELECT DISTINCT et.period_id AS pid FROM evaluation_tracker et WHERE ".PRINCIPAL_EVAL_ELIGIBLE,'i',[$principalId]) as $r){
+ if((int)$r['pid']>0) $termIds[(int)$r['pid']]=true;
+}
+$keptTerms=[];
+foreach(safe_rows($mysqli,"SELECT period_id AS pid, MAX(school_year) AS school_year, MAX(semester) AS semester, MAX(period_label) AS period_label
+    FROM feedback_received_keep WHERE target_user_id=? GROUP BY period_id",'i',[$principalId]) as $r){
+ $keptTerms[(int)$r['pid']]=$r;
+ if((int)$r['pid']>0) $termIds[(int)$r['pid']]=true;
+}
+
+$terms=[];
+if($termIds){
+ $in=implode(',',array_map('intval',array_keys($termIds)));
+ foreach(safe_rows($mysqli,"SELECT * FROM evaluation_periods WHERE id IN ($in)") as $ep){
+  $terms[(int)$ep['id']]=['id'=>(int)$ep['id'],'school_year'=>$ep['school_year']??'','period_label'=>$ep['period_label']??($ep['semester']??''),'date_start'=>$ep['date_start']??''];
+ }
+ // A period row that no longer exists can still have kept feedback: fall back to its snapshot labels.
+ foreach(array_keys($termIds) as $pid){
+  if(!isset($terms[$pid])){$k=$keptTerms[$pid]??[];$terms[$pid]=['id'=>$pid,'school_year'=>$k['school_year']??'','period_label'=>$k['period_label']??($k['semester']??''),'date_start'=>''];}
+ }
+ foreach($terms as $pid=>&$t){
+  $t['current']=(!empty($hasPeriod)&&$pid===(int)$period_id_int);
+  $t['archived']=isset($keptTerms[$pid]);
+  $t['label']=($t['school_year']!==''&&$t['period_label']!=='')?$t['school_year'].' — '.$t['period_label']:($t['period_label']!==''?$t['period_label']:($t['school_year']!==''?$t['school_year']:'Period #'.$pid));
+ }
+ unset($t);
+ // Current term first, then newest to oldest.
+ uasort($terms,function($a,$b){
+  if($a['current']!==$b['current']) return $a['current']?-1:1;
+  $c=strcmp((string)$b['date_start'],(string)$a['date_start']);
+  return $c?:($b['id']<=>$a['id']);
+ });
+}
+// ── Load EVERY evaluation (live + kept by System Archive) for the listed terms ──────────────
+// No evaluator-identifying column is selected anywhere: do not add one.
+$itemsByTerm=[];
+if($terms){
+ $inTerms=implode(',',array_map('intval',array_keys($terms)));
+ foreach(safe_rows($mysqli,"
+  SELECT et.id, et.period_id AS pid, et.remarks AS comment, et.submitted_at, ep.period_label, ep.semester, ep.school_year,
+         (SELECT SUM(qa.answer_score)   FROM questionnaire_answers qa WHERE qa.tracker_id=et.id) AS score_sum,
+         (SELECT COUNT(qa.answer_score) FROM questionnaire_answers qa WHERE qa.tracker_id=et.id) AS score_count
+  FROM evaluation_tracker et
+  LEFT JOIN evaluation_periods ep ON ep.id=et.period_id
+  WHERE ".PRINCIPAL_EVAL_ELIGIBLE." AND et.period_id IN ($inTerms)
+ ",'i',[$principalId]) as $r){
+  $itemsByTerm[(int)$r['pid']][]=['source'=>'live','key'=>(int)$r['id'],'comment'=>$r['comment']?:'','submitted_at'=>$r['submitted_at'],
+   'score_sum'=>(float)($r['score_sum']??0),'score_count'=>(int)($r['score_count']??0),
+   'school_year'=>$r['school_year']??'','semester'=>$r['semester']??'','period_label'=>$r['period_label']??''];
+ }
+ foreach(safe_rows($mysqli,"
+  SELECT id, period_id AS pid, remarks, submitted_at, school_year, semester, period_label, score_sum, score_count
+  FROM feedback_received_keep WHERE target_user_id=? AND period_id IN ($inTerms)
+ ",'i',[$principalId]) as $r){
+  $itemsByTerm[(int)$r['pid']][]=['source'=>'kept','key'=>(int)$r['id'],'comment'=>$r['remarks']?:'','submitted_at'=>$r['submitted_at'],
+   'score_sum'=>(float)$r['score_sum'],'score_count'=>(int)$r['score_count'],
+   'school_year'=>$r['school_year']??'','semester'=>$r['semester']??'','period_label'=>$r['period_label']??''];
+ }
+}
+// Submission order only (never evaluator identity). Evaluation #n is numbered within its term,
+// so a label stays the same whether you view the whole term or filter to one evaluation.
+$entries=[];            // id => entry, id = 'l12' (live) / 'k5' (kept)
+$entriesByTerm=[];
+foreach($itemsByTerm as $pid=>&$list){
+ usort($list,function($a,$b){
+  $ta=$a['submitted_at']?strtotime($a['submitted_at']):0;$tb=$b['submitted_at']?strtotime($b['submitted_at']):0;
+  return $ta<=>$tb?:($a['key']<=>$b['key']);
+ });
+ $n=1;
+ foreach($list as $it){
+  $id=($it['source']==='kept'?'k':'l').$it['key'];
+  $pl=(!empty($it['school_year'])&&!empty($it['semester']))?($it['school_year'].' · '.$it['semester']):($it['period_label']?:$it['semester']);
+  $when=$it['submitted_at']?date('M d, Y g:i A',strtotime($it['submitted_at'])):'Unknown date';
+  $entries[$id]=$entriesByTerm[$pid][]=[
+   'id'=>$id,'pid'=>(int)$pid,'_key'=>$it['key'],'_source'=>$it['source'],'label'=>'Evaluation #'.$n,
+   'score'=>$it['score_count']>0?round($it['score_sum']/$it['score_count'],2):null,
+   'score_sum'=>$it['score_sum'],'score_count'=>$it['score_count'],
+   'comment'=>$it['comment'],'submitted_at'=>$when,'period_label'=>$pl,
+   'ts'=>$it['submitted_at']?strtotime($it['submitted_at']):0,
+  ];
+  $n++;
+ }
+}
+unset($list);
+
+// Dropdown: a clickable header row per term (shows the whole term), then each evaluation indented under it.
+$termGroups=[];
+foreach($terms as $pid=>$t){
+ $tag=$t['archived']?' (Archived)':'';
+ $opts=[];
+ foreach(array_reverse($entriesByTerm[$pid]??[]) as $e){
+  $opts[]=['value'=>$e['id'],'text'=>$e['submitted_at'].($e['period_label']!==''?' · '.$e['period_label']:'')];
+ }
+ $sy=trim((string)$t['school_year']);$tp=trim((string)$t['period_label']);
+ if($sy!==''&&stripos($tp,$sy)===0) $tp=trim(preg_replace('/^[\s—–\-·:|]+/u','',substr($tp,strlen($sy))));
+ $name=trim($sy.' '.$tp); if($name==='') $name=$t['label'];
+ $head='All - '.$name.' Evaluation';
+ if($opts) $termGroups[]=['value'=>'p'.$pid,'label'=>$head.$tag,'opts'=>$opts];
+}
+
+// Selection: "all" (default) = every evaluation combined; p<term> = one whole term; l<id>/k<id> = one evaluation.
+$view=(string)($_GET['view']??'');
+$selValue='';$selPeriod=0;$selEntry=null;
+if(preg_match('/^[lk]\d+$/',$view)&&isset($entries[$view])){
+ $selEntry=$entries[$view];$selPeriod=$selEntry['pid'];$selValue=$view;
+}elseif(preg_match('/^p(\d+)$/',$view,$m)&&isset($terms[(int)$m[1]])){
+ $selPeriod=(int)$m[1];$selValue='p'.$selPeriod;
+}elseif($terms){
+ // "All Evaluations" only differs from a term when there is more than one term with feedback.
+ $selPeriod=(int)array_key_first($terms);
+ $selValue=(count($termGroups)>1)?'all':'p'.$selPeriod;
+}
+$showData=$selPeriod>0;
+
+if($selValue==='all'){
+ $history=array_values($entries);
+ usort($history,fn($x,$y)=>[$x['ts'],$x['_key']]<=>[$y['ts'],$y['_key']]);
+ if(count($terms)>1) foreach($history as &$hh){ if($hh['period_label']!=='') $hh['label'].=' · '.$hh['period_label']; } unset($hh);
+ $avgScope='All Evaluations';
+}elseif($selEntry){
+ $history=[$selEntry];$avgScope='This Evaluation';
+}else{
+ $history=$entriesByTerm[$selPeriod]??[];$avgScope='This Term';
+}
+$totalSum=0.0;$totalCount=0;
+foreach($history as $h){$totalSum+=$h['score_sum'];$totalCount+=$h['score_count'];}
+$responseCount=count($history);
+$overallAvg=$totalCount>0?round($totalSum/$totalCount,2):null;
+
+html_head_open("PBI — Evaluation Received");
 ?>
 <style>
-.main{max-width:1500px}.privacy{margin-bottom:22px;padding:13px 16px;border:1px solid rgba(16,185,129,.25);background:rgba(16,185,129,.07);border-radius:10px;color:#0F6B4F;font-size:12px;line-height:1.55}.top-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:22px}.stat-card{background:rgba(23,42,69,.85);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:20px;box-shadow:var(--shadow)}.stat-card i{color:var(--amber-h);font-size:20px;margin-bottom:10px}.stat-card .num{font-size:28px;font-weight:700;color:#fff}.stat-card .label{font-size:12px;color:var(--muted);margin-top:4px}.section{background:rgba(23,42,69,.85);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;box-shadow:var(--shadow);margin-bottom:20px}.section h2{font-family:'Rajdhani',sans-serif;font-size:19px;color:#fff;margin-bottom:16px}.view-evals-btn{width:100%;display:flex;align-items:center;gap:10px;background:rgba(217,154,43,.12);border:1px solid rgba(217,154,43,.28);color:var(--amber-h);padding:12px 14px;border-radius:10px;font:600 13px 'DM Sans',sans-serif;cursor:pointer}.view-evals-btn i:last-child{margin-left:auto;transition:transform .2s}.received-item{display:flex;justify-content:space-between;align-items:center;gap:14px;background:var(--inner);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:14px 16px;margin-bottom:10px;cursor:pointer}.received-item:hover{border-color:rgba(217,154,43,.35)}.received-anon{font-size:13px;font-weight:700;color:#fff}.received-anon i{color:var(--muted);margin-right:5px}.received-meta{font-size:11px;color:var(--muted);margin-top:4px}.received-right{display:flex;flex-direction:column;align-items:flex-end;gap:8px}.received-score{font-size:12px;font-weight:800;color:#f0b84d;background:rgba(217,154,43,.12);border:1px solid rgba(217,154,43,.25);padding:4px 10px;border-radius:18px}.details-btn{background:rgba(217,154,43,.12);border:1px solid rgba(217,154,43,.28);color:var(--amber-h);font-size:11px;font-weight:700;padding:6px 12px;border-radius:18px;cursor:pointer}.eval-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:500;display:none;align-items:center;justify-content:center;padding:20px}.eval-modal-overlay.open{display:flex}.eval-modal{background:var(--mid);border:1px solid rgba(255,255,255,.08);border-radius:16px;width:100%;max-width:720px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,.6)}.eval-modal-header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid rgba(255,255,255,.08)}.eval-modal-title{font-family:'Rajdhani',sans-serif;font-size:21px;font-weight:700;color:#fff}.eval-modal-title i{color:var(--amber-h);margin-right:8px}.eval-modal-close{background:none;border:none;color:var(--muted);font-size:19px;cursor:pointer}.eval-modal-body{padding:22px;overflow:auto}.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px}.info-grid>div{background:var(--inner);border:1px solid rgba(255,255,255,.05);border-radius:10px;padding:12px 14px}.info-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:5px}.info-value{font-size:13px;color:#fff;font-weight:600}.score-big{color:var(--amber-h)}.modal-section-title{font-size:14px;color:#fff;margin:18px 0 10px}.cat-row-modal{display:flex;align-items:center;gap:10px;margin:9px 0}.cat-name-modal{width:170px;font-size:12px;color:var(--light);flex-shrink:0}.cat-bar{flex:1;height:7px;background:rgba(255,255,255,.08);border-radius:6px;overflow:hidden}.cat-bar>div{height:100%;background:linear-gradient(90deg,var(--amber-dark),var(--amber-h));border-radius:6px}.cat-score-modal{width:42px;text-align:right;font-size:12px;font-weight:700;color:#fff}.q-result{background:var(--inner);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:13px 15px;margin-bottom:8px}.q-no{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:4px}.q-text{font-size:13px;color:#fff;font-weight:600;line-height:1.5}.q-score{margin-top:7px;font-size:12px;color:var(--muted)}.q-score span{margin-left:7px;font-weight:700}.star{color:rgba(255,255,255,.16);margin-right:2px}.star.filled{color:#facc15}.comment-modal{background:var(--inner);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:14px;color:var(--light);font-size:13px;line-height:1.6;font-style:italic}.comment-modal.empty{color:var(--muted);font-style:normal}.loading-eval{padding:50px 10px;text-align:center;color:var(--muted);font-size:13px}.loading-eval i{margin-right:8px}@media(max-width:768px){.top-grid{grid-template-columns:1fr}.info-grid{grid-template-columns:1fr}.received-item{flex-direction:column;align-items:flex-start}.received-right{align-items:flex-start;width:100%}}
+.main{max-width:1500px}.privacy{margin-bottom:22px;padding:13px 16px;border:1px solid rgba(16,185,129,.25);background:rgba(16,185,129,.07);border-radius:10px;color:#0F6B4F;font-size:12px;line-height:1.55}.top-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:22px}.stat-card{background:rgba(23,42,69,.85);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:20px;box-shadow:var(--shadow)}.stat-card i{color:var(--amber-h);font-size:20px;margin-bottom:10px}.stat-card .num{font-size:28px;font-weight:700;color:#fff}.stat-card .label{font-size:12px;color:var(--muted);margin-top:4px}.section{background:rgba(23,42,69,.85);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;box-shadow:var(--shadow);margin-bottom:20px}.section h2{font-family:'Rajdhani',sans-serif;font-size:19px;color:#fff;margin-bottom:16px}.view-evals-btn{width:100%;display:flex;align-items:center;gap:10px;background:rgba(217,154,43,.12);border:1px solid rgba(217,154,43,.28);color:var(--amber-h);padding:12px 14px;border-radius:10px;font:600 13px 'DM Sans',sans-serif;cursor:pointer}.view-evals-btn i:last-child{margin-left:auto;transition:transform .2s}.received-item{display:flex;justify-content:space-between;align-items:center;gap:14px;background:var(--inner);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:14px 16px;margin-bottom:10px;cursor:pointer}.received-item:hover{border-color:rgba(217,154,43,.35)}.received-anon{font-size:13px;font-weight:700;color:#fff}.received-anon i{color:var(--muted);margin-right:5px}.received-meta{font-size:11px;color:var(--muted);margin-top:4px}.received-right{display:flex;flex-direction:column;align-items:flex-end;gap:8px}.received-score{font-size:12px;font-weight:800;color:#f0b84d;background:rgba(217,154,43,.12);border:1px solid rgba(217,154,43,.25);padding:4px 10px;border-radius:18px}.details-btn{background:rgba(217,154,43,.12);border:1px solid rgba(217,154,43,.28);color:var(--amber-h);font-size:11px;font-weight:700;padding:6px 12px;border-radius:18px;cursor:pointer}.eval-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:500;display:none;align-items:center;justify-content:center;padding:20px}.eval-modal-overlay.open{display:flex}.eval-modal{background:var(--mid);border:1px solid rgba(255,255,255,.08);border-radius:16px;width:100%;max-width:720px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,.6)}.eval-modal-header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid rgba(255,255,255,.08)}.eval-modal-title{font-family:'Rajdhani',sans-serif;font-size:21px;font-weight:700;color:#fff}.eval-modal-title i{color:var(--amber-h);margin-right:8px}.eval-modal-close{background:none;border:none;color:var(--muted);font-size:19px;cursor:pointer}.eval-modal-body{padding:22px;overflow:auto}.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px}.info-grid>div{background:var(--inner);border:1px solid rgba(255,255,255,.05);border-radius:10px;padding:12px 14px}.info-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:5px}.info-value{font-size:13px;color:#fff;font-weight:600}.score-big{color:var(--amber-h)}.modal-section-title{font-size:14px;color:#fff;margin:18px 0 10px}.cat-row-modal{display:flex;align-items:center;gap:10px;margin:9px 0}.cat-name-modal{width:170px;font-size:12px;color:var(--light);flex-shrink:0}.cat-bar{flex:1;height:7px;background:rgba(255,255,255,.08);border-radius:6px;overflow:hidden}.cat-bar>div{height:100%;background:linear-gradient(90deg,var(--amber-dark),var(--amber-h));border-radius:6px}.cat-score-modal{width:42px;text-align:right;font-size:12px;font-weight:700;color:#fff}.q-result{background:var(--inner);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:13px 15px;margin-bottom:8px}.q-no{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:4px}.q-text{font-size:13px;color:#fff;font-weight:600;line-height:1.5}.q-score{margin-top:7px;font-size:12px;color:var(--muted)}.q-score span{margin-left:7px;font-weight:700}.star{color:rgba(255,255,255,.16);margin-right:2px}.star.filled{color:#facc15}.comment-modal{background:var(--inner);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:14px;color:var(--light);font-size:13px;line-height:1.6;font-style:italic}.comment-modal.empty{color:var(--muted);font-style:normal}.loading-eval{padding:50px 10px;text-align:center;color:var(--muted);font-size:13px}.loading-eval i{margin-right:8px}.term-picker{display:flex;flex-direction:row;align-items:center;gap:12px}.term-picker label{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#64748b;white-space:nowrap}.term-picker .sel-wrap{position:relative;display:inline-flex;align-items:center}.term-picker .sel-wrap i{position:absolute;right:15px;top:50%;transform:translateY(-50%);pointer-events:none;color:#172033!important;font-size:12px}.term-picker select{appearance:none;-webkit-appearance:none;min-width:340px;max-width:100%;padding:9px 40px 9px 14px!important;border-radius:10px;border:1px solid #CBD5E1;background:#fff;color:#172033;font:500 14px 'DM Sans',sans-serif;cursor:pointer}.term-picker select:focus{outline:3px solid rgba(217,154,43,.28);outline-offset:1px;border-color:#d99a2b}.term-picker option.term-opt{font:700 14px 'DM Sans',sans-serif;color:#0F172A}.term-picker option{font:400 14px 'DM Sans',sans-serif;color:#172033;padding:4px 10px}@media(max-width:640px){.term-picker{flex-direction:column;align-items:stretch;gap:5px;width:100%}.term-picker .sel-wrap{width:100%}.term-picker select{width:100%;min-width:0}}.page-header{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}.response-card{background:var(--inner);border:1px solid #E2E8F0;border-radius:10px;padding:16px 18px;margin-bottom:12px}.response-card:last-child{margin-bottom:0}.response-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.response-label{font-size:12px;font-weight:700;color:#b97f16;text-transform:uppercase;letter-spacing:.6px;display:flex;align-items:center;gap:6px}.response-score{font-size:13px;font-weight:700;color:#b97f16;background:rgba(217,154,43,.14);padding:2px 10px;border-radius:12px}.response-comment{font-size:13.5px;color:var(--light);line-height:1.6;font-style:italic}.empty-note{font-size:13px;color:var(--muted)}@media(max-width:768px){.top-grid{grid-template-columns:1fr}.info-grid{grid-template-columns:1fr}.received-item{flex-direction:column;align-items:flex-start}.received-right{align-items:flex-start;width:100%}}
 </style>
 
 <style id="principal-integrated-light-view">
@@ -419,25 +539,43 @@ main.main::before {
 }
 </style>
 
-<main class="main">
- <div class="page-header"><div class="page-title">Feedback's Received</div><div class="page-sub">Your anonymous evaluation results, submitted by authorized evaluators.</div></div>
- <div class="privacy"><i class="fa-solid fa-user-shield"></i> Evaluator identities are never shown here. Direct evaluations of the Principal are restricted to the result only; authorized evaluator names, IDs, photos, departments, and other identifying details are excluded.</div>
+<main class="main principal-feature-page">
+ <div id="principalFeatureWorkspace" class="principal-feature-shell">
+ <div class="principal-feature-header-row">
+  <section class="principal-feature-heading" aria-labelledby="principal-evaluation-received-title">
+   <div class="principal-feature-eyebrow"><i class="fa-solid fa-chart-line"></i> Evaluation Results</div>
+   <h1 id="principal-evaluation-received-title">Evaluation Received</h1>
+  </section>
+ <?php if($termGroups): ?><form method="get" class="term-picker principal-feature-term-picker"><label for="termSelect">Evaluation Term</label><span class="sel-wrap"><select id="termSelect" name="view" onchange="this.form.submit()"><?php if(count($termGroups)>1): ?><option value="all"<?= $selValue==='all'?' selected':'' ?>>All Evaluations</option><?php endif; ?><?php foreach($termGroups as $g): ?><option class="term-opt" value="<?= htmlspecialchars($g['value']) ?>"<?= $g['value']===$selValue?' selected':'' ?>><?= htmlspecialchars($g['label']) ?></option><?php foreach($g['opts'] as $o): ?><option class="eval-opt" value="<?= htmlspecialchars($o['value']) ?>"<?= $o['value']===$selValue?' selected':'' ?>>&nbsp;&nbsp;&nbsp;&nbsp;<?= htmlspecialchars($o['text']) ?></option><?php endforeach; ?><?php endforeach; ?></select><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></span></form><?php endif; ?>
+ </div>
  <div class="top-grid">
-  <div class="stat-card"><i class="fa-solid fa-star"></i><div class="num"><?= $overallAvg!==null?number_format($overallAvg,2):'—' ?></div><div class="label">Overall Average</div></div>
-  <div class="stat-card"><i class="fa-solid fa-comments"></i><div class="num"><?= $responseCount ?></div><div class="label">Evaluations Received</div></div>
+  <div class="stat-card"><i class="fa-solid fa-star"></i><div class="num"><?= $overallAvg!==null?number_format($overallAvg,2):'—' ?></div><div class="label">Overall Average · <?= htmlspecialchars($avgScope) ?></div></div>
+  <div class="stat-card"><i class="fa-solid fa-comments"></i><div class="num"><?= $responseCount ?></div><div class="label">Evaluations Received · <?= htmlspecialchars($avgScope) ?></div></div>
   <div class="stat-card"><i class="fa-solid fa-user-secret"></i><div class="num">Anonymous</div><div class="label">Evaluator Privacy</div></div>
+ </div>
+ <?php if(!$showData): ?><p class="empty-note">No evaluation term is available yet.</p><?php else: ?>
+ <div class="section">
+  <h2><i class="fa-solid fa-comment-dots"></i> Evaluation History — Anonymous Responses</h2>
+  <?php if(!$history): ?><p class="empty-note">No responses were submitted for this selection.</p><?php else: foreach($history as $h): ?>
+   <div class="response-card">
+    <div class="response-head"><span class="response-label"><i class="fa-solid fa-user-secret"></i> Anonymous — <?= htmlspecialchars($h['label']) ?></span><?php if($h['score']!==null): ?><span class="response-score"><?= htmlspecialchars((string)$h['score']) ?></span><?php endif; ?></div>
+    <?php if($h['comment']!==''): ?><p class="response-comment">&ldquo;<?= htmlspecialchars($h['comment']) ?>&rdquo;</p><?php else: ?><p class="empty-note">No written comment.</p><?php endif; ?>
+   </div>
+  <?php endforeach; endif; ?>
  </div>
  <div class="section">
   <h2><i class="fa-solid fa-clock-rotate-left"></i> Evaluations Received</h2>
   <button type="button" class="view-evals-btn" onclick="togglePrincipalEvals()"><i class="fa-solid fa-eye"></i> View Evaluations Received <i class="fa-solid fa-chevron-down" id="principalEvalsCaret"></i></button>
   <div id="principalEvalsList" style="display:none;margin-top:14px;">
-  <?php if(!$history): ?><div class="empty-note">No evaluations recorded yet.</div><?php else: foreach($history as $r): ?>
-   <div class="received-item" onclick="openPrincipalEvalDetails(<?= $r['tracker_id'] ?>)">
+  <?php if(!$history): ?><div class="empty-note">No evaluations received for this selection.</div><?php else: foreach($history as $r): ?>
+   <div class="received-item" onclick="openPrincipalEvalDetails(<?= (int)$r['_key'] ?>,'<?= $r['_source']==='kept'?'kept':'live' ?>')">
     <div><div class="received-anon"><i class="fa-solid fa-eye-slash"></i> Anonymous Evaluator</div><div class="received-meta"><?= htmlspecialchars($r['submitted_at']) ?><?= $r['period_label']?' · '.htmlspecialchars($r['period_label']):'' ?></div></div>
-    <div class="received-right"><span class="received-score"><?= $r['score']!==null?htmlspecialchars((string)$r['score']).' / 5':'—' ?></span><button type="button" class="details-btn" onclick="event.stopPropagation();openPrincipalEvalDetails(<?= $r['tracker_id'] ?>)">View Details <i class="fa-solid fa-chevron-right"></i></button></div>
+    <div class="received-right"><span class="received-score"><?= $r['score']!==null?htmlspecialchars((string)$r['score']).' / 5':'—' ?></span><button type="button" class="details-btn" onclick="event.stopPropagation();openPrincipalEvalDetails(<?= (int)$r['_key'] ?>,'<?= $r['_source']==='kept'?'kept':'live' ?>')">View Details <i class="fa-solid fa-chevron-right"></i></button></div>
    </div>
   <?php endforeach; endif; ?>
   </div>
+ </div>
+ <?php endif; ?>
  </div>
 </main>
 <div class="eval-modal-overlay" id="principalEvalModal"><div class="eval-modal"><div class="eval-modal-header"><div class="eval-modal-title"><i class="fa-solid fa-star"></i>Evaluation Details</div><button class="eval-modal-close" onclick="closePrincipalEvalDetails()"><i class="fa-solid fa-xmark"></i></button></div><div class="eval-modal-body" id="principalEvalBody"><div class="loading-eval">Loading evaluation…</div></div></div></div>
@@ -445,7 +583,7 @@ main.main::before {
 function togglePrincipalEvals(){const l=document.getElementById('principalEvalsList'),c=document.getElementById('principalEvalsCaret');const o=l.style.display!=='none';l.style.display=o?'none':'block';c.style.transform=o?'':'rotate(180deg)';}
 function e(v){if(v===null||v===undefined)return '';const d=document.createElement('div');d.textContent=v;return d.innerHTML;}
 function sh(s){let h='';for(let i=1;i<=5;i++)h+=`<i class="fa-solid fa-star star ${i<=s?'filled':''}"></i>`;return h;}
-function openPrincipalEvalDetails(id){const m=document.getElementById('principalEvalModal'),b=document.getElementById('principalEvalBody');b.innerHTML='<div class="loading-eval"><i class="fa-solid fa-spinner fa-spin"></i> Loading evaluation…</div>';m.classList.add('open');document.body.style.overflow='hidden';fetch('get_my_evaluation_details.php?tracker_id='+encodeURIComponent(id)).then(r=>r.json()).then(d=>{if(!d.ok){b.innerHTML='<div class="loading-eval"><i class="fa-solid fa-triangle-exclamation"></i>'+e(d.error||'Unable to load this evaluation.')+'</div>';return;}let h=`<div class="info-grid"><div><div class="info-label">Evaluator</div><div class="info-value"><i class="fa-solid fa-eye-slash"></i> Anonymous Evaluator</div></div><div><div class="info-label">Period</div><div class="info-value">${e(d.period_label||'—')}</div></div><div><div class="info-label">Submitted</div><div class="info-value">${e(d.submitted_at||'—')}</div></div><div><div class="info-label">Overall Score</div><div class="info-value score-big">${Number(d.overall_score||0).toFixed(2)} / 5</div></div></div>`;if(d.categories?.length){h+='<h3 class="modal-section-title">Performance by Category</h3>';d.categories.forEach(c=>{h+=`<div class="cat-row-modal"><div class="cat-name-modal">${e(c.category)}</div><div class="cat-bar"><div style="width:${Math.round((c.avg/5)*100)}%"></div></div><div class="cat-score-modal">${Number(c.avg).toFixed(2)}</div></div>`})}if(d.questions?.length){h+='<h3 class="modal-section-title">Question-by-Question Results</h3>';d.questions.forEach((q,i)=>{h+=`<div class="q-result"><div class="q-no">Question ${i+1}</div><div class="q-text">${e(q.question_text)}</div><div class="q-score">${sh(q.score)} <span>Score: ${q.score} / 5</span></div></div>`})}h+='<h3 class="modal-section-title">Comments / Feedback</h3>';h+=d.comment?`<div class="comment-modal">“${e(d.comment)}”</div>`:'<div class="comment-modal empty">No written feedback was provided.</div>';b.innerHTML=h;}).catch(()=>{b.innerHTML='<div class="loading-eval"><i class="fa-solid fa-triangle-exclamation"></i>Something went wrong loading this evaluation.</div>';});}
+function openPrincipalEvalDetails(id,src){const m=document.getElementById('principalEvalModal'),b=document.getElementById('principalEvalBody');b.innerHTML='<div class="loading-eval"><i class="fa-solid fa-spinner fa-spin"></i> Loading evaluation…</div>';m.classList.add('open');document.body.style.overflow='hidden';fetch('get_my_evaluation_details.php?'+(src==='kept'?'kept_id=':'tracker_id=')+encodeURIComponent(id)).then(r=>r.json()).then(d=>{if(!d.ok){b.innerHTML='<div class="loading-eval"><i class="fa-solid fa-triangle-exclamation"></i>'+e(d.error||'Unable to load this evaluation.')+'</div>';return;}let h=`<div class="info-grid"><div><div class="info-label">Evaluator</div><div class="info-value"><i class="fa-solid fa-eye-slash"></i> Anonymous Evaluator</div></div><div><div class="info-label">Period</div><div class="info-value">${e(d.period_label||'—')}</div></div><div><div class="info-label">Submitted</div><div class="info-value">${e(d.submitted_at||'—')}</div></div><div><div class="info-label">Overall Score</div><div class="info-value score-big">${Number(d.overall_score||0).toFixed(2)} / 5</div></div></div>`;if(d.categories?.length){h+='<h3 class="modal-section-title">Performance by Category</h3>';d.categories.forEach(c=>{h+=`<div class="cat-row-modal"><div class="cat-name-modal">${e(c.category)}</div><div class="cat-bar"><div style="width:${Math.round((c.avg/5)*100)}%"></div></div><div class="cat-score-modal">${Number(c.avg).toFixed(2)}</div></div>`})}if(d.questions?.length){h+='<h3 class="modal-section-title">Question-by-Question Results</h3>';d.questions.forEach((q,i)=>{h+=`<div class="q-result"><div class="q-no">Question ${i+1}</div><div class="q-text">${e(q.question_text)}</div><div class="q-score">${sh(q.score)} <span>Score: ${q.score} / 5</span></div></div>`})}h+='<h3 class="modal-section-title">Comments / Feedback</h3>';h+=d.comment?`<div class="comment-modal">“${e(d.comment)}”</div>`:'<div class="comment-modal empty">No written feedback was provided.</div>';b.innerHTML=h;}).catch(()=>{b.innerHTML='<div class="loading-eval"><i class="fa-solid fa-triangle-exclamation"></i>Something went wrong loading this evaluation.</div>';});}
 function closePrincipalEvalDetails(){document.getElementById('principalEvalModal').classList.remove('open');document.body.style.overflow='';}
 document.getElementById('principalEvalModal').addEventListener('click',function(ev){if(ev.target===this)closePrincipalEvalDetails();});
 </script>
@@ -761,4 +899,4 @@ main.main > .page-header{
 }
 </style>
 
-<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20260927" id="principal-dark-repairs"/>
+<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20261009.3" id="principal-dark-repairs"/>

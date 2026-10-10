@@ -1194,3 +1194,425 @@ main.main .subtle-head {
 }
 
 .portal-profile-fallback{display:flex !important;align-items:center !important;justify-content:center !important;color:#60A5FA !important;font-family:'Rajdhani',sans-serif !important;font-size:17px !important;font-weight:700 !important;}
+
+/* Dashboard-matched Dean feature-page finish; see includes/dean_light_theme.css. */
+@media screen {
+  html:not(.dark-theme) body {
+    font-family: 'DM Sans', Inter, Arial, sans-serif !important;
+    background: #F3F6FA !important;
+    background-image: none !important;
+    color: #12263A !important;
+  }
+  html:not(.dark-theme) body main.main {
+    margin: 20px 20px 0 20px !important;
+    padding-left: 28px !important;
+    padding-right: 28px !important;
+    padding-bottom: 44px !important;
+    min-height: calc(100vh - 20px) !important;
+    background: linear-gradient(180deg, #FFFFFF 0%, #F8FAFD 100%) !important;
+    color: #12263A !important;
+    border: 1px solid #E1E8F0 !important;
+    border-radius: 22px !important;
+    box-shadow: 0 10px 28px rgba(19, 38, 63, .045) !important;
+  }
+  html:not(.dark-theme) main.main > .page-header {
+    display: flex !important; align-items: flex-start !important; justify-content: space-between !important;
+    gap: 16px 22px !important; flex-wrap: wrap !important; margin: 2px 2px 24px !important;
+    padding: 0 !important; background: transparent !important; border: 0 !important; box-shadow: none !important;
+  }
+  html:not(.dark-theme) main.main .page-title,
+  html:not(.dark-theme) main.main .page-header .page-title,
+  html:not(.dark-theme) main.main .page-header h1 {
+    color: #10243E !important; font-family: 'Rajdhani', 'DM Sans', Arial, sans-serif !important;
+    font-size: 28px !important; font-weight: 800 !important; line-height: 1.08 !important; letter-spacing: .2px !important;
+  }
+  html:not(.dark-theme) main.main .page-sub { margin-top: 7px !important; color: #5C7187 !important; font-size: 13px !important; line-height: 1.5 !important; }
+  html:not(.dark-theme) main.main .section h2,
+  html:not(.dark-theme) main.main .section-title,
+  html:not(.dark-theme) main.main .tracker-heading h2,
+  html:not(.dark-theme) main.main .eval-modal-title,
+  html:not(.dark-theme) main.main .sheet-name {
+    color: #13263F !important; font-family: 'Rajdhani', 'DM Sans', Arial, sans-serif !important;
+    font-size: 20px !important; font-weight: 800 !important; letter-spacing: .1px !important;
+  }
+  html:not(.dark-theme) main.main .section,
+  html:not(.dark-theme) main.main .stat-card,
+  html:not(.dark-theme) main.main .filter-bar,
+  html:not(.dark-theme) main.main .table-wrap,
+  html:not(.dark-theme) main.main .eval-table-wrap,
+  html:not(.dark-theme) main.main .person-card,
+  html:not(.dark-theme) main.main .q-block,
+  html:not(.dark-theme) main.main .comment-block,
+  html:not(.dark-theme) main.main .profile-card,
+  html:not(.dark-theme) main.main .tracker-card,
+  html:not(.dark-theme) main.main .structure-note,
+  html:not(.dark-theme) main.main .info-banner,
+  html:not(.dark-theme) main.main .eval-tabs,
+  html:not(.dark-theme) main.main .eval-switcher,
+  html:not(.dark-theme) main.main .eval-banner,
+  html:not(.dark-theme) main.main .sheet-header,
+  html:not(.dark-theme) main.main .scale-bar,
+  html:not(.dark-theme) main.main .avg-summary,
+  html:not(.dark-theme) main.main .comment-section,
+  html:not(.dark-theme) main.main .response-card,
+  html:not(.dark-theme) main.main .received-item,
+  html:not(.dark-theme) main.main .sum-card,
+  html:not(.dark-theme) main.main .standing-panel,
+  html:not(.dark-theme) main.main .person-row,
+  html:not(.dark-theme) main.main .eval-card,
+  html:not(.dark-theme) main.main .top-bar,
+  html:not(.dark-theme) main.main .content-panel,
+  html:not(.dark-theme) main.main .create-panel,
+  html:not(.dark-theme) main.main .period-card,
+  html:not(.dark-theme) main.main .history-card,
+  html:not(.dark-theme) main.main .gl-card,
+  html:not(.dark-theme) main.main .amber-card,
+  html:not(.dark-theme) main.main .green-card,
+  html:not(.dark-theme) main.main .red-card,
+  html:not(.dark-theme) main.main .target-card,
+  html:not(.dark-theme) main.main .cat-section,
+  html:not(.dark-theme) main.main .people-list,
+  html:not(.dark-theme) main.main .evaluator-grid,
+  html:not(.dark-theme) main.main .feature-card {
+    background-color: #FFFFFF !important; color: #12263A !important; border-color: #DCE7F1 !important;
+    border-radius: 15px !important; box-shadow: 0 5px 18px rgba(30, 64, 92, .065) !important;
+  }
+  html:not(.dark-theme) main.main .stat-card { position: relative !important; overflow: hidden !important; padding: 21px 22px !important; border-top: 3px solid #2563EB !important; }
+  html:not(.dark-theme) main.main .card-grid > .stat-card:nth-child(2),
+  html:not(.dark-theme) main.main .card-grid > a:nth-child(2) .stat-card { border-top-color: #10B981 !important; }
+  html:not(.dark-theme) main.main .card-grid > .stat-card:nth-child(3),
+  html:not(.dark-theme) main.main .card-grid > a:nth-child(3) .stat-card { border-top-color: #F59E0B !important; }
+  html:not(.dark-theme) main.main .card-grid > .stat-card:nth-child(4),
+  html:not(.dark-theme) main.main .card-grid > a:nth-child(4) .stat-card { border-top-color: #3B82F6 !important; }
+  html:not(.dark-theme) main.main .stat-card i { color: #2563EB !important; font-size: 20px !important; }
+  html:not(.dark-theme) main.main .stat-card .num { color: #12263A !important; font-size: 27px !important; font-weight: 800 !important; }
+  html:not(.dark-theme) main.main .stat-card .label { color: #5E7388 !important; font-size: 12px !important; line-height: 1.45 !important; }
+  html:not(.dark-theme) main.main table thead th,
+  html:not(.dark-theme) main.main .table-head,
+  html:not(.dark-theme) main.main .table-header,
+  html:not(.dark-theme) main.main .thead,
+  html:not(.dark-theme) main.main .subtle-head { background: #F4F8FF !important; color: #4B6580 !important; border-color: #D9E4EF !important; }
+  html:not(.dark-theme) main.main input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+  html:not(.dark-theme) main.main select,
+  html:not(.dark-theme) main.main textarea { border-color: #D5E0EC !important; border-radius: 10px !important; background-color: #F8FAFC !important; color: #12263A !important; font-family: 'DM Sans', Inter, Arial, sans-serif !important; }
+  html:not(.dark-theme) main.main .period-badge { padding: 7px 13px !important; border-radius: 999px !important; background: #EAF1FF !important; border: 1px solid #CADBFF !important; color: #2458DA !important; font-weight: 700 !important; }
+  html:not(.dark-theme) main.main .period-badge.closed,
+  html:not(.dark-theme) main.main .period-badge.bad { background: #FFF1F1 !important; border-color: #F3B0B0 !important; color: #B42318 !important; }
+  html:not(.dark-theme) main.main .period-badge.open,
+  html:not(.dark-theme) main.main .period-badge.good { background: #E8FFF1 !important; border-color: #91E7B2 !important; color: #168447 !important; }
+  html:not(.dark-theme) main.main .empty-note,
+  html:not(.dark-theme) main.main .muted,
+  html:not(.dark-theme) main.main .helper,
+  html:not(.dark-theme) main.main .description { color: #6D8194 !important; }
+}
+@media screen and (max-width: 900px) {
+  html:not(.dark-theme) body main.main { padding-left: 18px !important; padding-right: 18px !important; padding-bottom: 30px !important; border-radius: 16px !important; }
+  html:not(.dark-theme) main.main .page-title,
+  html:not(.dark-theme) main.main .page-header .page-title,
+  html:not(.dark-theme) main.main .page-header h1 { font-size: 25px !important; }
+}
+@media screen and (max-width: 768px) {
+  html:not(.dark-theme) body main.main { margin: 12px 12px 0 12px !important; padding-left: 16px !important; padding-right: 16px !important; padding-bottom: 28px !important; min-height: calc(100vh - 12px) !important; border-radius: 14px !important; }
+  html:not(.dark-theme) main.main > .page-header { margin-bottom: 20px !important; }
+}
+
+
+/* =====================================================================
+   DEAN WORKSPACE — SHARED DASHBOARD INTERFACE
+   This final layer applies the same app shell to every non-dashboard tab:
+   fixed sidebar + topbar, inset rounded workspace, consistent page headers,
+   dashboard-like cards, tables, filters and form controls. The dashboard's
+   own overview layout is intentionally excluded.
+   ===================================================================== */
+@media screen {
+  html body:has(> main.main:not(.dean-dashboard-main)) {
+    display:flex !important;
+    align-items:stretch !important;
+    gap:0 !important;
+    margin:0 !important;
+    padding:0 !important;
+    width:100% !important;
+    height:100vh !important;
+    min-height:100vh !important;
+    max-height:100vh !important;
+    overflow:hidden !important;
+    background:#F3F6FA !important;
+    color:#12263A !important;
+    font-family:'DM Sans',Inter,Arial,sans-serif !important;
+  }
+
+  html body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) {
+    box-sizing:border-box !important;
+    position:relative !important;
+    z-index:1 !important;
+    flex:1 1 0% !important;
+    align-self:stretch !important;
+    width:auto !important;
+    min-width:0 !important;
+    min-height:0 !important;
+    height:calc(100vh - 106px) !important;
+    max-height:calc(100vh - 106px) !important;
+    margin:86px 20px 20px !important;
+    padding:24px 28px 42px !important;
+    overflow-x:hidden !important;
+    overflow-y:auto !important;
+    overscroll-behavior:contain !important;
+    scrollbar-gutter:stable !important;
+    border:1px solid #E1E8F0 !important;
+    border-radius:22px !important;
+    background:linear-gradient(180deg,#FFFFFF 0%,#F8FAFD 100%) !important;
+    color:#12263A !important;
+    box-shadow:0 10px 28px rgba(19,38,63,.045) !important;
+  }
+
+  /* Shared title/subtitle hierarchy: like the dashboard's clean intro. */
+  html body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) > .page-header {
+    display:flex !important;
+    align-items:flex-start !important;
+    justify-content:space-between !important;
+    flex-wrap:wrap !important;
+    gap:14px 22px !important;
+    margin:0 2px 24px !important;
+    padding:0 0 2px !important;
+    border:0 !important;
+    border-radius:0 !important;
+    background:transparent !important;
+    box-shadow:none !important;
+  }
+  html body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .page-title,
+  html body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .page-header h1 {
+    margin:0 !important;
+    color:#10243E !important;
+    font-family:'Rajdhani','DM Sans',Arial,sans-serif !important;
+    font-size:28px !important;
+    font-weight:800 !important;
+    line-height:1.08 !important;
+    letter-spacing:.2px !important;
+  }
+  html body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .page-sub,
+  html body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .subtitle,
+  html body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .description {
+    margin-top:7px !important;
+    color:#5C7187 !important;
+    font-family:'DM Sans',Inter,Arial,sans-serif !important;
+    font-size:13px !important;
+    line-height:1.5 !important;
+  }
+  html body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) h1,
+  html body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) h2,
+  html body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) h3,
+  html body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .section-title,
+  html body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .tracker-heading h2 {
+    font-family:'Rajdhani','DM Sans',Arial,sans-serif !important;
+    color:#13263F !important;
+    letter-spacing:.1px !important;
+  }
+
+  /* Reusable white card surfaces with consistent radii and dashboard shadows. */
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .section,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .stat-card,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .filter-bar,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .table-wrap,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .eval-table-wrap,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .person-card,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .q-block,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .comment-block,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .profile-card,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .tracker-card,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .structure-note,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .info-banner,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .eval-tabs,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .eval-switcher,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .eval-banner,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .sheet-header,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .scale-bar,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .avg-summary,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .comment-section,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .response-card,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .received-item,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .sum-card,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .standing-panel,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .person-row,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .eval-card,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .content-panel,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .history-card,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .no-archived,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .target-card,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .cat-section,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .people-list,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .evaluator-grid,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .de-panel,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .de-person-card,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .detail-person-card,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .detail-results-panel {
+    background:#FFFFFF !important;
+    color:#12263A !important;
+    border-color:#DCE7F1 !important;
+    border-radius:15px !important;
+    box-shadow:0 5px 18px rgba(30,64,92,.065) !important;
+  }
+
+  /* Evaluation category tiles, report selectors and tabs share dashboard blue. */
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .de-cat,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .reports-top-tab,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .eval-tab,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .tab-button {
+    border-radius:12px !important;
+    border-color:#DCE7F1 !important;
+    box-shadow:0 2px 8px rgba(30,64,92,.035) !important;
+  }
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .de-cat.active,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .reports-top-tab.active,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .eval-tab.active,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .tab-button.active {
+    background:#EEF4FF !important;
+    color:#2458DA !important;
+    border-color:#BFD3FF !important;
+  }
+
+  /* Table treatment and filters are consistent across Tracker, Results, Reports. */
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) table {
+    border-color:#DCE7F1 !important;
+  }
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) table thead th,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .table-head,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .table-header,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .thead {
+    background:#F4F8FF !important;
+    color:#4B6580 !important;
+    border-color:#D9E4EF !important;
+  }
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) table td {
+    border-color:#E6EDF5 !important;
+  }
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) input:not([type=checkbox]):not([type=radio]):not([type=hidden]),
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) select,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) textarea {
+    max-width:100%;
+    border:1px solid #D5E0EC !important;
+    border-radius:10px !important;
+    background:#F8FAFC !important;
+    color:#12263A !important;
+    font-family:'DM Sans',Inter,Arial,sans-serif !important;
+  }
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) button,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .btn {
+    border-radius:9px;
+  }
+
+  /* Status and information banners look like the dashboard's compact chips. */
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .period-badge {
+    background:#EAF1FF !important;
+    border:1px solid #CADBFF !important;
+    border-radius:999px !important;
+    color:#2458DA !important;
+    font-weight:700 !important;
+  }
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .period-badge.closed,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .period-badge.bad {
+    background:#FFF1F1 !important;
+    border-color:#F3B0B0 !important;
+    color:#B42318 !important;
+  }
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .period-badge.open,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .period-badge.good {
+    background:#E8FFF1 !important;
+    border-color:#91E7B2 !important;
+    color:#168447 !important;
+  }
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .structure-note,
+  html:not(.dark-theme) body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .info-banner {
+    display:flex;
+    align-items:flex-start;
+    gap:12px;
+    padding:18px 20px !important;
+    border:1px solid #DCE7F1 !important;
+    background:#FFFFFF !important;
+    color:#35516D !important;
+    border-radius:15px !important;
+    box-shadow:0 5px 18px rgba(30,64,92,.05) !important;
+  }
+
+  html.dark-theme body:has(> main.main:not(.dean-dashboard-main)) {
+    background:#0A192F !important;
+    color:#E0E6F0 !important;
+  }
+  html.dark-theme body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) {
+    background:linear-gradient(180deg,#0F1F3D 0%,#0A192F 100%) !important;
+    color:#E0E6F0 !important;
+    border-color:rgba(255,255,255,.08) !important;
+    box-shadow:0 10px 28px rgba(0,0,0,.20) !important;
+  }
+  html.dark-theme body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .page-title,
+  html.dark-theme body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .page-header h1,
+  html.dark-theme body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) h1,
+  html.dark-theme body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) h2,
+  html.dark-theme body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) h3 {
+    color:#F8FAFC !important;
+  }
+  html.dark-theme body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .page-sub,
+  html.dark-theme body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) p,
+  html.dark-theme body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .muted {
+    color:#A0B3C6 !important;
+  }
+  html.dark-theme body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .section,
+  html.dark-theme body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .stat-card,
+  html.dark-theme body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .filter-bar,
+  html.dark-theme body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .table-wrap,
+  html.dark-theme body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .eval-table-wrap,
+  html.dark-theme body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .person-card,
+  html.dark-theme body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .tracker-card,
+  html.dark-theme body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .structure-note,
+  html.dark-theme body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .profile-card,
+  html.dark-theme body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .response-card,
+  html.dark-theme body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .sum-card,
+  html.dark-theme body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .de-panel,
+  html.dark-theme body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .detail-person-card,
+  html.dark-theme body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .detail-results-panel {
+    background:#172A45 !important;
+    color:#E0E6F0 !important;
+    border-color:rgba(255,255,255,.08) !important;
+    box-shadow:0 8px 26px rgba(0,0,0,.22) !important;
+  }
+  html.dark-theme body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) table thead th {
+    background:#0F1F3D !important;
+    color:#A0B3C6 !important;
+    border-color:rgba(255,255,255,.1) !important;
+  }
+
+  @media (max-width:1000px) and (min-width:769px) {
+    html body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) {
+      margin-left:14px !important;
+      margin-right:14px !important;
+      padding-left:20px !important;
+      padding-right:20px !important;
+    }
+  }
+  @media (max-width:768px) {
+    html body:has(> main.main:not(.dean-dashboard-main)) {
+      display:block !important;
+      height:auto !important;
+      min-height:100vh !important;
+      max-height:none !important;
+      overflow:auto !important;
+    }
+    html body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) {
+      width:auto !important;
+      height:auto !important;
+      max-height:none !important;
+      min-height:calc(100vh - 160px) !important;
+      margin:12px !important;
+      padding:22px 16px 30px !important;
+      overflow:visible !important;
+      border-radius:16px !important;
+      scrollbar-gutter:auto !important;
+    }
+    html body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) > .page-header {
+      margin-bottom:20px !important;
+    }
+    html body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .page-title,
+    html body:has(> main.main:not(.dean-dashboard-main)) main.main:not(.dean-dashboard-main) .page-header h1 {
+      font-size:25px !important;
+    }
+  }
+}

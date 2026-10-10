@@ -409,3 +409,26 @@ body.light-theme:has(.app-shell) .alert-error {
     scroll-behavior: auto !important;
   }
 }
+
+/* -------------------------------------------------------------------------
+   Student workspace composition — matches the Dean portal
+   White outer page + inset light workspace (#F3F6FA) + white feature cards.
+   Replaces the earlier warm gradient / 22px-radius workspace in light theme.
+   ------------------------------------------------------------------------- */
+body.light-theme:has(.app-shell) {
+  background: #FFFFFF !important;
+}
+
+body.light-theme:has(.app-shell) .main {
+  background: #F3F6FA !important;
+  border: 1px solid #E5EAF0 !important;
+  border-radius: 16px !important;
+  box-shadow: 0 2px 10px rgba(31, 55, 79, .035) !important;
+}
+
+@media (min-width: 901px) {
+  body.light-theme:has(.app-shell) .main {
+    margin: 24px !important;           /* white outer margin, same as Dean */
+    min-height: calc(100vh - 48px) !important;
+  }
+}

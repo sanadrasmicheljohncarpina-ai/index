@@ -15,6 +15,8 @@ require_once '../shared/EvaluationContextService.php';
 require_once '../shared/system_settings_service.php';
 require_once '../shared/QuestionnaireService.php';
 require_once '../shared/notification_message.php';
+require_once __DIR__ . '/kept_feedback.php';
+require_once __DIR__ . '/received_results.php';
 qn_migrate_legacy_once($mysqli);
 
 if (empty($_SESSION['user_id']) || $_SESSION['role'] !== 'teacher') {
@@ -130,6 +132,11 @@ $lvlRes = $lvlQ->get_result();
 while ($lr = $lvlRes->fetch_assoc()) $my_levels[] = $lr['year_level'];
 $lvlQ->close();
 
+// College Peer-to-Peer is limited to teaching personnel with at least one
+// exact College assignment. This is separate from JHS/SHS Principal eligibility.
+$college_peer_levels = ['1st Year College','2nd Year College','3rd Year College','4th Year College'];
+$can_evaluate_college_peer = (bool) array_intersect($my_levels, $college_peer_levels);
+
 // ── DEAN/PRINCIPAL EVALUATOR ELIGIBILITY (by own teaching assignment) ──
 // Mirrors the admin-side Dean/Principal Evaluation targeting rule
 // (Principal <- Faculty/Teaching Staff assigned to Grade 7-12, Dean <-
@@ -147,6 +154,17 @@ $can_evaluate_dean       = (bool) array_intersect($my_levels, $dean_principal_co
 $period = null;
 $pr = $mysqli->query("SELECT * FROM evaluation_periods WHERE is_active=1 LIMIT 1");
 if ($pr) $period = $pr->fetch_assoc();
+
+// Match the Dean report's Higher Education scope: a College peer submission
+// must use a semester/summer period, never the globally active School Year.
+$college_peer_period = null;
+$cpp = $mysqli->query("SELECT * FROM evaluation_periods
+    WHERE semester IN ('1st Semester','2nd Semester','Summer')
+    ORDER BY is_active DESC,
+        (CONVERT(school_year USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+            CONVERT((SELECT setting_value FROM system_settings WHERE setting_key='acad_year' LIMIT 1) USING utf8mb4) COLLATE utf8mb4_unicode_ci) DESC,
+        id DESC LIMIT 1");
+if ($cpp) $college_peer_period = $cpp->fetch_assoc();
 
 // The active-period flag is not the schedule clock. Always evaluate the
 // live Asia/Manila schedule so a future period cannot appear open early.
@@ -197,8 +215,10 @@ $my_avg   = null;
 $my_total = 0;
 $my_scores = [];
 
+$live_sum = 0.0; $live_cnt = 0; $live_total = 0;
 $res_stmt = $mysqli->prepare("
-    SELECT AVG(qa.answer_score) as avg_score, COUNT(DISTINCT et.id) as total
+    SELECT AVG(qa.answer_score) as avg_score, COUNT(DISTINCT et.id) as total,
+           SUM(qa.answer_score) AS sum_score, COUNT(qa.answer_score) AS cnt_score
     FROM evaluation_tracker et
     JOIN questionnaire_answers qa ON qa.tracker_id = et.id
     WHERE et.target_user_id = ?
@@ -210,12 +230,16 @@ if ($res) {
     $row      = $res->fetch_assoc();
     $my_avg   = $row['avg_score'] !== null ? round($row['avg_score'], 2) : null;
     $my_total = $row['total'] ?? 0;
+    $live_sum   = (float)($row['sum_score'] ?? 0);
+    $live_cnt   = (int)($row['cnt_score'] ?? 0);
+    $live_total = (int)($row['total'] ?? 0);
 }
 $res_stmt->close();
 
 $cat_stmt = $mysqli->prepare("
     SELECT COALESCE(uq.category, eq.category, 'General') AS category,
-           AVG(qa.answer_score) AS avg_cat
+           AVG(qa.answer_score) AS avg_cat,
+           SUM(qa.answer_score) AS sum_cat, COUNT(qa.answer_score) AS cnt_cat
     FROM questionnaire_answers qa
     JOIN evaluation_tracker et ON et.id = qa.tracker_id
     LEFT JOIN user_questions uq
@@ -232,6 +256,12 @@ $cat_stmt->execute();
 $cat_res = $cat_stmt->get_result();
 if ($cat_res) $my_scores = $cat_res->fetch_all(MYSQLI_ASSOC);
 $cat_stmt->close();
+
+// Add feedback that was archived by the EA, so received evaluations never disappear.
+$kept_combined = kept_feedback_combine($live_sum, $live_cnt, $live_total, $my_scores, kept_feedback_aggregate($mysqli, (int)$user_id));
+$my_avg    = $kept_combined['avg'];
+$my_total  = $kept_combined['total'];
+$my_scores = $kept_combined['scores'];
 
 // ── PEER EVALUATION GROUPING (canonical, matches admin/questionnaire.php) ──
 // Faculty/Staff grouping here is NOT derived from designation text. It uses
@@ -257,21 +287,44 @@ function isNonTeachingStaff(mysqli $mysqli, int $user_id): bool {
     return (bool)($row['is_non_teaching'] ?? false);
 }
 
-// Resolves a peer-eval bucket for a user row ('teacher', 'staff', or null
-// if the account belongs to neither). A Staff account with an active
-// year-level assignment (i.e. NOT isNonTeachingStaff — the exact same
-// Manage Registrations logic used above) is Teaching Staff, and Teaching
-// Staff are evaluated as part of the Faculty ('teacher') group, not Staff.
-// Only a Staff account with no active year-level/teaching assignment
-// (Non-Teaching Staff) resolves to 'staff'. Actual Faculty accounts are
-// still identified the same way they always were, via
-// ec_has_teacher_function(), so no valid Faculty record is affected.
+// Resolves the Peer-to-Peer roster independently from a year-level row alone.
+// College assignment determines which College teachers are in scope, but it
+// must not turn a non-teaching Staff account (e.g. a facilities/custodial role)
+// into a Faculty peer merely because a mistaken College level was attached.
+// Staff-role users qualify as Teaching Staff only with an explicit teaching
+// identity (sector Teacher, secondary role Teacher/Faculty, or a teaching_assignments row).
+function peer_has_explicit_teaching_identity(mysqli $mysqli, array $u): bool {
+    $sector = strtolower(trim((string)($u['sector'] ?? '')));
+    $secondary = strtolower(trim((string)($u['secondary_role'] ?? '')));
+    if ($sector === 'teacher' || in_array($secondary, ['teacher','faculty'], true)) return true;
+    $uid = (int)($u['id'] ?? 0);
+    if ($uid <= 0) return false;
+    $stmt = $mysqli->prepare('SELECT 1 FROM teaching_assignments WHERE user_id=? LIMIT 1');
+    if (!$stmt) return false;
+    $stmt->bind_param('i', $uid);
+    $stmt->execute();
+    $found = (bool)$stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return $found;
+}
 function resolve_peer_group(mysqli $mysqli, array $u): ?string {
-    if (ec_has_teacher_function($u)) return 'teacher';
-    if (ec_has_staff_function($u)) {
-        return isNonTeachingStaff($mysqli, (int)$u['id']) ? 'staff' : 'teacher';
-    }
+    $role = strtolower(trim((string)($u['role'] ?? '')));
+    if (in_array($role, ['teacher','faculty'], true)) return 'teacher';
+    if ($role === 'staff') return peer_has_explicit_teaching_identity($mysqli, $u) ? 'teacher' : 'staff';
     return null;
+}
+
+// Match the Dean report's canonical College assignment rule exactly.
+function faculty_user_has_college_peer_level(mysqli $mysqli, int $uid): bool {
+    $stmt = $mysqli->prepare("SELECT 1 FROM user_year_levels
+        WHERE user_id=? AND year_level IN ('1st Year College','2nd Year College','3rd Year College','4th Year College')
+        LIMIT 1");
+    if (!$stmt) return false;
+    $stmt->bind_param('i', $uid);
+    $stmt->execute();
+    $found = (bool) $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return $found;
 }
 
 // Human-readable role label for a Peer/Faculty evaluation target card.
@@ -337,7 +390,11 @@ $done_school_heads = [];
 $peer_group       = null; // 'teacher' | 'staff' | 'school_head' | null
 
 if ($page === 'peer') {
-    $pr2 = $mysqli->prepare("SELECT id, full_name, designation, photo, role, secondary_role FROM users WHERE role IN ('teacher','staff','faculty') AND is_active=1 AND account_status='approved' AND id != ? ORDER BY full_name ASC");
+    $pr2 = $mysqli->prepare("SELECT u.id, u.full_name, u.designation, u.photo, u.role, u.sector, u.secondary_role,
+            EXISTS(SELECT 1 FROM user_year_levels uyl WHERE uyl.user_id=u.id
+                AND uyl.year_level IN ('1st Year College','2nd Year College','3rd Year College','4th Year College')) AS has_college_peer_level
+        FROM users u WHERE u.role IN ('teacher','staff','faculty')
+          AND u.is_active=1 AND u.account_status='approved' AND u.id != ? ORDER BY u.full_name ASC");
     $pr2->bind_param("i", $user_id);
     $pr2->execute();
     $pr2res = $pr2->get_result();
@@ -381,11 +438,24 @@ if ($page === 'peer') {
     $principal_targets = array_values(array_filter($school_heads, fn($t) => strtolower($t['role'] ?? '') === 'principal'));
     $dean_targets       = array_values(array_filter($school_heads, fn($t) => strtolower($t['role'] ?? '') === 'dean'));
 
-    if ($period) {
-        $period_id_int = (int)$period['id'];
+    $requestedPeerGroup = $_GET['group'] ?? '';
+    $done_college_peers = [];
+    if ($college_peer_period) {
+        $collegeDoneStmt = $mysqli->prepare("SELECT target_user_id FROM evaluation_tracker WHERE evaluator_id=? AND period_id=? AND eval_type='faculty_peer'");
+        $collegeDonePeriodId = (int)$college_peer_period['id'];
+        $collegeDoneStmt->bind_param('ii', $user_id, $collegeDonePeriodId);
+        $collegeDoneStmt->execute();
+        $collegeDoneRes = $collegeDoneStmt->get_result();
+        if ($collegeDoneRes) while ($r = $collegeDoneRes->fetch_assoc()) $done_college_peers[] = (int)$r['target_user_id'];
+        $collegeDoneStmt->close();
+    }
+    if ($period || ($requestedPeerGroup === 'teacher' && $college_peer_period)) {
+        $period_id_int = (int)($period['id'] ?? 0);
+        $donePeriodId = ($requestedPeerGroup === 'teacher' && $college_peer_period)
+            ? (int)$college_peer_period['id'] : $period_id_int;
 
         $dpStmt = $mysqli->prepare("SELECT target_user_id FROM evaluation_tracker WHERE evaluator_id=? AND period_id=? AND eval_type='faculty_peer'");
-        $dpStmt->bind_param("ii", $user_id, $period_id_int);
+        $dpStmt->bind_param("ii", $user_id, $donePeriodId);
         $dpStmt->execute();
         $dp = $dpStmt->get_result();
         if ($dp) while ($r = $dp->fetch_assoc()) $done_peers[] = (int)$r['target_user_id'];
@@ -412,7 +482,12 @@ if ($page === 'peer') {
             // Peer-to-Peer tab uses (see resolve_peer_group() above), not
             // designation text. Keeps both portals' Peer-to-Peer rosters
             // in agreement.
-            $peers = array_values(array_filter($peers_all, function ($p) use ($mysqli, $peer_group) {
+            $peers = array_values(array_filter($peers_all, function ($p) use ($mysqli, $peer_group, $can_evaluate_college_peer) {
+                if ($peer_group === 'teacher') {
+                    return $can_evaluate_college_peer
+                        && (int)($p['has_college_peer_level'] ?? 0) === 1
+                        && resolve_peer_group($mysqli, $p) === 'teacher';
+                }
                 return resolve_peer_group($mysqli, $p) === $peer_group;
             }));
         }
@@ -456,7 +531,13 @@ if ($page === 'peer_eval' && isset($_GET['tid'])) {
             }
         } else {
             $actual_group = resolve_peer_group($mysqli, $peer_target);
-            if (!in_array($peer_target['role'] ?? '', ['teacher', 'staff'], true) || $actual_group !== $req_group) {
+            if ($req_group === 'teacher' && !$can_evaluate_college_peer) {
+                $peer_group_error = "Faculty Peer-to-Peer Evaluation is only available to personnel assigned to a College year level.";
+                $peer_target = null;
+            } elseif ($req_group === 'teacher' && !faculty_user_has_college_peer_level($mysqli, (int)$peer_target['id'])) {
+                $peer_group_error = "Only faculty or teaching staff assigned to a College year level can be evaluated in this group.";
+                $peer_target = null;
+            } elseif (!in_array($peer_target['role'] ?? '', ['teacher', 'staff', 'faculty'], true) || $actual_group !== $req_group) {
                 $peer_group_error = "The selected user does not belong to the selected evaluation group.";
                 $peer_target = null;
             } else {
@@ -674,13 +755,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_peer'])) {
         header("Location: faculty_dashboard.php?page=peer&group=" . urlencode($submitted_group)); exit;
     }
 
-    // Never trust the period id carried by the browser. Use the currently
-    // active period after the live schedule check.
+    // Never trust a browser-supplied period. College peer rows must use an HE
+    // semester/summer period so the Dean Higher Education report can include them.
     $currentPeriod = null;
-    $currentPeriodResult = $mysqli->query("SELECT * FROM evaluation_periods WHERE is_active=1 LIMIT 1");
+    if ($submitted_group === 'teacher') {
+        $currentPeriodResult = $mysqli->query("SELECT * FROM evaluation_periods
+            WHERE semester IN ('1st Semester','2nd Semester','Summer')
+            ORDER BY is_active DESC,
+        (school_year = (SELECT setting_value FROM system_settings WHERE setting_key='acad_year' LIMIT 1)) DESC,
+        id DESC LIMIT 1");
+    } else {
+        $currentPeriodResult = $mysqli->query("SELECT * FROM evaluation_periods WHERE is_active=1 LIMIT 1");
+    }
     if ($currentPeriodResult) $currentPeriod = $currentPeriodResult->fetch_assoc();
     if (!$currentPeriod) {
-        $_SESSION['toast_error'] = "No evaluation period is currently open.";
+        $_SESSION['toast_error'] = $submitted_group === 'teacher'
+            ? "No Higher Education semester period is configured for College Peer-to-Peer Evaluation."
+            : "No evaluation period is currently open.";
         header("Location: faculty_dashboard.php?page=peer&group=" . urlencode($submitted_group)); exit;
     }
     $pid = (int)$currentPeriod['id'];
@@ -734,13 +825,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_peer'])) {
             header("Location: faculty_dashboard.php?page=peer&group=" . urlencode($submitted_group)); exit;
         }
     } else {
+        if ($submitted_group === 'teacher' && !$can_evaluate_college_peer) {
+            $_SESSION['toast_error'] = "Faculty Peer-to-Peer Evaluation is only available to personnel assigned to a College year level.";
+            header("Location: faculty_dashboard.php?page=peer&group=teacher"); exit;
+        }
+        if ($submitted_group === 'teacher' && !faculty_user_has_college_peer_level($mysqli, $tid)) {
+            $_SESSION['toast_error'] = "Only faculty or teaching staff assigned to a College year level can be evaluated in this group.";
+            header("Location: faculty_dashboard.php?page=peer&group=teacher"); exit;
+        }
         [$eligible, $eligMsg] = canPeerEvaluate($mysqli, $user_id, $tid);
         if (!$eligible) {
             $_SESSION['toast_error'] = $eligMsg;
             header("Location: faculty_dashboard.php?page=peer&group=" . urlencode($submitted_group)); exit;
         }
 
-        $tchk = $mysqli->prepare("SELECT id, designation, role, secondary_role FROM users WHERE id=? AND role IN ('teacher','staff','faculty') AND is_active=1 LIMIT 1");
+        $tchk = $mysqli->prepare("SELECT id, designation, role, sector, secondary_role FROM users WHERE id=? AND role IN ('teacher','staff','faculty') AND is_active=1 LIMIT 1");
         $tchk->bind_param("i", $tid);
         $tchk->execute();
         $tchkRow = $tchk->get_result()->fetch_assoc();
@@ -934,6 +1033,7 @@ $rsStmt->execute();
 $rs = $rsStmt->get_result();
 if ($rs) $recent_subs = $rs->fetch_all(MYSQLI_ASSOC);
 $rsStmt->close();
+$recent_subs = kept_feedback_merge_lists($recent_subs ?? [], kept_feedback_rows($mysqli, (int)$user_id), 5);
 
 // ── MARK NOTIFICATIONS READ ──────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_notifications_read'])) {
@@ -1116,6 +1216,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .score-chip .sc-lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:8px;}
 .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:22px;}
 .stat-card{background:var(--mid);border:1px solid var(--border);border-radius:var(--radius);padding:20px 22px;}
+.stat-card-link{display:block;color:inherit;text-decoration:none;cursor:pointer;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease;}
+.stat-card-link:hover{transform:translateY(-2px);border-color:var(--teal-hover);box-shadow:0 8px 18px rgba(20,42,67,.10);}
+.stat-card-link:focus-visible{outline:3px solid var(--teal-hover);outline-offset:3px;}
+body.light-theme .stat-card-link:hover{border-color:#2563EB !important;box-shadow:0 8px 18px rgba(20,42,67,.10) !important;}
 .stat-card-lbl{font-size:11px;text-transform:uppercase;letter-spacing:.9px;color:var(--muted);margin-bottom:12px;font-weight:700;}
 .stat-card-val{font-size:28px;font-weight:700;color:#fff;line-height:1;}
 .stat-card-val.teal{color:var(--teal-hover);}
@@ -1162,6 +1266,90 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 }
 .btn-view-all-evals:hover{background:rgba(43,108,176,.2);}
 
+
+/* Peer Evaluation questionnaire: modal structure, retaining the faculty theme variables. */
+.peer-eval-overlay{position:fixed;inset:0;z-index:280;display:flex;align-items:flex-start;justify-content:center;padding:28px 16px;overflow-y:auto;background:rgba(8,20,39,.58);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);}
+.peer-eval-dialog{width:100%;max-width:960px;height:auto;max-height:calc(100vh - 56px);min-height:0;display:flex;flex-direction:column;overflow:hidden;background:var(--mid);border:1px solid var(--border);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.35);}
+.peer-eval-dialog-header{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:18px 24px;border-bottom:1px solid var(--border);background:var(--mid);flex:0 0 auto;}
+.peer-eval-target{display:flex;align-items:center;gap:14px;min-width:0;}
+.peer-eval-avatar{width:56px;height:56px;border-radius:50%;object-fit:cover;border:2px solid var(--teal);box-shadow:0 0 0 3px rgba(37,99,235,.10);flex-shrink:0;}
+.peer-eval-avatar-placeholder{display:flex;align-items:center;justify-content:center;background:var(--inner);color:var(--muted);font-size:20px;}
+.peer-eval-target-copy{min-width:0;}
+.peer-eval-target-copy h2{margin:0;color:var(--light);font-family:'Rajdhani',sans-serif;font-size:22px;font-weight:700;line-height:1.15;overflow-wrap:anywhere;}
+.peer-eval-target-copy p{margin:2px 0 0;color:var(--muted);font-size:13px;}
+.peer-eval-close{width:38px;height:38px;display:flex;align-items:center;justify-content:center;flex-shrink:0;border-radius:9px;color:var(--muted);font-size:22px;text-decoration:none;transition:background .15s,color .15s;}
+.peer-eval-close:hover{background:var(--inner);color:var(--light);}
+.peer-eval-form{display:flex;flex:1 1 auto;min-height:0;flex-direction:column;}
+.peer-eval-scroll{padding:20px 24px;overflow-y:auto;overscroll-behavior:contain;min-height:0;flex:1 1 auto;}
+.peer-eval-progress-banner{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;padding:11px 16px;border:1px solid rgba(37,99,235,.2);border-radius:10px;background:rgba(37,99,235,.07);color:var(--light);font-size:13px;font-weight:600;}
+.peer-eval-progress-banner>span{display:flex;align-items:center;gap:9px;}
+.peer-eval-progress-banner>span i{color:var(--teal-hover);}
+.peer-eval-progress-banner strong{color:var(--teal-hover);white-space:nowrap;font-size:13px;}
+.peer-eval-scale{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:10px 14px;margin-bottom:16px;border:1px solid var(--border);border-radius:10px;background:var(--inner);}
+.peer-eval-scale-item{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12.5px;}
+.peer-eval-scale-item span{width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;background:var(--teal);color:#fff;font-size:12px;font-weight:700;}
+.peer-eval-scale-item em{font-style:normal;}
+.peer-eval-question-section{margin-bottom:18px;}
+.peer-eval-question-section .q-category-header{margin:18px 0 8px;padding:0 0 2px;border:0;font-size:12px;letter-spacing:.8px;}
+.peer-eval-dialog .eval-form-wrap{margin:0;border-radius:14px;}
+.peer-eval-dialog .eval-form-table th{padding:11px 8px;background:var(--inner);font-size:11px;}
+.peer-eval-dialog .eval-form-table th:first-child{padding-left:16px;}
+.peer-eval-dialog .eval-form-table td{padding:12px 8px;}
+.peer-eval-dialog .eval-form-table td:first-child{padding-left:16px;}
+.peer-eval-dialog .eval-form-qtext{font-size:14px;font-weight:500;}
+.peer-eval-dialog .eval-form-qno{font-size:14px;}
+.peer-eval-dialog .eval-form-rating label{width:36px;height:32px;border-radius:7px;font-size:13px;}
+.peer-eval-dialog .eval-form-rating input:focus-visible+label{outline:3px solid rgba(37,99,235,.3);outline-offset:2px;}
+.peer-eval-dialog .eval-question-row.eval-unanswered td{background:rgba(239,68,68,.055);}
+.peer-eval-dialog .comment-box-new{margin:8px 0 0;}
+.peer-eval-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 24px;border-top:1px solid var(--border);background:var(--mid);flex:0 0 auto;}
+.peer-eval-footer .btn-cancel-new{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;white-space:nowrap;}
+.peer-eval-footer .btn-submit-new{flex:1;justify-content:center;min-height:48px;box-shadow:0 6px 15px rgba(37,99,235,.17);}
+.peer-eval-empty{padding:28px;color:var(--muted);display:flex;gap:10px;align-items:center;}
+.peer-eval-empty i{color:#d97706;}
+body.light-theme .peer-eval-dialog{background:#fff;border-color:#dce5f1;box-shadow:0 24px 80px rgba(15,31,61,.22);}
+body.light-theme .peer-eval-dialog-header,body.light-theme .peer-eval-footer{background:#fff;border-color:#e1e8f2;}
+body.light-theme .peer-eval-target-copy h2{color:#152b45;}
+body.light-theme .peer-eval-target-copy p{color:#71839a;}
+body.light-theme .peer-eval-progress-banner{background:#f2f6ff;border-color:#d7e3ff;}
+body.light-theme .peer-eval-scale{background:#f7f9fc;border-color:#e0e8f3;}
+body.light-theme .peer-eval-scale-item span{background:#2563eb;}
+body.light-theme .peer-eval-dialog .eval-form-table th{background:#f3f7fd;color:#61758f;border-color:#e0e8f3;}
+body.light-theme .peer-eval-dialog .eval-form-table td{border-color:#e9eef6;}
+body.light-theme .peer-eval-dialog .eval-form-qtext{color:#243b53;}
+body.light-theme .peer-eval-dialog .eval-form-rating label{background:#f4f7fc;border-color:#d6e2f2;color:#45617f;}
+body.light-theme .peer-eval-dialog .eval-form-rating label:hover{background:#eaf1ff;border-color:#2563eb;color:#1d4ed8;}
+body.light-theme .peer-eval-dialog .eval-form-rating input:checked+label{background:#2563eb;border-color:#2563eb;color:#fff;}
+body.light-theme .peer-eval-dialog .q-category-header{color:#2563eb;}
+body.light-theme .peer-eval-dialog .comment-box-label,body.light-theme .peer-eval-dialog .comment-box-icon{color:#15803D;}
+body.light-theme .peer-eval-dialog .comment-box-new{background:#fff;border-color:#D9E4EF;border-radius:15px;padding:20px 20px 26px;}
+body.light-theme .peer-eval-dialog .comment-textarea-new{box-sizing:border-box;min-height:113px;width:100%;background:#F8FAFC;color:#172033;border:1px solid #CBD5E1;border-radius:10px;padding:14px 18px;font-size:15px;line-height:1.5;}
+body.light-theme .peer-eval-dialog .comment-textarea-new:focus{outline:none;border-color:#16A34A;box-shadow:0 0 0 3px rgba(22,163,74,.10);}
+body.light-theme .peer-eval-dialog .comment-textarea-new::placeholder{color:#526C86;opacity:1;font-size:15px;font-weight:400;}
+body.light-theme .peer-eval-footer .btn-submit-new{background:#2563eb;}
+body.light-theme .peer-eval-footer .btn-submit-new:hover{background:#1d4ed8;}
+@media(max-width:700px){
+ .peer-eval-overlay{padding:8px;align-items:center;}
+ .peer-eval-dialog{width:100%;height:calc(100vh - 16px);max-height:calc(100vh - 16px);border-radius:16px;}
+ .peer-eval-dialog-header{padding:16px;min-height:0;}
+ .peer-eval-avatar{width:52px;height:52px;}
+ .peer-eval-target-copy h2{font-size:20px;}
+ .peer-eval-target-copy p{font-size:12px;}
+ .peer-eval-scroll{padding:16px 12px 20px;}
+ .peer-eval-progress-banner{align-items:flex-start;flex-direction:column;gap:7px;padding:12px;font-size:12px;}
+ .peer-eval-scale{gap:10px;padding:10px;}
+ .peer-eval-scale-item{gap:5px;font-size:11px;}
+ .peer-eval-scale-item span{width:26px;height:26px;}
+ .peer-eval-dialog .eval-form-table th:not(:first-child){width:36px;}
+ .peer-eval-dialog .eval-form-table th{padding:10px 2px;font-size:10px;}
+ .peer-eval-dialog .eval-form-table td{padding:9px 2px;}
+ .peer-eval-dialog .eval-form-table td:first-child{padding-left:8px;padding-right:5px;}
+ .peer-eval-dialog .eval-form-qtext{font-size:12px;}
+ .peer-eval-dialog .eval-form-rating label{width:29px;height:31px;border-radius:7px;font-size:12px;}
+ .peer-eval-footer{padding:12px;gap:9px;min-height:0;}
+ .peer-eval-footer .btn-cancel-new{padding:10px 14px;}
+ .peer-eval-footer .btn-submit-new{padding:10px 12px;font-size:12px;min-height:44px;}
+}
 .eval-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:300;display:none;align-items:center;justify-content:center;padding:20px;}
 .eval-modal-overlay.open{display:flex;}
 .eval-modal{background:var(--mid);border:1px solid var(--border);border-radius:18px;width:100%;max-width:640px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.6);}
@@ -1221,19 +1409,22 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .eval-form-table td:first-child{text-align:left;padding-left:16px;padding-right:12px}
 .eval-form-qtext{font-size:13px;font-weight:600;line-height:1.5;color:var(--light)}
 .eval-form-qno{color:var(--teal-hover);font-weight:800;margin-right:6px}
-.eval-form-rating{display:flex;justify-content:center}
-.eval-form-rating input{position:absolute;opacity:0;pointer-events:none}
+.eval-form-rating{display:flex;justify-content:center;position:relative}
+/* Keep the visually-hidden radio anchored to its own rating cell. Unanchored
+   absolute inputs can sit at the page origin and make the viewport jump when
+   a label activates/focuses them. */
+.eval-form-rating input{position:absolute;left:0;top:0;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;opacity:0;pointer-events:none}
 .eval-form-rating label{width:38px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:8px;border:1px solid var(--border);background:var(--inner);color:var(--muted);font-size:14px;font-weight:800;cursor:pointer;transition:all .18s ease;font-family:'DM Sans',sans-serif}
 .eval-form-rating label:hover{border-color:var(--teal);color:var(--teal-hover);background:rgba(13,148,136,.1)}
 .eval-form-rating input:checked + label{background:var(--teal);border-color:var(--teal);color:#fff}
 @media(max-width:700px){.eval-form-table th:not(:first-child){width:42px}.eval-form-rating label{width:30px;height:30px;font-size:12px}.eval-form-qtext{font-size:12px}}
-.comment-box-new{background:var(--mid);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:10px;display:flex;gap:14px;align-items:flex-start;}
-.comment-box-icon{color:var(--teal-hover);font-size:17px;margin-top:2px;flex-shrink:0;}
-.comment-box-inner{flex:1;}
-.comment-box-label{font-size:13px;font-weight:700;color:var(--teal-hover);margin-bottom:9px;}
-.comment-textarea-new{width:100%;background:var(--inner);border:1px solid var(--border);border-radius:8px;color:var(--light);padding:11px 13px;font-size:13px;font-family:'DM Sans',sans-serif;resize:vertical;outline:none;transition:border-color .2s;line-height:1.5;min-height:88px;}
+.comment-box-new{background:var(--mid);border:1px solid var(--border);border-radius:15px;padding:20px 20px 26px;margin-bottom:10px;display:block;}
+.comment-box-icon{color:var(--teal-hover);font-size:16px;flex-shrink:0;}
+.comment-box-inner{width:100%;}
+.comment-box-label{display:flex;align-items:center;gap:9px;font-size:15px;font-weight:700;color:var(--teal-hover);margin-bottom:11px;}
+.comment-textarea-new{display:block;box-sizing:border-box;width:100%;background:var(--inner);border:1px solid var(--border);border-radius:10px;color:var(--light);padding:14px 18px;font-size:15px;font-family:'DM Sans',sans-serif;resize:vertical;outline:none;transition:border-color .2s;line-height:1.5;min-height:113px;}
 .comment-textarea-new:focus{border-color:var(--teal);}
-.comment-textarea-new::placeholder{color:rgba(160,179,198,.38);}
+.comment-textarea-new::placeholder{color:var(--muted);opacity:1;font-size:15px;font-weight:400;}
 .submit-row-new{background:var(--mid);border:1px solid var(--border);border-radius:12px;padding:15px 20px;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;}
 .btn-cancel-new{padding:10px 24px;background:var(--inner);border:1px solid var(--border);border-radius:var(--radius);color:var(--light);font-size:14px;font-weight:600;cursor:pointer;transition:background .2s;font-family:'DM Sans',sans-serif;}
 .btn-cancel-new:hover{background:rgba(255,255,255,.06);}
@@ -1290,6 +1481,54 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .eval-group-count{font-size:12.5px;color:var(--muted);}
 .peer-select-hint{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;margin-top:14px;}
 .peer-select-hint.warn{color:#fcd34d;}
+
+
+/* Peer Evaluation refresh: category progress + compact roster, retaining the faculty blue theme. */
+.peer-page-heading{font-family:'Rajdhani',sans-serif;font-size:29px;font-weight:800;color:var(--light);margin:0 0 12px;}
+.peer-category-grid .eval-group-card{position:relative;min-height:170px;padding:22px 18px 18px;border-bottom:3px solid #2563EB;background:var(--inner);}
+.peer-category-grid .eval-group-card:hover{border-color:#2563EB;}
+.peer-category-grid .eval-group-card.is-selected{border-color:#2563EB;box-shadow:0 5px 18px rgba(37,99,235,.13);background:#F8FBFF;}
+.peer-inline-categories{margin-bottom:22px;}
+.peer-inline-categories .peer-page-heading{margin-bottom:14px;}
+.peer-category-grid .eval-group-icon.blue{background:#E0F2FE;color:#0284C7;}
+.peer-category-grid .eval-group-icon.green{background:#D1FAE5;color:#059669;}
+.peer-category-grid .eval-group-icon.purple{background:#EDE9FE;color:#7C3AED;}
+.peer-category-grid .eval-group-icon.gold{background:#DBEAFE;color:#2563EB;}
+.peer-progress-pill{display:inline-flex;align-items:center;gap:5px;margin-top:10px;padding:4px 10px;border-radius:20px;background:#E0F2FE;color:#2563EB;font-size:11px;font-weight:800;}
+.peer-target-section{padding:0!important;overflow:hidden;}
+.peer-list-heading{display:flex;align-items:center;gap:10px;padding:13px 20px;border-bottom:1px solid var(--border);color:var(--light);font-size:16px;}
+.peer-list-heading-icon{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;border-radius:9px;background:#DBEAFE;color:#2563EB;}
+.peer-target-section>p{padding:0 20px;}
+.peer-target-section .empty-state{padding:35px 20px;}
+.peer-list-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:14px 20px;}
+.peer-list-row{min-width:0;display:flex;align-items:center;gap:12px;padding:11px 13px;background:var(--inner);border:1px solid var(--border);border-radius:13px;}
+.peer-list-row.done{opacity:.8;}
+.peer-list-photo{width:40px;height:40px;border-radius:50%;object-fit:cover;flex:0 0 40px;border:1px solid #CBD5E1;}
+.peer-list-photo-ph{display:flex;align-items:center;justify-content:center;background:#E8EEF7;color:#64748B;font-size:16px;}
+.peer-list-person{flex:1;min-width:0;}
+.peer-list-person .peer-name{display:block;min-height:0;text-align:left;color:var(--light);font-size:13px;line-height:1.35;}
+.peer-list-person .peer-desig{display:block;text-align:left;color:var(--muted);font-size:11px;line-height:1.4;margin-top:2px;overflow-wrap:anywhere;}
+.peer-status-pill{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:20px;margin-top:5px;font-size:10px;font-weight:800;}
+.peer-status-pill.is-pending{background:#FEF3C7;color:#B45309;}
+.peer-status-pill.is-done{background:#D1FAE5;color:#047857;}
+.peer-list-row .btn-eval-peer{width:auto;min-width:94px;margin:0;padding:8px 12px;white-space:nowrap;background:#2563EB;border-radius:7px;}
+.peer-list-row .btn-eval-peer:hover{background:#1D4ED8;}
+.peer-completed-label{font-size:11px;font-weight:800;color:#059669;white-space:nowrap;}
+.peer-list-footer{display:flex;align-items:center;gap:15px;flex-wrap:wrap;padding:12px 20px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);}
+.peer-list-footer strong{color:#2563EB;}
+.peer-period-label{margin-left:auto;}
+body.light-theme .peer-page-heading{color:#13263F!important;}
+body.light-theme .peer-category-grid .eval-group-card{background:#FFF!important;border-color:#D8E3F0!important;border-bottom-color:#2563EB!important;}
+body.light-theme .peer-category-grid .eval-group-card.is-selected{background:#F2F7FF!important;border-color:#2563EB!important;}
+body.light-theme .peer-category-grid .eval-group-title{color:#172B45!important;}
+body.light-theme .peer-category-grid .eval-group-count{color:#71839A!important;}
+body.light-theme .peer-target-section{background:#FFF!important;border-color:#DCE6F1!important;}
+body.light-theme .peer-list-heading{color:#142A43!important;border-bottom-color:#DCE6F1!important;}
+body.light-theme .peer-list-row{background:#F4F7FB!important;border-color:#D8E4F2!important;}
+body.light-theme .peer-list-person .peer-name{color:#13263F!important;}
+body.light-theme .peer-list-person .peer-desig{color:#60758D!important;}
+body.light-theme .peer-list-footer{border-top-color:#DCE6F1!important;}
+@media(max-width:760px){.peer-list-grid{grid-template-columns:1fr;padding:12px;}.peer-list-row{gap:9px;padding:10px;}.peer-list-row .btn-eval-peer{min-width:0;padding:8px;font-size:11px;}.peer-period-label{margin-left:0;}}
 
 /* ── NOTIFICATION BELL ── */
 .notif-wrap{position:relative;display:flex;align-items:center;}
@@ -1911,6 +2150,251 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
 @media(max-width:900px) { .sidebar { width:248px !important; transform:translateX(-100%); transition:transform .22s ease; } .sidebar.open { transform:translateX(0); box-shadow:12px 0 34px rgba(0,0,0,.45); } .top-nav { left:0 !important; } .main { margin-left:0 !important; } }
 @media(max-width:520px) { .portal-sidebar-nav { padding-left:9px !important; padding-right:9px !important; } }
 
+
+/* Compact dashboard layout: keep summary information visible without forced blank space. */
+body.light-theme .main {
+    padding: 14px 24px 16px !important;
+}
+body.light-theme .dashboard-shell {
+    padding: 16px 24px 18px !important;
+    min-height: 0 !important;
+}
+body.light-theme .dashboard-intro {
+    margin: 0 2px 12px !important;
+}
+body.light-theme .dashboard-intro h1 {
+    font-size: 26px !important;
+}
+body.light-theme .dashboard-intro p {
+    margin-top: 5px !important;
+    line-height: 1.35;
+}
+body.light-theme .dashboard-intro .status-pill {
+    margin-top: 9px !important;
+    padding: 5px 10px !important;
+}
+body.light-theme .evaluation-schedule-card {
+    padding: 14px 22px !important;
+    margin-bottom: 14px !important;
+}
+body.light-theme .schedule-summary-grid {
+    gap: 16px;
+}
+body.light-theme .schedule-label {
+    margin-bottom: 5px;
+}
+body.light-theme .welcome-bar {
+    padding: 15px 22px !important;
+    margin-bottom: 14px !important;
+    gap: 12px;
+}
+body.light-theme .score-chip {
+    padding: 10px 20px !important;
+}
+body.light-theme .score-chip .sc-val,
+body.light-theme .score-chip .big {
+    font-size: 34px !important;
+}
+body.light-theme .score-chip .sc-lbl,
+body.light-theme .score-chip .lbl {
+    margin-top: 5px !important;
+}
+body.light-theme .stats-grid {
+    gap: 12px !important;
+    margin-bottom: 0 !important;
+}
+body.light-theme .stat-card,
+body.light-theme .stat-box {
+    padding: 13px 16px 15px !important;
+}
+body.light-theme .stat-card-icon,
+body.light-theme .stat-box-icon {
+    width: 30px !important;
+    height: 30px !important;
+    margin-bottom: 8px !important;
+}
+body.light-theme .stat-card-lbl,
+body.light-theme .stat-box-lbl {
+    margin-bottom: 8px !important;
+}
+body.light-theme .stat-card-val,
+body.light-theme .stat-box-val {
+    font-size: 26px !important;
+}
+
+@media (max-width: 900px) {
+    body.light-theme .main {
+        padding: 14px 14px 18px !important;
+    }
+    body.light-theme .dashboard-shell {
+        padding: 16px 14px 18px !important;
+        border-radius: 16px;
+    }
+    body.light-theme .evaluation-schedule-card {
+        padding: 13px 16px !important;
+    }
+    body.light-theme .welcome-bar {
+        padding: 14px 16px !important;
+    }
+}
+
+/* Expanded dashboard overview: use the available viewport while adding helpful shortcuts. */
+body.light-theme .dashboard-shell {
+    min-height: calc(100vh - 110px) !important;
+    display: flex;
+    flex-direction: column;
+}
+body.light-theme .dashboard-quick-access {
+    margin-top: auto;
+    padding-top: 22px;
+}
+body.light-theme .quick-access-heading {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 0 2px 12px;
+}
+body.light-theme .quick-access-kicker {
+    display: block;
+    margin-bottom: 3px;
+    color: #2563EB;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1.15px;
+}
+body.light-theme .quick-access-heading h2 {
+    color: #10243E;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 19px;
+    line-height: 1.15;
+    font-weight: 800;
+}
+body.light-theme .quick-access-caption {
+    color: #6B7D91;
+    font-size: 11px;
+    padding-bottom: 2px;
+}
+body.light-theme .quick-access-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+body.light-theme .quick-access-card {
+    min-width: 0;
+    min-height: 92px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 15px 16px;
+    text-decoration: none;
+    border: 1px solid #DEE7F2;
+    border-radius: 14px;
+    background: #FFFFFF;
+    box-shadow: 0 4px 14px rgba(19, 38, 63, .035);
+    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+body.light-theme .quick-access-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(19, 38, 63, .08);
+    border-color: #BFD2F8;
+}
+body.light-theme .quick-access-icon {
+    width: 42px;
+    height: 42px;
+    flex: 0 0 42px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    font-size: 17px;
+}
+body.light-theme .quick-blue .quick-access-icon { background: #EAF1FF; color: #2563EB; }
+body.light-theme .quick-green .quick-access-icon { background: #E7F9EF; color: #0E9F6E; }
+body.light-theme .quick-amber .quick-access-icon { background: #FFF4DB; color: #D97706; }
+body.light-theme .quick-access-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+body.light-theme .quick-access-copy strong { color: #10243E; font-size: 12.5px; line-height: 1.25; font-weight: 800; }
+body.light-theme .quick-access-copy small { color: #64788E; font-size: 11px; line-height: 1.4; }
+body.light-theme .quick-access-arrow { color: #8AA0B8; font-size: 12px; flex: 0 0 auto; transition: transform .18s ease, color .18s ease; }
+body.light-theme .quick-access-card:hover .quick-access-arrow { color: #2563EB; transform: translateX(3px); }
+@media (max-width: 1100px) {
+    body.light-theme .dashboard-shell { min-height: calc(100vh - 100px) !important; }
+    body.light-theme .quick-access-grid { grid-template-columns: 1fr; }
+    body.light-theme .quick-access-card { min-height: 76px; }
+}
+@media (max-width: 900px) {
+    body.light-theme .dashboard-shell { min-height: 0 !important; }
+    body.light-theme .dashboard-quick-access { margin-top: 22px; padding-top: 0; }
+    body.light-theme .quick-access-heading { align-items: flex-start; flex-direction: column; gap: 4px; }
+}
+
+
+/* ===== Role & Designation — same visual language as the Dashboard ===== */
+.rd-id{display:flex;align-items:center;gap:18px;flex-wrap:wrap;min-width:0;}
+.rd-avatar-wrap{position:relative;flex-shrink:0;}
+.rd-avatar{width:76px;height:76px;border-radius:50%;object-fit:cover;display:flex;align-items:center;justify-content:center;border:3px solid var(--teal);background:var(--inner);color:var(--teal-hover);font-size:28px;}
+.rd-cam{position:absolute;bottom:-2px;right:-2px;width:28px;height:28px;border-radius:50%;background:var(--teal);border:2px solid var(--mid);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px;padding:0;}
+.rd-photo-link{margin-top:6px;background:none;border:none;color:var(--teal-hover);font-size:12px;font-weight:700;cursor:pointer;padding:0;font-family:inherit;}
+.rd-photo-link:hover{text-decoration:underline;}
+
+.rd-levels{flex:0 1 340px;min-width:230px;max-width:340px;align-self:stretch;background:rgba(13,148,136,.13);border:1px solid rgba(13,148,136,.25);border-radius:12px;padding:14px 20px;display:flex;flex-direction:column;justify-content:center;gap:9px;transition:box-shadow .3s ease,border-color .3s ease;}
+.rd-levels.flash{border-color:var(--teal);box-shadow:0 0 0 3px rgba(13,148,136,.25);}
+.rd-levels-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);display:flex;align-items:center;gap:7px;}
+.rd-levels-pills{display:flex;flex-wrap:wrap;gap:6px;}
+.rd-level-pill{background:rgba(13,148,136,.15);color:#5eead4;border:1px solid rgba(13,148,136,.35);font-size:12px;font-weight:700;padding:4px 12px;border-radius:20px;}
+.rd-levels-empty{font-size:11.5px;color:#fcd34d;display:flex;align-items:center;gap:6px;line-height:1.5;}
+.rd-levels-hint{font-size:11px;color:var(--muted);}
+
+.rd-card{position:relative;overflow:hidden;background:var(--mid);border:1px solid var(--border);border-radius:var(--radius);padding:22px 24px 24px;}
+.rd-card::before{content:'';position:absolute;left:0;right:0;top:0;height:3px;background:linear-gradient(90deg,var(--teal),var(--teal-hover));}
+.rd-card-head{display:flex;align-items:flex-start;gap:14px;margin-bottom:20px;}
+.rd-card-icon{width:42px;height:42px;flex:0 0 42px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;font-size:17px;background:rgba(13,148,136,.14);color:var(--teal-hover);}
+.rd-card-head h2{margin:0 0 4px;font-family:'Rajdhani',sans-serif;font-size:21px;font-weight:800;color:#fff;line-height:1.15;}
+.rd-card-head p{margin:0;font-size:13px;color:var(--muted);line-height:1.5;}
+.rd-label{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1.1px;color:var(--muted);display:flex;align-items:center;gap:7px;margin-bottom:10px;}
+.rd-label i{color:var(--teal-hover);}
+.rd-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:22px;}
+.rd-chip{padding:9px 16px;border-radius:10px;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;border:1px solid var(--border);background:var(--inner);color:var(--muted);transition:all .18s ease;display:inline-flex;align-items:center;gap:6px;}
+.rd-chip:hover{border-color:var(--teal);color:var(--teal-hover);background:rgba(13,148,136,.1);transform:translateY(-1px);}
+.rd-chip.is-current{border-color:var(--teal);background:rgba(13,148,136,.18);color:var(--teal-hover);}
+.rd-chip.is-current::after{content:'✓';font-size:12px;}
+.rd-input-row{display:flex;gap:10px;flex-wrap:wrap;}
+.rd-input{flex:1;min-width:220px;background:var(--inner);border:1px solid var(--border);color:var(--light);padding:13px 16px;border-radius:12px;font-size:14px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .2s,box-shadow .2s;}
+.rd-input:focus{border-color:var(--teal);box-shadow:0 0 0 3px rgba(13,148,136,.2);}
+.rd-input::placeholder{color:var(--muted);}
+.rd-save{background:var(--teal);color:#fff;border:none;padding:13px 26px;border-radius:12px;font-size:14px;font-weight:700;font-family:'DM Sans',sans-serif;cursor:pointer;display:inline-flex;align-items:center;gap:8px;white-space:nowrap;transition:all .18s ease;}
+.rd-save:hover{background:var(--teal-hover);transform:translateY(-1px);}
+.rd-note{margin-top:16px;display:flex;gap:10px;align-items:flex-start;padding:12px 16px;border-radius:12px;font-size:13px;color:var(--muted);background:rgba(43,108,176,.07);border:1px solid rgba(43,108,176,.18);}
+.rd-note i{color:#60a5fa;margin-top:2px;flex-shrink:0;}
+
+/* Light theme: identical palette to the Dashboard cards */
+body.light-theme .rd-shell{min-height:0 !important;}
+body.light-theme .rd-avatar{border-color:#2563EB;color:#2563EB;background:#EEF4FF;box-shadow:0 4px 14px rgba(37,99,235,.18);}
+body.light-theme .rd-cam{background:#2563EB;border-color:#fff;}
+body.light-theme .rd-photo-link{color:#2563EB;}
+body.light-theme .rd-levels{background:#F0F5FF;border:1px solid #CADBFF;border-radius:15px;}
+body.light-theme .rd-levels.flash{border-color:#2563EB;box-shadow:0 0 0 3px rgba(37,99,235,.14);}
+body.light-theme .rd-levels-label{color:#66798D;}
+body.light-theme .rd-level-pill{background:#E9F1FF;color:#2563EB;border-color:#C5D8FF;}
+body.light-theme .rd-levels-empty{color:#B45309;}
+body.light-theme .rd-levels-hint{color:#66798D;}
+body.light-theme .rd-card{background:#FFFFFF;border:1px solid #E0E7EF;border-radius:15px;box-shadow:0 6px 18px rgba(20,42,67,.045);}
+body.light-theme .rd-card::before{background:#2563EB;}
+body.light-theme .rd-card-icon{background:#E6EEFF;color:#2563EB;}
+body.light-theme .rd-card-head h2{color:#10243E;}
+body.light-theme .rd-card-head p{color:#5E7388;}
+body.light-theme .rd-label{color:#5E7388;}
+body.light-theme .rd-label i{color:#2563EB;}
+body.light-theme .rd-chip{background:#F7F9FC;border-color:#DDE5EE;color:#51677F;}
+body.light-theme .rd-chip:hover{background:#EEF4FF;border-color:#AFC8FF;color:#2563EB;}
+body.light-theme .rd-chip.is-current{background:#EEF4FF;border-color:#AFC8FF;color:#2563EB;}
+body.light-theme .rd-input{background:#F8FAFD;border-color:#DDE6EF;color:#13263F;}
+body.light-theme .rd-input:focus{border-color:#2563EB;box-shadow:0 0 0 3px rgba(37,99,235,.14);}
+body.light-theme .rd-save{background:#2563EB;box-shadow:0 6px 14px rgba(37,99,235,.22);}
+body.light-theme .rd-save:hover{background:#1D4ED8;}
+body.light-theme .rd-note{background:#F0F5FF;border-color:#CADBFF;color:#5E7388;}
+body.light-theme .rd-note i{color:#2563EB;}
+@media(max-width:700px){.rd-levels{flex:1 1 100%;max-width:none;}.rd-save{width:100%;justify-content:center;}.rd-card{padding:18px 18px 20px;}}
 </style>
 </head>
 <body class="light-theme">
@@ -1920,7 +2404,6 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
         <div class="portal-brand-logo"><img src="../image/pbi_logo" alt="PBI" onerror="this.style.display='none'"/></div>
         <div class="portal-brand-copy">
             <strong>Faculty Workspace</strong>
-            <span>Evaluation Workspace</span>
         </div>
     </div>
 
@@ -1950,7 +2433,7 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
             <i class="fa-solid fa-chart-bar"></i><span>Evaluations Received</span>
         </a>
         <a href="faculty_dashboard.php?page=peer" class="nav-link <?= in_array($page,['peer','peer_eval'])?'active':'' ?>">
-            <i class="fa-solid fa-users-viewfinder"></i><span>Evaluate Others</span>
+            <i class="fa-solid fa-users-viewfinder"></i><span>Peer Evaluation</span>
             <?php if ($page==='peer' && (!empty($peers_all) || !empty($school_heads))): ?>
             <span class="side-nav-badge"><?= (count($peers_all) - count($done_peers)) + (count($school_heads) - count($done_school_heads)) ?></span>
             <?php endif; ?>
@@ -1963,7 +2446,7 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
     </nav>
 
     <div class="sidebar-footer">
-        <a href="../logout.php" class="btn-logout-side" onclick="return confirm('Log out of your faculty session?')">
+        <a href="../logout.php" class="btn-logout-side" onclick="return openLogoutModal(this)">
             <i class="fa-solid fa-power-off"></i><span>Log Out</span>
         </a>
     </div>
@@ -2021,7 +2504,7 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
             <i class="fa-solid fa-bars"></i>
         </button>
         <div class="nav-page-title">
-            <?php $titles=['dashboard'=>'Dashboard','profile'=>'Role & Designation','my_results'=>"Evaluations Received",'peer'=>'Evaluate Others','peer_eval'=>'Evaluate','settings'=>'Settings'];
+            <?php $titles=['dashboard'=>'Dashboard','profile'=>'Role & Designation','my_results'=>"Evaluations Received",'peer'=>'Peer Evaluation','peer_eval'=>'Evaluate','settings'=>'Settings'];
             echo $titles[$page] ?? 'Dashboard'; ?>
         </div>
     </div>
@@ -2134,11 +2617,11 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
 </div>
 
 <div class="stats-grid">
-    <div class="stat-card">
-        <div class="stat-card-icon blue"><i class="fa-solid fa-users"></i></div>
+    <a class="stat-card stat-card-link" href="faculty_dashboard.php?page=my_results" aria-label="View Evaluations Received" title="View Evaluations Received">
+        <div class="stat-card-icon blue"><i class="fa-solid fa-users" aria-hidden="true"></i></div>
         <div class="stat-card-lbl">Evaluations Received</div>
         <div class="stat-card-val teal"><?= $my_total ?></div>
-    </div>
+    </a>
     <div class="stat-card">
         <div class="stat-card-icon green"><i class="fa-solid fa-circle-check"></i></div>
         <div class="stat-card-lbl">Overall Average</div>
@@ -2158,85 +2641,132 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
     </div>
 </div>
 
+<section class="dashboard-quick-access" aria-label="Quick access">
+    <div class="quick-access-heading">
+        <div>
+            <span class="quick-access-kicker">WORKSPACE SHORTCUTS</span>
+            <h2>Continue where you need to be</h2>
+        </div>
+        <span class="quick-access-caption">Your most-used faculty tools</span>
+    </div>
+    <div class="quick-access-grid">
+        <a class="quick-access-card quick-blue" href="faculty_dashboard.php?page=my_results">
+            <span class="quick-access-icon"><i class="fa-solid fa-chart-column"></i></span>
+            <span class="quick-access-copy">
+                <strong>Evaluations Received</strong>
+                <small>Review your feedback and evaluation results.</small>
+            </span>
+            <i class="fa-solid fa-arrow-right quick-access-arrow" aria-hidden="true"></i>
+        </a>
+        <a class="quick-access-card quick-green" href="faculty_dashboard.php?page=peer">
+            <span class="quick-access-icon"><i class="fa-solid fa-users"></i></span>
+            <span class="quick-access-copy">
+                <strong>Your Evaluation</strong>
+                <small>Open the evaluation tasks assigned to you.</small>
+            </span>
+            <i class="fa-solid fa-arrow-right quick-access-arrow" aria-hidden="true"></i>
+        </a>
+        <a class="quick-access-card quick-amber" href="faculty_dashboard.php?page=profile">
+            <span class="quick-access-icon"><i class="fa-solid fa-id-card"></i></span>
+            <span class="quick-access-copy">
+                <strong>Role &amp; Designation</strong>
+                <small>View your role, designation, and assigned levels.</small>
+            </span>
+            <i class="fa-solid fa-arrow-right quick-access-arrow" aria-hidden="true"></i>
+        </a>
+    </div>
+</section>
 
 </div>
 
 <?php elseif ($page === 'profile'): ?>
-    <!-- STAFF-STYLE PROFILE / ROLE PAGE, preserving Faculty functionality and theme -->
-    <div class="profile-hero">
-        <div class="profile-hero-left">
-            <div style="position:relative;">
+<!-- ROLE & DESIGNATION — built from the same shell/intro/welcome-bar/card language as the Dashboard -->
+<div class="dashboard-shell rd-shell">
+
+    <div class="dashboard-intro">
+        <div class="dashboard-kicker"><i class="fa-solid fa-id-card"></i> Role &amp; Designation</div>
+        <h1>Your Role Workspace</h1>
+        <p>Review your role and teaching levels, and update how you appear in the evaluation questionnaire.</p>
+    </div>
+
+    <div class="welcome-bar">
+        <div class="rd-id">
+            <div class="rd-avatar-wrap">
                 <?php if ($faculty_photo): ?>
-                <img class="profile-hero-avatar" src="<?= UPLOAD_URL . htmlspecialchars($faculty_photo) ?>" alt="<?= htmlspecialchars($full_name) ?>" style="display:block;"/>
+                <img class="rd-avatar" src="<?= UPLOAD_URL . htmlspecialchars($faculty_photo) ?>" alt="<?= htmlspecialchars($full_name) ?>"/>
                 <?php else: ?>
-                <div class="profile-hero-avatar"><i class="fa-solid fa-chalkboard-user"></i></div>
+                <div class="rd-avatar"><i class="fa-solid fa-chalkboard-user"></i></div>
                 <?php endif; ?>
-                <button type="button" onclick="openPhotoModal()" title="Update Profile Photo"
-                        style="position:absolute;bottom:-2px;right:-2px;width:30px;height:30px;border-radius:50%;background:var(--teal);border:2px solid var(--mid);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;">
+                <button type="button" class="rd-cam" onclick="openPhotoModal()" title="Update Profile Photo" aria-label="Update Profile Photo">
                     <i class="fa-solid fa-camera"></i>
                 </button>
             </div>
-            <div>
-                <div class="profile-hero-name"><?= htmlspecialchars($full_name) ?></div>
-                <div class="profile-hero-desig"><i class="fa-solid fa-id-badge"></i> <?= htmlspecialchars($designation) ?></div>
-                <button type="button" onclick="openPhotoModal()" style="margin-top:6px;background:none;border:none;color:var(--teal);font-size:12px;font-weight:600;cursor:pointer;padding:0;">
+            <div class="welcome-text">
+                <h2><?= htmlspecialchars($full_name) ?></h2>
+                <p>
+                    <strong><?= htmlspecialchars($designation) ?></strong>
+                    &nbsp;·&nbsp;
+                    <?= $period ? htmlspecialchars($period['period_label'] ?? $period['semester']) : 'No active evaluation period' ?>
+                </p>
+                <button type="button" class="rd-photo-link" onclick="openPhotoModal()">
                     <i class="fa-solid fa-camera"></i> Update Profile Photo
                 </button>
             </div>
         </div>
 
-        <div class="level-view-wrap" id="levelDdWrap">
-            <div class="level-view-label"><i class="fa-solid fa-layer-group"></i> My Teaching Level(s)</div>
-            <div class="level-view-pills">
+        <div class="rd-levels" id="levelDdWrap">
+            <div class="rd-levels-label"><i class="fa-solid fa-layer-group"></i> My Teaching Level(s)</div>
+            <div class="rd-levels-pills">
                 <?php if (empty($my_levels)): ?>
-                <span class="level-view-empty"><i class="fa-solid fa-triangle-exclamation"></i> No level assigned yet — contact the admin.</span>
+                <span class="rd-levels-empty"><i class="fa-solid fa-triangle-exclamation"></i> No level assigned yet — contact the admin.</span>
                 <?php else: foreach ($my_levels as $lvl): ?>
-                <span class="level-view-pill"><?= htmlspecialchars($lvl) ?></span>
+                <span class="rd-level-pill"><?= htmlspecialchars($lvl) ?></span>
                 <?php endforeach; endif; ?>
             </div>
-            <div class="level-view-hint">Set by the admin — reach out to them to change this.</div>
+            <div class="rd-levels-hint">Set by the admin — reach out to them to change this.</div>
         </div>
     </div>
 
-    <div class="role-card">
-        <div class="role-card-title">
-            <i class="fa-solid fa-tags" style="color:var(--teal)"></i>
-            Assign / Update My Role
-        </div>
-        <div class="role-card-sub">
-            Your role determines which evaluation questions apply to you and how you appear in the questionnaire.
-            Changes take effect immediately and the admin is notified.
+    <section class="rd-card" aria-label="Assign or update my role">
+        <div class="rd-card-head">
+            <span class="rd-card-icon"><i class="fa-solid fa-tags"></i></span>
+            <div>
+                <h2>Assign / Update My Role</h2>
+                <p>Your role determines which evaluation questions apply to you and how you appear in the questionnaire. Changes take effect immediately and the admin is notified.</p>
+            </div>
         </div>
 
-        <div class="role-chips-label"><i class="fa-solid fa-bolt" style="color:var(--teal)"></i> Quick Pick</div>
-        <div class="role-chips">
+        <div class="rd-label"><i class="fa-solid fa-bolt"></i> Quick Pick</div>
+        <div class="rd-chips">
             <?php foreach ($desig_suggestions as $d): ?>
-            <div class="role-chip <?= ($d === $designation) ? 'is-current' : '' ?>"
-                 onclick="document.getElementById('roleInput').value='<?= htmlspecialchars(addslashes($d)) ?>'">
+            <button type="button" class="rd-chip <?= ($d === $designation) ? 'is-current' : '' ?>"
+                    onclick="var i=document.getElementById('roleInput');i.value=<?= htmlspecialchars(json_encode($d), ENT_QUOTES) ?>;i.focus();">
                 <?= htmlspecialchars($d) ?>
-            </div>
+            </button>
             <?php endforeach; ?>
         </div>
 
-        <div class="custom-role-label"><i class="fa-solid fa-pen-to-square" style="color:var(--teal)"></i> Or type a custom role</div>
+        <div class="rd-label"><i class="fa-solid fa-pen-to-square"></i> Or type a custom role</div>
         <form method="POST" id="roleForm">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>"/>
             <input type="hidden" name="update_designation" value="1"/>
-            <div class="custom-role-row">
-                <input type="text" name="new_designation" id="roleInput" class="custom-role-input"
+            <div class="rd-input-row">
+                <input type="text" name="new_designation" id="roleInput" class="rd-input"
                        placeholder="e.g. Department Head, Bookkeeper…"
                        value="<?= htmlspecialchars($designation) ?>" required/>
-                <button type="submit" class="btn-save-role">
+                <button type="submit" class="rd-save">
                     <i class="fa-solid fa-floppy-disk"></i> Save &amp; Notify Admin
                 </button>
             </div>
         </form>
 
-        <div class="info-note">
+        <div class="rd-note">
             <i class="fa-solid fa-circle-info"></i>
             <span>Your role change is logged and sent to the admin automatically so the admin can confirm or reassign you if needed.</span>
         </div>
-    </div>
+    </section>
+
+</div>
 
     <?php elseif ($page === 'settings'): ?>
 
@@ -2310,7 +2840,7 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
 
         <div class="settings-card">
             <div class="settings-card-head"><div class="sicon"><i class="fa-solid fa-lock"></i></div><div><h3>Security</h3><p>Keep your account protected.</p></div></div>
-            <div class="setting-row"><div><strong>Password</strong><span>Update your password without leaving the dashboard.</span></div><a href="change_password.php" class="settings-save" style="text-decoration:none;">Change</a></div>
+            <div class="setting-row"><div><strong>Password</strong><span>Update your password without leaving the dashboard.</span></div><a href="change_password.php" class="settings-save" style="text-decoration:none;">Change</a></div><div class="setting-row"><div><strong>Security questions</strong><span>Needed to recover a forgotten password.</span></div><a href="security_questions.php" class="settings-save" style="text-decoration:none;">Set up</a></div>
             <div class="setting-row"><div><strong>Role protection</strong><span>Your system role is administrator-controlled.</span></div><i class="fa-solid fa-shield-halved" style="color:var(--success)"></i></div>
         </div>
 
@@ -2331,91 +2861,7 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
 
 <?php elseif ($page === 'my_results'): ?>
 
-<div class="section-card">
-    <div class="section-title"><i class="fa-solid fa-chart-bar" style="color:var(--teal)"></i> Your Evaluation Summary</div>
-    <div style="display:flex;gap:28px;flex-wrap:wrap;margin-bottom:20px;">
-        <div>
-            <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:5px;">Overall Average</div>
-            <div style="font-size:36px;font-weight:700;color:<?= $my_avg===null?'#6b7280':($my_avg>=4?'#4ade80':($my_avg>=3?'#facc15':'#f87171')) ?>">
-                <?= $my_avg !== null ? number_format($my_avg,2) : '—' ?><span style="font-size:16px;color:var(--muted)"> / 5</span>
-            </div>
-        </div>
-        <div>
-            <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:5px;">Total Responses</div>
-            <div style="font-size:36px;font-weight:700;color:var(--teal-hover)"><?= $my_total ?></div>
-        </div>
-    </div>
-    <?php if (!empty($my_scores)): ?>
-    <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin:0 0 14px;padding-top:18px;border-top:1px solid var(--border);">Performance by Category</div>
-    <?php foreach ($my_scores as $cs):
-        $pct = round(($cs['avg_cat']/5)*100);
-        $col = $cs['avg_cat']>=4?'#4ade80':($cs['avg_cat']>=3?'#facc15':'#f87171');
-    ?>
-    <div class="cat-row">
-        <div class="cat-name"><?= htmlspecialchars($cs['category']) ?></div>
-        <div class="cat-bar-bg"><div class="cat-bar-fill" style="width:<?= $pct ?>%;background:<?= $col ?>"></div></div>
-        <div class="cat-score" style="color:<?= $col ?>"><?= number_format($cs['avg_cat'],2) ?></div>
-    </div>
-    <?php endforeach; ?>
-    <?php else: ?>
-    <div class="empty-state"><i class="fa-solid fa-chart-simple"></i><p>No category data available yet.</p></div>
-    <?php endif; ?>
-</div>
-
-<div class="section-card">
-<div class="section-card">
-    <div class="section-title">
-        <i class="fa-solid fa-list" style="color:var(--accent)"></i> Evaluations Received (Anonymous)
-    </div>
-
-    <button type="button" class="btn-view-all-evals" id="viewAllEvalsBtn" onclick="toggleAllEvals()">
-        <i class="fa-solid fa-eye"></i> View Evaluations Received
-        <i class="fa-solid fa-chevron-down" id="allEvalsCaret" style="transition:transform .2s;margin-left:auto;"></i>
-    </button>
-
-    <div id="allEvalsList" style="display:none;margin-top:14px;">
-    <?php
-    $allStmt = $mysqli->prepare("
-        SELECT et.id AS tracker_id,
-               (SELECT AVG(qa.answer_score) FROM questionnaire_answers qa WHERE qa.tracker_id = et.id) AS overall_score,
-               et.submitted_at, ep.period_label, ep.semester
-        FROM evaluation_tracker et
-        LEFT JOIN evaluation_periods ep ON ep.id = et.period_id
-        WHERE et.target_user_id=?
-        ORDER BY et.submitted_at DESC
-    ");
-    $allStmt->bind_param("i", $user_id);
-    $allStmt->execute();
-    $all_subs = $allStmt->get_result();
-    if (!$all_subs || $all_subs->num_rows === 0):
-    ?>
-    <div class="empty-state"><i class="fa-solid fa-inbox"></i><p>No evaluations recorded yet.</p></div>
-    <?php else: while ($s = $all_subs->fetch_assoc()):
-        $col = $s['overall_score']>=4?'#4ade80':($s['overall_score']>=3?'#facc15':'#f87171');
-        $period_lbl = $s['period_label'] ?? $s['semester'] ?? '';
-    ?>
-    <div class="eval-item eval-item-clickable" onclick="openEvalDetails(<?= (int)$s['tracker_id'] ?>)">
-        <div class="eval-item-left">
-            <div class="anon"><i class="fa-solid fa-eye-slash" style="color:var(--muted)"></i> Anonymous Evaluator</div>
-            <div class="meta">
-                <?= date('M d, Y g:i A', strtotime($s['submitted_at'])) ?><?= $period_lbl ? ' · ' . htmlspecialchars($period_lbl) : '' ?>
-            </div>
-        </div>
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
-            <div class="score-pill" style="background:<?= $col ?>1a;color:<?= $col ?>;border:1px solid <?= $col ?>44">
-                <?= number_format($s['overall_score'],2) ?> / 5
-            </div>
-            <?php if (true): ?>
-            <button type="button" class="btn-view-details" onclick="event.stopPropagation(); openEvalDetails(<?= (int)$s['tracker_id'] ?>)">
-                View Details <i class="fa-solid fa-chevron-right"></i>
-            </button>
-            <?php endif; ?>
-        </div>
-    </div>
-    <?php endwhile; $allStmt->close(); endif; ?>
-    </div>
-</div>
-</div>
+<?php render_received_results($mysqli, (int)$user_id); ?>
 
 <!-- ══════════ EVALUATION — STEP 1: CHOOSE GROUP ══════════ -->
 <?php elseif ($page === 'peer' && $peer_group === null): ?>
@@ -2425,8 +2871,13 @@ body.light-theme .appearance-choice{background:#FFFFFF;color:#294765;border-colo
 // used to build the Step 2 lists below and admin/questionnaire.php's own
 // Peer-to-Peer cards. The currently logged-in faculty account has already
 // been excluded from $peers_all above.
-$teacher_count = count(array_filter($peers_all, fn($p) => resolve_peer_group($mysqli, $p) === 'teacher'));
+$college_teacher_targets = array_values(array_filter($peers_all, fn($p) => (int)($p['has_college_peer_level'] ?? 0) === 1 && resolve_peer_group($mysqli, $p) === 'teacher'));
+$teacher_count = $can_evaluate_college_peer ? count($college_teacher_targets) : 0;
 $staff_count = count(array_filter($peers_all, fn($p) => resolve_peer_group($mysqli, $p) === 'staff'));
+$teacher_done_count = count(array_intersect(array_map('intval', array_column($college_teacher_targets, 'id')), $done_college_peers));
+$staff_done_count = count(array_intersect(array_map('intval', array_column(array_values(array_filter($peers_all, fn($p) => resolve_peer_group($mysqli, $p) === 'staff')), 'id')), $done_peers));
+$principal_done_count = count(array_intersect(array_map('intval', array_column($principal_targets, 'id')), $done_school_heads));
+$dean_done_count = count(array_intersect(array_map('intval', array_column($dean_targets, 'id')), $done_school_heads));
 ?>
 
 <?php if (!$evaluation_open): ?>
@@ -2434,26 +2885,31 @@ $staff_count = count(array_filter($peers_all, fn($p) => resolve_peer_group($mysq
 <?php endif; ?>
 
 <div class="section-card">
-    <div class="section-title"><i class="fa-solid fa-clipboard-check" style="color:var(--teal)"></i> Evaluation</div>
-    <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Choose who you want to evaluate. Faculty can evaluate fellow faculty, staff members, or the Dean / Principal.</p>
+    <div class="peer-page-heading">Peer Evaluation</div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Choose a category, then select a colleague to evaluate. Your identity will be kept confidential.</p>
 
-    <div class="fg-label" style="margin-bottom:10px;"><i class="fa-solid fa-bolt" style="margin-right:5px"></i>Step 1: Select Evaluation Group</div>
-    <div class="eval-group-grid">
+    <div class="fg-label" style="margin-bottom:10px;">CHOOSE A CATEGORY</div>
+    <div class="eval-group-grid peer-category-grid">
+        <?php if ($can_evaluate_college_peer): ?>
         <a href="faculty_dashboard.php?page=peer&group=teacher" class="eval-group-card">
             <div class="eval-group-icon blue"><i class="fa-solid fa-chalkboard-user"></i></div>
-            <div class="eval-group-title">Faculty</div>
+            <div class="eval-group-title">College Faculty</div>
             <div class="eval-group-count"><?= $teacher_count ?> member<?= $teacher_count == 1 ? '' : 's' ?></div>
+            <span class="peer-progress-pill"><i class="fa-solid fa-check"></i> <?= $teacher_done_count ?>/<?= $teacher_count ?> done</span>
         </a>
+        <?php endif; ?>
         <a href="faculty_dashboard.php?page=peer&group=staff" class="eval-group-card">
             <div class="eval-group-icon green"><i class="fa-solid fa-briefcase"></i></div>
             <div class="eval-group-title">Staff</div>
             <div class="eval-group-count"><?= $staff_count ?> member<?= $staff_count == 1 ? '' : 's' ?></div>
+            <span class="peer-progress-pill"><i class="fa-solid fa-check"></i> <?= $staff_done_count ?>/<?= $staff_count ?> done</span>
         </a>
         <?php if ($can_evaluate_principal): ?>
         <a href="faculty_dashboard.php?page=peer&group=principal" class="eval-group-card">
             <div class="eval-group-icon purple"><i class="fa-solid fa-user-tie"></i></div>
             <div class="eval-group-title">Principal</div>
             <div class="eval-group-count"><?= count($principal_targets) ?> member<?= count($principal_targets) == 1 ? '' : 's' ?></div>
+            <span class="peer-progress-pill"><i class="fa-solid fa-check"></i> <?= $principal_done_count ?>/<?= count($principal_targets) ?> done</span>
         </a>
         <?php endif; ?>
         <?php if ($can_evaluate_dean): ?>
@@ -2461,11 +2917,12 @@ $staff_count = count(array_filter($peers_all, fn($p) => resolve_peer_group($mysq
             <div class="eval-group-icon gold"><i class="fa-solid fa-graduation-cap"></i></div>
             <div class="eval-group-title">Dean</div>
             <div class="eval-group-count"><?= count($dean_targets) ?> member<?= count($dean_targets) == 1 ? '' : 's' ?></div>
+            <span class="peer-progress-pill"><i class="fa-solid fa-check"></i> <?= $dean_done_count ?>/<?= count($dean_targets) ?> done</span>
         </a>
         <?php endif; ?>
     </div>
     <?php if ($can_evaluate_principal && $can_evaluate_dean): ?>
-    <div class="peer-select-hint"><i class="fa-solid fa-circle-info"></i> You teach both JHS/SHS and College, so you can evaluate both the Principal and the Dean.</div>
+   
     <?php elseif ($can_evaluate_principal): ?>
     <div class="peer-select-hint"><i class="fa-solid fa-circle-info"></i> Your JHS/SHS teaching assignment makes you eligible to evaluate the Principal. Dean evaluation is only for those with a College teaching assignment.</div>
     <?php elseif ($can_evaluate_dean): ?>
@@ -2478,15 +2935,32 @@ $staff_count = count(array_filter($peers_all, fn($p) => resolve_peer_group($mysq
 <!-- ══════════ EVALUATION — STEP 2: TARGET LIST ══════════ -->
 <?php elseif ($page === 'peer' && $peer_group !== null): ?>
 
-<a href="faculty_dashboard.php?page=peer" class="back-link"><i class="fa-solid fa-arrow-left"></i> Change Evaluation Group</a>
+<?php
+$peer_teacher_targets = $can_evaluate_college_peer ? array_values(array_filter($peers_all, fn($p) => (int)($p['has_college_peer_level'] ?? 0) === 1 && resolve_peer_group($mysqli, $p) === 'teacher')) : [];
+$peer_staff_targets = array_values(array_filter($peers_all, fn($p) => resolve_peer_group($mysqli, $p) === 'staff'));
+$peer_teacher_done = count(array_intersect(array_map('intval', array_column($peer_teacher_targets, 'id')), $done_college_peers));
+$peer_staff_done = count(array_intersect(array_map('intval', array_column($peer_staff_targets, 'id')), $done_peers));
+$peer_principal_done = count(array_intersect(array_map('intval', array_column($principal_targets, 'id')), $done_school_heads));
+$peer_dean_done = count(array_intersect(array_map('intval', array_column($dean_targets, 'id')), $done_school_heads));
+?>
+<div class="peer-inline-categories">
+    <div class="peer-page-heading">Evaluate Colleagues</div>
+    <div class="fg-label" style="margin-bottom:10px;">CHOOSE A CATEGORY</div>
+    <div class="eval-group-grid peer-category-grid">
+        <?php if ($can_evaluate_college_peer): ?><a href="faculty_dashboard.php?page=peer&group=teacher" class="eval-group-card <?= $peer_group === 'teacher' ? 'is-selected' : '' ?>"><div class="eval-group-icon blue"><i class="fa-solid fa-chalkboard-user"></i></div><div class="eval-group-title">College Faculty</div><div class="eval-group-count"><?= count($peer_teacher_targets) ?> members</div><span class="peer-progress-pill"><i class="fa-solid fa-check"></i> <?= $peer_teacher_done ?>/<?= count($peer_teacher_targets) ?> done</span></a><?php endif; ?>
+        <a href="faculty_dashboard.php?page=peer&group=staff" class="eval-group-card <?= $peer_group === 'staff' ? 'is-selected' : '' ?>"><div class="eval-group-icon green"><i class="fa-solid fa-briefcase"></i></div><div class="eval-group-title">Staff</div><div class="eval-group-count"><?= count($peer_staff_targets) ?> members</div><span class="peer-progress-pill"><i class="fa-solid fa-check"></i> <?= $peer_staff_done ?>/<?= count($peer_staff_targets) ?> done</span></a>
+        <?php if ($can_evaluate_principal): ?><a href="faculty_dashboard.php?page=peer&group=principal" class="eval-group-card <?= $peer_group === 'principal' ? 'is-selected' : '' ?>"><div class="eval-group-icon purple"><i class="fa-solid fa-user-tie"></i></div><div class="eval-group-title">Principal</div><div class="eval-group-count"><?= count($principal_targets) ?> <?= count($principal_targets) === 1 ? 'member' : 'members' ?></div><span class="peer-progress-pill"><i class="fa-solid fa-check"></i> <?= $peer_principal_done ?>/<?= count($principal_targets) ?> done</span></a><?php endif; ?>
+        <?php if ($can_evaluate_dean): ?><a href="faculty_dashboard.php?page=peer&group=dean" class="eval-group-card <?= $peer_group === 'dean' ? 'is-selected' : '' ?>"><div class="eval-group-icon gold"><i class="fa-solid fa-graduation-cap"></i></div><div class="eval-group-title">Dean</div><div class="eval-group-count"><?= count($dean_targets) ?> <?= count($dean_targets) === 1 ? 'member' : 'members' ?></div><span class="peer-progress-pill"><i class="fa-solid fa-check"></i> <?= $peer_dean_done ?>/<?= count($dean_targets) ?> done</span></a><?php endif; ?>
+    </div>
+</div>
 
 <?php if (!$evaluation_open): ?>
 <div class="no-period-warn"><i class="fa-solid fa-clock"></i> Evaluation is currently closed until the scheduled opening time.</div>
 <?php endif; ?>
 
-<div class="section-card">
-    <div class="section-title"><i class="fa-solid <?= in_array($peer_group, $school_head_groups, true) ? 'fa-user-tie' : 'fa-users' ?>" style="color:var(--teal)"></i>
-        <?= in_array($peer_group, $school_head_groups, true) ? htmlspecialchars($peer_group_labels[$peer_group]) : 'Fellow ' . htmlspecialchars($peer_group_labels[$peer_group]) . ' Members' ?>
+<div class="section-card peer-target-section">
+    <div class="peer-list-heading"><span class="peer-list-heading-icon"><i class="fa-solid <?= in_array($peer_group, $school_head_groups, true) ? 'fa-user-tie' : 'fa-users' ?>"></i></span>
+        <strong><?= htmlspecialchars($peer_group_labels[$peer_group] ?? ucfirst($peer_group)) ?></strong>
     </div>
     <p style="font-size:13px;color:var(--muted);margin-bottom:18px;">
         <?= in_array($peer_group, $school_head_groups, true)
@@ -2504,27 +2978,27 @@ $staff_count = count(array_filter($peers_all, fn($p) => resolve_peer_group($mysq
         <?= in_array($peer_group, $school_head_groups, true) ? 'No ' . htmlspecialchars($peer_group_labels[$peer_group]) . ' account was found.' : 'No registered ' . htmlspecialchars(strtolower($peer_group_labels[$peer_group])) . ' members found.' ?>
     </p></div>
     <?php else: ?>
-    <div class="peer-grid">
+    <div class="peer-list-grid">
         <?php foreach ($peers as $p):
             $done = in_array($peer_group, $school_head_groups, true)
                 ? in_array((int)$p['id'], $done_school_heads, true)
                 : in_array((int)$p['id'], $done_peers, true);
         ?>
-        <div class="peer-card <?= $done?'done':'' ?>">
+        <div class="peer-list-row <?= $done?'done':'' ?>">
             <?php if ($p['photo']): ?>
-            <img class="peer-photo" src="<?= UPLOAD_URL . htmlspecialchars($p['photo']) ?>" alt=""/>
+            <img class="peer-list-photo" src="<?= UPLOAD_URL . htmlspecialchars($p['photo']) ?>" alt=""/>
             <?php else: ?>
-            <div class="peer-photo-ph"><i class="fa-solid fa-user"></i></div>
+            <div class="peer-list-photo peer-list-photo-ph"><i class="fa-solid fa-user"></i></div>
             <?php endif; ?>
-            <div class="peer-name"><?= htmlspecialchars($p['full_name']) ?></div>
-            <div class="peer-desig"><?= htmlspecialchars(peer_display_label($mysqli, $p, $peer_group, $peer_group_labels)) ?></div>
+            <div class="peer-list-person">
+                <div class="peer-name"><?= htmlspecialchars($p['full_name']) ?></div>
+                <div class="peer-desig"><?= htmlspecialchars(peer_display_label($mysqli, $p, $peer_group, $peer_group_labels)) ?></div>
+                <span class="peer-status-pill <?= $done ? 'is-done' : 'is-pending' ?>"><i class="fa-solid <?= $done ? 'fa-circle-check' : 'fa-hourglass-half' ?>"></i> <?= $done ? 'Completed' : 'Pending' ?></span>
+            </div>
             <?php if ($done): ?>
-            <div class="done-badge"><i class="fa-solid fa-circle-check"></i> Done</div>
+            <span class="peer-completed-label"><i class="fa-solid fa-check"></i> Done</span>
             <?php else: ?>
-            <button class="btn-eval-peer" <?= !$evaluation_open?'disabled':'' ?>
-                    onclick="window.location='faculty_dashboard.php?page=peer_eval&tid=<?= $p['id'] ?>&group=<?= urlencode($peer_group) ?>'">
-                Evaluate
-            </button>
+            <button class="btn-eval-peer" <?= !$evaluation_open?'disabled':'' ?> onclick="window.location='faculty_dashboard.php?page=peer_eval&tid=<?= $p['id'] ?>&group=<?= urlencode($peer_group) ?>'"><i class="fa-solid fa-pen"></i> Evaluate</button>
             <?php endif; ?>
         </div>
         <?php endforeach; ?>
@@ -2534,6 +3008,8 @@ $staff_count = count(array_filter($peers_all, fn($p) => resolve_peer_group($mysq
             ? count(array_intersect(array_map('intval', array_column($peers, 'id')), $done_school_heads))
             : count(array_intersect(array_map('intval', array_column($peers, 'id')), $done_peers));
     ?>
+    <?php $displayPeerPeriod = ($peer_group === 'teacher' && $college_peer_period) ? $college_peer_period : $period; ?>
+    <div class="peer-list-footer"><span><strong><?= count($peers) ?></strong> members</span><span><strong><?= $done_in_group ?></strong> completed</span><span><strong><?= max(0, count($peers)-$done_in_group) ?></strong> pending</span><span class="peer-period-label"><i class="fa-regular fa-calendar"></i> <?= htmlspecialchars($displayPeerPeriod['period_label'] ?? $displayPeerPeriod['semester'] ?? 'Current Period') ?></span></div>
     <?php if ($done_in_group > 0): ?>
     <div class="peer-select-hint warn"><i class="fa-solid fa-circle-check"></i>
         You've already evaluated <?= $done_in_group ?> of <?= count($peers) ?> <?= htmlspecialchars(strtolower($peer_group_labels[$peer_group])) ?> members this period.
@@ -2544,89 +3020,91 @@ $staff_count = count(array_filter($peers_all, fn($p) => resolve_peer_group($mysq
 
 <?php elseif ($page === 'peer_eval' && $peer_target): ?>
 
-<a href="faculty_dashboard.php?page=peer&group=<?= urlencode($peer_eval_group) ?>" class="back-link">
-    <i class="fa-solid fa-arrow-left"></i> Back to <?= htmlspecialchars($peer_group_labels[$peer_eval_group]) ?> List
-</a>
+<div class="peer-eval-overlay">
+  <section class="peer-eval-dialog" role="dialog" aria-modal="true" aria-labelledby="peerEvalTitle">
+    <header class="peer-eval-dialog-header">
+      <div class="peer-eval-target">
+        <?php if ($peer_target['photo']): ?>
+          <img class="peer-eval-avatar" src="<?= UPLOAD_URL . htmlspecialchars($peer_target['photo']) ?>" alt=""/>
+        <?php else: ?>
+          <div class="peer-eval-avatar peer-eval-avatar-placeholder"><i class="fa-solid fa-user"></i></div>
+        <?php endif; ?>
+        <div class="peer-eval-target-copy">
+          <h2 id="peerEvalTitle"><?= htmlspecialchars($peer_target['full_name']) ?></h2>
+          <p><?= htmlspecialchars(peer_display_label($mysqli, $peer_target, $peer_eval_group ?? 'teacher', $peer_group_labels)) ?></p>
+        </div>
+      </div>
+      <a class="peer-eval-close" href="faculty_dashboard.php?page=peer&group=<?= urlencode($peer_eval_group) ?>" aria-label="Close evaluation"><i class="fa-solid fa-xmark"></i></a>
+    </header>
 
-<div class="eval-header-bar">
-    <?php if ($peer_target['photo']): ?>
-    <img class="eval-photo-lg" src="<?= UPLOAD_URL . htmlspecialchars($peer_target['photo']) ?>" alt=""/>
+    <?php if (empty($peer_questions)): ?>
+      <div class="peer-eval-empty"><i class="fa-solid fa-triangle-exclamation"></i> No evaluation questions have been set up yet. Please contact the admin.</div>
+      <footer class="peer-eval-footer"><a class="btn-cancel-new" href="faculty_dashboard.php?page=peer&group=<?= urlencode($peer_eval_group) ?>">Back to Peer Evaluation</a></footer>
     <?php else: ?>
-    <div class="eval-photo-ph"><i class="fa-solid fa-user"></i></div>
-    <?php endif; ?>
-    <div>
-        <div class="eval-name"><?= htmlspecialchars($peer_target['full_name']) ?></div>
-        <div class="eval-desig"><?= htmlspecialchars(peer_display_label($mysqli, $peer_target, $peer_eval_group ?? 'teacher', $peer_group_labels)) ?></div>
-    </div>
-</div>
+      <form class="peer-eval-form" method="POST" action="faculty_dashboard.php?page=peer_eval&tid=<?= $peer_target['id'] ?>&group=<?= urlencode($peer_eval_group) ?>" id="evalForm" novalidate>
+        <div class="peer-eval-scroll" id="peerEvalScroll">
+          <div class="eval-validation-alert" id="facultyEvalValidation" role="alert" aria-live="assertive"></div>
+          <div class="peer-eval-progress-banner">
+            <span><i class="fa-solid fa-circle-info"></i> Please rate every question before submitting.</span>
+            <strong id="facultyEvalProgress" aria-live="polite">0 of 0 questions answered</strong>
+          </div>
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>"/>
+          <input type="hidden" name="submit_peer" value="1"/>
+          <input type="hidden" name="target_id" value="<?= $peer_target['id'] ?>"/>
+          <input type="hidden" name="form_id" value="<?= $peer_form_id ?>"/>
+          <input type="hidden" name="period_id" value="<?= $period['id'] ?? 0 ?>"/>
+          <input type="hidden" name="group" value="<?= htmlspecialchars($peer_eval_group) ?>"/>
 
-<?php if (empty($peer_questions)): ?>
-<div style="background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.18);border-radius:10px;padding:18px;color:#fcd34d;font-size:13px;display:flex;gap:10px;">
-    <i class="fa-solid fa-triangle-exclamation"></i> No evaluation questions have been set up yet. Please contact the admin.
-</div>
-<?php else: ?>
-
-<div class="scale-legend-bar">
-    <?php foreach ([5=>'Always',4=>'Often',3=>'Sometimes',2=>'Rarely',1=>'Never'] as $num=>$lbl): ?>
-    <div class="legend-pill"><span class="l-num"><?= $num ?></span><span class="l-lbl"><?= $lbl ?></span></div>
-    <?php endforeach; ?>
-</div>
-
-<form method="POST" action="faculty_dashboard.php?page=peer_eval&tid=<?= $peer_target['id'] ?>&group=<?= urlencode($peer_eval_group) ?>" id="evalForm" novalidate>
-    <div class="eval-validation-alert" id="facultyEvalValidation" role="alert" aria-live="assertive"></div>
-    <div class="eval-progress" id="facultyEvalProgress" aria-live="polite">0 of 0 questions answered</div>
-    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>"/>
-    <input type="hidden" name="submit_peer" value="1"/>
-    <input type="hidden" name="target_id"   value="<?= $peer_target['id'] ?>"/>
-    <input type="hidden" name="form_id"     value="<?= $peer_form_id ?>"/>
-    <input type="hidden" name="period_id"   value="<?= $period['id'] ?? 0 ?>"/>
-    <input type="hidden" name="group"       value="<?= htmlspecialchars($peer_eval_group) ?>"/>
-
-    <?php
-    $grouped_qs = [];
-    foreach ($peer_questions as $q) $grouped_qs[$q['category'] ?? 'General'][] = $q;
-    $cat_icons  = ['Work Performance'=>'fa-briefcase','Professional Ethics'=>'fa-scale-balanced','Interpersonal Skills'=>'fa-handshake','Teaching'=>'fa-chalkboard-user','Communication'=>'fa-comments','General'=>'fa-layer-group'];
-    $qno        = 1;
-    foreach ($grouped_qs as $cat => $qs):
-        $icon = $cat_icons[$cat] ?? 'fa-layer-group';
-    ?>
-    <div class="q-category-header"><i class="fa-solid <?= $icon ?>"></i><?= htmlspecialchars($cat) ?></div>
-    <div class="eval-form-wrap">
-    <table class="eval-form-table">
-        <thead><tr><th>Question</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th></tr></thead>
-        <tbody>
-        <?php foreach ($qs as $q): ?>
-        <tr class="eval-question-row">
-            <td><div class="eval-form-qtext"><span class="eval-form-qno">Q<?= $qno++ ?>.</span><?= htmlspecialchars($q['question_text']) ?></div></td>
-            <?php foreach ([5,4,3,2,1] as $v): $optId = 'r_' . $q['id'] . '_' . $v; ?>
-            <td><div class="eval-form-rating"><input type="radio" name="ratings[<?= $q['id'] ?>]" id="<?= $optId ?>" value="<?= $v ?>"><label for="<?= $optId ?>"><?= $v ?></label></div></td>
+          <div class="peer-eval-scale" aria-label="Rating scale">
+            <?php foreach ([5=>'Always',4=>'Often',3=>'Sometimes',2=>'Rarely',1=>'Never'] as $num=>$lbl): ?>
+              <div class="peer-eval-scale-item"><span><?= $num ?></span><em><?= $lbl ?></em></div>
             <?php endforeach; ?>
-        </tr>
-        <?php endforeach; ?>
-        </tbody>
-    </table>
-    </div>
-    <?php endforeach; ?>
+          </div>
 
-    <div class="comment-box-new">
-        <i class="fa-solid fa-comment-dots comment-box-icon"></i>
-        <div class="comment-box-inner">
-            <div class="comment-box-label">Comments &amp; Suggestions</div>
-            <textarea name="comment" class="comment-textarea-new" placeholder="Share your thoughts or suggestions…"></textarea>
+          <?php
+          $grouped_qs = [];
+          foreach ($peer_questions as $q) $grouped_qs[$q['category'] ?? 'General'][] = $q;
+          $cat_icons = ['Work Performance'=>'fa-briefcase','Professional Ethics'=>'fa-scale-balanced','Interpersonal Skills'=>'fa-handshake','Teaching'=>'fa-chalkboard-user','Communication'=>'fa-comments','General'=>'fa-layer-group'];
+          $qno = 1;
+          foreach ($grouped_qs as $cat => $qs):
+            $icon = $cat_icons[$cat] ?? 'fa-layer-group';
+          ?>
+            <section class="peer-eval-question-section">
+              <h3 class="q-category-header"><i class="fa-solid <?= $icon ?>"></i><?= htmlspecialchars($cat) ?></h3>
+              <div class="eval-form-wrap">
+                <table class="eval-form-table">
+                  <thead><tr><th>Question</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th></tr></thead>
+                  <tbody>
+                    <?php foreach ($qs as $q): ?>
+                      <tr class="eval-question-row">
+                        <td><div class="eval-form-qtext"><span class="eval-form-qno"><?= $qno++ ?>.</span><?= htmlspecialchars($q['question_text']) ?><?= !empty($q['is_required']) ? ' *' : '' ?></div></td>
+                        <?php foreach ([5,4,3,2,1] as $v): $optId = 'r_' . $q['id'] . '_' . $v; ?>
+                          <td><div class="eval-form-rating"><input type="radio" name="ratings[<?= $q['id'] ?>]" id="<?= $optId ?>" value="<?= $v ?>"><label for="<?= $optId ?>"><?= $v ?></label></div></td>
+                        <?php endforeach; ?>
+                      </tr>
+                    <?php endforeach; ?>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          <?php endforeach; ?>
+
+          <div class="comment-box-new">
+            <div class="comment-box-inner">
+              <div class="comment-box-label"><i class="fa-solid fa-comment-dots comment-box-icon"></i> Comments &amp; Suggestions</div>
+              <textarea name="comment" class="comment-textarea-new" placeholder="Share your thoughts, suggestions, or concerns about this person's performance."></textarea>
+            </div>
+          </div>
         </div>
-    </div>
+        <footer class="peer-eval-footer">
+          <a class="btn-cancel-new" href="faculty_dashboard.php?page=peer&group=<?= urlencode($peer_eval_group) ?>">Cancel</a>
+          <button type="submit" class="btn-submit-new"><i class="fa-solid fa-paper-plane"></i> Submit Evaluation</button>
+        </footer>
+      </form>
+    <?php endif; ?>
+  </section>
+</div>
 
-    <div class="submit-row-new">
-        <span style="font-size:13px;color:var(--muted);"><i class="fa-solid fa-circle-info" style="color:#60a5fa;margin-right:5px"></i>Rate 1 (Never) – 5 (Always). All questions required.</span>
-        <div style="display:flex;gap:10px;">
-            <button type="button" class="btn-cancel-new" onclick="window.location='faculty_dashboard.php?page=peer&group=<?= urlencode($peer_eval_group) ?>'">Cancel</button>
-            <button type="submit" class="btn-submit-new"><i class="fa-solid fa-paper-plane"></i> Submit Evaluation</button>
-        </div>
-    </div>
-</form>
-<?php endif; ?>
-
-<!-- ══════════ EVALUATION — INVALID / MISSING TARGET ══════════ -->
 <?php elseif ($page === 'peer_eval' && !$peer_target): ?>
 
 <a href="faculty_dashboard.php?page=peer" class="back-link"><i class="fa-solid fa-arrow-left"></i> Back to Evaluation Selection</a>
@@ -3064,5 +3542,48 @@ document.getElementById('photoModal').addEventListener('click', function(e) {
 
 <?php $mysqli->close(); ?>
 <script src="../admin/eval_status_poll.js" defer></script>
+
+<!-- Logout confirmation (replaces the browser's native confirm popup) -->
+<style>
+.lgo-overlay{position:fixed;inset:0;z-index:99999;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(2,8,23,.55);backdrop-filter:blur(3px)}
+.lgo-overlay.open{display:flex}
+.lgo-box{width:100%;max-width:360px;background:#0f1d36;color:#e6edf7;border:1px solid rgba(148,163,184,.25);border-radius:16px;padding:24px 22px 20px;box-shadow:0 24px 70px rgba(0,0,0,.45);text-align:center;font-family:inherit}
+.lgo-icon{width:46px;height:46px;margin:0 auto 12px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(240,84,84,.14);color:#f87171;font-size:18px}
+.lgo-title{font-size:17px;font-weight:700;margin:0 0 6px}
+.lgo-text{font-size:13.5px;line-height:1.5;color:#9fb0c7;margin:0 0 18px}
+.lgo-actions{display:flex;gap:10px}
+.lgo-actions a,.lgo-actions button{flex:1;padding:10px 12px;border-radius:10px;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;text-decoration:none;text-align:center;border:1px solid transparent}
+.lgo-cancel{background:transparent;color:#cbd5e1;border-color:rgba(148,163,184,.35)}
+.lgo-cancel:hover{background:rgba(148,163,184,.12)}
+.lgo-ok{background:#ef4444;color:#fff}
+.lgo-ok:hover{background:#dc2626}
+</style>
+<div class="lgo-overlay" id="lgoOverlay" role="dialog" aria-modal="true" aria-labelledby="lgoTitle">
+    <div class="lgo-box">
+        <div class="lgo-icon"><i class="fa-solid fa-power-off"></i></div>
+        <h3 class="lgo-title" id="lgoTitle">Log out?</h3>
+        <p class="lgo-text">Log out of your faculty session?</p>
+        <div class="lgo-actions">
+            <button type="button" class="lgo-cancel" id="lgoCancel">Cancel</button>
+            <a href="#" class="lgo-ok" id="lgoOk">Log Out</a>
+        </div>
+    </div>
+</div>
+<script>
+(function(){
+    var ov=document.getElementById('lgoOverlay'),ok=document.getElementById('lgoOk'),cancel=document.getElementById('lgoCancel');
+    if(!ov)return;
+    window.openLogoutModal=function(link){
+        ok.href=link.getAttribute('href');
+        ov.classList.add('open');
+        cancel.focus();
+        return false;
+    };
+    function close(){ov.classList.remove('open');}
+    cancel.addEventListener('click',close);
+    ov.addEventListener('click',function(e){if(e.target===ov)close();});
+    document.addEventListener('keydown',function(e){if(e.key==='Escape')close();});
+})();
+</script>
 </body>
 </html>

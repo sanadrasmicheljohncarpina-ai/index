@@ -698,7 +698,7 @@ html.principal-theme-dark .optional-status.completed{background:rgba(16,185,129,
   html.principal-theme-dark main.main{background:#FFFFFF!important;color:#172033!important;}
 }
 </style>
-<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20260927.5" id="principal-dark-repairs"/>
+<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20261009.3" id="principal-dark-repairs"/>
 </head>
 <body>
 <?php
@@ -706,11 +706,7 @@ render_principal_sidebar('tracker', $me, $scopeLabel, $photo_src);
 ?>
 <main class="main">
     <div class="page-header">
-        <div>
-            <div class="page-title">Evaluation Tracker</div>
-            <div class="page-sub">Monitor JHS and SHS student participation in Student Evaluation. Your own Faculty evaluations are optional and tracked separately below.</div>
-        </div>
-        <?php render_period_badge($settings); ?>
+
     </div>
 
     <?php if (!$structureActive): ?>

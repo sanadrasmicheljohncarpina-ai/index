@@ -107,6 +107,12 @@ PBI.confirm = function (msg, opts = {}) {
         const okLabel     = opts.okLabel     || 'Confirm';
         const cancelLabel = opts.cancelLabel || 'Cancel';
         const okColor     = opts.danger === false ? '#0F9F6E' : '#D6455D';
+        // Theme-aware colours. admin_appearance.css repaints white inline backgrounds in dark
+        // mode, which used to leave this dialog with dark text on a dark card.
+        const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+        const C = dark
+            ? { bg:'#172A45', border:'rgba(255,255,255,.16)', text:'#E7ECF3', btnBg:'#0F1F3D', btnText:'#E7ECF3', shadow:'rgba(0,0,0,.55)' }
+            : { bg:'#FFFFFF', border:'rgba(30,82,144,.13)', text:'#0B1F3A', btnBg:'#F8FAFC', btnText:'#0B1F3A', shadow:'rgba(30,82,144,.13)' };
 
         const overlay = document.createElement('div');
         overlay.style.cssText = `
@@ -116,14 +122,14 @@ PBI.confirm = function (msg, opts = {}) {
             font-family:'DM Sans',sans-serif;
         `;
         overlay.innerHTML = `
-            <div style="background:#FFFFFF;border:1px solid rgba(30,82,144,.13);
+            <div style="background:${C.bg};border:1px solid ${C.border};
                         border-radius:14px;padding:28px 26px;max-width:400px;width:100%;
-                        box-shadow:0 20px 60px rgba(30,82,144,.13);">
-                <p style="font-size:14px;color:#0B1F3A;line-height:1.6;margin-bottom:22px;white-space:pre-line;"></p>
+                        box-shadow:0 20px 60px ${C.shadow};">
+                <p style="font-size:14px;color:${C.text};line-height:1.6;margin-bottom:22px;white-space:pre-line;"></p>
                 <div style="display:flex;gap:10px;">
                     <button id="pbi-no"
-                        style="flex:1;padding:10px;background:#F8FAFC;border:1px solid rgba(30,82,144,.13);
-                               border-radius:8px;color:#0B1F3A;font-size:14px;font-weight:600;cursor:pointer;">
+                        style="flex:1;padding:10px;background:${C.btnBg};border:1px solid ${C.border};
+                               border-radius:8px;color:${C.btnText};font-size:14px;font-weight:600;cursor:pointer;">
                         ${cancelLabel}
                     </button>
                     <button id="pbi-yes"

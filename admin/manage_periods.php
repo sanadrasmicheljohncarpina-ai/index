@@ -2,9 +2,19 @@
 // admin/manage_periods.php
 // Include this as a tab in your admin questionnaire page,
 // or link to it from the admin dashboard Quick Actions.
-session_start();
-require_once 'db.php';
+require_once 'session_bootstrap.php';   // starts session, connects DB, requires a logged-in admin-area user
+// Login + role gate: only admin / superadmin may use this page.
+if (!in_array($_SESSION['role'] ?? '', ['admin','superadmin'], true)) {
+    header('Location: admin_login.php');
+    exit;
+}
+require_once 'permissions.php';
 require_once dirname(__DIR__) . '/shared/system_settings_service.php';
+$can_edit = admin_can_edit($mysqli, 'eval_periods');
+if (!$can_edit && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    http_response_code(403);
+    exit('View-only access: you do not have permission to change evaluation periods.');
+}
 
 // Apply automatic scheduling before showing or changing active periods.
 ss_sync_from_database($mysqli);
@@ -18,8 +28,8 @@ $mysqli->query("CREATE TABLE IF NOT EXISTS evaluation_periods (
     semester      VARCHAR(50)  NOT NULL DEFAULT '1st Semester',
     school_year   VARCHAR(20)  NOT NULL DEFAULT '2025-2026',
     is_active     TINYINT(1)   NOT NULL DEFAULT 0,
-    start_date    DATE         NULL,
-    end_date      DATE         NULL,
+    date_start    DATE         NULL,
+    date_end      DATE         NULL,
     created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
@@ -37,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $end    = $_POST['end_date']    ?: null;
 
         if ($label) {
-            $stmt = $mysqli->prepare("INSERT INTO evaluation_periods (period_label, semester, school_year, start_date, end_date) VALUES (?,?,?,?,?)");
+            $stmt = $mysqli->prepare("INSERT INTO evaluation_periods (period_label, semester, school_year, date_start, date_end) VALUES (?,?,?,?,?)");
             $stmt->bind_param("sssss", $label, $sem, $sy, $start, $end);
             $stmt->execute(); $stmt->close();
             $toast = "Period '$label' created successfully.";
@@ -305,7 +315,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
         <div class="period-label-text"><?= htmlspecialchars($p['period_label']) ?></div>
         <div class="period-meta">
             <?= htmlspecialchars($p['semester']) ?> · <?= htmlspecialchars($p['school_year']) ?>
-            <?php if ($p['start_date']): ?> · <?= date('M d, Y', strtotime($p['start_date'])) ?> – <?= $p['end_date'] ? date('M d, Y', strtotime($p['end_date'])) : 'ongoing' ?><?php endif; ?>
+            <?php if ($p['date_start']): ?> · <?= date('M d, Y', strtotime($p['date_start'])) ?> – <?= $p['date_end'] ? date('M d, Y', strtotime($p['date_end'])) : 'ongoing' ?><?php endif; ?>
         </div>
         <div style="margin-top:8px;">
             <?php if ($is_active): ?>

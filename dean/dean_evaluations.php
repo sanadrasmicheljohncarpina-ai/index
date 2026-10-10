@@ -273,7 +273,7 @@ table.data tr:last-child td{border-bottom:none;}
 
 @media(max-width:768px){body{flex-direction:column;}.sidebar{width:100%;min-height:auto;}.filter-bar{flex-direction:column;align-items:stretch;}}
 </style>
-<link rel="stylesheet" href="includes/dean_light_theme.css"/>
+<link rel="stylesheet" href="includes/dean_light_theme.css?v=dashboard-ui-20261009"/>
 </head>
 <body>
 
@@ -431,5 +431,5 @@ if (table) {
 }
 </script>
 </body>
-<link rel="stylesheet" href="includes/dean_light_theme.css" id="dean-light-theme-final"/>
+<link rel="stylesheet" href="includes/dean_light_theme.css?v=dashboard-ui-20261009" id="dean-light-theme-final"/>
 </html>

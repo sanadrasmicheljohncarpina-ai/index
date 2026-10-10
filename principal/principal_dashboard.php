@@ -22,8 +22,8 @@ if (!function_exists('principal_theme_assets')) {
         $done = true;
         ?>
 <script>(function(){try{if(localStorage.getItem('pbi_theme') === 'dark'){document.documentElement.classList.add('principal-theme-dark-pending');}}catch(e){}})();</script>
-<link rel="stylesheet" href="includes/principal_theme.css?v=20260927.3"/>
-<script defer src="includes/principal_theme.js?v=20260927.3"></script>
+<link rel="stylesheet" href="includes/principal_theme.css?v=20261009.1"/>
+<script defer src="includes/principal_theme.js?v=20261009.1"></script>
         <?php
     }
 }
@@ -102,8 +102,6 @@ $hasPeriod       = $period_id_int > 0;
 
 // Step 8 (mirrored from Dean): internal value stays whatever admin uses;
 // this is the only display label used in markup below.
-const BASIC_ED_LABEL = 'Basic Education';
-
 $daysRemaining = null;
 if ($settings['eval_end']) {
     $diff = (strtotime($settings['eval_end']) - strtotime(date('Y-m-d')));
@@ -124,9 +122,11 @@ $formatScheduleDateTime = static function ($value) use ($displayTimezone): strin
 $evalOpenDisplay = $structureActive && $evalOpen;
 $dashboardStatusLabel = $evalOpenDisplay ? 'Open' : ($hasPeriod ? 'Scheduled' : 'Closed');
 $dashboardStatusClass = $evalOpenDisplay ? 'open' : 'closed';
-$dashboardStatusHeadline = $evalOpenDisplay
-    ? 'Evaluation is currently open.'
-    : 'Evaluation is currently closed — waiting for the scheduled opening.';
+$dashboardStatusHeadline = !$structureActive
+    ? 'Basic Education is not the active evaluation structure.'
+    : ($evalOpen
+        ? 'Evaluation is currently open.'
+        : 'Evaluation is currently closed — waiting for the scheduled opening.');
 
 // ── HEADLINE STATS ONLY ────────────────────────────────────
 // Six numbers, nothing per-person and nothing per-grade. The old page ran an
@@ -180,6 +180,71 @@ if ($structureActive) {
     $studentParticipation  = $studentCount > 0 ? round($studentsSubmitted / $studentCount * 100) : 0;
 }
 
+// ── PRINCIPAL'S OWN EVALUATION SUMMARY (live + archived anonymous feedback) ──
+// Mirrors the Principal Results page: no evaluator identity is selected or exposed.
+$principalEvaluationResponses = 0;
+$principalEvaluationScoreSum = 0.0;
+$principalEvaluationScoreCount = 0;
+$principalSummaryTargetId = (int)($_SESSION['user_id'] ?? 0);
+
+try {
+    $principalLiveSummaryStmt = $mysqli->prepare("
+        SELECT COUNT(*) AS response_count,
+               COALESCE(SUM(answer_totals.score_sum), 0) AS score_sum,
+               COALESCE(SUM(answer_totals.score_count), 0) AS score_count
+        FROM evaluation_tracker et
+        LEFT JOIN (
+            SELECT tracker_id, SUM(answer_score) AS score_sum, COUNT(answer_score) AS score_count
+            FROM questionnaire_answers
+            GROUP BY tracker_id
+        ) answer_totals ON answer_totals.tracker_id = et.id
+        WHERE et.target_user_id = ?
+          AND et.status IN ('submitted', 'approved')
+          AND (
+              et.eval_type = 'faculty_peer'
+              OR (et.eval_type = 'student' AND et.evaluation_context = 'school_head')
+              OR et.eval_type = 'school_head'
+          )
+    ");
+    $principalLiveSummaryStmt->bind_param('i', $principalSummaryTargetId);
+    $principalLiveSummaryStmt->execute();
+    $principalLiveSummaryRow = $principalLiveSummaryStmt->get_result()->fetch_assoc() ?: [];
+    $principalLiveSummaryStmt->close();
+
+    $principalEvaluationResponses += (int)($principalLiveSummaryRow['response_count'] ?? 0);
+    $principalEvaluationScoreSum += (float)($principalLiveSummaryRow['score_sum'] ?? 0);
+    $principalEvaluationScoreCount += (int)($principalLiveSummaryRow['score_count'] ?? 0);
+} catch (Throwable $principalLiveSummaryError) {
+    // Keep the dashboard available on installations whose evaluation schema is older.
+}
+
+try {
+    $principalArchiveSummaryStmt = $mysqli->prepare("
+        SELECT COUNT(*) AS response_count,
+               COALESCE(SUM(score_sum), 0) AS score_sum,
+               COALESCE(SUM(score_count), 0) AS score_count
+        FROM feedback_received_keep
+        WHERE target_user_id = ?
+    ");
+    $principalArchiveSummaryStmt->bind_param('i', $principalSummaryTargetId);
+    $principalArchiveSummaryStmt->execute();
+    $principalArchiveSummaryRow = $principalArchiveSummaryStmt->get_result()->fetch_assoc() ?: [];
+    $principalArchiveSummaryStmt->close();
+
+    $principalEvaluationResponses += (int)($principalArchiveSummaryRow['response_count'] ?? 0);
+    $principalEvaluationScoreSum += (float)($principalArchiveSummaryRow['score_sum'] ?? 0);
+    $principalEvaluationScoreCount += (int)($principalArchiveSummaryRow['score_count'] ?? 0);
+} catch (Throwable $principalArchiveSummaryError) {
+    // The archive table is optional on a fresh deployment.
+}
+
+$principalOverallAverage = $principalEvaluationScoreCount > 0
+    ? round($principalEvaluationScoreSum / $principalEvaluationScoreCount, 2)
+    : null;
+$principalPerformanceLabel = $principalOverallAverage === null
+    ? '—'
+    : ($principalOverallAverage >= 4 ? 'Excellent' : ($principalOverallAverage >= 3 ? 'Good' : 'Needs Improvement'));
+
 $photo_src = !empty($me['photo']) ? '../image/' . $me['photo'] : '../image/pbi_logo';
 
 // ── NOTIFICATIONS ─────────────────────────────────────────────────────
@@ -190,6 +255,28 @@ $notifications = principal_build_notifications($mysqli, (int)$_SESSION['user_id'
 $mysqli->close();
 
 $scopeLabel = $myLevel === 'both' ? 'Junior High & Senior High' : ($myLevel === 'junior_high' ? 'Junior High School' : 'Senior High School');
+
+// Use a natural display order for names stored as "Last Name, First Name M.I.".
+$dashboardDisplayName = trim((string)($me['full_name'] ?? 'Principal'));
+if (strpos($dashboardDisplayName, ',') !== false) {
+    [$dashboardLastName, $dashboardGivenName] = array_map('trim', explode(',', $dashboardDisplayName, 2));
+    $dashboardDisplayName = trim($dashboardGivenName . ' ' . $dashboardLastName);
+}
+
+$dashboardPeriodParts = [];
+foreach ([
+    $settings['academic_year'] ?? '',
+    $settings['academic_term'] ?? $settings['semester'] ?? '',
+] as $dashboardPeriodPart) {
+    $dashboardPeriodPart = trim((string)$dashboardPeriodPart);
+    if ($dashboardPeriodPart !== '') $dashboardPeriodParts[] = $dashboardPeriodPart;
+}
+$dashboardCurrentPeriod = implode(' — ', $dashboardPeriodParts);
+
+$principalCurrentPeriodLabel = trim((string)($settings['academic_term'] ?? ''));
+if ($principalCurrentPeriodLabel === '') $principalCurrentPeriodLabel = trim((string)($settings['semester'] ?? ''));
+if ($principalCurrentPeriodLabel === '') $principalCurrentPeriodLabel = trim((string)($settings['period_label'] ?? ''));
+if ($principalCurrentPeriodLabel === '') $principalCurrentPeriodLabel = '—';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -785,284 +872,121 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
 
 <?php render_principal_sidebar('dashboard', $me, $scopeLabel, $photo_src); ?>
 
-<main class="main">
-    <div class="page-header">
-        <div>
-            <div class="page-title">Welcome, <?= htmlspecialchars(explode(',', $me['full_name'] ?? 'Principal')[0]) ?></div>
-            <div class="page-sub">Pandan Bay Institute — <?= htmlspecialchars($scopeLabel) ?> Oversight</div>
-        </div>
-        <div class="header-right">
-            <div class="period-badge <?= htmlspecialchars($settings['status']['cls']) ?>">
-                <i class="fa-solid fa-calendar-check"></i>
-                <?= htmlspecialchars($settings['academic_year']) ?> · <?= htmlspecialchars($settings['academic_structure_label']) ?> · <?= htmlspecialchars($settings['academic_term']) ?>
-                — <?= htmlspecialchars($settings['status']['label']) ?>
-            </div>
+<main class="main principal-dashboard" id="principalDashboard">
+    <div class="principal-dashboard-shell">
+        <section class="principal-dashboard-heading" aria-labelledby="principal-dashboard-title">
+            <div class="principal-dashboard-eyebrow"><i class="fa-solid fa-chart-line"></i> Dashboard Overview</div>
+            <h1 id="principal-dashboard-title"></h1>
+        </section>
 
-            <!-- NOTIFICATION BELL — replaces the old full-width Notifications panel -->
-            <div class="bell" id="bell">
-                <button class="bell-btn" id="bellBtn" type="button"
-                        aria-haspopup="true" aria-expanded="false" aria-label="Notifications">
-                    <i class="fa-solid fa-bell"></i>
-                    <span class="bell-count" id="bellCount">0</span>
-                </button>
-                <div class="bell-panel" id="bellPanel" role="dialog" aria-label="Notifications">
-                    <div class="bell-head">
-                        <h3>Notifications</h3>
-                        <button type="button" id="bellMarkRead">Mark all read</button>
-                    </div>
-                    <ul class="bell-list" id="bellList">
-                        <?php foreach ($notifications as $n): ?>
-                        <li class="lv-<?= htmlspecialchars($n['level']) ?>" data-id="<?= htmlspecialchars($n['id']) ?>">
-                            <i class="fa-solid <?= htmlspecialchars($n['icon'] ?? (['warn'=>'fa-triangle-exclamation','good'=>'fa-circle-check'][$n['level']] ?? 'fa-circle-info')) ?>"></i>
-                            <span><?= htmlspecialchars($n['text']) ?></span>
-                        </li>
-                        <?php endforeach; ?>
-                    </ul>
-                    <div class="bell-foot" id="bellFoot">Live</div>
+        <div class="schedule-status <?= htmlspecialchars($dashboardStatusClass, ENT_QUOTES, 'UTF-8') ?>">
+            <i class="fa-solid <?= !$structureActive ? 'fa-circle-info' : ($evalOpen ? 'fa-lock-open' : 'fa-lock') ?>"></i>
+            <strong><?= htmlspecialchars($dashboardStatusHeadline, ENT_QUOTES, 'UTF-8') ?></strong>
+        </div>
+
+        <section class="period-strip evaluation-schedule-strip" id="principalSchedule" aria-label="Evaluation schedule">
+            <div class="period-item">
+                <div class="k">Academic Year</div>
+                <div class="v"><?= htmlspecialchars((string)($settings['academic_year'] ?? '—')) ?></div>
+            </div>
+            <div class="period-item">
+                <div class="k">Evaluation Opens</div>
+                <div class="v"><?= htmlspecialchars($formatScheduleDateTime($settings['eval_start'] ?? null)) ?></div>
+            </div>
+            <div class="period-item">
+                <div class="k">Evaluation Closes</div>
+                <div class="v"><?= htmlspecialchars($formatScheduleDateTime($settings['eval_end'] ?? null)) ?></div>
+            </div>
+            <div class="period-item">
+                <div class="k">Status</div>
+                <div class="v"><span class="period-badge <?= htmlspecialchars($dashboardStatusClass, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($dashboardStatusLabel, ENT_QUOTES, 'UTF-8') ?></span></div>
+            </div>
+        </section>
+
+        <section class="principal-welcome-card" id="principalPerformanceSummary" aria-label="Principal overview">
+            <div class="principal-welcome-copy">
+                <h2>Welcome, <?= htmlspecialchars($dashboardDisplayName, ENT_QUOTES, 'UTF-8') ?>!</h2>
+                <div class="principal-welcome-meta">
+                    <strong><?= htmlspecialchars($scopeLabel, ENT_QUOTES, 'UTF-8') ?></strong>
+                    <span class="principal-meta-dot">·</span>
+                    <span><?= htmlspecialchars($dashboardCurrentPeriod !== '' ? $dashboardCurrentPeriod : 'No active evaluation period', ENT_QUOTES, 'UTF-8') ?></span>
                 </div>
             </div>
+            <div class="principal-completion-panel">
+                <div class="principal-completion-value"><?= $structureActive ? (int)$evaluationCompletion . '%' : '—' ?></div>
+                <div class="principal-completion-label">Evaluation Completion</div>
+            </div>
+        </section>
+
+        <section class="principal-summary-grid" aria-label="Principal evaluation summary metrics">
+            <a class="principal-summary-card summary-blue" href="principal_results.php" aria-label="View Evaluation Received page" title="View Evaluation Received">
+                <span class="principal-summary-icon"><i class="fa-solid fa-comments" aria-hidden="true"></i></span>
+                <span class="principal-summary-label">Evaluations Received</span>
+                <strong class="principal-summary-value"><?= number_format($principalEvaluationResponses) ?></strong>
+            </a>
+            <a class="principal-summary-card summary-green" href="principal_results.php">
+                <span class="principal-summary-icon"><i class="fa-solid fa-circle-check" aria-hidden="true"></i></span>
+                <span class="principal-summary-label">Overall Average</span>
+                <strong class="principal-summary-value"><?= $principalOverallAverage !== null ? number_format($principalOverallAverage, 2) . ' / 5' : '—' ?></strong>
+            </a>
+            <a class="principal-summary-card summary-amber" href="principal_results.php">
+                <span class="principal-summary-icon"><i class="fa-solid fa-award" aria-hidden="true"></i></span>
+                <span class="principal-summary-label">Performance Level</span>
+                <strong class="principal-summary-value principal-performance-label"><?= htmlspecialchars($principalPerformanceLabel, ENT_QUOTES, 'UTF-8') ?></strong>
+            </a>
+            <a class="principal-summary-card summary-sky" href="#principalSchedule">
+                <span class="principal-summary-icon"><i class="fa-solid fa-calendar" aria-hidden="true"></i></span>
+                <span class="principal-summary-label">Current Period</span>
+                <strong class="principal-summary-value principal-period-label"><?= htmlspecialchars($principalCurrentPeriodLabel, ENT_QUOTES, 'UTF-8') ?></strong>
+            </a>
+        </section>
+
+        <?php /* No-active-period reminders are surfaced through the notification bell. */ ?>
+        <?php if ($structureActive && !$hasPeriod): ?>
+        <div class="stub-note">
+            <i class="fa-solid fa-clock-rotate-left"></i>
+            Rosters are live, but there is no active evaluation period in System &amp; Period settings yet. Completion and participation figures remain at 0% until a period opens.
         </div>
-    </div>
+        <?php endif; ?>
 
-    <?php if (!$structureActive): ?>
-    <div class="structure-note">
-        <i class="fa-solid fa-circle-info"></i>
-        <p>
-            <b><?= BASIC_ED_LABEL ?> evaluations are currently inactive.</b><br>
-            The current evaluation period is configured for <b><?= htmlspecialchars($settings['academic_structure_label']) ?></b>.
-            Principal evaluation tracking will become available when the evaluation period is switched to <?= BASIC_ED_LABEL ?>.
-        </p>
+        <section class="principal-workspace-shortcuts" aria-labelledby="principal-shortcuts-title">
+            <div class="principal-shortcuts-heading">
+                <div>
+                    <div class="principal-shortcuts-eyebrow">Workspace Shortcuts</div>
+                    <h2 id="principal-shortcuts-title">Continue where you need to be</h2>
+                </div>
+                <p>Your most-used school tools</p>
+            </div>
+            <div class="principal-shortcuts-grid">
+                <a class="principal-shortcut" href="principal_results.php">
+                    <span class="principal-shortcut-icon"><i class="fa-solid fa-chart-column" aria-hidden="true"></i></span>
+                    <span class="principal-shortcut-copy">
+                        <strong>Your Evaluation</strong>
+                        <small>Review your evaluation feedback and results.</small>
+                    </span>
+                    <i class="fa-solid fa-arrow-right principal-shortcut-arrow" aria-hidden="true"></i>
+                </a>
+                <a class="principal-shortcut" href="#principalSchedule">
+                    <span class="principal-shortcut-icon"><i class="fa-solid fa-calendar-days" aria-hidden="true"></i></span>
+                    <span class="principal-shortcut-copy">
+                        <strong>Evaluation Schedule</strong>
+                        <small>Check the current evaluation period and dates.</small>
+                    </span>
+                    <i class="fa-solid fa-arrow-right principal-shortcut-arrow" aria-hidden="true"></i>
+                </a>
+                <a class="principal-shortcut" href="#principalPerformanceSummary">
+                    <span class="principal-shortcut-icon"><i class="fa-solid fa-award" aria-hidden="true"></i></span>
+                    <span class="principal-shortcut-copy">
+                        <strong>Performance Summary</strong>
+                        <small>View your evaluation completion and overview.</small>
+                    </span>
+                    <i class="fa-solid fa-arrow-right principal-shortcut-arrow" aria-hidden="true"></i>
+                </a>
+            </div>
+        </section>
     </div>
-    <?php endif; ?>
-
-    <!-- ── EVALUATION SCHEDULE ── -->
-    <div class="schedule-status <?= $dashboardStatusClass ?>">
-        <i class="fa-solid <?= $evalOpenDisplay ? 'fa-lock-open' : 'fa-lock' ?>"></i>
-        <strong><?= htmlspecialchars($dashboardStatusHeadline) ?></strong>
-    </div>
-    <div class="period-strip evaluation-schedule-strip">
-        <div class="period-item">
-            <div class="k">Academic Year</div>
-            <div class="v"><?= htmlspecialchars($settings['academic_year']) ?></div>
-        </div>
-        <div class="period-item">
-            <div class="k">Evaluation Opens</div>
-            <div class="v"><?= htmlspecialchars($formatScheduleDateTime($settings['eval_start'] ?? null)) ?></div>
-        </div>
-        <div class="period-item">
-            <div class="k">Evaluation Closes</div>
-            <div class="v"><?= htmlspecialchars($formatScheduleDateTime($settings['eval_end'] ?? null)) ?></div>
-        </div>
-        <div class="period-item">
-            <div class="k">Status</div>
-            <div class="v"><span class="period-badge <?= $dashboardStatusClass ?>" style="font-size:11px;"><?= htmlspecialchars($dashboardStatusLabel) ?></span></div>
-        </div>
-    </div>
-
-    <?php if ($structureActive): ?>
-
-    <!-- HEADLINE STATS — each card is the doorway to its detail page -->
-    <div class="card-grid">
-        <a class="stat-link" href="principal_teachers.php">
-            <div class="stat-card"><i class="fa-solid fa-chalkboard-user"></i><div class="num"><?= $teacherCount ?></div><div class="label">Teachers</div></div>
-        </a>
-        <a class="stat-link" href="principal_staff.php">
-            <div class="stat-card"><i class="fa-solid fa-users"></i><div class="num"><?= $staffCount ?></div><div class="label">School Staff</div></div>
-        </a>
-        <a class="stat-link" href="principal_evaluation_tracker.php">
-            <div class="stat-card"><i class="fa-solid fa-user-graduate"></i><div class="num"><?= $studentParticipation ?>%</div><div class="label">Student Participation</div></div>
-        </a>
-        <a class="stat-link" href="principal_evaluation_tracker.php">
-            <div class="stat-card"><i class="fa-solid fa-clipboard-check"></i><div class="num"><?= $evaluationCompletion ?>%</div><div class="label">Evaluation Completion</div></div>
-        </a>
-        <a class="stat-link" href="principal_evaluations.php">
-            <div class="stat-card"><i class="fa-solid fa-hourglass-half"></i><div class="num"><?= $pendingEvaluations ?></div><div class="label">Pending Evaluations</div></div>
-        </a>
-        <a class="stat-link" href="principal_reports.php">
-            <div class="stat-card"><i class="fa-solid fa-chart-line"></i><div class="num">Open</div><div class="label">Reports &amp; Analytics</div></div>
-        </a>
-        <a class="stat-link" href="principal_results.php">
-            <div class="stat-card"><i class="fa-solid fa-star"></i><div class="num">View</div><div class="label">Your Evaluation Results</div></div>
-        </a>
-    </div>
-
-    <?php /* The empty-roster warning was removed from the page body by
-             request — it still reaches the Principal through the bell
-             ('no-roster' item in principal_notifications_feed.php). */ ?>
-    <?php if (!$hasPeriod): ?>
-    <div class="stub-note">
-        <i class="fa-solid fa-clock-rotate-left"></i>
-        Rosters are live, but there's no active evaluation period from System &amp; Period settings yet — completion and participation figures stay at 0% until one is opened.
-    </div>
-    <?php endif; ?>
-
-    <?php else: ?>
-    <div class="section">
-        <h2><i class="fa-solid fa-circle-info"></i> <?= BASIC_ED_LABEL ?> Analytics</h2>
-        <p class="empty-note">
-            <?= BASIC_ED_LABEL ?> analytics will resume automatically once the Executive Assistant sets the active
-            Academic Structure back to Basic Education.
-        </p>
-    </div>
-    <?php endif; ?>
-
 </main>
 
-<script>
-/* =========================================================================
-   Notification bell — live polling
-   -------------------------------------------------------------------------
-   Refreshes from principal_notifications.php every 10s and while the tab is
-   visible only, so a dashboard left open on a spare monitor overnight is not
-   hammering the DB. Read-state is per-browser (localStorage) — there is no
-   notifications table to persist it server-side yet, so "read" does not
-   follow the Principal to another device.
-   ========================================================================= */
-(function(){
-    const POLL_MS   = 10000;
-    const ENDPOINT  = 'principal_notifications.php';
-    const STORE_KEY = 'pbi_principal_notifications_<?= (int)($_SESSION['user_id'] ?? 0) ?>';
-    const MAX_ITEMS = 40;
-    const ICONS     = { warn:'fa-triangle-exclamation', good:'fa-circle-check', info:'fa-circle-info' };
-
-    const bell   = document.getElementById('bell');
-    const btn    = document.getElementById('bellBtn');
-    const panel  = document.getElementById('bellPanel');
-    const list   = document.getElementById('bellList');
-    const count  = document.getElementById('bellCount');
-    const foot   = document.getElementById('bellFoot');
-    const markBtn= document.getElementById('bellMarkRead');
-    if (!bell || !btn || !panel || !list) return;
-
-    let timer = null;
-
-    let stored = loadStored();
-    function loadStored(){
-        try {
-            const parsed = JSON.parse(localStorage.getItem(STORE_KEY) || '[]');
-            return Array.isArray(parsed) ? parsed.filter(n => n && n.id && n.text) : [];
-        } catch (e) { return []; }
-    }
-    function saveStored(){
-        try { localStorage.setItem(STORE_KEY, JSON.stringify(stored.slice(0, MAX_ITEMS))); } catch (e) {}
-    }
-    function normalize(n){
-        n = n || {};
-        return { id:String(n.id || ''), text:String(n.text || ''), level:ICONS[n.level] ? n.level : 'info', icon:/^fa-[a-z0-9-]+$/.test(n.icon || '') ? n.icon : '', created_at:n.created_at || null };
-    }
-    function merge(items){
-        const map = new Map(stored.map(n => [String(n.id), n]));
-        const fresh = [];
-        (Array.isArray(items) ? items : []).map(normalize).forEach(n => {
-            if (!n.id || !n.text) return;
-            const previous = map.get(n.id);
-            if (previous) map.set(n.id, Object.assign({}, previous, n, {read:!!previous.read}));
-            else { n.read = false; if (!n.created_at) n.created_at = new Date().toISOString(); map.set(n.id, n); fresh.push(n.id); }
-        });
-        stored = Array.from(map.values()).sort((a,b) => {
-            const da = a.created_at ? new Date(a.created_at).getTime() : 0;
-            const db = b.created_at ? new Date(b.created_at).getTime() : 0;
-            return db - da;
-        }).slice(0, MAX_ITEMS);
-        saveStored();
-        return fresh;
-    }
-
-    function refreshBadge(){
-        let unread = 0;
-        list.querySelectorAll('li[data-id]').forEach(li => {
-            const item = stored.find(n => String(n.id) === li.dataset.id);
-            const isNew = !item || !item.read;
-            li.classList.toggle('unseen', isNew);
-            if (isNew) unread++;
-        });
-        count.textContent = unread > 9 ? '9+' : unread;
-        count.classList.toggle('show', unread > 0);
-        return unread;
-    }
-
-    function render(items){
-        const before = new Set(stored.map(n => String(n.id)));
-        const nearTop = list.scrollTop < 24;
-        const arrived = merge(items);
-        list.innerHTML = stored.map(n => {
-            const div = document.createElement('div');
-            div.textContent = n.text;
-            const lv = ICONS[n.level] ? n.level : 'info';
-            const idEsc = String(n.id).replace(/"/g, '&quot;');
-            return '<li class="lv-' + lv + (n.read ? '' : ' unseen') + '" data-id="' + idEsc + '">' +
-                   '<i class="fa-solid ' + (n.icon || ICONS[lv]) + '"></i><span>' +
-                   div.innerHTML + '</span></li>';
-        }).join('');
-        // Keep the newest items at the top on a normal refresh, but do not
-        // yank the user back to the top once they have scrolled to older updates.
-        if (nearTop) list.scrollTop = 0;
-        refreshBadge();
-        if (arrived.length && before.size) {
-            btn.classList.remove('pulse');
-            void btn.offsetWidth;          // restart the animation
-            btn.classList.add('pulse');
-        }
-    }
-
-    async function poll(){
-        try {
-            const res = await fetch(ENDPOINT + '?_=' + Date.now(), { headers: { 'Accept': 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
-            if (res.status === 401) { foot.textContent = 'Session expired — reload'; stop(); return; }
-            if (!res.ok) throw new Error('http ' + res.status);
-            const data = await res.json();
-            if (!data.ok) throw new Error('feed');
-            render(data.items || data.notifications || []);
-            foot.textContent = 'Updated ' + new Date((data.ts || Date.now() / 1000) * 1000).toLocaleTimeString();
-        } catch (e) {
-            foot.textContent = 'Offline — retrying';
-        }
-    }
-
-    function start(){ if (!timer) { timer = setInterval(poll, POLL_MS); } }
-    function stop(){ clearInterval(timer); timer = null; }
-
-    btn.addEventListener('click', e => {
-        e.stopPropagation();
-        const open = panel.classList.toggle('open');
-        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-        btn.classList.remove('pulse');
-        if (open) poll();
-    });
-    markBtn.addEventListener('click', e => {
-        e.stopPropagation();
-        stored = stored.map(n => Object.assign({}, n, {read:true}));
-        saveStored();
-        refreshBadge();
-    });
-    list.addEventListener('click', e => {
-        const li = e.target.closest('li[data-id]');
-        if (!li) return;
-        stored = stored.map(n => String(n.id) === li.dataset.id ? Object.assign({}, n, {read:true}) : n);
-        saveStored();
-        refreshBadge();
-    });
-    document.addEventListener('click', e => {
-        if (!bell.contains(e.target)) {
-            panel.classList.remove('open');
-            btn.setAttribute('aria-expanded', 'false');
-        }
-    });
-    document.addEventListener('keydown', e => {
-        if (e.key === 'Escape') {
-            panel.classList.remove('open');
-            btn.setAttribute('aria-expanded', 'false');
-        }
-    });
-    document.addEventListener('visibilitychange', () => {
-        if (document.hidden) { stop(); } else { poll(); start(); }
-    });
-
-    render(<?= json_encode($notifications) ?>);
-    start();
-    poll();   // sync right away instead of waiting a full 30s for the first refresh
-})();
-</script>
 <style id="principal-white-theme-final">
 :root{
   --dark:#ffffff!important;
@@ -1387,6 +1311,487 @@ main.main > .page-header{
     border-radius:0 !important;
   }
 }
+
+/* Faculty-inspired Principal dashboard overview and four summary cards. */
+#principalDashboard.main {
+  box-sizing: border-box !important;
+  flex: 1 1 auto !important;
+  width: auto !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  min-height: calc(100vh - 58px) !important;
+  margin: 58px 0 0 248px !important;
+  padding: 28px 28px 36px !important;
+  border-radius: 0 !important;
+  background: #F3F6FB !important;
+  color: #172033 !important;
+  box-shadow: none !important;
+  isolation: auto !important;
+  overflow: visible !important;
+}
+#principalDashboard .principal-dashboard-shell {
+  width: 100% !important;
+  max-width: 1680px !important;
+  min-height: calc(100vh - 86px) !important;
+  margin: 0 auto !important;
+  padding: 27px 32px 34px !important;
+  background: #FFFFFF !important;
+  color: #172033 !important;
+  border: 1px solid #DFE7F0 !important;
+  border-radius: 23px !important;
+  box-shadow: 0 2px 10px rgba(15,23,42,.025) !important;
+}
+#principalDashboard .principal-dashboard-heading {
+  margin: 0 0 17px !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+#principalDashboard .principal-dashboard-eyebrow {
+  display: flex !important;
+  align-items: center !important;
+  gap: 9px !important;
+  margin-bottom: 4px !important;
+  color: #B8801F !important;
+  font-family: 'DM Sans', sans-serif !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  letter-spacing: 1.25px !important;
+  line-height: 1.4 !important;
+  text-transform: uppercase !important;
+}
+#principalDashboard .principal-dashboard-eyebrow i { color: #B8801F !important; font-size: 13px !important; }
+#principalDashboard #principal-dashboard-title {
+  margin: 0 !important;
+  color: #10223B !important;
+  font-family: 'Rajdhani', sans-serif !important;
+  font-size: clamp(26px, 2vw, 34px) !important;
+  font-weight: 700 !important;
+  letter-spacing: .25px !important;
+  line-height: 1.18 !important;
+}
+#principalDashboard .principal-dashboard-heading p {
+  margin: 6px 0 0 !important;
+  color: #64748B !important;
+  font-size: 14px !important;
+  line-height: 1.55 !important;
+}
+#principalDashboard .schedule-status {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  width: fit-content !important;
+  max-width: 100% !important;
+  margin: 0 0 18px !important;
+  padding: 8px 14px !important;
+  border: 1px solid #86EFAC !important;
+  border-radius: 999px !important;
+  background: #F0FDF4 !important;
+  color: #047857 !important;
+  font-family: 'DM Sans', sans-serif !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  line-height: 1.35 !important;
+}
+#principalDashboard .schedule-status i { color: inherit !important; font-size: 12px !important; }
+#principalDashboard .schedule-status.closed { color: #B91C1C !important; background: #FEF2F2 !important; border-color: #FECACA !important; }
+#principalDashboard .evaluation-schedule-strip {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  align-items: stretch !important;
+  gap: 22px !important;
+  margin: 0 0 24px !important;
+  padding: 24px 29px !important;
+  background: #FFFFFF !important;
+  border: 1px solid #DFE7F0 !important;
+  border-radius: 18px !important;
+  box-shadow: 0 4px 14px rgba(15,23,42,.035) !important;
+}
+#principalDashboard .evaluation-schedule-strip .period-item { min-width: 0 !important; gap: 5px !important; }
+#principalDashboard .evaluation-schedule-strip .period-item .k {
+  color: #B8801F !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  letter-spacing: .75px !important;
+  line-height: 1.35 !important;
+}
+#principalDashboard .evaluation-schedule-strip .period-item .v {
+  color: #13263F !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  line-height: 1.45 !important;
+  overflow-wrap: anywhere !important;
+}
+#principalDashboard .evaluation-schedule-strip .period-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  padding: 6px 14px !important;
+  border-radius: 999px !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  background: #F0FDF4 !important;
+  color: #047857 !important;
+  border: 1px solid #86EFAC !important;
+}
+#principalDashboard .evaluation-schedule-strip .period-badge.closed { background: #FEF2F2 !important; color: #B91C1C !important; border-color: #FECACA !important; }
+#principalDashboard .principal-welcome-card {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 24px !important;
+  margin: 0 0 24px !important;
+  padding: 27px 32px !important;
+  border: 1px solid #E7D2A6 !important;
+  border-radius: 20px !important;
+  background: linear-gradient(110deg, #FFFFFF 0%, #FFFBF2 100%) !important;
+  box-shadow: 0 4px 15px rgba(217,154,43,.055) !important;
+}
+#principalDashboard .principal-welcome-copy { min-width: 0 !important; }
+#principalDashboard .principal-welcome-card h2 {
+  margin: 0 !important;
+  color: #10223B !important;
+  font-family: 'Rajdhani', sans-serif !important;
+  font-size: clamp(22px, 1.8vw, 27px) !important;
+  font-weight: 700 !important;
+  line-height: 1.25 !important;
+}
+#principalDashboard .principal-welcome-meta {
+  display: flex !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+  margin-top: 8px !important;
+  color: #64748B !important;
+  font-size: 13px !important;
+  line-height: 1.45 !important;
+}
+#principalDashboard .principal-welcome-meta strong { color: #B8801F !important; font-weight: 700 !important; }
+#principalDashboard .principal-meta-dot { color: #94A3B8 !important; }
+#principalDashboard .principal-completion-panel {
+  display: flex !important;
+  flex: 0 0 31% !important;
+  min-width: 205px !important;
+  min-height: 104px !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 12px 18px !important;
+  border: 1px solid #EBD8AB !important;
+  border-radius: 18px !important;
+  background: #FFFAEB !important;
+}
+#principalDashboard .principal-completion-value {
+  color: #B8801F !important;
+  font-family: 'DM Sans', sans-serif !important;
+  font-size: clamp(30px, 3vw, 42px) !important;
+  font-weight: 800 !important;
+  letter-spacing: -1.4px !important;
+  line-height: 1.1 !important;
+}
+#principalDashboard .principal-completion-label {
+  margin-top: 9px !important;
+  color: #64748B !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: .8px !important;
+  line-height: 1.35 !important;
+  text-align: center !important;
+  text-transform: uppercase !important;
+}
+#principalDashboard .principal-summary-grid {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 16px !important;
+  margin: 0 0 24px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+#principalDashboard a.principal-summary-card {
+  position: relative !important;
+  display: flex !important;
+  min-width: 0 !important;
+  min-height: 158px !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  padding: 20px 23px 21px !important;
+  overflow: hidden !important;
+  text-decoration: none !important;
+  background: #FFFFFF !important;
+  color: #13263F !important;
+  border: 1px solid #DFE7F0 !important;
+  border-radius: 17px !important;
+  box-shadow: 0 3px 12px rgba(15,23,42,.045) !important;
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease !important;
+}
+#principalDashboard a.principal-summary-card::before {
+  content: "" !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  height: 4px !important;
+  background: #D99A2B !important;
+}
+#principalDashboard a.principal-summary-card:hover {
+  transform: translateY(-2px) !important;
+  border-color: #E7D1A5 !important;
+  box-shadow: 0 8px 18px rgba(15,23,42,.075) !important;
+}
+#principalDashboard a.principal-summary-card:focus-visible {
+  outline: 3px solid #D99A2B !important;
+  outline-offset: 3px !important;
+}
+#principalDashboard .principal-summary-icon {
+  display: flex !important;
+  width: 40px !important;
+  height: 40px !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin: 0 0 14px !important;
+  border-radius: 12px !important;
+  background: #FFF1CF !important;
+  color: #B8801F !important;
+  font-size: 17px !important;
+}
+#principalDashboard .principal-summary-label {
+  display: block !important;
+  margin: 0 0 7px !important;
+  color: #64748B !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: .75px !important;
+  line-height: 1.35 !important;
+  text-transform: uppercase !important;
+}
+#principalDashboard .principal-summary-value {
+  display: block !important;
+  color: #B8801F !important;
+  font-family: 'DM Sans', sans-serif !important;
+  font-size: clamp(25px, 2.1vw, 31px) !important;
+  font-weight: 800 !important;
+  letter-spacing: -.6px !important;
+  line-height: 1.18 !important;
+}
+#principalDashboard .summary-green::before { background: #10B981 !important; }
+#principalDashboard .summary-green .principal-summary-icon { background: #E3F9EE !important; color: #10B981 !important; }
+#principalDashboard .summary-green .principal-summary-value { color: #059669 !important; }
+#principalDashboard .summary-amber::before { background: #F59E0B !important; }
+#principalDashboard .summary-amber .principal-summary-icon { background: #FFF4D8 !important; color: #B8801F !important; }
+#principalDashboard .summary-amber .principal-summary-value { color: #B8801F !important; }
+#principalDashboard .summary-sky::before { background: #B8801F !important; }
+#principalDashboard .summary-sky .principal-summary-icon { background: #FFF1CF !important; color: #B8801F !important; }
+#principalDashboard .summary-sky .principal-summary-value { color: #9A6700 !important; }
+
+/* Preserve the existing dark-theme option while using the faculty-style light view by default. */
+html.principal-theme-dark #principalDashboard.main { background: #0B1528 !important; color: #E0E6F0 !important; }
+html.principal-theme-dark #principalDashboard .principal-dashboard-shell { background: #0F1F3D !important; border-color: rgba(255,255,255,.12) !important; color: #E0E6F0 !important; }
+html.principal-theme-dark #principalDashboard #principal-dashboard-title,
+html.principal-theme-dark #principalDashboard .principal-welcome-card h2 { color: #F8FAFC !important; }
+html.principal-theme-dark #principalDashboard .principal-dashboard-heading p,
+html.principal-theme-dark #principalDashboard .principal-welcome-meta,
+html.principal-theme-dark #principalDashboard .principal-summary-label { color: #A0B3C6 !important; }
+html.principal-theme-dark #principalDashboard .evaluation-schedule-strip,
+html.principal-theme-dark #principalDashboard a.principal-summary-card { background: #172A45 !important; border-color: rgba(255,255,255,.10) !important; color: #E0E6F0 !important; }
+html.principal-theme-dark #principalDashboard .evaluation-schedule-strip .period-item .v,
+html.principal-theme-dark #principalDashboard .principal-summary-value { color: #F8FAFC !important; }
+html.principal-theme-dark #principalDashboard .principal-welcome-card { background: linear-gradient(110deg,#0F1F3D,#13294A) !important; border-color: rgba(240,184,77,.30) !important; }
+html.principal-theme-dark #principalDashboard .principal-completion-panel { background: #172A45 !important; border-color: rgba(240,184,77,.30) !important; }
+html.principal-theme-dark #principalDashboard .principal-completion-value { color: #F0B84D !important; }
+html.principal-theme-dark #principalDashboard .principal-summary-icon { background: rgba(217,154,43,.16) !important; }
+
+@media (max-width: 1100px) {
+  #principalDashboard .evaluation-schedule-strip { gap: 16px !important; padding: 20px !important; }
+  #principalDashboard .principal-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}
+@media (max-width: 900px) {
+  #principalDashboard.main { margin-left: 0 !important; }
+  #principalDashboard .principal-dashboard-shell { max-width: none !important; }
+}
+@media (max-width: 768px) {
+  #principalDashboard.main { margin: 0 !important; padding: 18px 12px 26px !important; min-height: calc(100vh - 58px) !important; }
+  #principalDashboard .principal-dashboard-shell { min-height: 0 !important; padding: 22px 18px 25px !important; border-radius: 16px !important; }
+  #principalDashboard .evaluation-schedule-strip { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 18px !important; }
+  #principalDashboard .principal-welcome-card { align-items: stretch !important; flex-direction: column !important; padding: 22px !important; }
+  #principalDashboard .principal-completion-panel { flex: 1 1 auto !important; width: 100% !important; min-width: 0 !important; min-height: 88px !important; }
+}
+@media (max-width: 520px) {
+  #principalDashboard .evaluation-schedule-strip { grid-template-columns: 1fr !important; }
+  #principalDashboard .principal-summary-grid { grid-template-columns: 1fr !important; }
+  #principalDashboard .principal-summary-card { min-height: 145px !important; }
+  #principalDashboard .principal-dashboard-shell { padding: 19px 14px 22px !important; }
+}
+
 </style>
 
-<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20260927" id="principal-dark-repairs"/>
+<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20261009.3" id="principal-dark-repairs"/>
+
+<style id="principal-one-view-dashboard-update">
+/* Compact single-view workspace, aligned with the Faculty and Staff dashboards.
+   The Principal's existing amber/gold accent is intentionally preserved. */
+#principalDashboard.main {
+  box-sizing:border-box !important;
+  min-height:calc(100vh - 58px) !important;
+  margin:58px 0 0 248px !important;
+  padding:14px 28px 16px !important;
+  overflow:visible !important;
+}
+#principalDashboard .principal-dashboard-shell {
+  box-sizing:border-box !important;
+  width:100% !important;
+  max-width:1680px !important;
+  min-height:calc(100vh - 88px) !important;
+  margin:0 auto !important;
+  padding:18px 26px 20px !important;
+  border-radius:20px !important;
+}
+#principalDashboard .principal-dashboard-heading { margin:0 0 11px !important; }
+#principalDashboard .principal-dashboard-eyebrow { margin-bottom:2px !important; font-size:10.5px !important; }
+#principalDashboard #principal-dashboard-title { font-size:clamp(25px,1.9vw,31px) !important; line-height:1.12 !important; }
+#principalDashboard .principal-dashboard-heading p { margin-top:4px !important; font-size:13px !important; line-height:1.4 !important; }
+#principalDashboard .structure-note { gap:10px !important; margin:0 0 10px !important; padding:10px 14px !important; }
+#principalDashboard .structure-note i { font-size:16px !important; }
+#principalDashboard .structure-note p { font-size:11.5px !important; line-height:1.4 !important; }
+#principalDashboard .schedule-status { margin:0 0 10px !important; padding:6px 11px !important; font-size:11px !important; gap:7px !important; }
+#principalDashboard .evaluation-schedule-strip {
+  gap:14px !important;
+  padding:14px 22px !important;
+  margin:0 0 14px !important;
+  border-radius:15px !important;
+}
+#principalDashboard .evaluation-schedule-strip .period-item { gap:4px !important; }
+#principalDashboard .evaluation-schedule-strip .period-item .k { font-size:10px !important; }
+#principalDashboard .evaluation-schedule-strip .period-item .v { font-size:14px !important; line-height:1.3 !important; }
+#principalDashboard .evaluation-schedule-strip .period-badge { padding:5px 12px !important; font-size:10.5px !important; }
+#principalDashboard .principal-welcome-card {
+  gap:18px !important;
+  margin:0 0 14px !important;
+  padding:16px 22px !important;
+  border-radius:16px !important;
+}
+#principalDashboard .principal-welcome-card h2 { font-size:clamp(20px,1.6vw,24px) !important; }
+#principalDashboard .principal-welcome-meta { margin-top:5px !important; font-size:12px !important; gap:6px !important; }
+#principalDashboard .principal-completion-panel {
+  flex-basis:25% !important;
+  min-width:185px !important;
+  min-height:76px !important;
+  padding:9px 14px !important;
+  border-radius:14px !important;
+}
+#principalDashboard .principal-completion-value { font-size:clamp(28px,2.5vw,36px) !important; }
+#principalDashboard .principal-completion-label { margin-top:5px !important; font-size:10px !important; }
+#principalDashboard .principal-summary-grid {
+  gap:12px !important;
+  margin:0 0 16px !important;
+}
+#principalDashboard a.principal-summary-card {
+  min-height:112px !important;
+  padding:13px 17px 15px !important;
+  border-radius:14px !important;
+}
+#principalDashboard .principal-summary-icon {
+  width:33px !important;
+  height:33px !important;
+  margin-bottom:8px !important;
+  border-radius:10px !important;
+  font-size:14px !important;
+}
+#principalDashboard .principal-summary-label { margin-bottom:4px !important; font-size:10px !important; }
+#principalDashboard .principal-summary-value { font-size:clamp(23px,1.9vw,28px) !important; }
+/* Keep all four KPI cards in the Principal's amber/gold theme. */
+#principalDashboard .principal-summary-grid a.principal-summary-card::before { background:#D99A2B !important; }
+#principalDashboard .principal-summary-grid .principal-summary-icon { background:#FFF1CF !important; color:#B8801F !important; }
+#principalDashboard .principal-summary-grid .principal-summary-value { color:#B8801F !important; }
+#principalDashboard .principal-summary-value.principal-performance-label { font-size:clamp(17px,1.45vw,23px) !important; letter-spacing:-.25px !important; overflow-wrap:anywhere !important; }
+#principalDashboard .principal-summary-value.principal-period-label { font-size:clamp(19px,1.55vw,25px) !important; letter-spacing:-.3px !important; overflow-wrap:anywhere !important; }
+html.principal-theme-dark #principalDashboard .principal-summary-grid .principal-summary-icon { background:rgba(217,154,43,.16) !important; color:#F0B84D !important; }
+html.principal-theme-dark #principalDashboard .principal-summary-grid .principal-summary-value { color:#F0B84D !important; }
+#principalDashboard .stub-note { margin:0 0 12px !important; padding:7px 10px !important; line-height:1.4 !important; }
+#principalDashboard .principal-workspace-shortcuts { margin:0 !important; }
+#principalDashboard .principal-shortcuts-heading {
+  display:flex !important;
+  align-items:flex-end !important;
+  justify-content:space-between !important;
+  gap:12px !important;
+  margin:0 2px 8px !important;
+}
+#principalDashboard .principal-shortcuts-eyebrow {
+  margin-bottom:2px !important;
+  color:#B8801F !important;
+  font-size:10px !important;
+  font-weight:800 !important;
+  letter-spacing:1.05px !important;
+  line-height:1.3 !important;
+  text-transform:uppercase !important;
+}
+#principalDashboard .principal-shortcuts-heading h2 {
+  margin:0 !important;
+  color:#13263F !important;
+  font-family:'Rajdhani','DM Sans',sans-serif !important;
+  font-size:19px !important;
+  font-weight:800 !important;
+  line-height:1.15 !important;
+}
+#principalDashboard .principal-shortcuts-heading p { margin:0 !important; color:#6D8194 !important; font-size:11px !important; white-space:nowrap !important; }
+#principalDashboard .principal-shortcuts-grid { display:grid !important; grid-template-columns:repeat(3,minmax(0,1fr)) !important; gap:12px !important; }
+#principalDashboard .principal-shortcut {
+  display:flex !important;
+  align-items:center !important;
+  gap:12px !important;
+  min-width:0 !important;
+  min-height:78px !important;
+  padding:12px 14px !important;
+  color:#13263F !important;
+  text-decoration:none !important;
+  background:#FFFFFF !important;
+  border:1px solid #DFE7F0 !important;
+  border-radius:14px !important;
+  box-shadow:0 3px 12px rgba(15,23,42,.035) !important;
+  transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease !important;
+  scroll-margin-top:72px !important;
+}
+#principalDashboard .principal-shortcut:hover { transform:translateY(-1px) !important; border-color:#E7D1A5 !important; box-shadow:0 7px 16px rgba(15,23,42,.07) !important; }
+#principalDashboard .principal-shortcut-icon {
+  display:flex !important; align-items:center !important; justify-content:center !important;
+  flex:0 0 36px !important; width:36px !important; height:36px !important;
+  border-radius:11px !important; background:#FFF1CF !important; color:#B8801F !important; font-size:15px !important;
+}
+#principalDashboard .principal-shortcut-copy { display:flex !important; flex-direction:column !important; gap:3px !important; min-width:0 !important; }
+#principalDashboard .principal-shortcut-copy strong { color:#13263F !important; font-size:12.5px !important; font-weight:800 !important; line-height:1.25 !important; }
+#principalDashboard .principal-shortcut-copy small { color:#64748B !important; font-size:10.5px !important; line-height:1.35 !important; }
+#principalDashboard .principal-shortcut-arrow { flex:0 0 auto !important; margin-left:auto !important; color:#B8801F !important; font-size:12px !important; }
+html.principal-theme-dark #principalDashboard .principal-shortcuts-heading h2,
+html.principal-theme-dark #principalDashboard .principal-shortcut-copy strong { color:#F8FAFC !important; }
+html.principal-theme-dark #principalDashboard .principal-shortcuts-heading p,
+html.principal-theme-dark #principalDashboard .principal-shortcut-copy small { color:#A0B3C6 !important; }
+html.principal-theme-dark #principalDashboard .principal-shortcut { background:#172A45 !important; border-color:rgba(255,255,255,.10) !important; color:#E0E6F0 !important; }
+html.principal-theme-dark #principalDashboard .principal-shortcut-icon { background:rgba(217,154,43,.16) !important; color:#F0B84D !important; }
+html.principal-theme-dark #principalDashboard .principal-shortcut-arrow { color:#F0B84D !important; }
+@media(max-width:1200px) {
+  #principalDashboard .principal-dashboard-shell { padding:17px 20px 19px !important; }
+  #principalDashboard .principal-summary-grid { gap:10px !important; }
+  #principalDashboard a.principal-summary-card { padding:12px 14px !important; }
+}
+@media(max-width:900px) {
+  #principalDashboard.main { margin-left:0 !important; }
+  #principalDashboard .principal-dashboard-shell { max-width:none !important; min-height:0 !important; }
+  #principalDashboard .principal-shortcuts-grid { grid-template-columns:1fr !important; }
+}
+@media(max-width:768px) {
+  #principalDashboard.main { min-height:calc(100vh - 58px) !important; margin:0 !important; padding:18px 12px 24px !important; }
+  #principalDashboard .principal-dashboard-shell { min-height:0 !important; padding:18px 16px 20px !important; }
+  #principalDashboard .evaluation-schedule-strip { grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:14px !important; }
+  #principalDashboard .principal-welcome-card { align-items:stretch !important; flex-direction:column !important; padding:16px !important; }
+  #principalDashboard .principal-completion-panel { flex:1 1 auto !important; width:100% !important; min-width:0 !important; min-height:72px !important; }
+  #principalDashboard .principal-shortcuts-heading { align-items:flex-start !important; flex-direction:column !important; }
+  #principalDashboard .principal-shortcuts-heading p { white-space:normal !important; }
+}
+@media(max-width:520px) {
+  #principalDashboard .evaluation-schedule-strip { grid-template-columns:1fr !important; }
+  #principalDashboard .principal-summary-grid { grid-template-columns:1fr !important; }
+  #principalDashboard .principal-shortcuts-grid { grid-template-columns:1fr !important; }
+}
+</style>
+

@@ -51,8 +51,18 @@ if (empty($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', ['teacher'
 }
 $user_id = (int)$_SESSION['user_id'];
 
-$tracker_id = isset($_GET['tracker_id']) ? (int)$_GET['tracker_id'] : 0;
-if ($tracker_id <= 0) {
+// A live evaluation is a plain tracker id. An evaluation that was archived by the EA is
+// requested as "k<id>", where <id> is its row in portal_feedback_keep (the anonymous copy
+// kept so faculty and staff can still read the feedback they received).
+$raw_id     = isset($_GET['tracker_id']) ? trim((string)$_GET['tracker_id']) : '';
+$kept_id    = 0;
+$tracker_id = 0;
+if (preg_match('/^k(\d+)$/', $raw_id, $km)) {
+    $kept_id = (int)$km[1];
+} else {
+    $tracker_id = (int)$raw_id;
+}
+if ($tracker_id <= 0 && $kept_id <= 0) {
     json_fail('Missing or invalid evaluation.', 400);
 }
 
@@ -72,6 +82,76 @@ function eval_type_label(?string $eval_type, ?string $peer_group = null): string
         case 'supervisor_to_ea':      return 'Supervisor Evaluation';
         default:                      return ucwords(str_replace('_', ' ', $eval_type ?: 'Evaluation'));
     }
+}
+
+// ── ARCHIVED EVALUATION (kept copy) ──────────────────────────
+// Same scoping rule as the live path: only resolves for the logged-in target. The kept
+// table has no evaluator columns, so anonymity holds here as well.
+if ($kept_id > 0) {
+    $kept = null;
+    try {
+        $kStmt = $mysqli->prepare("
+            SELECT k.eval_type, k.peer_group, k.score, k.remarks, k.submitted_at,
+                   k.period_label, k.semester, k.school_year, k.answers_json,
+                   u.full_name AS target_name
+            FROM portal_feedback_keep k
+            JOIN users u ON u.id = k.target_user_id
+            WHERE k.id = ? AND k.target_user_id = ?
+            LIMIT 1
+        ");
+        if ($kStmt) {
+            $kStmt->bind_param('ii', $kept_id, $user_id);
+            $kStmt->execute();
+            $kept = $kStmt->get_result()->fetch_assoc();
+            $kStmt->close();
+        }
+    } catch (Throwable $e) {
+        $kept = null; // table not created yet, or lookup failed: behave like "not found"
+    }
+    if (!$kept) {
+        json_fail('This evaluation could not be found.', 404);
+    }
+
+    $k_period = (!empty($kept['school_year']) && !empty($kept['semester']))
+        ? $kept['school_year'] . ' · ' . $kept['semester']
+        : ($kept['period_label'] ?? $kept['semester'] ?? null);
+
+    $k_answers   = json_decode((string)$kept['answers_json'], true);
+    $k_questions = [];
+    $k_cats      = [];
+    foreach ((is_array($k_answers) ? $k_answers : []) as $a) {
+        $cat   = trim((string)($a['category'] ?? '')) ?: 'General';
+        $score = (int)($a['score'] ?? 0);
+        $k_questions[] = [
+            'question_id'   => 0,
+            'category'      => $cat,
+            'question_text' => $a['question_text'] ?? '(This question is no longer available)',
+            'score'         => $score,
+        ];
+        if (!isset($k_cats[$cat])) $k_cats[$cat] = ['sum' => 0, 'count' => 0];
+        $k_cats[$cat]['sum']   += $score;
+        $k_cats[$cat]['count'] += 1;
+    }
+    $k_categories = [];
+    foreach ($k_cats as $cat => $t) {
+        $k_categories[] = ['category' => $cat, 'avg' => $t['count'] ? round($t['sum'] / $t['count'], 2) : 0];
+    }
+    $k_count   = count($k_questions);
+    $k_avg     = $k_count ? round(array_sum(array_column($k_questions, 'score')) / $k_count, 2) : 0.0;
+    $k_overall = $kept['score'] !== null ? (float)$kept['score'] : $k_avg;
+
+    echo json_encode([
+        'ok'               => true,
+        'target_name'      => $kept['target_name'],
+        'eval_type_label'  => eval_type_label($kept['eval_type'], $kept['peer_group']),
+        'period_label'     => $k_period,
+        'submitted_at'     => $kept['submitted_at'] ? date('F j, Y', strtotime($kept['submitted_at'])) : null,
+        'overall_score'    => $k_overall,
+        'categories'       => $k_categories,
+        'questions'        => $k_questions,
+        'comment'          => (isset($kept['remarks']) && trim((string)$kept['remarks']) !== '') ? $kept['remarks'] : null,
+    ]);
+    exit;
 }
 
 // ── FETCH THE TRACKER ROW — SCOPED TO THIS USER AS TARGET ─────

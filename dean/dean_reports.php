@@ -75,12 +75,6 @@ if (empty($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', ['dean']))
     exit;
 }
 
-// ── CSRF TOKEN (archive / restore are POST-only) ─────────────────────────────
-if (empty($_SESSION['csrf_token'])) {
-    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-}
-$csrfToken = $_SESSION['csrf_token'];
-
 // ── EXECUTIVE PROFILE (shared portal layout) ─────────────────
 $stmt = $mysqli->prepare("SELECT full_name, username, email, designation, photo, department FROM users WHERE id = ? LIMIT 1");
 $stmt->bind_param("i", $_SESSION['user_id']);
@@ -91,14 +85,6 @@ $photo_src = !empty($me['photo']) ? '../image/' . $me['photo'] : '../image/pbi_l
 
 // ── ENSURE TABLES EXIST (once per session) ───────────────────
 if (empty($_SESSION['dean_reports_schema_v1'])) {
-$mysqli->query("CREATE TABLE IF NOT EXISTS analytics_archive (
-    id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    target_user_id INT UNSIGNED NOT NULL,
-    archived_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    UNIQUE KEY uniq_target (target_user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-
 // evaluation_tracker already has student evals; add eval_type column if missing
 $col = $mysqli->query("SHOW COLUMNS FROM evaluation_tracker LIKE 'eval_type'");
 if ($col && $col->num_rows === 0) {
@@ -152,40 +138,6 @@ $eaRolesSql = implode(',', array_map(static fn($r) => "'" . addslashes($r) . "'"
 $eaScopeSql = "(u.role IN ($eaRolesSql) AND u.is_active=1)";
 $reportStudentScopeSql = "(education_level='higher_ed' OR year_level IN ('1st Year College','2nd Year College','3rd Year College','4th Year College'))";
 
-// ── ARCHIVE / RESTORE (POST + CSRF only) ─────────────────────
-// State-changing actions must never run from a plain GET link, otherwise a
-// crafted URL/image tag could archive personnel for a logged-in Dean.
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['archive_id']) || isset($_POST['restore_id']))) {
-    if (!hash_equals($csrfToken, (string)($_POST['csrf_token'] ?? ''))) {
-        http_response_code(403);
-        exit('Invalid or expired request. Please go back, refresh the page and try again.');
-    }
-    $postEval  = in_array($_POST['eval_type'] ?? '', ['student','peer','staff'], true) ? $_POST['eval_type'] : 'student';
-    $postScopeSql = $postEval === 'staff' ? $eaScopeSql : $reportScopeSql;
-    $postGroup = (string)($_POST['group'] ?? 'All');
-    $qs = "group=" . urlencode($postGroup) . "&eval_type=" . urlencode($postEval);
-
-    if (isset($_POST['archive_id'])) {
-        $aid = intval($_POST['archive_id']);
-        $scopeCheck = $mysqli->query("SELECT u.id FROM users u WHERE u.id=$aid AND $postScopeSql LIMIT 1");
-        if ($scopeCheck && $scopeCheck->num_rows) {
-            $stmt = $mysqli->prepare("INSERT IGNORE INTO analytics_archive (target_user_id) VALUES (?)");
-            $stmt->bind_param("i", $aid); $stmt->execute(); $stmt->close();
-            $_SESSION['toast'] = "Personnel archived. Their data is kept and can be restored anytime.";
-        }
-        header("Location: dean_reports.php?$qs"); exit;
-    }
-
-    $rid = intval($_POST['restore_id']);
-    $scopeCheck = $mysqli->query("SELECT u.id FROM users u WHERE u.id=$rid AND $postScopeSql LIMIT 1");
-    if ($scopeCheck && $scopeCheck->num_rows) {
-        $stmt = $mysqli->prepare("DELETE FROM analytics_archive WHERE target_user_id=?");
-        $stmt->bind_param("i", $rid); $stmt->execute(); $stmt->close();
-        $_SESSION['toast'] = "Personnel restored to the main list.";
-    }
-    header("Location: dean_reports.php?$qs&view=archived"); exit;
-}
-
 $toast = $_SESSION['toast'] ?? ''; unset($_SESSION['toast']);
 
 // ── ACTIVE EVAL TYPE ──────────────────────────────────────────
@@ -212,9 +164,18 @@ $viewScopeSql = $activeEval === 'staff' ? $eaScopeSql : $reportScopeSql;
 $groupForOtherTabs = in_array($groupFilter, ['Faculty','Teacher','Staff'], true) ? $groupFilter : 'All';
 
 $settings = get_system_settings($mysqli);
-$period_id_int = (int)($settings['period_id'] ?? 0);
-$periodSql = $period_id_int > 0 ? "et.period_id=" . $period_id_int : "1=0";
-$periodPlainSql = $period_id_int > 0 ? "period_id=" . $period_id_int : "1=0";
+
+// ── HIGHER-ED PERIOD RESOLUTION ──────────────────────────────
+// The Dean portal is Higher Ed only. The active period in system settings is
+// flipped by the EA between Higher Ed (semester) and Basic Ed (School Year), so
+// the Dean pages must not follow it blindly: they read ALL Higher Ed periods so
+// Faculty and Staff records stay visible whatever structure is active.
+// See dean_period_resolver.php.
+require_once __DIR__ . '/dean_period_resolver.php';
+$periodIds      = dean_higher_ed_period_ids($mysqli, $settings);
+$period_id_int  = $periodIds ? (int)max($periodIds) : 0;   // newest Higher Ed period
+$periodSql      = dean_period_sql($periodIds, 'et.period_id');
+$periodPlainSql = dean_period_sql($periodIds, 'period_id');
 
 $sqlQuote = static function (string $value) use ($mysqli): string {
     return "'" . $mysqli->real_escape_string($value) . "'";
@@ -244,12 +205,18 @@ $collegeStudentEvaluatorPlainSql = "evaluator_id IN (
 
 // IMPORTANT: Dean Peer-to-Peer is College teachers only. Both sides of a peer
 // evaluation (the evaluator AND the person being evaluated) must be teaching
-// personnel assigned to at least one College year level. Following this
-// file's own classification rule, a staff-role account with a College year
-// level is teaching staff, so it counts; Dean, Principal, non-teaching Staff
-// and basic-ed (JHS/SHS) teachers do not.
+// personnel assigned to at least one College year level. A Staff-sector account
+// needs an explicit teaching identity (Teacher sector, Teacher/Faculty secondary
+// role, or a teaching_assignments row); a College year-level row alone is not enough.
 $collegeTeacherIdsSql = "SELECT ct.id FROM users ct
-    WHERE ct.role IN ('teacher','faculty','staff')
+    WHERE (
+        ct.role IN ('teacher','faculty')
+        OR (ct.role='staff' AND (
+            ct.sector='Teacher'
+            OR LOWER(COALESCE(ct.secondary_role,'')) IN ('teacher','faculty')
+            OR EXISTS (SELECT 1 FROM teaching_assignments ctta WHERE ctta.user_id=ct.id)
+        ))
+    )
       AND EXISTS (SELECT 1 FROM user_year_levels ctyl
                   WHERE ctyl.user_id=ct.id AND ctyl.year_level IN ($collegeLevelsSql))";
 $peerEvalSql = "$periodSql AND et.eval_type IN ($peerTypesSql)
@@ -292,6 +259,13 @@ $view       = $_GET['view']       ?? 'list';
 $target_id  = intval($_GET['target_id']  ?? 0);
 $student_id = intval($_GET['student_id'] ?? 0);  // evaluator for peer
 $tracker_id = intval($_GET['tracker_id'] ?? 0);
+if (($view === 'list') && isset($_GET['group']) && (string)$_GET['group'] !== (string)$groupFilter) {
+    $canonicalParams = $_GET;
+    $canonicalParams['group'] = $groupFilter;
+    $canonicalPath = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?: 'dean_reports.php';
+    header('Location: ' . $canonicalPath . '?' . http_build_query($canonicalParams), true, 302);
+    exit;
+}
 
 // ── HELPERS ───────────────────────────────────────────────────
 // Resolve a target into the same Student Evaluation groups used by the
@@ -865,7 +839,7 @@ input::placeholder, textarea::placeholder { color:#94A3B8; }
 button, .btn { font-weight:700; }
 a { color:inherit; }
 </style>
-<link rel="stylesheet" href="includes/dean_light_theme.css"/>
+<link rel="stylesheet" href="includes/dean_light_theme.css?v=dashboard-ui-20261009"/>
 </head><body class="<?= $reportMode ? 'report-mode' : '' ?>">
 </div>
 <?php render_exec_sidebar('reports', $me, $photo_src); ?>
@@ -1900,7 +1874,7 @@ if ($view === 'students' && $target_id) {
   .detail-results-table th,.detail-results-table td{color:#000!important;}
 }
 </style>
-<link rel="stylesheet" href="includes/dean_light_theme.css"/>
+<link rel="stylesheet" href="includes/dean_light_theme.css?v=dashboard-ui-20261009"/>
 </head><body>
 <?php render_exec_sidebar('reports', $me, $photo_src); ?>
 <main class="main detail-page">
@@ -2373,520 +2347,6 @@ html.dark-theme ::-webkit-scrollbar-thumb {
 </body></html>
 <?php $mysqli->close(); exit; }
 
-// ══════════════════════════════════════════════════════════════
-// VIEW: ARCHIVED PERSONNEL
-// ══════════════════════════════════════════════════════════════
-if ($view === 'archived') {
-    $whereRoleArc = match ($groupFilter) {
-        'Teacher' => "u.role='teacher'",
-        'Staff' => "u.role='staff'",
-        'MultiRoleTeacher','MultiRoleStaff','MultiRole' => "u.role IN ('teacher','staff','faculty')",
-        default => "u.role IN ('teacher','staff','faculty')"
-    };
-    if ($activeEval === 'staff') $whereRoleArc = "u.role IN ($eaRolesSql)";
-    $archived = [];
-    $res = $mysqli->query("
-        SELECT u.id,u.full_name,u.designation,u.photo,u.role,u.secondary_role,u.source,u.account_status,aa.archived_at,
-               COUNT(DISTINCT et.id) AS total_responses,
-               AVG(qa.answer_score)  AS avg_score
-        FROM analytics_archive aa
-        JOIN users u ON u.id=aa.target_user_id
-        LEFT JOIN evaluation_tracker et ON et.target_user_id=u.id AND $evalTypeSql
-        LEFT JOIN questionnaire_answers qa ON qa.tracker_id=et.id AND " . rp_current_q_sql('qa', 'u.id') . "
-        WHERE $whereRoleArc AND $viewScopeSql
-        GROUP BY u.id ORDER BY aa.archived_at DESC
-    ");
-    if ($res) $archived = $res->fetch_all(MYSQLI_ASSOC);
-
-    pageHead('Archived Personnel', $evalColor, $evalColorBg, $evalColorBorder);
-    ?>
-<style>
-.page-title{font-family:'Rajdhani',sans-serif;font-size:28px;font-weight:700;color:var(--light);margin-bottom:3px;}
-.page-sub{font-size:13px;color:var(--muted);margin-bottom:24px;}
-.people-list{display:flex;flex-direction:column;gap:14px;}
-.person-row{background:var(--mid);border:1px solid var(--border);border-radius:14px;overflow:hidden;opacity:.85;}
-.person-header{display:flex;align-items:center;gap:16px;padding:18px 22px;}
-.person-photo{width:52px;height:52px;border-radius:50%;object-fit:cover;border:2px solid var(--border);filter:grayscale(.4);}
-.person-photo-ph{width:52px;height:52px;border-radius:50%;background:var(--inner);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:20px;}
-.person-name{font-size:15px;font-weight:700;color:var(--light);margin-bottom:4px;}
-.person-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--muted);}
-.archived-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border-radius:20px;font-size:11px;font-weight:700;background:rgba(160,179,198,.15);color:var(--muted);border:1px solid var(--border);}
-.btn-restore{background:var(--teal);color:#fff;border:none;padding:9px 18px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;transition:background .2s;white-space:nowrap;}
-.btn-restore:hover{background:#14b89f;}
-.no-archived{text-align:center;padding:48px;background:var(--mid);border-radius:14px;border:1px solid var(--border);color:var(--muted);}
-.no-archived i{font-size:36px;opacity:.3;display:block;margin-bottom:14px;}
-
-/* ── SHARP LIGHT ADMIN UI ── */
-html { background:#F8FAFC; }
-body {
-  color:#0F172A !important;
-  background:#F8FAFC !important;
-  -webkit-font-smoothing:antialiased;
-  text-rendering:optimizeLegibility;
-}
-h1,h2,h3,h4,h5,h6 { color:#0F172A; letter-spacing:-.01em; }
-p, .subtitle, .description, .helper, .muted, small { color:#475569; }
-label, th { color:#334155; font-weight:600; }
-td { color:#0F172A; }
-input, select, textarea {
-  color:#0F172A;
-  background:#FFFFFF;
-  border-color:#CBD5E1;
-}
-input::placeholder, textarea::placeholder { color:#94A3B8; }
-.card, .panel, .section, .table-card, .content-card {
-  border-color:#CBD5E1;
-  box-shadow:0 4px 14px rgba(15,23,42,.07);
-}
-button, .btn { font-weight:700; }
-a { color:inherit; }
-</style>
-</head><body>
-<?php render_exec_sidebar('reports', $me, $photo_src); ?>
-<main class="main">
-
-<?php if ($toast): ?><div class="toast"><i class="fa-solid fa-circle-check"></i><?= htmlspecialchars($toast) ?></div><?php endif; ?>
-<a href="?group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>" class="back-btn"><i class="fa-solid fa-arrow-left"></i> Back to Analytics</a>
-<div class="page-title">Archived Personnel</div>
-<div class="page-sub">Hidden from the main list. Evaluation data is preserved and can be restored anytime.</div>
-<?php if (empty($archived)): ?>
-<div class="no-archived"><i class="fa-solid fa-box-archive"></i><p>No archived personnel.</p></div>
-<?php else: ?>
-<div class="people-list">
-<?php foreach ($archived as $p):
-    $avg = $p['avg_score'] !== null ? round($p['avg_score'],2) : null;
-?>
-<div class="person-row">
-    <div class="person-header">
-        <?php if($p['photo']): ?><img class="person-photo" src="../image/<?= htmlspecialchars($p['photo']) ?>" alt=""/>
-        <?php else: ?><div class="person-photo-ph"><i class="fa-solid fa-user"></i></div><?php endif; ?>
-        <div style="flex:1;">
-            <div class="person-name"><?= htmlspecialchars($p['full_name']) ?></div>
-            <div class="person-meta">
-                <span class="archived-badge"><i class="fa-solid fa-box-archive"></i> Archived <?= date('M d, Y', strtotime($p['archived_at'])) ?></span>
-                <span><?= $activeEval==='staff' ? 'Executive Assistant' : ($p['role']==='teacher'?'Teacher':'Staff') ?> · <?= htmlspecialchars((string)($p['designation'] ?? '')) ?></span>
-                <span><?= $p['total_responses'] ?> evaluation<?= $p['total_responses']!=1?'s':'' ?></span>
-                <?php if ($avg !== null): ?><span style="color:<?= scoreColor($avg) ?>;font-weight:700;"><?= number_format($avg,2) ?> avg</span><?php endif; ?>
-            </div>
-        </div>
-        <form method="post" action="dean_reports.php" style="margin:0"
-              onsubmit="return confirm(<?= htmlspecialchars(json_encode('Restore ' . $p['full_name'] . ' to the analytics list?', JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') ?>)">
-            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>"/>
-            <input type="hidden" name="restore_id" value="<?= (int)$p['id'] ?>"/>
-            <input type="hidden" name="group" value="<?= htmlspecialchars($groupFilter) ?>"/>
-            <input type="hidden" name="eval_type" value="<?= htmlspecialchars($activeEval) ?>"/>
-            <button type="submit" class="btn-restore" style="font-family:inherit"><i class="fa-solid fa-rotate-left"></i> Restore</button>
-        </form>
-    </div>
-</div>
-<?php endforeach; ?>
-</div>
-<?php endif; ?>
-<?php $mysqli->close(); ?>
-</main>
-
-<style id="executive-original-theme-2">
-:root{
- --dark:#0A192F;--mid:#172A45;--inner:#0F1F3D;
- --violet:#7C5FD9;--violet-h:#9C85F0;--violet-dark:#5F45B8;
- --light:#E0E6F0;--muted:#A0B3C6;--border:rgba(255,255,255,.08);
- --accent:#7C5FD9;--accent-h:#9C85F0;--good:#10B981;--danger:#f05454;
- --page-bg:#0A192F;--card-bg:rgba(23,42,69,.85);--card-border:rgba(255,255,255,.08);
-}
-html{background:var(--dark)!important;color-scheme:dark!important;}
-body{background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,.82)),url('../background.png') center center/cover no-repeat fixed!important;background-color:var(--dark)!important;color:var(--light)!important;}
-.main,.content,.page-content{color:var(--light)!important;}
-.page-title,.page-header h1,.section-title,.sheet-name,.target-name{color:#fff!important;}
-.page-sub,.sheet-desig,.target-desig,.muted,.hint,.helper,.description,p{color:var(--muted)!important;}
-/* Cards/panels */
-.card,.panel,.section,.table-card,.content-card,.stat-card,.sum-card,.standing-panel,.eval-card,.eval-banner,.info-banner,.history-card,.gl-card,.amber-card,.green-card,.red-card,.person-row,.target-card,.no-eval,.no-data,.no-evaluated,.comment-section,.avg-summary,.cat-section,.people-list,.evaluator-grid{
- background:rgba(23,42,69,.85)!important;border-color:rgba(255,255,255,.08)!important;box-shadow:0 8px 32px rgba(0,0,0,.45)!important;color:var(--light)!important;
-}
-.table-wrap{background:transparent!important;color:var(--light)!important;}
-table.data th,table.data td,th,td{color:var(--light)!important;border-color:rgba(255,255,255,.08)!important;}
-.q-table{color:var(--light)!important;}
-.q-table th{color:var(--muted)!important;background:rgba(15,31,61,.65)!important;border-color:rgba(255,255,255,.08)!important;}
-.q-table td{color:var(--light)!important;border-color:rgba(255,255,255,.06)!important;}
-/* Tabs and filters */
-.eval-switcher,.tabs,.level-tabs,.status-tabs{background:rgba(23,42,69,.85)!important;border-color:rgba(255,255,255,.08)!important;box-shadow:none!important;}
-.eval-tab,.tab,.level-tab,.status-tab,.group-tab,.desig-subtab{color:var(--muted)!important;background:transparent!important;}
-.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover,.group-tab:hover,.desig-subtab:hover{color:#fff!important;background:rgba(124,95,217,.08)!important;}
-.eval-tab.student.active,.group-tab.active,.desig-subtab.active{background:rgba(124,95,217,.14)!important;color:var(--violet-h)!important;border-color:rgba(124,95,217,.35)!important;}
-.eval-tab.student.active::after{background:var(--violet)!important;}
-.eval-tab.peer.active{background:rgba(124,95,217,.14)!important;color:var(--violet-h)!important;}
-.eval-tab.peer.active::after{background:var(--violet)!important;}
-.tab-badge{background:rgba(255,255,255,.08)!important;color:var(--muted)!important;}
-.eval-tab.student.active .tab-badge,.eval-tab.peer.active .tab-badge{background:rgba(124,95,217,.18)!important;color:var(--violet-h)!important;}
-/* Buttons/links */
-.btn-print,.btn-print.no-print,.back-btn,.btn,.action-btn,.btn-archive,.btn-restore,.btn-solid,.btn-archived-link{background:rgba(124,95,217,.12)!important;border:1px solid rgba(124,95,217,.35)!important;color:var(--violet-h)!important;}
-.btn-print:hover,.back-btn:hover,.btn:hover,.action-btn:hover,.btn-archive:hover,.btn-restore:hover,.btn-solid:hover,.btn-archived-link:hover{background:rgba(124,95,217,.22)!important;color:#fff!important;}
-.btn-solid{background:var(--violet)!important;color:#fff!important;}
-/* accents */
-.eval-banner{background:rgba(124,95,217,.08)!important;border-color:rgba(124,95,217,.25)!important;}
-.eval-banner-title,.eval-banner-icon,.cat-title,.comment-title,.section h2 i,.section h2{color:var(--violet-h)!important;}
-.period-badge{background:rgba(124,95,217,.14)!important;border-color:rgba(124,95,217,.3)!important;color:var(--violet-h)!important;}
-.bar-fill,.avg-bar-fill{background:linear-gradient(90deg,var(--violet-dark),var(--violet-h))!important;}
-.score-bar-bg,.eval-bar-bg,.avg-bar-bg,.bar-wrap{background:rgba(255,255,255,.08)!important;}
-.standing-title.top,.standing-score,.pstat-val,.avg-score-big,.avg-score-label{color:#4ade80!important;}
-.standing-title.low{color:#f87171!important;}
-.person-row:hover,.standing-item:hover{border-color:rgba(124,95,217,.4)!important;background:rgba(124,95,217,.05)!important;}
-.comment-text{background:rgba(15,31,61,.7)!important;color:var(--light)!important;}
-.empty-note,.no-comment,.no-eval{color:var(--muted)!important;}
-label,th{color:var(--muted)!important;}
-input,select,textarea{background:#0F1F3D!important;color:var(--light)!important;border-color:rgba(255,255,255,.12)!important;}
-input::placeholder,textarea::placeholder{color:#7890a8!important;}
-</style>
-
-
-<style id="dean-reports-dark-final">
-/* -------------------------------------------------------------------------
-   Final dark-mode layer for Dean Evaluation Reports.
-   This is intentionally loaded last because this page contains several
-   legacy light-theme blocks and view-specific inline styles.
-   ------------------------------------------------------------------------- */
-html.dark-theme body {
-  background:#0A192F !important;
-  background-image:none !important;
-  color:#E0E6F0 !important;
-}
-html.dark-theme .main {
-  background:#0F1F3D !important;
-  color:#E0E6F0 !important;
-}
-
-/* Main analytics tabs / filters */
-html.dark-theme .reports-top-tab,
-html.dark-theme .reports-filter-tab {
-  background:#172A45 !important;
-  border-color:rgba(255,255,255,.12) !important;
-  color:#A0B3C6 !important;
-  box-shadow:none !important;
-}
-html.dark-theme .reports-top-tab:hover,
-html.dark-theme .reports-filter-tab:hover {
-  background:#1D3350 !important;
-  color:#E0E6F0 !important;
-}
-html.dark-theme .reports-top-tab.active,
-html.dark-theme .reports-top-tab.peer.active,
-html.dark-theme .reports-filter-tab.active {
-  background:rgba(124,95,217,.16) !important;
-  border-color:rgba(156,133,240,.38) !important;
-  color:#C4B5FD !important;
-  box-shadow:none !important;
-}
-html.dark-theme .reports-top-badge,
-html.dark-theme .reports-filter-tab b {
-  background:#0F1F3D !important;
-  color:#A0B3C6 !important;
-}
-html.dark-theme .reports-top-tab.active .reports-top-badge,
-html.dark-theme .reports-filter-tab.active b {
-  background:rgba(124,95,217,.22) !important;
-  color:#C4B5FD !important;
-}
-
-html.dark-theme .reports-sub-filters,
-html.dark-theme .reports-designation-filters,
-html.dark-theme .reports-peer-note {
-  background:#172A45 !important;
-  border-color:rgba(255,255,255,.08) !important;
-  color:#A0B3C6 !important;
-}
-html.dark-theme .reports-sub-label { color:#A0B3C6 !important; }
-html.dark-theme .reports-sub-tab,
-html.dark-theme .reports-designation-pill {
-  color:#A0B3C6 !important;
-}
-html.dark-theme .reports-sub-tab:hover,
-html.dark-theme .reports-designation-pill:hover {
-  background:#1D3350 !important;
-  color:#E0E6F0 !important;
-}
-html.dark-theme .reports-sub-tab.active,
-html.dark-theme .reports-designation-pill.active {
-  background:rgba(124,95,217,.16) !important;
-  border-color:rgba(156,133,240,.35) !important;
-  color:#C4B5FD !important;
-}
-html.dark-theme .reports-sub-tab b,
-html.dark-theme .reports-designation-pill b {
-  background:#0F1F3D !important;
-  color:#A0B3C6 !important;
-}
-
-/* Report data panel */
-html.dark-theme .reports-data-panel {
-  background:#172A45 !important;
-  border-color:rgba(255,255,255,.08) !important;
-  box-shadow:0 8px 28px rgba(0,0,0,.28) !important;
-}
-html.dark-theme .reports-data-title h2 { color:#E0E6F0 !important; }
-html.dark-theme .reports-data-title span { color:#A0B3C6 !important; }
-html.dark-theme .reports-data-title i { color:#9C85F0 !important; }
-html.dark-theme .reports-action-btn {
-  background:#0F1F3D !important;
-  border-color:rgba(255,255,255,.14) !important;
-  color:#E0E6F0 !important;
-}
-html.dark-theme .reports-action-btn:hover { background:#1D3350 !important; }
-html.dark-theme .reports-search-box {
-  background:#0F1F3D !important;
-  border-color:rgba(255,255,255,.14) !important;
-}
-html.dark-theme .reports-search-box i { color:#8EA5BB !important; }
-html.dark-theme .reports-search-box input {
-  background:transparent !important;
-  color:#E0E6F0 !important;
-}
-html.dark-theme .reports-search-box input::placeholder { color:#6B84A0 !important; }
-html.dark-theme .reports-active-filter-note {
-  background:#0F1F3D !important;
-  border-color:rgba(255,255,255,.08) !important;
-  color:#A0B3C6 !important;
-}
-html.dark-theme .reports-active-filter-note button { color:#C4B5FD !important; }
-
-/* Main report table */
-html.dark-theme .reports-table th {
-  background:#0F1F3D !important;
-  color:#A0B3C6 !important;
-  border-top-color:rgba(255,255,255,.08) !important;
-  border-bottom-color:rgba(255,255,255,.10) !important;
-}
-html.dark-theme .reports-table td {
-  background:#172A45 !important;
-  color:#E0E6F0 !important;
-  border-bottom-color:rgba(255,255,255,.08) !important;
-}
-html.dark-theme .reports-table tbody tr:hover td {
-  background:#1D3350 !important;
-}
-html.dark-theme .reports-person-name { color:#E0E6F0 !important; }
-html.dark-theme .reports-designation-cell { color:#B6C6D6 !important; }
-html.dark-theme .reports-person-photo { border-color:rgba(255,255,255,.12) !important; }
-html.dark-theme .reports-person-photo.placeholder {
-  background:#0F1F3D !important;
-  color:#8EA5BB !important;
-}
-html.dark-theme .reports-role-badge.faculty {
-  background:rgba(37,99,216,.16) !important;
-  border-color:rgba(96,165,250,.32) !important;
-  color:#93C5FD !important;
-}
-html.dark-theme .reports-role-badge.staff,
-html.dark-theme .reports-role-badge.dean {
-  background:rgba(124,95,217,.16) !important;
-  border-color:rgba(156,133,240,.32) !important;
-  color:#C4B5FD !important;
-}
-html.dark-theme .reports-role-badge.principal {
-  background:rgba(217,119,6,.16) !important;
-  border-color:rgba(217,119,6,.32) !important;
-  color:#FBBF24 !important;
-}
-html.dark-theme .reports-score.high { color:#4ADE80 !important; }
-html.dark-theme .reports-score.mid { color:#FBBF24 !important; }
-html.dark-theme .reports-score.low { color:#FCA5A5 !important; }
-html.dark-theme .reports-date { color:#A0B3C6 !important; }
-html.dark-theme .reports-view-btn {
-  background:rgba(59,130,246,.14) !important;
-  border-color:rgba(96,165,250,.32) !important;
-  color:#93C5FD !important;
-}
-html.dark-theme .reports-view-btn:hover { background:rgba(59,130,246,.22) !important; }
-html.dark-theme .reports-archive-btn {
-  background:#0F1F3D !important;
-  border-color:rgba(255,255,255,.14) !important;
-  color:#A0B3C6 !important;
-}
-html.dark-theme .reports-archive-btn:hover { background:#1D3350 !important; color:#E0E6F0 !important; }
-html.dark-theme .reports-empty-state,
-html.dark-theme .reports-no-search { color:#A0B3C6 !important; }
-html.dark-theme .reports-empty-state h3 { color:#E0E6F0 !important; }
-html.dark-theme .reports-empty-state i { color:#71879C !important; }
-html.dark-theme .reports-empty-state p { color:#A0B3C6 !important; }
-html.dark-theme .reports-live-status {
-  background:rgba(16,185,129,.14) !important;
-  border-color:rgba(16,185,129,.32) !important;
-  color:#4ADE80 !important;
-}
-html.dark-theme .reports-live-status.stale {
-  background:#0F1F3D !important;
-  border-color:rgba(255,255,255,.10) !important;
-  color:#8EA5BB !important;
-}
-
-/* Shared report/detail controls */
-html.dark-theme .back-btn,
-html.dark-theme .detail-back,
-html.dark-theme .btn-archived-link {
-  background:#0F1F3D !important;
-  border-color:rgba(255,255,255,.14) !important;
-  color:#E0E6F0 !important;
-}
-html.dark-theme .back-btn:hover,
-html.dark-theme .detail-back:hover,
-html.dark-theme .btn-archived-link:hover {
-  background:#1D3350 !important;
-  color:#C4B5FD !important;
-}
-
-/* Detail / individual evaluation view */
-html.dark-theme .detail-eval-banner {
-  background:rgba(59,130,246,.10) !important;
-  border-color:rgba(96,165,250,.24) !important;
-}
-html.dark-theme .detail-eval-icon {
-  background:rgba(59,130,246,.14) !important;
-  border-color:rgba(96,165,250,.28) !important;
-  color:#93C5FD !important;
-}
-html.dark-theme .detail-eval-title { color:#93C5FD !important; }
-html.dark-theme .detail-eval-sub { color:#A0B3C6 !important; }
-html.dark-theme .detail-person-card,
-html.dark-theme .detail-results-panel,
-html.dark-theme .detail-legend {
-  background:#172A45 !important;
-  border-color:rgba(255,255,255,.08) !important;
-  box-shadow:0 8px 28px rgba(0,0,0,.25) !important;
-}
-html.dark-theme .detail-person-avatar.ph {
-  background:#0F1F3D !important;
-  color:#8EA5BB !important;
-}
-html.dark-theme .detail-person-name { color:#E0E6F0 !important; }
-html.dark-theme .detail-person-desig,
-html.dark-theme .detail-stat-label,
-html.dark-theme .detail-legend-text,
-html.dark-theme .detail-results-title span,
-html.dark-theme .detail-year-filter label { color:#A0B3C6 !important; }
-html.dark-theme .detail-stat-value { color:#93C5FD !important; }
-html.dark-theme .detail-stat-value.score { color:#4ADE80 !important; }
-html.dark-theme .detail-legend-title { color:#E0E6F0 !important; }
-html.dark-theme .detail-year-filter select {
-  background:#0F1F3D !important;
-  color:#E0E6F0 !important;
-  border-color:rgba(255,255,255,.14) !important;
-}
-html.dark-theme .detail-results-title h2 { color:#E0E6F0 !important; }
-html.dark-theme .detail-results-title i { color:#9C85F0 !important; }
-html.dark-theme .detail-results-table th {
-  background:#0F1F3D !important;
-  color:#A0B3C6 !important;
-  border-bottom-color:rgba(255,255,255,.10) !important;
-}
-html.dark-theme .detail-results-table td {
-  background:#172A45 !important;
-  color:#E0E6F0 !important;
-  border-bottom-color:rgba(255,255,255,.08) !important;
-}
-html.dark-theme .detail-results-table tbody tr:hover td { background:#1D3350 !important; }
-html.dark-theme .detail-evaluator,
-html.dark-theme .detail-date,
-html.dark-theme .detail-role { color:#B8C7D7 !important; }
-html.dark-theme .detail-rating {
-  background:rgba(16,185,129,.14) !important;
-  color:#4ADE80 !important;
-}
-html.dark-theme .detail-view-btn {
-  background:rgba(59,130,246,.14) !important;
-  border-color:rgba(96,165,250,.32) !important;
-  color:#93C5FD !important;
-}
-html.dark-theme .detail-view-btn:hover { background:rgba(59,130,246,.22) !important; }
-html.dark-theme .detail-empty { color:#A0B3C6 !important; }
-html.dark-theme .detail-empty h3 { color:#E0E6F0 !important; }
-html.dark-theme .detail-empty p { color:#A0B3C6 !important; }
-
-/* Individual sheet view */
-html.dark-theme .sheet-header,
-html.dark-theme .scale-bar,
-html.dark-theme .comment-section,
-html.dark-theme .avg-summary {
-  background:#172A45 !important;
-  border-color:rgba(255,255,255,.08) !important;
-  color:#E0E6F0 !important;
-}
-html.dark-theme .sheet-name,
-html.dark-theme .avg-score-big,
-html.dark-theme .avg-score-label { color:#E0E6F0 !important; }
-html.dark-theme .sheet-desig,
-html.dark-theme .eval-by-label,
-html.dark-theme .eval-by-date,
-html.dark-theme .avg-out-of,
-html.dark-theme .scale-item,
-html.dark-theme .avg-bar-label { color:#A0B3C6 !important; }
-html.dark-theme .eval-by-name { color:#93C5FD !important; }
-html.dark-theme .sheet-avatar-ph {
-  background:#0F1F3D !important;
-  border-color:rgba(255,255,255,.12) !important;
-  color:#8EA5BB !important;
-}
-html.dark-theme .eval-type-chip {
-  background:rgba(59,130,246,.12) !important;
-  border-color:rgba(96,165,250,.28) !important;
-  color:#93C5FD !important;
-}
-html.dark-theme .q-table {
-  background:#172A45 !important;
-  border-color:rgba(255,255,255,.08) !important;
-}
-html.dark-theme .q-table thead tr,
-html.dark-theme .q-table th {
-  background:#0F1F3D !important;
-  color:#A0B3C6 !important;
-}
-html.dark-theme .q-table td {
-  background:#172A45 !important;
-  color:#E0E6F0 !important;
-  border-top-color:rgba(255,255,255,.08) !important;
-}
-html.dark-theme .q-table tr:hover td { background:#1D3350 !important; }
-html.dark-theme .rating-badge {
-  background:#0F1F3D !important;
-  border-color:rgba(255,255,255,.08) !important;
-  color:#E0E6F0 !important;
-}
-html.dark-theme .comment-text { color:#D7E0E9 !important; }
-html.dark-theme .avg-bar-bg { background:rgba(255,255,255,.08) !important; }
-
-/* Archived personnel */
-html.dark-theme .person-row,
-html.dark-theme .no-archived {
-  background:#172A45 !important;
-  border-color:rgba(255,255,255,.08) !important;
-  color:#E0E6F0 !important;
-}
-html.dark-theme .person-name { color:#E0E6F0 !important; }
-html.dark-theme .person-meta { color:#A0B3C6 !important; }
-html.dark-theme .person-photo-ph {
-  background:#0F1F3D !important;
-  border-color:rgba(255,255,255,.12) !important;
-  color:#8EA5BB !important;
-}
-html.dark-theme .archived-badge {
-  background:#0F1F3D !important;
-  border-color:rgba(255,255,255,.10) !important;
-  color:#A0B3C6 !important;
-}
-html.dark-theme .btn-restore {
-  background:rgba(124,95,217,.16) !important;
-  border:1px solid rgba(156,133,240,.35) !important;
-  color:#C4B5FD !important;
-}
-html.dark-theme .btn-restore:hover { background:rgba(124,95,217,.24) !important; }
-
-/* Keep dark-theme scrollbars readable */
-html.dark-theme ::-webkit-scrollbar-track { background:#0F1F3D !important; }
-html.dark-theme ::-webkit-scrollbar-thumb {
-  background:#2A4468 !important;
-  border:2px solid #0F1F3D !important;
-}
-</style>
-
-</body></html>
-<?php exit; }
 
 // ══════════════════════════════════════════════════════════════
 // VIEW: MAIN LIST
@@ -2906,7 +2366,6 @@ $whereRole = match ($activeEval) {
 $people = [];
 $res = $mysqli->query(" 
     SELECT u.id, u.full_name, u.designation, u.photo, u.role, u.secondary_role, u.source, u.account_status,
-           aa.archived_at,
            COUNT(DISTINCT et.id) AS total_responses,
            MAX(et.submitted_at) AS last_evaluated,
            AVG(qa.answer_score)  AS avg_score,
@@ -2915,9 +2374,7 @@ $res = $mysqli->query("
     FROM users u
     JOIN evaluation_tracker et ON et.target_user_id=u.id AND $evalTypeSql
     LEFT JOIN questionnaire_answers qa ON qa.tracker_id=et.id AND " . rp_current_q_sql('qa', 'u.id') . "
-    LEFT JOIN analytics_archive aa ON aa.target_user_id=u.id
     WHERE $whereRole AND u.is_active=1 AND $viewScopeSql
-      AND aa.id IS NULL
     GROUP BY u.id
     ORDER BY avg_score DESC, u.full_name ASC
 ");
@@ -3002,7 +2459,6 @@ if ($groupFilter === 'Teacher' || $groupFilter === 'Staff') {
     $totalFacStaff = $groupFilter === 'Teacher' ? $facCount : $staffCount;
 }
 
-$archivedCount = db_row($mysqli, "SELECT COUNT(*) as c FROM analytics_archive aa JOIN users u ON u.id=aa.target_user_id WHERE $viewScopeSql")['c'] ?? 0;
 $studentEvalCount = db_row($mysqli, "SELECT COUNT(DISTINCT et.id) as c
     FROM evaluation_tracker et
     JOIN users u ON u.id=et.target_user_id
@@ -3013,7 +2469,7 @@ $studentEvalCount = db_row($mysqli, "SELECT COUNT(DISTINCT et.id) as c
       AND $reportScopeSql")['c'] ?? 0;
 $multiRoleEvalCount = db_row($mysqli, "SELECT COUNT(DISTINCT et.id) AS c
     FROM evaluation_tracker et JOIN users u ON u.id=et.target_user_id
-    WHERE et.period_id=$period_id_int
+    WHERE $periodSql
       AND et.eval_type='student'
       AND $collegeStudentEvaluatorSql
       AND (et.evaluation_context='multi_role' OR EXISTS (
@@ -3179,15 +2635,6 @@ a { color:inherit; }
         </a>
     </div>
 
-    <div class="reports-toolbar">
-        <div class="reports-toolbar-spacer" aria-hidden="true"></div>
-        <div class="reports-toolbar-actions">
-            <a href="?view=archived&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>" class="reports-archive-link">
-                <i class="fa-solid fa-box-archive"></i> Archived<?php if ($archivedCount > 0): ?><span class="reports-archive-count"><?= $archivedCount ?></span><?php endif; ?>
-            </a>
-        </div>
-    </div>
-
     <?php if ($activeEval === 'student'): ?>
     <div class="reports-filter-tabs">
         <a href="?group=All&eval_type=student" class="reports-filter-tab <?= $groupFilter==='All'?'active':'' ?>">
@@ -3280,9 +2727,13 @@ a { color:inherit; }
                     } elseif ($activeEval === 'staff') {
                         $roleLabel = 'Executive Assistant';
                     } else {
-                        $roleLabel = in_array($rawRole, ['teacher','faculty'], true) ? 'Faculty' : 'Staff';
+                        // In Peer-to-Peer, every row has already passed the explicit
+                        // College teaching-personnel filter. A role='staff' account
+                        // admitted via sector/secondary-role/teaching assignment is
+                        // displayed as Teaching Staff, not ordinary Non-Teaching Staff.
+                        $roleLabel = in_array($rawRole, ['teacher','faculty'], true) ? 'Faculty' : 'Teaching Staff';
                     }
-                    $isFac = $roleLabel === 'Faculty';
+                    $isFac = in_array($roleLabel, ['Faculty','Teaching Staff'], true);
                     $lastEval = !empty($p['last_evaluated']) ? date('M d, Y', strtotime($p['last_evaluated'])) : '—';
                     $searchText = trim(($p['full_name'] ?? '') . ' ' . ($p['designation'] ?? '') . ' ' . $roleLabel);
                 ?>
@@ -3301,7 +2752,6 @@ a { color:inherit; }
                         <td class="col-actions">
                             <div class="reports-row-actions">
                                 <a class="reports-view-btn" href="?view=students&target_id=<?= $p['id'] ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>"><i class="fa-solid fa-eye"></i> View</a>
-                                <button type="button" class="reports-archive-btn" onclick="archivePerson(<?= (int)$p['id'] ?>, <?= htmlspecialchars(json_encode((string)$p['full_name'], JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') ?>)"><i class="fa-solid fa-box-archive"></i> Archive</button>
                             </div>
                         </td>
                     </tr>
@@ -3341,7 +2791,7 @@ a { color:inherit; }
 .reports-archive-link{display:inline-flex;align-items:center;gap:7px;padding:11px 15px;border:1px solid #BCD0E5;border-radius:11px;background:#fff;color:#38546E;text-decoration:none;font-size:12px;font-weight:700;}
 .reports-archive-link:hover{background:#F6F9FC;border-color:#8FAFCB;color:#173957;}
 .reports-archive-count{padding:2px 7px;border-radius:999px;background:#EDF2F7;color:#64748B;font-size:10px;}
-.reports-filter-tabs{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:12px;}
+.reports-filter-tabs{display:flex;gap:9px;flex-wrap:wrap;margin-top:28px;margin-bottom:12px;}
 .reports-filter-tab{display:inline-flex;align-items:center;gap:9px;min-height:47px;padding:0 22px;border:1px solid #CFE0F0;border-radius:13px;background:#fff;color:#56708A;text-decoration:none;font-size:14px;font-weight:700;box-shadow:0 1px 3px rgba(27,67,106,.03);}
 .reports-filter-tab:hover{background:#F7FAFD;color:#274B6C;}
 .reports-filter-tab.active{background:#E9F2FF;border-color:#7CB0FF;color:#2161CF;box-shadow:0 2px 7px rgba(45,102,225,.08);}
@@ -3503,26 +2953,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (note) note.hidden = !q;
     });
 });
-function archivePerson(id, name) {
-    if (!confirm(`Archive "${name}"? They'll be hidden from this list but their evaluation data is kept and can be restored anytime.`)) return;
-    const f = document.createElement('form');
-    f.method = 'post';
-    f.action = 'dean_reports.php';
-    const fields = {
-        archive_id: id,
-        group: <?= json_encode($groupFilter) ?>,
-        eval_type: <?= json_encode($activeEval) ?>,
-        csrf_token: <?= json_encode($csrfToken) ?>
-    };
-    Object.keys(fields).forEach(function(k){
-        const i = document.createElement('input');
-        i.type = 'hidden'; i.name = k; i.value = fields[k];
-        f.appendChild(i);
-    });
-    document.body.appendChild(f);
-    f.submit();
-}
-
 // ── LIVE REPORT UPDATES ────────────────────────────────────────────────
 // Reports reads the same evaluation_tracker records used by the tracker/results
 // pages. Polling the lightweight endpoint makes newly submitted evaluations
@@ -4095,7 +3525,7 @@ html.dark-theme ::-webkit-scrollbar-thumb {
 </style>
 
 </body>
-<link rel="stylesheet" href="includes/dean_light_theme.css" id="dean-light-theme-final"/>
+<link rel="stylesheet" href="includes/dean_light_theme.css?v=dashboard-ui-20261009" id="dean-light-theme-final"/>
 <style id="dean-generated-sheet-dark-final-v4">
 @media screen {
   html.dark-theme body.report-mode .cumulative-sheet,

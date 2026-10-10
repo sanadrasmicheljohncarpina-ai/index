@@ -2,6 +2,10 @@
 // admin/admin_register.php
 session_start();
 require_once 'db.php';   // provides $mysqli + UPLOAD_DIR + UPLOAD_URL
+require_once 'security.php';   // security-question helpers (password recovery)
+security_ensure_tables($mysqli);
+$sq_all  = sq_questions();
+$sq_rows = [];
 
 // ── REGISTRATION LOCK ────────────────────────────────────────
 // Once a superadmin account exists, this page closes itself automatically.
@@ -33,27 +37,30 @@ $success = "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $full_name  = trim($_POST['full_name']        ?? '');
-    $email      = trim($_POST['email']            ?? '');
     $username   = trim($_POST['username']         ?? '');
     $password   = $_POST['password']              ?? '';
     $confirm    = $_POST['confirm_password']      ?? '';
 
     // ── VALIDATION ────────────────────────────────────────────
-    if (empty($full_name) || empty($email) || empty($username) || empty($password)) {
+    if (empty($full_name) || empty($username) || empty($password)) {
         $error = "Please fill in all required fields.";
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $error = "Please enter a valid email address.";
     } elseif (strlen($password) < 8) {
         $error = "Password must be at least 8 characters.";
     } elseif ($password !== $confirm) {
         $error = "Passwords do not match.";
     } else {
-        $chk = $mysqli->prepare("SELECT id FROM users WHERE username = ? OR email = ? LIMIT 1");
-        $chk->bind_param("ss", $username, $email);
-        $chk->execute();
-        $chk->store_result();
-        if ($chk->num_rows > 0) $error = "Username or email is already in use.";
-        $chk->close();
+        // Security questions (used for password recovery)
+        [$sqErr, $sq_rows] = sq_validate($_POST['sq_question'] ?? [], $_POST['sq_answer'] ?? [], $username);
+        if ($sqErr !== null) {
+            $error = $sqErr;
+        } else {
+            $chk = $mysqli->prepare("SELECT id FROM users WHERE username = ? LIMIT 1");
+            $chk->bind_param("s", $username);
+            $chk->execute();
+            $chk->store_result();
+            if ($chk->num_rows > 0) $error = "Username is already in use.";
+            $chk->close();
+        }
     }
 
     // ── PHOTO UPLOAD ──────────────────────────────────────────
@@ -82,22 +89,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($error)) {
         $hash      = password_hash($password, PASSWORD_DEFAULT);
 
-        $ins = $mysqli->prepare(
-            "INSERT INTO users (full_name, email, username, password_hash, photo, role, is_active, created_at)
-             VALUES (?, ?, ?, ?, ?, 'superadmin', 1, NOW())"
-        );
-        $ins->bind_param("sssss", $full_name, $email, $username, $hash, $photo_filename);
-
-        if ($ins->execute()) {
+        try {
+            // The account and its security answers are saved together (all or nothing).
+            $mysqli->begin_transaction();
+            $ins = $mysqli->prepare(
+                "INSERT INTO users (full_name, username, password_hash, photo, role, is_active, created_at)
+                 VALUES (?, ?, ?, ?, 'superadmin', 1, NOW())"
+            );
+            $ins->bind_param("ssss", $full_name, $username, $hash, $photo_filename);
+            $ins->execute();
+            $newId = (int)$mysqli->insert_id;
             $ins->close();
+
+            sq_save($mysqli, $newId, $sq_rows);
+            $mysqli->commit();
             $mysqli->close();
             $_SESSION['reg_success'] = "Admin account created! You can now sign in.";
             header("Location: admin_login.php");
             exit;
-        } else {
-            $error = "Registration failed: " . $mysqli->error;
+        } catch (Throwable $e) {
+            try { $mysqli->rollback(); } catch (Throwable $ignored) {}
+            error_log('admin_register.php failed: ' . $e->getMessage());
+            if ($photo_filename && is_file(UPLOAD_DIR . $photo_filename)) @unlink(UPLOAD_DIR . $photo_filename);
+            $duplicate = ($e instanceof mysqli_sql_exception && (int)$e->getCode() === 1062);
+            $error = $duplicate ? "Username is already in use." : "Registration failed. Please try again in a moment.";
         }
-        $ins->close();
     }
     if ($mysqli->ping()) $mysqli->close();
 }
@@ -304,6 +320,30 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible,.btn-photo:foc
     .form-row .full{grid-column:auto}
     .photo-upload-area{gap:14px;padding:14px}
 }
+
+/* ── Security questions (collapsible panel) ── */
+.sq-section{margin-top:12px;margin-bottom:12px;border:1px solid rgba(160,179,198,.18);border-radius:12px;background:linear-gradient(135deg,rgba(242,201,76,.10),rgba(9,23,39,.82) 55%);box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 8px 22px rgba(0,0,0,.22);overflow:hidden}
+.sq-section[open]{border-color:rgba(242,201,76,.40)}
+.sq-head{list-style:none;display:flex;align-items:center;gap:10px;width:100%;padding:13px 14px;cursor:pointer;font-weight:700;font-size:13.5px;letter-spacing:1.2px;text-transform:uppercase;color:#fff;user-select:none}
+.sq-head::-webkit-details-marker{display:none}
+.sq-head::after{content:'\f078';font-family:'Font Awesome 6 Free';font-weight:900;color:var(--muted);font-size:11px;margin-left:auto;transition:transform .2s ease}
+.sq-section[open] .sq-head::after{transform:rotate(180deg)}
+.sq-head i{color:var(--gold-hover);font-size:14px}
+.sq-head-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.sq-head-subtitle{font-size:10.5px;font-weight:500;letter-spacing:.15px;text-transform:none;color:var(--muted);line-height:1.35}
+.sq-content{padding:0 14px 4px}
+.sq-note{font-size:11.5px;line-height:1.55;color:var(--muted);margin:0 0 12px}
+.sq-item{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.sq-item .form-input{width:100%;height:40px;min-height:0;padding:0 13px;background:var(--input-bg);border:1px solid var(--input-border);border-radius:9px;color:var(--text);font:500 12.5px 'DM Sans',sans-serif;outline:none;box-shadow:inset 0 2px 6px rgba(0,0,0,.32);transition:border-color .2s,box-shadow .2s}
+.sq-item .form-input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(47,110,226,.20)}
+.sq-item .sq-select{appearance:none;-webkit-appearance:none;cursor:pointer;padding-right:34px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23A0B3C6' stroke-width='3'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 13px center}
+.sq-select option{background:#0B1B2E;color:#E7EEF7}
+.sq-select option:disabled{color:#7b8ea3}
+.sq-chosen{font-size:12.5px;line-height:1.5;color:var(--text);padding:0 2px}
+.sq-chosen:empty{display:none}
+summary:focus-visible{outline:3px solid rgba(255,216,102,.40);outline-offset:2px}
 </style>
 
 </head>
@@ -363,21 +403,12 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible,.btn-photo:foc
                     </div>
                 </div>
 
-                <div class="form-group">
+                <div class="form-group full">
                     <label class="form-label" for="username">Username<span class="required">*</span></label>
                     <div class="input-wrap">
                         <i class="fa-solid fa-at f-icon"></i>
                         <input class="form-input" type="text" id="username" name="username" placeholder="Choose a username"
                                value="<?= htmlspecialchars($_POST['username'] ?? '') ?>" required autocomplete="off"/>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label" for="email">Email Address<span class="required">*</span></label>
-                    <div class="input-wrap">
-                        <i class="fa-solid fa-envelope f-icon"></i>
-                        <input class="form-input" type="email" id="email" name="email" placeholder="admin@pandanbay.edu.ph"
-                               value="<?= htmlspecialchars($_POST['email'] ?? '') ?>" required/>
                     </div>
                 </div>
             </div>
@@ -417,6 +448,33 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible,.btn-photo:foc
                 </div>
             </div>
         </div>
+
+        <!-- Security questions (collapsed until clicked, same as the other registration forms) -->
+        <details class="sq-section" id="securityQuestions"<?= ($error && isset($_POST['sq_question'])) ? ' open' : '' ?>>
+            <summary class="sq-head">
+                <i class="fa-solid fa-shield-halved"></i>
+                <span class="sq-head-text">
+                    <span class="sq-head-title">Security Questions</span>
+                    <span class="sq-head-subtitle">Required for password recovery · Choose 3 questions</span>
+                </span>
+            </summary>
+            <div class="sq-content">
+                <p class="sq-note"></p>
+                <?php for ($n = 1; $n <= 3; $n++): ?>
+                <div class="sq-item">
+                    <label class="form-label" for="sq_q<?= $n ?>">Question <?= $n ?><span class="required">*</span></label>
+                    <select class="form-input sq-select" name="sq_question[<?= $n ?>]" id="sq_q<?= $n ?>" required>
+                        <option value="" disabled <?= empty($_POST['sq_question'][$n]) ? 'selected' : '' ?>>Choose a question</option>
+                        <?php foreach ($sq_all as $k => $q): ?>
+                        <option value="<?= htmlspecialchars($k) ?>" <?= (($_POST['sq_question'][$n] ?? '') === $k) ? 'selected' : '' ?>><?= htmlspecialchars($q) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="sq-chosen" id="sq_chosen<?= $n ?>" aria-live="polite"></div>
+                    <input class="form-input sq-answer" type="text" name="sq_answer[<?= $n ?>]" id="sq_a<?= $n ?>" maxlength="100" placeholder="Your answer" autocomplete="off" required/>
+                </div>
+                <?php endfor; ?>
+            </div>
+        </details>
 
         <button type="submit" class="btn-main">
             <i class="fa-solid fa-user-plus"></i> ADMIN REGISTRATION
@@ -468,6 +526,25 @@ function checkStrength(val) {
     hint.textContent      = labels[level - 1];
     hint.style.color      = colors[level - 1];
 }
+// Security questions: open the collapsed panel when a field inside it needs attention,
+// keep the three dropdowns from repeating, and show the full chosen question.
+(function(){
+    const form=document.querySelector('form[action="admin_register.php"]'), box=document.getElementById('securityQuestions');
+    if(!form||!box) return;
+    form.addEventListener('invalid',function(e){ if(e.target.closest&&e.target.closest('.sq-section')) box.open=true; },true);
+    const selects=[1,2,3].map(n=>document.getElementById('sq_q'+n));
+    function sync(){
+        const chosen=selects.map(s=>s.value).filter(Boolean);
+        selects.forEach(function(s,i){
+            Array.from(s.options).forEach(function(o){ o.disabled=o.value!==''&&chosen.includes(o.value)&&o.value!==s.value; });
+            if(!s.value) s.options[0].disabled=true;
+            const el=document.getElementById('sq_chosen'+(i+1));
+            if(el) el.textContent=s.value?s.options[s.selectedIndex].text:'';
+        });
+    }
+    selects.forEach(s=>s.addEventListener('change',sync));
+    sync();
+})();
 </script>
 </body>
 </html>

@@ -76,8 +76,8 @@ if (!function_exists('principal_theme_assets')) {
         $done = true;
         ?>
 <script>(function(){try{if(localStorage.getItem('pbi_theme') === 'dark'){document.documentElement.classList.add('principal-theme-dark-pending');}}catch(e){}})();</script>
-<link rel="stylesheet" href="includes/principal_theme.css?v=20260927.3"/>
-<script defer src="includes/principal_theme.js?v=20260927.3"></script>
+<link rel="stylesheet" href="includes/principal_theme.css?v=20261009.1"/>
+<script defer src="includes/principal_theme.js?v=20261009.1"></script>
         <?php
     }
 }
@@ -108,7 +108,7 @@ $photo_src = !empty($me['photo']) ? '../image/' . $me['photo'] : '../image/pbi_l
 $principalScopeLabel = ($me['education_level'] ?? 'both') === 'junior_high' ? 'Junior High School' : (($me['education_level'] ?? 'both') === 'senior_high' ? 'Senior High School' : 'Junior High & Senior High');
 
 // ── ENSURE TABLES EXIST (once per session) ───────────────────
-if (empty($_SESSION['principal_reports_schema_v1'])) {
+if (empty($_SESSION['principal_reports_schema_v2'])) {
 $mysqli->query("CREATE TABLE IF NOT EXISTS analytics_archive (
     id INT UNSIGNED NOT NULL AUTO_INCREMENT,
     target_user_id INT UNSIGNED NOT NULL,
@@ -155,7 +155,15 @@ if ($ctxCol && $ctxCol->num_rows === 0) {
     $mysqli->query("UPDATE evaluation_tracker et JOIN users u ON u.id=et.target_user_id SET et.evaluation_context=CASE WHEN u.role IN ('principal','dean') THEN 'school_head' WHEN u.role='staff' THEN 'staff' WHEN u.role='teacher' THEN 'teacher' ELSE et.evaluation_context END WHERE et.evaluation_context='teacher'");
 }
 
-$_SESSION['principal_reports_schema_v1'] = 1;
+// Both Faculty and Staff submit flows label the peer-group / questionnaire
+// type on evaluation_tracker. Make sure that column exists before using it to
+// recover valid legacy submissions in reports.
+$peerGroupCol = $mysqli->query("SHOW COLUMNS FROM evaluation_tracker LIKE 'peer_group'");
+if ($peerGroupCol && $peerGroupCol->num_rows === 0) {
+    $mysqli->query("ALTER TABLE evaluation_tracker ADD COLUMN peer_group VARCHAR(40) NULL AFTER eval_type");
+}
+
+$_SESSION['principal_reports_schema_v2'] = 1;
 }
 
 // Portal scope: Reports & Analytics matches the Dean Reports page, but its
@@ -178,10 +186,15 @@ $principalHighSchoolLevelsSql = "'Grade 7','Grade 8','Grade 9','Grade 10','Grade
 $principalHighSchoolScopeSql = "(
     EXISTS (SELECT 1 FROM user_year_levels scope_uyl WHERE scope_uyl.user_id=u.id AND scope_uyl.year_level IN ($principalHighSchoolLevelsSql))
     OR EXISTS (SELECT 1 FROM teaching_assignments scope_ta WHERE scope_ta.user_id=u.id AND scope_ta.year_level IN ($principalHighSchoolLevelsSql))
+    OR TRIM(COALESCE(u.year_level,'')) IN ($principalHighSchoolLevelsSql)
+    OR LOWER(TRIM(COALESCE(u.year_level,''))) IN ('jhs','shs','junior high school','senior high school')
+    OR LOWER(TRIM(COALESCE(u.education_level,''))) IN ('junior_high','senior_high','jhs','shs')
 )";
 $principalAnyTeachingScopeSql = "(
     EXISTS (SELECT 1 FROM user_year_levels any_uyl WHERE any_uyl.user_id=u.id)
     OR EXISTS (SELECT 1 FROM teaching_assignments any_ta WHERE any_ta.user_id=u.id)
+    OR TRIM(COALESCE(u.year_level,'')) <> ''
+    OR LOWER(TRIM(COALESCE(u.education_level,''))) IN ('junior_high','senior_high','jhs','shs')
 )";
 $reportScopeSql = "(
     (u.role IN ('teacher','faculty') AND $principalHighSchoolScopeSql)
@@ -201,9 +214,12 @@ $myUserId = (int)$_SESSION['user_id'];
 $reportScopeSql = "($reportScopeSql) AND u.role NOT IN ('principal','dean','superadmin') AND u.id <> $myUserId";
 // ── STAFF EVALUATION (non-teaching staff evaluating the Executive Assistant) ──
 // The EA account role(s). Adjust this list if your EA accounts use a different users.role value.
-$eaRoles = ['ea','executive_assistant','admin'];
+$eaRoles = ['ea','executive_assistant','admin','superadmin'];
 $eaRolesSql = implode(',', array_map(static fn($r) => "'" . addslashes($r) . "'", $eaRoles));
-$eaScopeSql = "(u.role IN ($eaRolesSql) AND u.is_active=1)";
+// Some legacy installations identify the Executive Assistant by designation
+// even when the account role is not one of the newer EA role aliases.
+$eaTargetPredicateSql = "(u.role IN ($eaRolesSql) OR LOWER(TRIM(COALESCE(u.designation,'')))='executive assistant')";
+$eaScopeSql = "($eaTargetPredicateSql AND u.is_active=1)";
 $reportStudentScopeSql = "COALESCE(education_level,'') <> 'higher_ed' AND (education_level IN ('junior_high','senior_high','basic_education','basic_ed','jhs','shs') OR year_level IN ($principalHighSchoolLevelsSql))";
 
 // ── ARCHIVE / RESTORE (POST + CSRF only) ─────────────────────
@@ -267,8 +283,6 @@ $groupForOtherTabs = in_array($groupFilter, ['Faculty','Teacher','Staff'], true)
 
 $settings = get_system_settings($mysqli);
 $period_id_int = (int)($settings['period_id'] ?? 0);
-$periodSql = $period_id_int > 0 ? "et.period_id=" . $period_id_int : "1=0";
-$periodPlainSql = $period_id_int > 0 ? "period_id=" . $period_id_int : "1=0";
 
 $sqlQuote = static function (string $value) use ($mysqli): string {
     return "'" . $mysqli->real_escape_string($value) . "'";
@@ -312,7 +326,7 @@ $principalStudentEvaluatorPlainSql = "evaluator_id IN (
 //   * Basic Education is the active structure -> the active period, as before.
 //   * Otherwise (College active)              -> the period of the most recent
 //     JHS/SHS student submission (the active period is used if it has any).
-// Peer-to-Peer keeps using the active period ($periodSql) and is unchanged.
+// Peer and Staff report-period selection is resolved below from matching completed tracker rows.
 $studentPeriodId = $period_id_int;
 $activeSchoolHead = function_exists('sh_gate_applicable_role') ? sh_gate_applicable_role($settings) : null;
 if ($activeSchoolHead !== 'principal') {
@@ -344,30 +358,120 @@ $principalTeacherIdsSql = "SELECT ht.id FROM users ht
       AND (
           EXISTS (SELECT 1 FROM user_year_levels htyl WHERE htyl.user_id=ht.id AND htyl.year_level IN ($principalHighSchoolLevelsSql))
           OR EXISTS (SELECT 1 FROM teaching_assignments htta WHERE htta.user_id=ht.id AND htta.year_level IN ($principalHighSchoolLevelsSql))
+          OR TRIM(COALESCE(ht.year_level,'')) IN ($principalHighSchoolLevelsSql)
+          OR LOWER(TRIM(COALESCE(ht.year_level,''))) IN ('jhs','shs','junior high school','senior high school')
+          OR LOWER(TRIM(COALESCE(ht.education_level,''))) IN ('junior_high','senior_high','jhs','shs')
       )";
-$peerEvalSql = "$periodSql AND et.eval_type IN ($peerTypesSql)
-    AND et.evaluator_id IN ($principalTeacherIdsSql)
+
+// Peer rows are stored by the Faculty/Teaching Staff submission flow as
+// eval_type='faculty_peer' (with 'peer'/'staff_peer' retained for legacy rows).
+// Read only completed submissions and keep both evaluator and target in the
+// JHS/SHS teacher scope.
+// Match the faculty/staff submission eligibility rules: a Faculty/Teacher
+// account can submit peer evaluations even if it has not been assigned a grade
+// in user_year_levels yet; Staff accounts only get the peer workflow when EA
+// assigned at least one teaching year level. The RECEIVER still must be a
+// JHS/SHS teaching-scope account, since this is the Principal's Basic Education
+// report. Requiring a JHS/SHS assignment on both evaluator and target was more
+// restrictive than the submission flow and could hide valid received reviews.
+$principalPeerEvaluatorIdsSql = "SELECT pe.id FROM users pe
+    WHERE pe.role IN ('teacher','faculty')
+       OR (pe.role='staff' AND EXISTS (
+            SELECT 1 FROM user_year_levels peyl WHERE peyl.user_id=pe.id
+       ))";
+$peerEvalBaseSql = "(
+        et.eval_type IN ($peerTypesSql)
+        OR LOWER(TRIM(COALESCE(et.peer_group,''))) IN ('faculty','teacher','staff','teaching staff')
+    )
+    AND et.status IN ('submitted','approved')
+    AND et.evaluator_id IN ($principalPeerEvaluatorIdsSql)
     AND et.target_user_id IN ($principalTeacherIdsSql)";
-$peerEvalPlainSql = "$periodPlainSql AND eval_type IN ($peerTypesSql)
-    AND evaluator_id IN ($principalTeacherIdsSql)
+$peerEvalBasePlainSql = "(
+        eval_type IN ($peerTypesSql)
+        OR LOWER(TRIM(COALESCE(peer_group,''))) IN ('faculty','teacher','staff','teaching staff')
+    )
+    AND status IN ('submitted','approved')
+    AND evaluator_id IN ($principalPeerEvaluatorIdsSql)
     AND target_user_id IN ($principalTeacherIdsSql)";
 
-// Staff Evaluation: NON-TEACHING staff (staff role, no teaching assignment / year level)
-// evaluating the Executive Assistant. Any non-student tracker row that matches
-// that evaluator/target pair counts, so it works whatever eval_type value the
-// staff-to-EA form stores.
+// Staff Evaluation is saved with eval_type='staff' and peer_group='Staff Evaluation'.
+// Retain known legacy target-type values where peer_group identifies the form.
+// The Staff form decides whether an account is non-teaching by the absence of
+// user_year_levels rows, so this predicate mirrors the actual submit flow.
 $nonTeachingStaffIdsSql = "SELECT nts.id FROM users nts
     WHERE nts.role='staff'
-      AND COALESCE(nts.sector,'') <> 'Teacher'
-      AND NOT EXISTS (SELECT 1 FROM user_year_levels ntyl WHERE ntyl.user_id=nts.id)
-      AND NOT EXISTS (SELECT 1 FROM teaching_assignments ntta WHERE ntta.user_id=nts.id)";
-$eaTargetIdsSql = "SELECT eat.id FROM users eat WHERE eat.role IN ($eaRolesSql)";
-$staffEvalSql = "$periodSql AND et.eval_type<>$studentTypeSql
+      AND NOT EXISTS (SELECT 1 FROM user_year_levels ntyl WHERE ntyl.user_id=nts.id)";
+$eaTargetIdsSql = "SELECT eat.id FROM users eat
+    WHERE eat.role IN ($eaRolesSql)
+       OR LOWER(TRIM(COALESCE(eat.designation,'')))='executive assistant'";
+$staffEvalBaseSql = "(
+        et.eval_type='staff'
+        OR LOWER(TRIM(COALESCE(et.peer_group,'')))='staff evaluation'
+    )
+    AND et.status IN ('submitted','approved')
     AND et.evaluator_id IN ($nonTeachingStaffIdsSql)
     AND et.target_user_id IN ($eaTargetIdsSql)";
-$staffEvalPlainSql = "$periodPlainSql AND eval_type<>$studentTypeSql
+$staffEvalBasePlainSql = "(
+        eval_type='staff'
+        OR LOWER(TRIM(COALESCE(peer_group,'')))='staff evaluation'
+    )
+    AND status IN ('submitted','approved')
     AND evaluator_id IN ($nonTeachingStaffIdsSql)
     AND target_user_id IN ($eaTargetIdsSql)";
+
+// The submit forms use evaluation_periods.is_active=1, while the report header
+// gets its period from system settings. If those point to different terms, keep
+// the requested period when it has data; otherwise show the latest matching
+// submitted period instead of incorrectly showing an empty Peer/Staff tab.
+if (!function_exists('principal_reports_choose_data_period')) {
+    function principal_reports_choose_data_period(mysqli $db, string $baseWhereSql, int $preferredPeriodId): int {
+        if ($preferredPeriodId > 0) {
+            $preferredQ = $db->query("SELECT 1 FROM evaluation_tracker et WHERE et.period_id=" . $preferredPeriodId . " AND ($baseWhereSql) LIMIT 1");
+            if ($preferredQ && $preferredQ->num_rows > 0) return $preferredPeriodId;
+        }
+        $latestQ = $db->query("SELECT et.period_id FROM evaluation_tracker et WHERE et.period_id IS NOT NULL AND ($baseWhereSql) ORDER BY et.submitted_at DESC, et.id DESC LIMIT 1");
+        if ($latestQ && ($latestRow = $latestQ->fetch_assoc()) && (int)$latestRow['period_id'] > 0) {
+            return (int)$latestRow['period_id'];
+        }
+        return $preferredPeriodId;
+    }
+}
+$peerPeriodId = principal_reports_choose_data_period($mysqli, $peerEvalBaseSql, $period_id_int);
+$staffPeriodId = principal_reports_choose_data_period($mysqli, $staffEvalBaseSql, $period_id_int);
+$peerPeriodSql = $peerPeriodId > 0 ? "et.period_id=" . $peerPeriodId : "1=0";
+$peerPeriodPlainSql = $peerPeriodId > 0 ? "period_id=" . $peerPeriodId : "1=0";
+$staffPeriodSql = $staffPeriodId > 0 ? "et.period_id=" . $staffPeriodId : "1=0";
+$staffPeriodPlainSql = $staffPeriodId > 0 ? "period_id=" . $staffPeriodId : "1=0";
+$peerEvalSql = "$peerPeriodSql AND ($peerEvalBaseSql)";
+$peerEvalPlainSql = "$peerPeriodPlainSql AND ($peerEvalBasePlainSql)";
+$staffEvalSql = "$staffPeriodSql AND ($staffEvalBaseSql)";
+$staffEvalPlainSql = "$staffPeriodPlainSql AND ($staffEvalBasePlainSql)";
+
+// A generated cumulative report must retain the period chosen by the evaluator
+// list that opened it. Use the period only when the report link also carries its
+// explicit tracker set; that keeps the report scoped to the same list snapshot.
+$hasReportTrackerParam = trim((string)($_GET['report_tracker_ids'] ?? '')) !== '';
+$requestedReportPeriodId = (int)($_GET['report_period_id'] ?? 0);
+$isCumulativeReportRequest = (($_GET['view'] ?? '') === 'sheet' && (($_GET['report'] ?? '') === '1'));
+if ($isCumulativeReportRequest && $hasReportTrackerParam && $requestedReportPeriodId > 0) {
+    if ($activeEval === 'student') {
+        $studentPeriodId = $requestedReportPeriodId;
+        $studentPeriodSql = "et.period_id=" . $studentPeriodId;
+        $studentPeriodPlainSql = "period_id=" . $studentPeriodId;
+    } elseif ($activeEval === 'peer') {
+        $peerPeriodId = $requestedReportPeriodId;
+        $peerPeriodSql = "et.period_id=" . $peerPeriodId;
+        $peerPeriodPlainSql = "period_id=" . $peerPeriodId;
+        $peerEvalSql = "$peerPeriodSql AND ($peerEvalBaseSql)";
+        $peerEvalPlainSql = "$peerPeriodPlainSql AND ($peerEvalBasePlainSql)";
+    } elseif ($activeEval === 'staff') {
+        $staffPeriodId = $requestedReportPeriodId;
+        $staffPeriodSql = "et.period_id=" . $staffPeriodId;
+        $staffPeriodPlainSql = "period_id=" . $staffPeriodId;
+        $staffEvalSql = "$staffPeriodSql AND ($staffEvalBaseSql)";
+        $staffEvalPlainSql = "$staffPeriodPlainSql AND ($staffEvalBasePlainSql)";
+    }
+}
 
 $evalTypeSql = match ($activeEval) {
     'peer' => $peerEvalSql,
@@ -387,17 +491,35 @@ $student_id = intval($_GET['student_id'] ?? 0);  // evaluator for peer
 $tracker_id = intval($_GET['tracker_id'] ?? 0);
 
 // ── CONFIDENTIALITY GUARD (drill-down views) ─────────────────
-// view=students / view=sheet are where an evaluator's identity becomes
-// visible. $reportScopeSql already keeps Principal/Dean/EA/superadmin and the
-// logged-in Principal out of every roster query, but $target_id can arrive as
-// a raw query-string value, so re-check it independently before rendering.
+// view=students / view=sheet can reveal evaluator identities. Keep the logged-in
+// Principal and Principal/Dean targets blocked. Exception: Staff Evaluation's
+// intended target is the Executive Assistant, whose account may use the legacy
+// `superadmin` role. Allow that role only when this target is in the EA scope
+// AND has an actual qualifying Staff Evaluation submission; do not generally
+// open superadmin accounts in the reports drill-down.
 if ($target_id > 0 && in_array($view, ['students', 'sheet'], true)) {
     $tr = $mysqli->query("SELECT role FROM users WHERE id=$target_id LIMIT 1");
     $targetRoleCheck = $tr ? ($tr->fetch_assoc() ?: []) : [];
     $targetRole = $targetRoleCheck['role'] ?? null;
-    if ($target_id === $myUserId || in_array($targetRole, ['principal', 'dean', 'superadmin'], true)) {
-        // Never reveal why -- just land back on the roster. Their own results
-        // (in aggregate, no evaluator identity) live at principal_results.php.
+
+    $isSubmittedStaffEvalEaTarget = false;
+    if ($activeEval === 'staff' && $targetRole === 'superadmin') {
+        $eaTargetCheck = $mysqli->query("SELECT u.id
+            FROM users u
+            WHERE u.id=$target_id
+              AND $eaScopeSql
+              AND EXISTS (
+                  SELECT 1 FROM evaluation_tracker et
+                  WHERE et.target_user_id=u.id AND ($staffEvalSql)
+              )
+            LIMIT 1");
+        $isSubmittedStaffEvalEaTarget = $eaTargetCheck && $eaTargetCheck->num_rows > 0;
+    }
+
+    $protectedRole = in_array($targetRole, ['principal', 'dean'], true)
+        || ($targetRole === 'superadmin' && !$isSubmittedStaffEvalEaTarget);
+    if ($target_id === $myUserId || $protectedRole) {
+        // Aggregate school-head results stay in the dedicated results view.
         header("Location: principal_reports.php?group=" . urlencode($_GET['group'] ?? 'All') . "&eval_type=" . urlencode($activeEval));
         exit;
     }
@@ -734,28 +856,52 @@ if ($view === 'sheet' && $target_id && $tracker_id) {
     $reportMode = (($_GET['report'] ?? '') === '1');
 
     // ── CUMULATIVE REPORT DATA (print / Generate Report layout) ───────────
-    // The report is the cumulative result for this person under the current
-    // evaluation type: every submission is pooled, each question shows its
-    // average rating across all evaluators, and the overall rating is the
-    // average of those per-question ratings. It uses the same evaluator set as
-    // the Evaluators List (same period, JHS/SHS-only scope, year-level filter).
+    // The Generate Report link passes the exact tracker IDs displayed in the
+    // Evaluators List. Reusing those IDs prevents printing a different count or
+    // average if the active period / eligibility filters resolve differently
+    // on a separate request. IDs are revalidated below against the target,
+    // evaluation type, period, basic-ed evaluator rules, and selected grade.
+    // Each question is averaged across this exact evaluator set. The bottom
+    // total is the pooled average of all valid answers for those same trackers.
     $cumYear = trim((string)($_GET['year_level'] ?? ''));
     if (!isset($principalGradeLevels[$cumYear])) $cumYear = '';
     $cumYearWhere = '';
     if ($activeEval === 'student' && $cumYear !== '') {
         $cumYearWhere = " AND TRIM(COALESCE(u.year_level,'')) IN (" . implode(',', array_map($sqlQuote, $principalGradeLevels[$cumYear]['values'])) . ")";
     }
+
+    $reportTrackerIdsRaw = trim((string)($_GET['report_tracker_ids'] ?? ''));
+    $requestedReportTrackerIds = [];
+    if ($reportTrackerIdsRaw !== '') {
+        foreach (explode(',', $reportTrackerIdsRaw) as $candidateTrackerId) {
+            $candidateTrackerId = (int)trim($candidateTrackerId);
+            if ($candidateTrackerId > 0) $requestedReportTrackerIds[] = $candidateTrackerId;
+        }
+        $requestedReportTrackerIds = array_values(array_unique($requestedReportTrackerIds));
+        // Keep GET-based ID lists bounded and numeric before using them in SQL.
+        $requestedReportTrackerIds = array_slice($requestedReportTrackerIds, 0, 500);
+    }
+    $hasExplicitReportTrackerSet = $reportMode && $reportTrackerIdsRaw !== '';
+    $reportTrackerFilterSql = '';
+    if ($hasExplicitReportTrackerSet) {
+        $reportTrackerFilterSql = !empty($requestedReportTrackerIds)
+            ? ' AND et.id IN (' . implode(',', $requestedReportTrackerIds) . ')'
+            : ' AND 1=0';
+    }
+
     $cumTrackers = [];
     $cq = $mysqli->query("
         SELECT et.id AS tracker_id, et.submitted_at, et.remarks, u.role AS evaluator_role
         FROM evaluation_tracker et
         JOIN users u ON u.id = et.evaluator_id
-        WHERE et.target_user_id = $target_id AND $evalTypeSql $cumYearWhere
-        ORDER BY et.submitted_at DESC
+        WHERE et.target_user_id = $target_id AND $evalTypeSql $cumYearWhere $reportTrackerFilterSql
+        ORDER BY et.submitted_at DESC, et.id DESC
     ");
     if ($cq) $cumTrackers = $cq->fetch_all(MYSQLI_ASSOC);
-    if (empty($cumTrackers) && $trk) {
-        // Safety net: never print an empty report for a valid sheet link.
+    if (empty($cumTrackers) && $trk && !$hasExplicitReportTrackerSet) {
+        // Legacy/single-sheet links without a supplied report set retain the
+        // previous fallback. An explicit but invalid set must NOT silently
+        // fall back to one evaluator, as that would misrepresent the aggregate.
         $cumTrackers = [[
             'tracker_id'     => (int)$trk['id'],
             'submitted_at'   => $trk['submitted_at'],
@@ -961,7 +1107,7 @@ button, .btn { font-weight:700; }
 a { color:inherit; }
 </style>
 <link rel="stylesheet" href="includes/principal_light_theme.css"/>
-<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20260927.4" id="principal-dark-repairs"/>
+<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20261009.3" id="principal-dark-repairs"/>
 </head><body class="<?= $reportMode ? 'report-mode' : '' ?>">
 </div>
 <?php render_exec_sidebar('reports', $me, $photo_src); ?>
@@ -1597,6 +1743,13 @@ if ($view === 'students' && $target_id) {
          ORDER BY et.submitted_at DESC
     ");
     if ($eq) $evaluators = $eq->fetch_all(MYSQLI_ASSOC);
+    // This list is the source of truth for both the evaluator table and the
+    // cumulative Generate Report/print view. Pass its IDs to that view instead
+    // of reconstructing the evaluator set independently on the next request.
+    $reportTrackerIds = implode(',', array_values(array_unique(array_filter(
+        array_map('intval', array_column($evaluators, 'tracker_id')),
+        static fn($id) => $id > 0
+    ))));
 
     // Pooled average over every individual answer — the same figure the roster
     // and the cumulative sheet use (was: mean of per-evaluator means, which
@@ -1792,10 +1945,21 @@ if ($view === 'students' && $target_id) {
             <td><span class="detail-rating" style="color:<?= scoreColor($sc) ?>;background:<?= scoreColor($sc) ?>18;"><?= htmlspecialchars(scoreLabel($sc)) ?></span></td>
             <td class="detail-date"><?= htmlspecialchars($dateEval) ?></td>
             <td>
-                <?php $sheetQs = '?view=sheet&target_id=' . $target_id . '&student_id=' . (int)$ev['student_id'] . '&tracker_id=' . (int)$ev['tracker_id']
-                    . '&group=' . urlencode($groupFilter) . '&eval_type=' . $activeEval
-                    . ($selectedYearLevel !== '' ? '&year_level=' . urlencode($selectedYearLevel) : ''); ?>
-                <a class="detail-view-btn detail-report-btn" href="<?= $sheetQs ?>&report=1">
+                <?php
+                    $sheetQs = '?view=sheet&target_id=' . $target_id . '&student_id=' . (int)$ev['student_id'] . '&tracker_id=' . (int)$ev['tracker_id']
+                        . '&group=' . urlencode($groupFilter) . '&eval_type=' . $activeEval
+                        . ($selectedYearLevel !== '' ? '&year_level=' . urlencode($selectedYearLevel) : '');
+                    $reportPeriodId = match ($activeEval) {
+                        'peer' => (int)$peerPeriodId,
+                        'staff' => (int)$staffPeriodId,
+                        default => (int)$studentPeriodId,
+                    };
+                    $sheetReportQs = $sheetQs . '&report=1'
+                        . ($reportTrackerIds !== ''
+                            ? '&report_period_id=' . $reportPeriodId . '&report_tracker_ids=' . urlencode($reportTrackerIds)
+                            : '');
+                ?>
+                <a class="detail-view-btn detail-report-btn" href="<?= htmlspecialchars($sheetReportQs, ENT_QUOTES, 'UTF-8') ?>">
                     <i class="fa-solid fa-file-lines"></i> Generate Report
                 </a>
                 <a class="detail-view-btn" href="<?= $sheetQs ?>">
@@ -1992,7 +2156,7 @@ $whereRole = match ($activeEval) {
     'student' => "u.role IN ('teacher','staff','faculty')",
     // Peer targets are restricted to JHS/SHS teachers by $peerEvalSql itself.
     'peer'    => "u.role IN ('teacher','faculty','staff')",
-    'staff'   => "u.role IN ($eaRolesSql)",
+    'staff'   => $eaTargetPredicateSql,
     default   => "u.role IN ('teacher','staff')"
 };
 
@@ -2098,6 +2262,21 @@ $peerTeacherCount = db_row($mysqli, "SELECT COUNT(*) AS c FROM users u
     WHERE u.is_active=1 AND u.account_status='approved'
       AND u.id IN ($principalTeacherIdsSql)
       AND $reportScopeSql")['c'] ?? 0;
+
+$periodLabelForReport = static function (mysqli $db, int $pid): string {
+    if ($pid <= 0) return '';
+    $row = db_row($db, "SELECT school_year, semester, period_label FROM evaluation_periods WHERE id=" . $pid . " LIMIT 1");
+    $schoolYear = trim((string)($row['school_year'] ?? ''));
+    $semester = trim((string)($row['semester'] ?? ''));
+    $label = trim((string)($row['period_label'] ?? ''));
+    if ($schoolYear !== '' && $semester !== '') return $schoolYear . ' · ' . $semester;
+    if ($schoolYear !== '' && $label !== '') return $schoolYear . ' · ' . $label;
+    return $label !== '' ? $label : $schoolYear;
+};
+$peerReportPeriodLabel = $periodLabelForReport($mysqli, (int)$peerPeriodId);
+$staffReportPeriodLabel = $periodLabelForReport($mysqli, (int)$staffPeriodId);
+$peerUsesFallbackPeriod = $peerPeriodId > 0 && $peerPeriodId !== $period_id_int;
+$staffUsesFallbackPeriod = $staffPeriodId > 0 && $staffPeriodId !== $period_id_int;
 
 $staffDesigCounts = [];
 $sdq = $mysqli->query("SELECT designation, COUNT(*) as c FROM users u WHERE u.role='staff' AND u.is_active=1 AND $reportScopeSql GROUP BY designation ORDER BY designation");
@@ -2252,15 +2431,6 @@ a { color:inherit; }
         </a>
     </div>
 
-    <div class="reports-toolbar">
-        <div class="reports-toolbar-spacer" aria-hidden="true"></div>
-        <div class="reports-toolbar-actions">
-            <a href="?view=archived&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>" class="reports-archive-link">
-                <i class="fa-solid fa-box-archive"></i> Archived<?php if ($archivedCount > 0): ?><span class="reports-archive-count"><?= $archivedCount ?></span><?php endif; ?>
-            </a>
-        </div>
-    </div>
-
     <?php if ($activeEval === 'student'): ?>
     <div class="reports-filter-tabs">
         <a href="?group=All&eval_type=student" class="reports-filter-tab <?= $groupFilter==='All'?'active':'' ?>">
@@ -2279,14 +2449,14 @@ a { color:inherit; }
             <i class="fa-solid fa-user-tie"></i><span>Executive Assistant</span><b><?= count($people) ?></b>
         </a>
     </div>
-    <div class="reports-peer-note"><i class="fa-solid fa-circle-info"></i><span><strong>Staff Evaluations</strong> — results submitted by non-teaching staff for the Executive Assistant.</span></div>
+    <div class="reports-peer-note"><i class="fa-solid fa-circle-info"></i><span><strong>Staff Evaluations</strong> — results submitted by non-teaching staff for the Executive Assistant.<?php if ($staffUsesFallbackPeriod && $staffReportPeriodLabel !== ''): ?> Showing the latest available submissions from <?= htmlspecialchars($staffReportPeriodLabel) ?> because the configured period has no matching submissions.<?php endif; ?></span></div>
     <?php else: ?>
     <div class="reports-filter-tabs">
         <a href="?group=All&eval_type=peer" class="reports-filter-tab active">
             <i class="fa-solid fa-chalkboard-user"></i><span>JHS/SHS Teachers</span><b><?= $peerTeacherCount ?></b>
         </a>
     </div>
-    <div class="reports-peer-note"><i class="fa-solid fa-circle-info"></i><span><strong>Peer-to-Peer Evaluations</strong> — results submitted by fellow JHS/SHS teachers.</span></div>
+    <div class="reports-peer-note"><i class="fa-solid fa-circle-info"></i><span><strong>Peer-to-Peer Evaluations</strong> — results submitted by fellow JHS/SHS teachers.<?php if ($peerUsesFallbackPeriod && $peerReportPeriodLabel !== ''): ?> Showing the latest available submissions from <?= htmlspecialchars($peerReportPeriodLabel) ?> because the configured period has no matching submissions.<?php endif; ?></span></div>
     <?php endif; ?>
 
     <!-- Main data panel styled after the supplied reference layout. -->
@@ -2370,7 +2540,6 @@ a { color:inherit; }
                         <td class="col-actions">
                             <div class="reports-row-actions">
                                 <a class="reports-view-btn" href="?view=students&target_id=<?= $p['id'] ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>"><i class="fa-solid fa-eye"></i> View</a>
-                                <button type="button" class="reports-archive-btn" onclick="archivePerson(<?= (int)$p['id'] ?>, <?= htmlspecialchars(json_encode((string)$p['full_name'], JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') ?>)"><i class="fa-solid fa-box-archive"></i> Archive</button>
                             </div>
                         </td>
                     </tr>
@@ -2388,7 +2557,8 @@ a { color:inherit; }
 <style>
 /* ── Reference-style Reports layout: visual-only redesign, current data preserved ── */
 .reports-redesign{display:flex;flex-direction:column;gap:0;margin-top:-2px;}
-.reports-top-switcher{display:flex;align-items:center;justify-content:flex-start;gap:9px;width:max-content;max-width:100%;margin:0 0 0 0;border:0;border-radius:0;background:transparent;overflow:visible;box-shadow:none;}
+/* Keep report-type tabs distinct from the secondary filters below. */
+.reports-top-switcher{display:flex;align-items:center;justify-content:flex-start;gap:13px;width:max-content;max-width:100%;margin:0 0 26px 0;border:0;border-radius:0;background:transparent;overflow:visible;box-shadow:none;}
 .reports-top-tab{display:inline-flex;flex:0 0 auto;min-width:0;align-items:center;justify-content:center;gap:9px;min-height:47px;padding:0 22px;border:1px solid #CFE0F0;border-radius:13px;color:#56708A;text-decoration:none;font-size:14px;font-weight:700;letter-spacing:.01em;transition:.18s;background:#fff;position:relative;white-space:nowrap;box-shadow:0 1px 3px rgba(27,67,106,.03);}
 .reports-top-tab.student{color:#2764D4;}
 .reports-top-tab i{font-size:14px;}
@@ -2410,7 +2580,7 @@ a { color:inherit; }
 .reports-archive-link{display:inline-flex;align-items:center;gap:7px;padding:11px 15px;border:1px solid #BCD0E5;border-radius:11px;background:#fff;color:#38546E;text-decoration:none;font-size:12px;font-weight:700;}
 .reports-archive-link:hover{background:#F6F9FC;border-color:#8FAFCB;color:#173957;}
 .reports-archive-count{padding:2px 7px;border-radius:999px;background:#EDF2F7;color:#64748B;font-size:10px;}
-.reports-filter-tabs{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:12px;}
+.reports-filter-tabs{display:flex;gap:12px;flex-wrap:wrap;margin-top:0;margin-bottom:12px;}
 .reports-filter-tab{display:inline-flex;align-items:center;gap:9px;min-height:47px;padding:0 22px;border:1px solid #CFE0F0;border-radius:13px;background:#fff;color:#56708A;text-decoration:none;font-size:14px;font-weight:700;box-shadow:0 1px 3px rgba(27,67,106,.03);}
 .reports-filter-tab:hover{background:#F7FAFD;color:#274B6C;}
 .reports-filter-tab.active{background:#E9F2FF;border-color:#7CB0FF;color:#2161CF;box-shadow:0 2px 7px rgba(45,102,225,.08);}
@@ -2572,25 +2742,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (note) note.hidden = !q;
     });
 });
-function archivePerson(id, name) {
-    if (!confirm(`Archive "${name}"? They'll be hidden from this list but their evaluation data is kept and can be restored anytime.`)) return;
-    const f = document.createElement('form');
-    f.method = 'post';
-    f.action = 'principal_reports.php';
-    const fields = {
-        archive_id: id,
-        group: <?= json_encode($groupFilter) ?>,
-        eval_type: <?= json_encode($activeEval) ?>,
-        csrf_token: <?= json_encode($csrfToken) ?>
-    };
-    Object.keys(fields).forEach(function(k){
-        const i = document.createElement('input');
-        i.type = 'hidden'; i.name = k; i.value = fields[k];
-        f.appendChild(i);
-    });
-    document.body.appendChild(f);
-    f.submit();
-}
 
 // ── LIVE REPORT UPDATES ────────────────────────────────────────────────
 // Reports reads the same evaluation_tracker records used by the tracker/results

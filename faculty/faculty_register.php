@@ -1,94 +1,112 @@
 <?php
-	// faculty/faculty_register.php
-	session_start();
-	require_once 'db.php';   // gives $mysqli + UPLOAD_DIR + UPLOAD_URL
+    // faculty/faculty_register.php
+    require_once 'security.php';
+    secure_session_start();
+    require_once 'db.php';   // gives $mysqli + UPLOAD_DIR + UPLOAD_URL
+    security_ensure_tables($mysqli);
+    $sq_all  = sq_questions();
+    $sq_rows = [];
 
-	$error   = "";
-	$success = "";
+    $error   = "";
+    $success = "";
 
-	if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-		$full_name  = trim($_POST['full_name']  ?? '');
-		$username   = trim($_POST['username']   ?? '');
-		$email      = trim($_POST['email']      ?? '');
-		$password   = $_POST['password']        ?? '';
-		$confirm_pw = $_POST['confirm_password']?? '';
-		
-		// ── VALIDATION ───────────────────────────────────────────
-		if (empty($full_name) || empty($username) || empty($email) || empty($password) || empty($confirm_pw)) {
-			$error = "All required fields must be completed, including your email address.";
-		} elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-			$error = "Please enter a valid email address.";
-		} elseif ($password !== $confirm_pw) {
-			$error = "Passwords do not match.";
-		} elseif (strlen($password) < 8) {
-			$error = "Password must be at least 8 characters.";
-		} else {
-			$chk = $mysqli->prepare("SELECT id FROM users WHERE username = ? OR (email = ? AND email != '') LIMIT 1");
-			$chk->bind_param("ss", $username, $email);
-			$chk->execute();
-			$chk->store_result();
-			if ($chk->num_rows > 0) $error = "Username or email is already taken.";
-			$chk->close();
-		}
+        $full_name  = trim($_POST['full_name']  ?? '');
+        $username   = trim($_POST['username']   ?? '');
+        $password   = $_POST['password']        ?? '';
+        $confirm_pw = $_POST['confirm_password']?? '';
+        
+        // ── VALIDATION ───────────────────────────────────────────
+        if (empty($full_name) || empty($username) || empty($password) || empty($confirm_pw)) {
+            $error = "All required fields must be completed.";
+        } elseif ($password !== $confirm_pw) {
+            $error = "Passwords do not match.";
+        } elseif (strlen($password) < 8) {
+            $error = "Password must be at least 8 characters.";
+        } else {
+            // Security questions (used for password recovery)
+            [$sqErr, $sq_rows] = sq_validate($_POST['sq_question'] ?? [], $_POST['sq_answer'] ?? [], $username);
+            if ($sqErr !== null) {
+                $error = $sqErr;
+            } else {
+                $chk = $mysqli->prepare("SELECT id FROM users WHERE username = ? LIMIT 1");
+                $chk->bind_param("s", $username);
+                $chk->execute();
+                $chk->store_result();
+                if ($chk->num_rows > 0) $error = "Username is already taken.";
+                $chk->close();
+            }
+        }
 
-		// ── PHOTO UPLOAD ─────────────────────────────────────────
-		$photo_filename = null;
-		if (empty($error) && (!isset($_FILES['photo']) || $_FILES['photo']['error'] !== UPLOAD_ERR_OK)) {
-			$error = "Profile photo is required.";
-		}
-		if (empty($error) && isset($_FILES['photo']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
-			$allowed   = ['image/jpeg','image/png','image/webp','image/gif'];
-			$file_type = mime_content_type($_FILES['photo']['tmp_name']);
-			$file_size = $_FILES['photo']['size'];
+        // ── PHOTO UPLOAD ─────────────────────────────────────────
+        $photo_filename = null;
+        if (empty($error) && (!isset($_FILES['photo']) || $_FILES['photo']['error'] !== UPLOAD_ERR_OK)) {
+            $error = "Profile photo is required.";
+        }
+        if (empty($error) && isset($_FILES['photo']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
+            $allowed   = ['image/jpeg','image/png','image/webp','image/gif'];
+            $file_type = mime_content_type($_FILES['photo']['tmp_name']);
+            $file_size = $_FILES['photo']['size'];
 
-			if (!in_array($file_type, $allowed)) {
-				$error = "Profile photo must be JPG, PNG, WebP, or GIF.";
-			} elseif ($file_size > 10 * 1024 * 1024) {
-				$error = "Profile photo must be under 10 MB.";
-			} else {
-				$ext            = pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION);
-				$photo_filename = uniqid('usr_', true) . '.' . strtolower($ext);
-				// UPLOAD_DIR = absolute path to index/image/ — correct from any subfolder
-				if (!is_dir(UPLOAD_DIR)) mkdir(UPLOAD_DIR, 0755, true);
-				if (!move_uploaded_file($_FILES['photo']['tmp_name'], UPLOAD_DIR . $photo_filename)) {
-					$error = "Failed to save photo. Check folder permissions on /image/.";
-					$photo_filename = null;
-				}
-			}
-		}
+            if (!in_array($file_type, $allowed)) {
+                $error = "Profile photo must be JPG, PNG, WebP, or GIF.";
+            } elseif ($file_size > 10 * 1024 * 1024) {
+                $error = "Profile photo must be under 10 MB.";
+            } else {
+                $ext            = pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION);
+                $photo_filename = uniqid('usr_', true) . '.' . strtolower($ext);
+                // UPLOAD_DIR = absolute path to index/image/ — correct from any subfolder
+                if (!is_dir(UPLOAD_DIR)) mkdir(UPLOAD_DIR, 0755, true);
+                if (!move_uploaded_file($_FILES['photo']['tmp_name'], UPLOAD_DIR . $photo_filename)) {
+                    $error = "Failed to save photo. Check folder permissions on /image/.";
+                    $photo_filename = null;
+                }
+            }
+        }
 
-		// ── INSERT ───────────────────────────────────────────────
-		if (empty($error)) {
-			$password_hash = password_hash($password, PASSWORD_BCRYPT);
-			$designation   = 'Teacher';
-			$role          = 'teacher';
-			$sector        = 'Teacher';
-			$is_active     = 1;
+        // ── INSERT ───────────────────────────────────────────────
+        if (empty($error)) {
+            $password_hash = password_hash($password, PASSWORD_BCRYPT);
+            $designation   = 'Teacher';
+            $role          = 'teacher';
+            $sector        = 'Teacher';
+            $is_active     = 1;
 
-			$stmt = $mysqli->prepare(
-				"INSERT INTO users (full_name, username, email, password_hash, role, sector, designation, photo, is_active)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-			);
-			$stmt->bind_param("ssssssssi",
-				$full_name, $username, $email,
-				$password_hash, $role, $sector, $designation,
-				$photo_filename, $is_active
-			);
-			if ($stmt->execute()) {
-				$stmt->close();
-				$mysqli->close();
-				$_SESSION['reg_success'] = "Account created! Please log in. Your designation will be assigned by the admin.";
-				header("Location: faculty_login.php");
-				exit;
-			} else {
-				$error = "Registration failed: " . $mysqli->error;
-			}
-			$stmt->close();
-		}
-		if ($mysqli->ping()) $mysqli->close();
-	}
-	?>
+            try {
+                $mysqli->begin_transaction();
+                $stmt = $mysqli->prepare(
+                    "INSERT INTO users (full_name, username, password_hash, role, sector, designation, photo, is_active)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                );
+                $stmt->bind_param("sssssssi",
+                    $full_name, $username,
+                    $password_hash, $role, $sector, $designation,
+                    $photo_filename, $is_active
+                );
+                $stmt->execute();
+                $newId = (int)$mysqli->insert_id;
+                $stmt->close();
+
+                // Account and security answers are saved together (all or nothing)
+                sq_save($mysqli, $newId, $sq_rows);
+                $mysqli->commit();
+                $mysqli->close();
+
+                $_SESSION['reg_success'] = "Account created! Please log in. Your designation will be assigned by the admin.";
+                header("Location: faculty_login.php");
+                exit;
+            } catch (Throwable $e) {
+                try { $mysqli->rollback(); } catch (Throwable $ignored) {}
+                error_log('faculty_register.php failed: ' . $e->getMessage());
+                if ($photo_filename && is_file(UPLOAD_DIR . $photo_filename)) @unlink(UPLOAD_DIR . $photo_filename);
+                $duplicate = ($e instanceof mysqli_sql_exception && (int)$e->getCode() === 1062);
+                $error = $duplicate ? "Username is already taken." : "Registration failed. Please try again in a moment.";
+            }
+        }
+        if ($mysqli->ping()) $mysqli->close();
+    }
+    ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -280,6 +298,29 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible{outline:3px so
     .form-grid .full{grid-column:auto}
     .photo-upload-area{gap:12px;padding:12px}
 }
+
+/* ── Security questions ── */
+.sq-note{font-size:11.5px;line-height:1.55;color:var(--muted);margin:0 0 12px}
+.sq-item{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.sq-item .form-input{padding:0 13px}
+.sq-select{appearance:none;-webkit-appearance:none;cursor:pointer;padding-right:34px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23A0B3C6' stroke-width='3'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 13px center}
+.sq-select option{background:#0B1A32;color:#E0E6F0}
+.sq-select option:disabled{color:#7b8ea3}
+.sq-section{margin-top:16px;border:1px solid rgba(160,179,198,.18);border-radius:12px;background:linear-gradient(135deg,rgba(255,255,255,.04),rgba(10,27,46,.55) 55%);box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 8px 22px rgba(0,0,0,.22);overflow:hidden}
+.sq-section[open]{border-color:var(--teal)}
+.sq-head{list-style:none;display:flex;align-items:center;gap:10px;width:100%;padding:14px;cursor:pointer;font-weight:700;font-size:14px;letter-spacing:1.2px;text-transform:uppercase;color:#fff;user-select:none}
+.sq-head::-webkit-details-marker{display:none}
+.sq-head::after{content:'\f078';font-family:'Font Awesome 6 Free';font-weight:900;color:var(--muted);font-size:11px;margin-left:auto;transition:transform .2s ease}
+.sq-section[open] .sq-head::after{transform:rotate(180deg)}
+.sq-head i{color:var(--teal-light);font-size:14px}
+.sq-head-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.sq-head-subtitle{font-size:11px;font-weight:500;letter-spacing:.15px;text-transform:none;color:var(--muted);line-height:1.35}
+.sq-content{padding:0 14px 4px}
+.sq-chosen{font-size:12.5px;line-height:1.5;color:#E0E6F0;padding:0 2px}
+.sq-chosen:empty{display:none}
+summary:focus-visible{outline:3px solid rgba(255,255,255,.3);outline-offset:2px}
 </style>
 </head>
 <body>
@@ -334,19 +375,11 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible{outline:3px so
                     </div>
                 </div>
 
-                <div class="form-group">
+                <div class="form-group full">
                     <label class="form-label" for="username">Username<span class="required">*</span></label>
                     <div class="input-wrap">
                         <i class="fa-solid fa-user f-icon"></i>
                         <input class="form-input" type="text" id="username" name="username" placeholder="Choose a username" required value="<?= htmlspecialchars($_POST['username'] ?? '') ?>"/>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label" for="email">Email Address<span class="required">*</span></label>
-                    <div class="input-wrap">
-                        <i class="fa-solid fa-envelope f-icon"></i>
-                        <input class="form-input" type="email" id="email" name="email" placeholder="your@email.com" required value="<?= htmlspecialchars($_POST['email'] ?? '') ?>"/>
                     </div>
                 </div>
             </div>
@@ -381,6 +414,33 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible{outline:3px so
             </div>
         </div>
 
+        <!-- Security questions (collapsed until clicked, same as the student form) -->
+        <details class="sq-section" id="securityQuestions"<?= ($error && isset($_POST['sq_question'])) ? ' open' : '' ?>>
+            <summary class="sq-head">
+                <i class="fa-solid fa-shield-halved"></i>
+                <span class="sq-head-text">
+                    <span class="sq-head-title">Security Questions</span>
+                    <span class="sq-head-subtitle">Required for password recovery · Choose 3 questions</span>
+                </span>
+            </summary>
+            <div class="sq-content">
+            <p class="sq-note"></p>
+            <?php for ($n = 1; $n <= 3; $n++): ?>
+            <div class="sq-item">
+                <label class="form-label" for="sq_q<?= $n ?>">Question <?= $n ?><span class="required">*</span></label>
+                <select class="form-input sq-select" name="sq_question[<?= $n ?>]" id="sq_q<?= $n ?>" required>
+                    <option value="" disabled <?= empty($_POST['sq_question'][$n]) ? 'selected' : '' ?>>Choose a question</option>
+                    <?php foreach ($sq_all as $k => $q): ?>
+                    <option value="<?= htmlspecialchars($k) ?>" <?= (($_POST['sq_question'][$n] ?? '') === $k) ? 'selected' : '' ?>><?= htmlspecialchars($q) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <div class="sq-chosen" id="sq_chosen<?= $n ?>" aria-live="polite"></div>
+                <input class="form-input sq-answer" type="text" name="sq_answer[<?= $n ?>]" id="sq_a<?= $n ?>" maxlength="100" placeholder="Your answer" autocomplete="off" required/>
+            </div>
+            <?php endfor; ?>
+            </div>
+        </details>
+
         <button type="submit" class="btn-register">
             <i class="fa-solid fa-user-plus"></i>
             <span id="regBtnLabel">Create Faculty Account</span>
@@ -394,6 +454,7 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible{outline:3px so
 
 <script>
 const regForm = document.getElementById('regForm');
+regForm.addEventListener('invalid', function(e){ const b = e.target.closest && e.target.closest('.sq-section'); if (b) b.open = true; }, true);
 regForm.addEventListener('submit', function(e){
     const requiredFields = regForm.querySelectorAll('[required]');
     let firstInvalid = null;
@@ -407,14 +468,9 @@ regForm.addEventListener('submit', function(e){
         if (empty && !firstInvalid) firstInvalid = field;
     });
 
-    const email = document.getElementById('email');
     const password = document.getElementById('password');
     const confirmPassword = document.getElementById('confirm_password');
 
-    if (!email.validity.valid) {
-        email.classList.add('field-invalid');
-        if (!firstInvalid) firstInvalid = email;
-    }
     if (password.value.length < 8) {
         password.classList.add('field-invalid');
         if (!firstInvalid) firstInvalid = password;
@@ -424,8 +480,26 @@ regForm.addEventListener('submit', function(e){
         if (!firstInvalid) firstInvalid = confirmPassword;
     }
 
+
+    // Security questions: three different questions, answers long enough and different from each other
+    const sqSelects = [1,2,3].map(n => document.getElementById('sq_q' + n));
+    const sqAnswers = [1,2,3].map(n => document.getElementById('sq_a' + n));
+    if (new Set(sqSelects.map(s => s.value)).size !== 3) {
+        sqSelects.forEach(s => s.classList.add('field-invalid'));
+        if (!firstInvalid) firstInvalid = sqSelects[0];
+    }
+    const sqNorm = sqAnswers.map(a => a.value.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ''));
+    sqNorm.forEach(function(v, i){
+        if (v.length < 3 || sqNorm.indexOf(v) !== i) {
+            sqAnswers[i].classList.add('field-invalid');
+            if (!firstInvalid) firstInvalid = sqAnswers[i];
+        }
+    });
+
     if (firstInvalid) {
         e.preventDefault();
+        const sqBox = firstInvalid.closest('.sq-section');
+        if (sqBox) sqBox.open = true;   // reveal the collapsed questions so the error is visible
         if (firstInvalid.type === 'file') {
             document.getElementById('photoPreview').scrollIntoView({block:'center'});
         } else {
@@ -440,6 +514,21 @@ regForm.addEventListener('input', function(e){
 regForm.addEventListener('change', function(e){
     if (e.target.matches('[required]')) e.target.classList.remove('field-invalid');
 });
+
+// Keep the three question dropdowns from repeating each other.
+function syncQuestionChoices(){
+    const selects = [1,2,3].map(n => document.getElementById('sq_q' + n));
+    selects.forEach(function(s){
+        const chosenEl = document.getElementById('sq_chosen' + s.id.slice(4));
+        if (chosenEl) chosenEl.textContent = s.value ? s.options[s.selectedIndex].text : '';
+        Array.from(s.options).forEach(function(o){
+            if (!o.value) return;
+            o.disabled = selects.some(function(t){ return t !== s && t.value === o.value; });
+        });
+    });
+}
+document.querySelectorAll('.sq-select').forEach(s => s.addEventListener('change', syncQuestionChoices));
+syncQuestionChoices();
 
 function togglePw(id,ic){
     const e=document.getElementById(id),i=document.getElementById(ic);

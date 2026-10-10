@@ -203,8 +203,8 @@ if (!function_exists('principal_theme_assets')) {
     } catch (e) {}
 })();
 </script>
-<link rel="stylesheet" href="includes/principal_theme.css?v=20260927.3"/>
-<script defer src="includes/principal_theme.js?v=20260927.3"></script>
+<link rel="stylesheet" href="includes/principal_theme.css?v=20261009.1"/>
+<script defer src="includes/principal_theme.js?v=20261009.1"></script>
         <?php
     }
 }

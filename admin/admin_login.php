@@ -20,9 +20,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($username) || empty($password)) {
         $error = "Please enter your username and password.";
     } else {
+        // BINARY makes the username match case-sensitive: "Admin" will not log in as "admin".
+        // (Passwords are already case-sensitive because they are checked with password_verify().)
         $stmt = $mysqli->prepare(
             "SELECT id, full_name, email, password_hash, role, is_logged_in
-             FROM users WHERE username = ? AND role IN ('admin','superadmin','registrar') AND is_active = 1 LIMIT 1"
+             FROM users WHERE BINARY username = ? AND role IN ('admin','superadmin','registrar') AND is_active = 1 LIMIT 1"
         );
         $stmt->bind_param("s", $username);
         $stmt->execute();

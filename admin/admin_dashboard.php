@@ -1848,7 +1848,7 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { display:none !important; widt
             <li><a href="#" id="link-tracker" onclick="showPage('tracker',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-satellite-dish icon"></i></span> <span>Evaluation Tracker</span></a></li>
             <li><a href="#" id="link-ea-eval" onclick="showPage('ea_eval',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-clipboard-check icon"></i></span> <span><?= $isExecutiveAssistant ? 'Evaluate Others' : 'EA Evaluations' ?></span></a></li>
             <?php if ($isExecutiveAssistant): ?>
-            <li><a href="#" id="link-ea-results" onclick="showPage('ea_results',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-star-half-stroke icon"></i></span> <span>Feedback's Received</span></a></li>
+            <li><a href="#" id="link-ea-results" onclick="showPage('ea_results',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-star-half-stroke icon"></i></span> <span>Evaluation Received</span></a></li>
             <?php endif; ?>
             <li><a href="#" id="link-analytics" onclick="showPage('analytics',this);return false;" class="nav-item"><span class="nav-icon-badge"><i class="fa-solid fa-chart-line icon"></i></span> <span>Evaluation Reports</span></a></li>
 
@@ -2466,7 +2466,7 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { display:none !important; widt
     <div id="analytics"     class="page"><iframe src="admin_analytics.php"            class="iframe-box" id="analyticsFrame"></iframe></div>
     <div id="registrations" class="page"><iframe src="manage_privileged_accounts.php" class="iframe-box" id="registrationsFrame"></iframe></div>
     <div id="tracker"       class="page"><iframe src="evaluation_tracker.php"        class="iframe-box"></iframe></div>
-    <div id="ea_eval"       class="page"><iframe src="ea_evaluation.php"             class="iframe-box"></iframe></div>
+    <div id="ea_eval"       class="page"><iframe id="eaEvalFrame" src="ea_evaluation.php"             class="iframe-box"></iframe></div>
     <?php if ($isExecutiveAssistant): ?>
     <div id="ea_results"   class="page"><iframe src="ea_results.php"               class="iframe-box"></iframe></div>
     <?php endif; ?>
@@ -3215,6 +3215,38 @@ html body:has(#dashboard.active) .pbi-panel{padding:22px 24px!important;}
 </style>
 
 <script src="eval_status_poll.js" defer></script>
+
+<!-- EA evaluation popup: lives at the top level so the blur covers the whole screen (sidebar + header included). -->
+<style>
+.ea-eval-overlay{position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(9,17,30,.64);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
+.ea-eval-overlay.open{display:flex}
+.ea-eval-wrap{width:100%;max-width:780px;height:92vh}
+.ea-eval-wrap iframe{width:100%;height:100%;border:0;background:transparent;border-radius:18px}
+@media(max-width:700px){.ea-eval-overlay{padding:10px}}
+</style>
+<div class="ea-eval-overlay" id="eaEvalOverlay" aria-hidden="true">
+  <div class="ea-eval-wrap"><iframe id="eaEvalPopupFrame" title="Evaluation form" allowtransparency="true"></iframe></div>
+</div>
+<script>
+(function(){
+  var overlay=document.getElementById('eaEvalOverlay'), frame=document.getElementById('eaEvalPopupFrame');
+  window.openEvalModal=function(url){
+    frame.src=url; overlay.classList.add('open'); overlay.setAttribute('aria-hidden','false');
+    document.body.style.overflow='hidden';
+  };
+  window.closeEvalModal=function(){
+    overlay.classList.remove('open'); overlay.setAttribute('aria-hidden','true');
+    document.body.style.overflow=''; frame.src='about:blank';
+  };
+  // After a successful submit: close the popup and refresh the Evaluate Others list.
+  window.pbiEvalDone=function(url){
+    window.closeEvalModal();
+    var list=document.getElementById('eaEvalFrame'); if(list) list.src=url;
+  };
+  overlay.addEventListener('click',function(e){ if(e.target===overlay) window.closeEvalModal(); });
+  document.addEventListener('keydown',function(e){ if(e.key==='Escape'&&overlay.classList.contains('open')) window.closeEvalModal(); });
+})();
+</script>
 </body>
 </html>
 <?php if($mysqli->ping())$mysqli->close();?>

@@ -133,18 +133,19 @@ const AUTH_LOCK_MESSAGE = 'Too many failed attempts. Please wait 15 minutes and 
 // Keys are stored in the database (not the wording), so you can reword or add questions freely.
 function sq_questions(): array {
     return [
-        'first_pet'         => 'What was the name of your first pet (or the pet you always wanted)?',
-        'childhood_nick'    => 'What was your nickname when you were a small child?',
-        'grandparent_middle'=> 'What is the middle name of your oldest grandparent (or the oldest one you remember)?',
-        'childhood_neighbor'=> 'What was the first name of the neighbor you remember best from your childhood?',
-        'childhood_toy'     => 'What was the name of your favorite toy or stuffed animal as a child (or the one you always wanted)?',
-        'grow_up_street'    => 'What was the name of the street or sitio where you spent most of your childhood?',
-        'first_phone'       => 'What was the brand and model of the first mobile phone you used?',
-        'first_movie'       => 'What is the title of the first movie you remember watching in a cinema?',
-        'parents_met'       => 'In what town or city did your parents meet?',
-        'oldest_cousin'     => 'What is the first name of your oldest cousin?',
-        'first_game'        => 'What is the name of the first video or mobile game you remember playing?',
-        'first_trip'        => 'Where did you go on the first trip you remember taking?',
+        'nickname'     => 'What is your nickname?',
+        'called_by'    => 'What do people usually call you?',
+        'fav_food'     => 'What is your favorite food?',
+        'fav_color'    => 'What is your favorite color?',
+        'fav_subject'  => 'What is your favorite subject in school?',
+        'fav_fruit'    => 'What is your favorite fruit?',
+        'fav_drink'    => 'What is your favorite drink?',
+        'fav_sport'    => 'What is your favorite sport or game?',
+        'fav_singer'   => 'Who is your favorite singer or band?',
+        'pet_name'     => 'What is the name of your pet (or the pet you wish to have)?',
+        'bestie_name'  => 'What is the first name of your best friend?',
+        'fav_place'    => 'What is your favorite place to go to?',
+        'hometown'     => 'What barangay or town do you live in?',
     ];
 }
 
@@ -154,6 +155,19 @@ function sq_questions(): array {
 // student may still have it stored.
 function sq_retired_questions(): array {
     return [
+        // Previously active "childhood memory" questions (replaced by the basic list above).
+        'first_pet'          => 'What was the name of your first pet (or the pet you always wanted)?',
+        'childhood_nick'     => 'What was your nickname when you were a small child?',
+        'grandparent_middle' => 'What is the middle name of your oldest grandparent (or the oldest one you remember)?',
+        'childhood_neighbor' => 'What was the first name of the neighbor you remember best from your childhood?',
+        'childhood_toy'      => 'What was the name of your favorite toy or stuffed animal as a child (or the one you always wanted)?',
+        'grow_up_street'     => 'What was the name of the street or sitio where you spent most of your childhood?',
+        'first_phone'        => 'What was the brand and model of the first mobile phone you used?',
+        'first_movie'        => 'What is the title of the first movie you remember watching in a cinema?',
+        'parents_met'        => 'In what town or city did your parents meet?',
+        'oldest_cousin'      => 'What is the first name of your oldest cousin?',
+        'first_game'         => 'What is the name of the first video or mobile game you remember playing?',
+        'first_trip'         => 'Where did you go on the first trip you remember taking?',
         'best_friend' => 'What was the first name of your best friend in elementary school?',
         'fav_teacher' => 'What was the last name of your favorite elementary teacher?',
         'first_dish'  => 'What is the first dish you learned to cook?',

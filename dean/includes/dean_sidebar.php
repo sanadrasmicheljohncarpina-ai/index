@@ -32,7 +32,7 @@ $navItems = [
     'dashboard'  => ['dean_dashboard.php',          'fa-gauge',           'Dashboard'],
     'evaluation' => ['dean_evaluation.php',         'fa-clipboard-check', 'Evaluate Others'],
     'tracker'    => ['dean_evaluation_tracker.php', 'fa-satellite-dish',  'Evaluation Tracker'],
-    'results'    => ['dean_results.php',            'fa-star-half-stroke',"Feedback's Received"],
+    'results'    => ['dean_results.php',            'fa-star-half-stroke',"Evaluation Received"],
     'reports'    => ['dean_reports.php',            'fa-chart-line',      'Evaluation Reports'],
     'settings'   => ['dean_account_settings.php',   'fa-gear',            'Account Settings'],
 ];
@@ -44,7 +44,6 @@ $navItems = [
         </div>
         <div class="portal-brand-copy">
             <strong>Dean Workspace</strong>
-            <span>Evaluation Workspace</span>
         </div>
     </div>
 
@@ -111,6 +110,38 @@ $navItems = [
     </script>
 
     <style>
+    /* Keep the Dean navigation anchored to the viewport while the page content scrolls. */
+    .sidebar#sidebar{
+        position:sticky !important;
+        top:0 !important;
+        align-self:flex-start !important;
+        flex:0 0 248px !important;
+        width:248px !important;
+        height:100vh !important;
+        min-height:100vh !important;
+        max-height:100vh !important;
+        overflow:hidden !important;
+        z-index:1000 !important;
+    }
+    #sidebar .portal-sidebar-nav{
+        min-height:0 !important;
+        flex:1 1 auto !important;
+        overflow-y:auto !important;
+        overscroll-behavior:contain;
+    }
+    @media(max-width:768px){
+        .sidebar#sidebar{
+            position:relative !important;
+            top:auto !important;
+            align-self:stretch !important;
+            flex:0 0 auto !important;
+            width:100% !important;
+            height:auto !important;
+            min-height:0 !important;
+            max-height:none !important;
+        }
+        #sidebar .portal-sidebar-nav{max-height:42vh !important;}
+    }
     #deanLogoutModal{position:fixed;inset:0;z-index:100000;display:none;align-items:center;justify-content:center;background:rgba(3,10,22,.65);backdrop-filter:blur(3px);}
     #deanLogoutModal.open{display:flex;}
     #deanLogoutModal .dlm-box{width:min(380px,90vw);background:#172A45;color:#E0E6F0;border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.55);font-family:inherit;}
@@ -155,3 +186,4 @@ $navItems = [
     }
     </script>
 </aside>
+<?php include __DIR__ . '/dean_portal_header.php'; ?>

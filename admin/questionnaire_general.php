@@ -19,6 +19,12 @@ $csrf = $_SESSION['csrf_token'];
 $scope = $_GET['scope'] ?? $_POST['scope'] ?? '';
 if ($scope !== '' && !qn_scope_is_valid($scope)) $scope = '';
 
+function qxm_sum_for(array $countsByUser, array $people): int {
+    $t = 0;
+    foreach ($people as $p) $t += (int)($countsByUser[(int)$p['id']] ?? 0);
+    return $t;
+}
+
 function qxm_scope_target(string $scope): string {
     return match ($scope) {
         'faculty' => 'Faculty',
@@ -404,25 +410,41 @@ $selectedPersonName = $selectedPerson['full_name'] ?? '';
 
 <link rel="stylesheet" href="admin_appearance.css?v=<?= (int)@filemtime(__DIR__ . '/admin_appearance.css') ?>">
 <style>
-/* EA card: same dark-mode Manage button as the other cards (no green). Placed after the
-   stylesheet so it wins even if an older cached admin_appearance.css is still loaded. */
-html[data-theme="dark"] .card-ea .manage-card{
-  background:var(--panel-bg)!important;
-  color:var(--accent)!important;
-  border-color:var(--panel-border)!important;
-}
+/* Landing: same layout as Evaluate Others (panel > step label > group cards with colored bottom border) */
+.qx-panel{background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 8px 24px rgba(15,23,42,.06);padding:28px 32px 32px}
+.qx-title{display:flex;align-items:center;gap:12px;margin:0 0 18px;font-size:28px;letter-spacing:-.01em;color:var(--text)}
+.qx-title i{color:var(--blue);font-size:22px}
+.qx-step{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#64748b}
+.qx-groups{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:22px}
+.qx-group{--c:#2563eb;--c-bg:#eaf1ff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:230px;padding:28px 18px 24px;text-decoration:none;color:var(--text);background:#fff;border:1px solid var(--line);border-bottom:4px solid var(--c);border-radius:16px;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease,background .15s ease}
+.qx-group:hover,.qx-group:focus-visible{background:#f5f9ff;border-color:var(--c);border-bottom-color:var(--c);box-shadow:0 10px 26px rgba(15,23,42,.1);transform:translateY(-2px);outline:none}
+.qx-group-icon{width:80px;height:80px;border-radius:50%;display:grid;place-items:center;background:var(--c-bg);color:var(--c);font-size:30px;margin-bottom:12px}
+.qx-group-name{font-size:20px;font-weight:800;text-align:center}
+.qx-group-count{font-size:14px;color:var(--muted)}
+.qx-group.card-faculty{--c:#2563eb;--c-bg:#e6efff}
+.qx-group.card-staff{--c:#7c3aed;--c-bg:#f0e9ff}
+.qx-group.card-leadership{--c:#f59e0b;--c-bg:#fff3de}
+.qx-group.card-ea{--c:#22c55e;--c-bg:#e6f8ed}
+@media(max-width:1100px){.qx-groups{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.qx-groups{grid-template-columns:1fr}.qx-panel{padding:20px}}
+html[data-theme="dark"] .qx-panel,html[data-theme="dark"] .qx-group{background:var(--panel-bg);border-color:var(--panel-border)}
+html[data-theme="dark"] .qx-group{border-bottom-color:var(--c)}
+html[data-theme="dark"] .qx-group:hover,html[data-theme="dark"] .qx-group:focus-visible{border-color:var(--c)}
+html[data-theme="dark"] .qx-title,html[data-theme="dark"] .qx-group-name{color:var(--text)}
 </style>
 <script src="admin_appearance.js"></script>
 </head>
-<body class="<?= $scope === '' ? 'landing-center' : '' ?>">
+<body>
 <div class="wrap">
+  <?php if ($scope !== ''): ?>
   <div class="header">
     <div class="title">
       <h1>Questionnaire</h1>
       <p>Assign questions by <strong>evaluation target</strong>. The same target questionnaire is used automatically by every applicable evaluator.</p>
     </div>
-    <?php if ($scope !== ''): ?><a class="back-link" href="questionnaire.php"><i class="fa-solid fa-arrow-left"></i> Back to questionnaires</a><?php endif; ?>
+    <a class="back-link" href="questionnaire.php"><i class="fa-solid fa-arrow-left"></i> Back to questionnaires</a>
   </div>
+  <?php endif; ?>
 
 
   <?php if ($message !== ''): ?><div class="notice success"><?= qxm_e($message) ?></div><?php endif; ?>
@@ -440,41 +462,37 @@ html[data-theme="dark"] .card-ea .manage-card{
         'staff' => [
           'label' => 'Staff',
           'desc'  => 'Staff-target questionnaires',
-          'count' => array_sum($counts['staff'] ?? []),
+          'count' => qxm_sum_for($counts['staff'] ?? [], $staffUsers),
           'icon'  => 'fa-briefcase',
           'class' => 'card-staff',
         ],
         'school_head' => [
           'label' => 'Dean / Principal',
           'desc'  => 'Leadership-target questionnaires',
-          'count' => array_sum($counts['school_head'] ?? []),
+          'count' => qxm_sum_for($counts['school_head'] ?? [], $headUsers),
           'icon'  => 'fa-user-tie',
           'class' => 'card-leadership',
         ],
         'ea' => [
           'label' => 'Executive Assistant (EA)',
           'desc'  => 'EA-target questionnaire',
-          'count' => array_sum($counts['ea'] ?? []),
+          'count' => qxm_sum_for($counts['ea'] ?? [], $eaUsers),
           'icon'  => 'fa-user-shield',
           'class' => 'card-ea',
         ],
       ];
     ?>
-    <section class="questionnaire-landing">
-      <div class="questionnaire-cards">
+    <section class="qx-panel">
+      <h1 class="qx-title"><i class="fa-solid fa-clipboard-question"></i> Questionnaire</h1>
+      <div class="qx-step"><i class="fa-solid fa-bolt"></i> Step 1: Select questionnaire target</div>
+      <div class="qx-groups">
         <?php foreach ($questionnaireCards as $key => $card): ?>
-          <article class="questionnaire-card <?= qxm_e($card['class']) ?>">
-            <div class="questionnaire-card-top">
-              <span class="questionnaire-icon"><i class="fa-solid <?= qxm_e($card['icon']) ?>"></i></span>
-              <div>
-                <h3><?= qxm_e($card['label']) ?></h3>
-                <p><?= qxm_e($card['desc']) ?></p>
-              </div>
-            </div>
-            <div class="questionnaire-card-bottom">
-              <a class="manage-card" href="questionnaire.php?scope=<?= urlencode($key) ?>">Manage <i class="fa-solid fa-arrow-right"></i></a>
-            </div>
-          </article>
+          <?php $n = (int)$card['count']; ?>
+          <a class="qx-group <?= qxm_e($card['class']) ?>" href="questionnaire.php?scope=<?= urlencode($key) ?>">
+            <span class="qx-group-icon"><i class="fa-solid <?= qxm_e($card['icon']) ?>"></i></span>
+            <span class="qx-group-name"><?= qxm_e($card['label']) ?></span>
+            <span class="qx-group-count"><?= $n ?> question<?= $n === 1 ? '' : 's' ?></span>
+          </a>
         <?php endforeach; ?>
       </div>
     </section>

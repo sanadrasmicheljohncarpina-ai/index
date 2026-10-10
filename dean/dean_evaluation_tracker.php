@@ -107,7 +107,12 @@ $evalOpen        = $settings['is_open_for_submission'];
 const HIGHER_ED_LABEL = 'Higher Education';
 const REMINDER_COOLDOWN_HOURS = 24; // must match dean_send_reminder.php
 
-// ── FILTER + SORT + PAGE INPUT (GET) ──────────────────────────────────
+// ── TAB + FILTER + PAGE INPUT (GET) ───────────────────────────────────
+// The Dean tracker has three tabs: Students (College only), Faculty (College
+// teachers only) and Staff (non-teaching staff). Layout mirrors the EA tracker.
+$tab = $_GET['tab'] ?? 'students';
+if (!in_array($tab, ['students','faculty','staff'], true)) $tab = 'students';
+
 $search    = trim($_GET['search'] ?? '');
 $yearLevel = trim($_GET['year_level'] ?? '');
 $status    = trim($_GET['status'] ?? '');
@@ -115,13 +120,9 @@ $status    = trim($_GET['status'] ?? '');
 // Keep the old query-string values working after the tracker redesign.
 if ($status === 'pending')   $status = 'not_started';
 if ($status === 'submitted') $status = 'completed';
-
 $validStatus = ['', 'not_started', 'in_progress', 'completed'];
 if (!in_array($status, $validStatus, true)) $status = '';
 
-// The Dean tracker is limited to College.  The filter below normalizes the
-// common year-level formats already used by the system (e.g. 1st_year,
-// 1st Year, 1st Year College) without changing the stored database values.
 $yearLevelOptions = [
     '1st_year' => '1st Year College',
     '2nd_year' => '2nd Year College',
@@ -134,334 +135,352 @@ $yearLevelRegex = [
     '3rd_year' => '(^|[^0-9a-z])(3rd|third)[[:space:]_-]*year([^0-9a-z]|$)',
     '4th_year' => '(^|[^0-9a-z])(4th|fourth)[[:space:]_-]*year([^0-9a-z]|$)',
 ];
-if (!isset($yearLevelRegex[$yearLevel])) $yearLevel = '';
+if ($tab !== 'students' || !isset($yearLevelRegex[$yearLevel])) $yearLevel = '';
 
-$sortableColumns = ['name' => 'full_name', 'year_level' => 'year_level'];
-$sort = $_GET['sort'] ?? 'name';
-if (!in_array($sort, array_merge(array_keys($sortableColumns), ['status']), true)) $sort = 'name';
-$dir = (strtolower($_GET['dir'] ?? 'asc') === 'desc') ? 'desc' : 'asc';
-
-$page = max(1, (int)($_GET['page'] ?? 1));
+$page    = max(1, (int)($_GET['page'] ?? 1));
 $perPage = 5;
 
+// ── SCOPE SQL (same rules as dean_reports.php) ────────────────────────
+// Faculty = College teachers only. A staff-role account with a College year
+// level is teaching staff and counts as Faculty.
+function dean_college_faculty_sql(string $a = 'u'): string {
+    $rx = '(^|[^0-9a-z])(1st|2nd|3rd|4th|college)[[:space:]_-]*year([^0-9a-z]|$)';
+    return "($a.role IN ('teacher','faculty','staff') AND $a.is_active=1 AND $a.account_status='approved'
+        AND (EXISTS (SELECT 1 FROM user_year_levels fyl WHERE fyl.user_id=$a.id
+                     AND LOWER(COALESCE(fyl.year_level,'')) REGEXP '$rx')
+             OR ($a.role IN ('teacher','faculty') AND $a.academic_level='college')))";
+}
+// Staff = non-teaching staff (no teaching assignment / year level).
+function dean_nonteaching_staff_sql(string $a = 'u'): string {
+    return "($a.role='staff' AND $a.is_active=1 AND $a.account_status='approved'
+        AND COALESCE($a.sector,'')<>'Teacher'
+        AND NOT EXISTS (SELECT 1 FROM user_year_levels sy WHERE sy.user_id=$a.id)
+        AND NOT EXISTS (SELECT 1 FROM teaching_assignments sta WHERE sta.user_id=$a.id))";
+}
+const DEAN_PEER_TYPES_SQL = "'peer','faculty_peer','staff_peer'";
+const DEAN_EA_ROLES_SQL   = "'ea','executive_assistant','admin'";
+
 // Defaults so the page still renders the structure-mismatch state.
-$students           = [];
-$pageStudents       = [];
-$studentsAssigned   = 0;
-$studentsSubmitted  = 0;
-$pendingStudents    = 0;
-$remainingStudents  = 0;
-$completionPct      = 0;
-$totalPages         = 1;
+$rowsAll        = [];
+$pageRows       = [];
+$cards          = [];
+$tabCounts      = ['students' => 0, 'faculty' => 0, 'staff' => 0];
+$totalAssigned  = 0;
+$requiredTotal  = 0;
+$totalPages     = 1;
 
 if ($structureActive) {
-    // ── QUESTIONNAIRE CONFIGURATION / REQUIRED TARGETS ─────────────────
-    // Required is NOT derived from submitted rows. It is the number of
-    // currently configured College Student-Evaluation targets that this Dean
-    // is responsible for. This keeps students with zero submissions at
-    // 0 / N instead of incorrectly reporting 0 / 0.
-    // The shared Faculty question pool has existed under both target_type='Teacher'
-    // (legacy) and target_type='Faculty' (current questionnaire model). Treat
-    // either as the Faculty questionnaire so Required never collapses to 0.
-    $teacherQuestionCount = (int)(safe_scalar($mysqli,
-        "SELECT COUNT(*) FROM evaluation_questions WHERE target_type='Faculty' AND eval_type='general' AND evaluator_role='shared' AND is_active=1"
-    ) ?? 0);
-    $multiRoleQuestionCount = (int)(safe_scalar($mysqli,
-        "SELECT COUNT(*) FROM evaluation_questions WHERE target_type='Faculty' AND eval_type='general' AND evaluator_role='shared' AND is_active=1"
-    ) ?? 0);
-    if ($multiRoleQuestionCount === 0) {
-        $multiRoleQuestionCount = (int)(safe_scalar($mysqli,
-            "SELECT COUNT(*) FROM user_questions WHERE eval_type='general' AND target_type='Staff'"
+    // ── ROSTERS (unfiltered, used for tab badges + summary cards) ───────
+    $studentRoster = safe_rows($mysqli, "
+        SELECT id, full_name, photo, year_level FROM users
+        WHERE role='student' AND is_active=1 AND account_status='approved'
+          AND LOWER(COALESCE(year_level,'')) REGEXP '^(1st|2nd|3rd|4th)[[:space:]_-]*year([[:space:]_-]*college)?\$'
+        ORDER BY full_name ASC");
+    $facultyRoster = safe_rows($mysqli, "
+        SELECT u.id, u.full_name, u.photo, u.designation,
+               (SELECT GROUP_CONCAT(DISTINCT yl.year_level ORDER BY yl.year_level SEPARATOR ', ')
+                  FROM user_year_levels yl WHERE yl.user_id=u.id) AS levels
+        FROM users u WHERE " . dean_college_faculty_sql('u') . " ORDER BY u.full_name ASC");
+    $staffRoster = safe_rows($mysqli, "
+        SELECT u.id, u.full_name, u.photo, u.designation
+        FROM users u WHERE " . dean_nonteaching_staff_sql('u') . " ORDER BY u.full_name ASC");
+
+    $tabCounts = [
+        'students' => count($studentRoster),
+        'faculty'  => count($facultyRoster),
+        'staff'    => count($staffRoster),
+    ];
+
+    $stateOf = static function (int $completed, int $required): array {
+        if ($required > 0 && $completed >= $required) return ['completed', 'Completed'];
+        if ($completed > 0) return ['in_progress', 'In Progress'];
+        return ['not_started', 'Not Started'];
+    };
+
+    if ($tab === 'students') {
+        // ── QUESTIONNAIRE CONFIGURATION / REQUIRED TARGETS ─────────────
+        // Required is the number of configured College Student-Evaluation
+        // targets, not derived from submitted rows, so a student with zero
+        // submissions shows 0 / N instead of 0 / 0.
+        $teacherQuestionCount = (int)(safe_scalar($mysqli,
+            "SELECT COUNT(*) FROM evaluation_questions WHERE target_type='Faculty' AND eval_type='general' AND evaluator_role='shared' AND is_active=1"
         ) ?? 0);
-    }
-
-    // Faculty in the Dean's College scope: teachers and staff who have a
-    // College academic level / College year-level assignment. Teaching Staff
-    // who are also Staff remain included here as Faculty as required by the
-    // existing personnel rules.
-    $collegeFacultyRequired = $teacherQuestionCount > 0 ? (int)(safe_scalar($mysqli, "
-        SELECT COUNT(*) FROM users u
-        WHERE u.role IN ('teacher','staff')
-          AND u.is_active=1
-          AND u.account_status='approved'
-          AND (
-              u.academic_level='college'
-              OR EXISTS (
-                  SELECT 1 FROM user_year_levels yl
-                  WHERE yl.user_id=u.id
-                    AND LOWER(COALESCE(yl.year_level,'')) REGEXP '(^|[^0-9a-z])(college|1st|2nd|3rd|4th)[[:space:]_-]*year([^0-9a-z]|$)'
-              )
-          )
-          AND (
-              u.role='teacher'
-              OR u.secondary_role='teacher'
-              OR u.sector='Teacher'
-              OR EXISTS (SELECT 1 FROM teaching_assignments ta WHERE ta.user_id=u.id)
-              OR EXISTS (SELECT 1 FROM user_year_levels yl2 WHERE yl2.user_id=u.id)
-          )
-    ") ?? 0) : 0;
-
-    // Staff is a Student Evaluation context for approved Staff accounts. The
-    // actual question bank is per-person, so only Staff with at least one
-    // Student/Staff question are counted as required targets.
-    $staffRequired = (int)(safe_scalar($mysqli, "
-        SELECT COUNT(*) FROM users u
-        WHERE u.role='staff'
-          AND u.is_active=1
-          AND u.account_status='approved'
-          AND EXISTS (
-              SELECT 1 FROM user_questions uq
-              WHERE uq.user_id=u.id
-                AND uq.eval_type='general'
-                AND uq.target_type='Staff'
-          )
-    ") ?? 0);
-
-    // Multi-Role is an additional Student Evaluation context. The same rules
-    // used by the Questionnaire page are mirrored here: explicit Teacher+Staff
-    // roles, or a Staff account that also has a teaching/year-level assignment.
-    $multiRoleRequired = $multiRoleQuestionCount > 0 ? (int)(safe_scalar($mysqli, "
-        SELECT COUNT(*) FROM users u
-        WHERE u.role IN ('teacher','staff')
-          AND u.is_active=1
-          AND u.account_status='approved'
-          AND (
-              (u.role='teacher' AND LOWER(COALESCE(u.secondary_role,''))='staff')
-              OR (u.role='staff' AND (
-                    LOWER(COALESCE(u.secondary_role,''))='teacher'
-                    OR EXISTS (SELECT 1 FROM teaching_assignments ta WHERE ta.user_id=u.id)
-                    OR EXISTS (SELECT 1 FROM user_year_levels yl WHERE yl.user_id=u.id)
-              ))
-              OR LOWER(COALESCE(u.designation,'')) REGEXP 'teacher.*staff|staff.*teacher'
-          )
-          AND (
-              u.academic_level='college'
-              OR EXISTS (
-                  SELECT 1 FROM user_year_levels yl2
-                  WHERE yl2.user_id=u.id
-                    AND LOWER(COALESCE(yl2.year_level,'')) REGEXP '(^|[^0-9a-z])(college|1st|2nd|3rd|4th)[[:space:]_-]*year([^0-9a-z]|$)'
-              )
-              OR EXISTS (SELECT 1 FROM teaching_assignments ta2 WHERE ta2.user_id=u.id)
-          )
-    ") ?? 0) : 0;
-
-    // College students evaluate the Dean as the College School Head. The
-    // Principal belongs to the Higher-School scope and is not required here.
-    $deanHeadRequired = (int)(safe_scalar($mysqli, "
-        SELECT COUNT(*) FROM users u
-        WHERE u.role='dean'
-          AND u.is_active=1
-          AND u.account_status='approved'
-          AND EXISTS (
-              SELECT 1 FROM user_questions uq
-              WHERE uq.user_id=u.id
-                AND uq.eval_type='general'
-                AND uq.target_type='Dean'
-          )
-    ") ?? 0);
-
-    $requiredTotal = $collegeFacultyRequired + $staffRequired + $multiRoleRequired + $deanHeadRequired;
-
-    // ── STUDENTS IN SCOPE ───────────────────────────────────────────────
-    $whereSql = "role='student' AND is_active=1 AND account_status='approved'
-        AND LOWER(COALESCE(year_level,'')) REGEXP '^(1st|2nd|3rd|4th)[[:space:]_-]*year([[:space:]_-]*college)?$'";
-    $types = '';
-    $params = [];
-
-    if ($search !== '') {
-        $whereSql .= " AND full_name LIKE ?";
-        $types .= 's';
-        $params[] = '%' . $search . '%';
-    }
-    if ($yearLevel !== '') {
-        $whereSql .= " AND LOWER(COALESCE(year_level,'')) REGEXP ?";
-        $types .= 's';
-        $params[] = strtolower($yearLevelRegex[$yearLevel]);
-    }
-
-    $orderSql = ($sort !== 'status') ? ($sortableColumns[$sort] . ' ' . strtoupper($dir)) : 'full_name ASC';
-
-    $allRows = safe_rows($mysqli, "
-        SELECT id, full_name, photo, year_level
-        FROM users WHERE $whereSql ORDER BY $orderSql
-    ", $types, $params);
-
-    // ── ACTUAL SUBMISSIONS / COMPLETED CONTEXTS ─────────────────────────
-    // A submission is counted against the same target/context only once.
-    // eval_bucket is the canonical Student Evaluation bucket written by the
-    // evaluation form (Faculty / Staff / Multi-Role / School Head). Older rows
-    // may not have it, so evaluation_context and answered user questions are
-    // used as safe fallbacks. Do not require et.level='college' here: legacy
-    // and current student forms can legitimately leave level NULL. The
-    // evaluator's own College eligibility is enforced by the student roster.
-    $completedMap = [];
-    $allIds = array_map('intval', array_column($allRows, 'id'));
-    if ($hasPeriod && !empty($allIds)) {
-        $ph = implode(',', array_fill(0, count($allIds), '?'));
-        $completedRows = safe_rows($mysqli, "
-            SELECT
-                et.evaluator_id,
-                COUNT(DISTINCT CASE
-                    WHEN LOWER(COALESCE(et.eval_bucket,'')) IN ('faculty','teacher')
-                      OR LOWER(COALESCE(et.evaluation_context,'')) IN ('teacher','faculty')
-                    THEN CONCAT('teacher:', et.target_user_id) END) AS teacher_completed,
-                COUNT(DISTINCT CASE
-                    WHEN LOWER(COALESCE(et.eval_bucket,'')) IN ('staff','non-teaching staff','non_teaching_staff')
-                      OR LOWER(COALESCE(et.evaluation_context,''))='staff'
-                    THEN CONCAT('staff:', et.target_user_id) END) AS staff_completed,
-                COUNT(DISTINCT CASE
-                    WHEN LOWER(COALESCE(et.eval_bucket,'')) IN ('multi-role','multi_role')
-                      OR LOWER(COALESCE(et.evaluation_context,'')) IN ('multi-role','multi_role')
-                      OR EXISTS (
-                          SELECT 1
-                          FROM questionnaire_answers qam
-                          JOIN user_questions uqm ON uqm.id=qam.user_question_id
-                          WHERE qam.tracker_id=et.id
-                            AND uqm.eval_type='general'
-                            AND uqm.target_type IN ('Staff','Dean','Principal')
-                      )
-                    THEN CONCAT('multi:', et.target_user_id) END) AS multi_completed,
-                COUNT(DISTINCT CASE
-                    WHEN LOWER(COALESCE(et.eval_bucket,'')) IN ('school head','school_head','dean','principal')
-                      OR LOWER(COALESCE(et.evaluation_context,''))='school_head'
-                      OR EXISTS (
-                          SELECT 1 FROM users uh
-                          WHERE uh.id=et.target_user_id AND uh.role IN ('dean','principal')
-                      )
-                    THEN CONCAT('head:', et.target_user_id) END) AS head_completed,
-                MAX(CASE
-                    WHEN et.status IN ('submitted','approved') OR et.submitted_at IS NOT NULL
-                    THEN et.submitted_at END) AS latest_submitted_at
-            FROM evaluation_tracker et
-            WHERE et.eval_type='student'
-              AND et.period_id=?
-              AND et.evaluator_id IN ($ph)
-              AND et.status IN ('submitted','approved')
-            GROUP BY et.evaluator_id
-        ", 'i' . str_repeat('i', count($allIds)), array_merge([$period_id_int], $allIds));
-
-        foreach ($completedRows as $row) {
-            $completedMap[(int)$row['evaluator_id']] = [
-                'teacher'  => max(0, (int)$row['teacher_completed']),
-                'staff'    => max(0, (int)$row['staff_completed']),
-                'multi'    => max(0, (int)$row['multi_completed']),
-                'head'     => max(0, (int)$row['head_completed']),
-                'latest_at'=> $row['latest_submitted_at'] ?? null,
-            ];
+        $multiRoleQuestionCount = $teacherQuestionCount;
+        if ($multiRoleQuestionCount === 0) {
+            $multiRoleQuestionCount = (int)(safe_scalar($mysqli,
+                "SELECT COUNT(*) FROM user_questions WHERE eval_type='general' AND target_type='Staff'"
+            ) ?? 0);
         }
-    }
 
-    foreach ($allRows as $s) {
-        $sid = (int)$s['id'];
-        $rawYear = trim((string)($s['year_level'] ?? ''));
-        $collegeYear = 'College';
-        foreach ($yearLevelRegex as $key => $rx) {
-            if ($rawYear !== '' && preg_match('/' . $rx . '/i', $rawYear)) {
-                $collegeYear = $yearLevelOptions[$key];
-                break;
+        $collegeFacultyRequired = $teacherQuestionCount > 0 ? (int)(safe_scalar($mysqli, "
+            SELECT COUNT(*) FROM users u
+            WHERE u.role IN ('teacher','staff')
+              AND u.is_active=1
+              AND u.account_status='approved'
+              AND (
+                  u.academic_level='college'
+                  OR EXISTS (
+                      SELECT 1 FROM user_year_levels yl
+                      WHERE yl.user_id=u.id
+                        AND LOWER(COALESCE(yl.year_level,'')) REGEXP '(^|[^0-9a-z])(college|1st|2nd|3rd|4th)[[:space:]_-]*year([^0-9a-z]|\$)'
+                  )
+              )
+              AND (
+                  u.role='teacher'
+                  OR u.secondary_role='teacher'
+                  OR u.sector='Teacher'
+                  OR EXISTS (SELECT 1 FROM teaching_assignments ta WHERE ta.user_id=u.id)
+                  OR EXISTS (SELECT 1 FROM user_year_levels yl2 WHERE yl2.user_id=u.id)
+              )
+        ") ?? 0) : 0;
+
+        $staffRequired = (int)(safe_scalar($mysqli, "
+            SELECT COUNT(*) FROM users u
+            WHERE u.role='staff' AND u.is_active=1 AND u.account_status='approved'
+              AND EXISTS (SELECT 1 FROM user_questions uq
+                          WHERE uq.user_id=u.id AND uq.eval_type='general' AND uq.target_type='Staff')
+        ") ?? 0);
+
+        $multiRoleRequired = $multiRoleQuestionCount > 0 ? (int)(safe_scalar($mysqli, "
+            SELECT COUNT(*) FROM users u
+            WHERE u.role IN ('teacher','staff')
+              AND u.is_active=1
+              AND u.account_status='approved'
+              AND (
+                  (u.role='teacher' AND LOWER(COALESCE(u.secondary_role,''))='staff')
+                  OR (u.role='staff' AND (
+                        LOWER(COALESCE(u.secondary_role,''))='teacher'
+                        OR EXISTS (SELECT 1 FROM teaching_assignments ta WHERE ta.user_id=u.id)
+                        OR EXISTS (SELECT 1 FROM user_year_levels yl WHERE yl.user_id=u.id)
+                  ))
+                  OR LOWER(COALESCE(u.designation,'')) REGEXP 'teacher.*staff|staff.*teacher'
+              )
+              AND (
+                  u.academic_level='college'
+                  OR EXISTS (
+                      SELECT 1 FROM user_year_levels yl2
+                      WHERE yl2.user_id=u.id
+                        AND LOWER(COALESCE(yl2.year_level,'')) REGEXP '(^|[^0-9a-z])(college|1st|2nd|3rd|4th)[[:space:]_-]*year([^0-9a-z]|\$)'
+                  )
+                  OR EXISTS (SELECT 1 FROM teaching_assignments ta2 WHERE ta2.user_id=u.id)
+              )
+        ") ?? 0) : 0;
+
+        // College students evaluate the Dean as the College School Head.
+        $deanHeadRequired = (int)(safe_scalar($mysqli, "
+            SELECT COUNT(*) FROM users u
+            WHERE u.role='dean' AND u.is_active=1 AND u.account_status='approved'
+              AND EXISTS (SELECT 1 FROM user_questions uq
+                          WHERE uq.user_id=u.id AND uq.eval_type='general' AND uq.target_type='Dean')
+        ") ?? 0);
+
+        $requiredTotal = $collegeFacultyRequired + $staffRequired + $multiRoleRequired + $deanHeadRequired;
+
+        $completedMap = [];
+        $allIds = array_map('intval', array_column($studentRoster, 'id'));
+        if ($hasPeriod && !empty($allIds)) {
+            $ph = implode(',', array_fill(0, count($allIds), '?'));
+            $completedRows = safe_rows($mysqli, "
+                SELECT
+                    et.evaluator_id,
+                    COUNT(DISTINCT CASE
+                        WHEN LOWER(COALESCE(et.eval_bucket,'')) IN ('faculty','teacher')
+                          OR LOWER(COALESCE(et.evaluation_context,'')) IN ('teacher','faculty')
+                        THEN CONCAT('teacher:', et.target_user_id) END) AS teacher_completed,
+                    COUNT(DISTINCT CASE
+                        WHEN LOWER(COALESCE(et.eval_bucket,'')) IN ('staff','non-teaching staff','non_teaching_staff')
+                          OR LOWER(COALESCE(et.evaluation_context,''))='staff'
+                        THEN CONCAT('staff:', et.target_user_id) END) AS staff_completed,
+                    COUNT(DISTINCT CASE
+                        WHEN LOWER(COALESCE(et.eval_bucket,'')) IN ('multi-role','multi_role')
+                          OR LOWER(COALESCE(et.evaluation_context,'')) IN ('multi-role','multi_role')
+                          OR EXISTS (
+                              SELECT 1 FROM questionnaire_answers qam
+                              JOIN user_questions uqm ON uqm.id=qam.user_question_id
+                              WHERE qam.tracker_id=et.id
+                                AND uqm.eval_type='general'
+                                AND uqm.target_type IN ('Staff','Dean','Principal')
+                          )
+                        THEN CONCAT('multi:', et.target_user_id) END) AS multi_completed,
+                    COUNT(DISTINCT CASE
+                        WHEN LOWER(COALESCE(et.eval_bucket,'')) IN ('school head','school_head','dean','principal')
+                          OR LOWER(COALESCE(et.evaluation_context,''))='school_head'
+                          OR EXISTS (SELECT 1 FROM users uh WHERE uh.id=et.target_user_id AND uh.role IN ('dean','principal'))
+                        THEN CONCAT('head:', et.target_user_id) END) AS head_completed,
+                    MAX(CASE WHEN et.status IN ('submitted','approved') OR et.submitted_at IS NOT NULL
+                             THEN et.submitted_at END) AS latest_submitted_at
+                FROM evaluation_tracker et
+                WHERE et.eval_type='student'
+                  AND et.period_id=?
+                  AND et.evaluator_id IN ($ph)
+                  AND et.status IN ('submitted','approved')
+                GROUP BY et.evaluator_id
+            ", 'i' . str_repeat('i', count($allIds)), array_merge([$period_id_int], $allIds));
+            foreach ($completedRows as $row) {
+                $completedMap[(int)$row['evaluator_id']] = [
+                    'n'  => (int)$row['teacher_completed'] + (int)$row['staff_completed']
+                          + (int)$row['multi_completed'] + (int)$row['head_completed'],
+                    'at' => $row['latest_submitted_at'] ?? null,
+                ];
             }
         }
 
-        $c = $completedMap[$sid] ?? ['teacher'=>0,'staff'=>0,'multi'=>0,'head'=>0,'latest_at'=>null];
-        $completed = min($requiredTotal, $c['teacher'] + $c['staff'] + $c['multi'] + $c['head']);
-        $progress = $requiredTotal > 0 ? min(100, (int)round(($completed / $requiredTotal) * 100)) : 0;
-
-        if ($requiredTotal > 0 && $completed >= $requiredTotal) {
-            $state = 'completed';
-            $stateLabel = 'Completed';
-        } elseif ($completed > 0) {
-            $state = 'in_progress';
-            $stateLabel = 'In Progress';
-        } else {
-            $state = 'not_started';
-            $stateLabel = 'Not Started';
+        foreach ($studentRoster as $s) {
+            $sid = (int)$s['id'];
+            $rawYear = trim((string)($s['year_level'] ?? ''));
+            $collegeYear = 'College';
+            $yearKey = '';
+            foreach ($yearLevelRegex as $key => $rx) {
+                if ($rawYear !== '' && preg_match('/' . $rx . '/i', $rawYear)) {
+                    $collegeYear = $yearLevelOptions[$key];
+                    $yearKey = $key;
+                    break;
+                }
+            }
+            $c = $completedMap[$sid] ?? ['n' => 0, 'at' => null];
+            $completed = min($requiredTotal, $c['n']);
+            [$state, $stateLabel] = $stateOf($completed, $requiredTotal);
+            $rowsAll[] = [
+                'id' => $sid, 'name' => $s['full_name'],
+                'sub' => $collegeYear, 'level' => $collegeYear, 'year_key' => $yearKey,
+                'status' => $state, 'status_label' => $stateLabel,
+                'required' => $requiredTotal, 'completed' => $completed,
+                'progress' => $requiredTotal > 0 ? min(100, (int)round($completed / $requiredTotal * 100)) : 0,
+                'submitted_at' => $c['at'],
+            ];
         }
 
-        $students[] = [
-            'id'           => $sid,
-            'name'         => $s['full_name'],
-            'photo'        => !empty($s['photo']) ? UPLOAD_URL . $s['photo'] : UPLOAD_URL . 'pbi_logo',
-            'year_level'   => $collegeYear,
-            'status'       => $state,
-            'status_label' => $stateLabel,
-            'required'     => $requiredTotal,
-            'completed'    => $completed,
-            'progress'     => $progress,
-            'submitted_at' => $c['latest_at'],
+        // Summary cards: one per College year level (unfiltered roster).
+        foreach ($yearLevelOptions as $key => $lbl) {
+            $in   = array_filter($rowsAll, fn($r) => $r['year_key'] === $key);
+            $done = count(array_filter($in, fn($r) => $r['status'] === 'completed'));
+            $cards[] = ['label' => $lbl, 'value' => count($in), 'completed' => $done, 'pending' => count($in) - $done];
+        }
+
+    } else {
+        // ── FACULTY / STAFF TABS ───────────────────────────────────────
+        $isFaculty = ($tab === 'faculty');
+        $people    = $isFaculty ? $facultyRoster : $staffRoster;
+        $ids       = array_map('intval', array_column($people, 'id'));
+        $doneMap   = [];
+
+        if ($isFaculty) {
+            // Peer-to-Peer: each College teacher evaluates every OTHER College teacher.
+            $facCount = count($facultyRoster);
+            $requiredFor = static fn(int $id): int => max(0, $facCount - 1);
+        } else {
+            // Staff Evaluation: each non-teaching staff evaluates the Executive Assistant(s).
+            $eaCount = (int)(safe_scalar($mysqli,
+                "SELECT COUNT(*) FROM users WHERE role IN (" . DEAN_EA_ROLES_SQL . ") AND is_active=1") ?? 0);
+            $requiredFor = static fn(int $id): int => $eaCount;
+        }
+
+        if ($hasPeriod && $ids) {
+            $ph = implode(',', array_fill(0, count($ids), '?'));
+            if ($isFaculty) {
+                $sql = "SELECT et.evaluator_id, COUNT(DISTINCT et.target_user_id) AS n, MAX(et.submitted_at) AS latest
+                        FROM evaluation_tracker et
+                        WHERE et.period_id=? AND et.eval_type IN (" . DEAN_PEER_TYPES_SQL . ")
+                          AND et.status IN ('submitted','approved')
+                          AND et.evaluator_id IN ($ph) AND et.target_user_id IN ($ph)
+                          AND et.target_user_id<>et.evaluator_id
+                        GROUP BY et.evaluator_id";
+                $types  = 'i' . str_repeat('i', count($ids) * 2);
+                $params = array_merge([$period_id_int], $ids, $ids);
+            } else {
+                $sql = "SELECT et.evaluator_id, COUNT(DISTINCT et.target_user_id) AS n, MAX(et.submitted_at) AS latest
+                        FROM evaluation_tracker et
+                        WHERE et.period_id=? AND et.eval_type<>'student'
+                          AND et.status IN ('submitted','approved')
+                          AND et.evaluator_id IN ($ph)
+                          AND et.target_user_id IN (SELECT id FROM users WHERE role IN (" . DEAN_EA_ROLES_SQL . "))
+                        GROUP BY et.evaluator_id";
+                $types  = 'i' . str_repeat('i', count($ids));
+                $params = array_merge([$period_id_int], $ids);
+            }
+            foreach (safe_rows($mysqli, $sql, $types, $params) as $r) {
+                $doneMap[(int)$r['evaluator_id']] = ['n' => (int)$r['n'], 'at' => $r['latest'] ?? null];
+            }
+        }
+
+        foreach ($people as $p) {
+            $pid = (int)$p['id'];
+            $req = $requiredFor($pid);
+            $d   = $doneMap[$pid] ?? ['n' => 0, 'at' => null];
+            $completed = min($req, $d['n']);
+            [$state, $stateLabel] = $stateOf($completed, $req);
+            $desig = trim((string)($p['designation'] ?? ''));
+            $rowsAll[] = [
+                'id' => $pid, 'name' => $p['full_name'],
+                'sub' => $desig !== '' ? $desig : ($isFaculty ? 'College Faculty' : 'Non-Teaching Staff'),
+                'level' => $isFaculty ? 'College' : 'Staff', 'year_key' => '',
+                'status' => $state, 'status_label' => $stateLabel,
+                'required' => $req, 'completed' => $completed,
+                'progress' => $req > 0 ? min(100, (int)round($completed / $req * 100)) : 0,
+                'submitted_at' => $d['at'],
+            ];
+        }
+        $requiredTotal = $rowsAll ? $rowsAll[0]['required'] : 0;
+
+        $total = count($rowsAll);
+        $cnt = ['not_started' => 0, 'in_progress' => 0, 'completed' => 0];
+        foreach ($rowsAll as $r) $cnt[$r['status']]++;
+        $noun = $isFaculty ? 'faculty' : 'staff';
+        $cards = [
+            ['label' => 'Not Started', 'value' => $cnt['not_started'], 'completed' => $cnt['completed'], 'pending' => $total - $cnt['completed'], 'note' => $total . ' ' . $noun . ' total'],
+            ['label' => 'In Progress', 'value' => $cnt['in_progress'], 'completed' => $cnt['completed'], 'pending' => $total - $cnt['completed'], 'note' => $total . ' ' . $noun . ' total'],
+            ['label' => 'Completed',   'value' => $cnt['completed'],   'completed' => $cnt['completed'], 'pending' => $total - $cnt['completed'], 'note' => $total . ' ' . $noun . ' total'],
         ];
     }
 
-    // Status sorting is derived from the calculated participation state.
-    if ($sort === 'status') {
-        $rank = ['not_started' => 1, 'in_progress' => 2, 'completed' => 3];
-        usort($students, function ($a, $b) use ($dir, $rank) {
-            $cmp = ($rank[$a['status']] ?? 0) <=> ($rank[$b['status']] ?? 0);
-            if ($cmp === 0) $cmp = strcasecmp($a['name'], $b['name']);
-            return $dir === 'desc' ? -$cmp : $cmp;
-        });
-    }
+    // ── FILTERS (applied to the active tab only) ────────────────────────
+    $rowsAll = array_values(array_filter($rowsAll, function ($r) use ($search, $yearLevel, $status) {
+        if ($search !== '' && stripos($r['name'], $search) === false) return false;
+        if ($yearLevel !== '' && $r['year_key'] !== $yearLevel) return false;
+        if ($status !== '' && $r['status'] !== $status) return false;
+        return true;
+    }));
+    $totalAssigned = count($rowsAll);
 
-    if ($status !== '') {
-        $students = array_values(array_filter($students, fn($s) => $s['status'] === $status));
-    }
-
-    $studentsAssigned  = count($students);
-    $studentsSubmitted = count(array_filter($students, fn($s) => $s['status'] === 'completed'));
-    $pendingStudents   = count(array_filter($students, fn($s) => $s['status'] !== 'completed'));
-    $remainingStudents = $pendingStudents;
-    $completionPct     = $studentsAssigned > 0 ? (int)round($studentsSubmitted / $studentsAssigned * 100) : 0;
-
-    // ── EXPORT (full filtered set) ─────────────────────────────────────
+    // ── EXPORT (full filtered set of the active tab) ────────────────────
     if (($_GET['export'] ?? '') === 'csv') {
         header('Content-Type: text/csv; charset=utf-8');
-        header('Content-Disposition: attachment; filename="dean_tracker_export_' . date('Ymd_His') . '.csv"');
+        header('Content-Disposition: attachment; filename="dean_tracker_' . $tab . '_' . date('Ymd_His') . '.csv"');
         $out = fopen('php://output', 'w');
-        fputcsv($out, ['Student', 'Level', 'Required', 'Completed', 'Status', 'Progress']);
-        foreach ($students as $s) {
-            fputcsv($out, [
-                $s['name'], 'College', $s['required'], $s['completed'] . ' / ' . $s['required'],
-                $s['status_label'], $s['progress'] . '%',
-            ]);
+        fputcsv($out, [['students' => 'Student', 'faculty' => 'Faculty', 'staff' => 'Staff'][$tab], 'Level', 'Required', 'Completed', 'Status', 'Progress']);
+        foreach ($rowsAll as $r) {
+            fputcsv($out, [$r['name'], $r['level'], $r['required'], $r['completed'] . ' / ' . $r['required'],
+                           $r['status_label'], $r['progress'] . '%']);
         }
         fclose($out);
         $mysqli->close();
         exit;
     }
 
-    $totalPages = max(1, (int)ceil($studentsAssigned / $perPage));
+    $totalPages = max(1, (int)ceil($totalAssigned / $perPage));
     $page = max(1, min($totalPages, $page));
-    $pageStudents = array_slice($students, ($page - 1) * $perPage, $perPage);
+    $pageRows = array_slice($rowsAll, ($page - 1) * $perPage, $perPage);
 
     // ── LIVE JSON ENDPOINT ───────────────────────────────────────────────
-    // The page polls itself every 5 seconds. No separate endpoint or schema
-    // change is required, and the live query always uses the current period.
     if (($_GET['ajax'] ?? '') === '1') {
         header('Content-Type: application/json; charset=utf-8');
         header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
         echo json_encode([
-            'ok' => true,
-            'structureActive' => $structureActive,
-            'hasPeriod' => $hasPeriod,
-            'evalOpen' => $evalOpen,
-            'requiredTotal' => $requiredTotal,
-            'studentsAssigned' => $studentsAssigned,
-            'studentsSubmitted' => $studentsSubmitted,
-            'pendingStudents' => $pendingStudents,
-            'remainingStudents' => $remainingStudents,
-            'completionPct' => $completionPct,
-            'totalPages' => $totalPages,
-            'page' => $page,
-            'students' => $pageStudents,
-            'checkedAt' => date('c'),
+            'ok' => true, 'tab' => $tab, 'structureActive' => $structureActive,
+            'hasPeriod' => $hasPeriod, 'evalOpen' => $evalOpen,
+            'counts' => $tabCounts, 'cards' => $cards,
+            'total' => $totalAssigned, 'totalPages' => $totalPages, 'page' => $page,
+            'rows' => $pageRows,
+            'updatedLabel' => date('M j, Y g:i A'), 'checkedAt' => date('c'),
         ], JSON_UNESCAPED_SLASHES);
         $mysqli->close();
         exit;
     }
 }
 
-$scopeParts = [];
-if ($yearLevel !== '') $scopeParts[] = $yearLevelOptions[$yearLevel] ?? $yearLevel;
-$scopeLabel = $scopeParts ? implode(' — ', $scopeParts) : HIGHER_ED_LABEL . ' Division';
+$tabNoun  = ['students' => 'student', 'faculty' => 'faculty member', 'staff' => 'staff member'][$tab];
+$tabNounP = ['students' => 'students', 'faculty' => 'faculty', 'staff' => 'staff'][$tab];
+$tabHead  = ['students' => 'Student', 'faculty' => 'Faculty', 'staff' => 'Staff'][$tab];
 
 // Rebuilds the current query string with overrides — used by sorting,
 // filtering and pagination links.
@@ -469,14 +488,6 @@ function tracker_qs(array $overrides = []): string {
     $params = array_merge($_GET, $overrides);
     if (!isset($overrides['page'])) $params['page'] = 1;
     return htmlspecialchars('?' . http_build_query($params));
-}
-function tracker_sort_url(string $col, string $curSort, string $curDir): string {
-    $newDir = ($curSort === $col && $curDir === 'asc') ? 'desc' : 'asc';
-    return tracker_qs(['sort' => $col, 'dir' => $newDir]);
-}
-function tracker_sort_icon(string $col, string $curSort, string $curDir): string {
-    if ($curSort !== $col) return 'fa-sort';
-    return $curDir === 'asc' ? 'fa-sort-up' : 'fa-sort-down';
 }
 
 // Small status helpers keep the table markup readable.
@@ -612,7 +623,7 @@ html.dark-theme .year-level-option{background:#0F1F3D!important;border-color:rgb
 html.dark-theme .year-level-option:hover{background:#17304C!important;border-color:rgba(45,212,191,.35)!important;color:#5EEAD4!important;}
 html.dark-theme .year-level-option.active{background:rgba(45,212,191,.14)!important;border-color:rgba(45,212,191,.42)!important;color:#5EEAD4!important;}
 </style>
-<link rel="stylesheet" href="includes/dean_light_theme.css"/>
+<link rel="stylesheet" href="includes/dean_light_theme.css?v=dashboard-ui-20261009"/>
 
 <style>
 /* Keep the Dean sidebar fixed and scroll this feature workspace internally. */
@@ -686,6 +697,84 @@ html.dark-theme main.main.dean-internal-scroll::-webkit-scrollbar-thumb:hover {
   }
 }
 </style>
+<style id="dean-tracker-ea-style">
+/* EA-style tracker layout: header, pill tabs, summary cards, chip filters */
+.ea-header{display:flex;justify-content:flex-end;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+.ea-title-wrap{display:flex;align-items:center;gap:12px}
+.ea-title-icon{width:38px;height:38px;border-radius:10px;background:#F1EDFC;border:1px solid #D9CFF7;color:#7C5FD9;display:inline-flex;align-items:center;justify-content:center;font-size:16px}
+.ea-title-wrap .page-title{font-size:21px}
+.ea-updated{display:inline-flex;align-items:center;gap:10px;font-size:12px;color:var(--muted)}
+.ea-updated i{color:#7C5FD9;font-size:13px}.ea-updated i.spin{animation:eaSpin .9s linear infinite}.ea-updated.offline i{color:#8092A2}
+@keyframes eaSpin{to{transform:rotate(360deg)}}
+
+.ea-tabs{display:inline-flex;gap:4px;padding:5px;background:#fff;border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow);margin-bottom:16px;flex-wrap:wrap}
+.ea-tab{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:700;color:#5A7083;transition:background .15s,color .15s}
+.ea-tab:hover{background:#F4F0FD;color:#7C5FD9}
+.ea-tab.active{background:#7C5FD9;color:#fff;box-shadow:0 2px 8px rgba(124,95,217,.28)}
+.ea-count{min-width:22px;height:19px;padding:0 6px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;background:#EDE7FB;color:#7C5FD9}
+.ea-tab.active .ea-count{background:rgba(255,255,255,.22);color:#fff}
+
+.ea-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px}
+.ea-card{background:#fff;border:1px solid var(--line);border-top:3px solid #7C5FD9;border-radius:12px;box-shadow:var(--shadow);padding:14px 16px 12px;display:flex;flex-direction:column;gap:6px}
+.ea-card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.ea-card-label{font-size:10.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:#5F7488}
+.ea-card-value{font-size:24px;font-weight:700;color:var(--text);line-height:1.1;margin-top:4px}
+.ea-card-icon{width:34px;height:30px;border-radius:8px;background:#EAF1FE;border:1px solid #C9D9F7;color:#2563EB;display:inline-flex;align-items:center;justify-content:center;font-size:12px}
+.ea-card-foot{border-top:1px solid #E4EDF4;padding-top:9px;margin-top:2px;font-size:12px;color:#6D8194;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ea-card-foot b{color:#7C5FD9;font-weight:700}.ea-card-foot .sep{color:#C5D2DD}
+
+.ea-filterbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:12px}
+.ea-chips{display:flex;gap:10px;flex-wrap:wrap}
+.ea-chip{height:36px;padding:0 14px;display:inline-flex;align-items:center;border-radius:10px;border:1px solid #C9D7E2;background:#fff;color:#334C60;font-size:12px;font-weight:700;text-decoration:none;transition:all .15s}
+.ea-chip:hover{border-color:#B7A3EC;color:#7C5FD9}
+.ea-chip.active{background:#7C5FD9;border-color:#7C5FD9;color:#fff}
+.ea-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-left:auto}
+.ea-select{height:36px;padding:0 28px 0 12px;border:1px solid #C9D7E2;border-radius:8px;background:#fff;color:#12263A;font:500 13px 'DM Sans',sans-serif;cursor:pointer}
+.ea-search{position:relative;width:240px;max-width:100%}
+.ea-search i{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#2563EB;font-size:13px;pointer-events:none}
+.ea-search input{width:100%;height:36px;padding:0 12px 0 34px;border:1px solid #C9D7E2;border-radius:8px;background:#fff;color:#12263A;font:500 13px 'DM Sans',sans-serif}
+.ea-search input:focus,.ea-select:focus{outline:none;border-color:#7C5FD9;box-shadow:0 0 0 3px rgba(124,95,217,.15)}
+.ea-export{height:36px;padding:0 13px;display:inline-flex;align-items:center;gap:7px;border-radius:8px;border:1px solid #D9CFF7;background:#F4F0FD;color:#7C5FD9;font-size:12px;font-weight:700;text-decoration:none}
+.ea-export:hover{background:#EAE3FB}
+
+.tracker-card{overflow:hidden}
+table.data{min-width:760px}
+table.data th{height:46px}
+table.data td{height:72px}
+.ea-header + .ea-tabs + .ea-cards ~ .tracker-card .stu-avatar{width:40px;height:40px;flex-basis:40px;font-size:15px}
+.tracker-card .level-pill{height:40px;min-width:74px;font-size:11px;border-radius:11px}
+.tracker-card .stu-name{font-size:13px}
+.stu-sub{font-size:12px;color:var(--muted);margin-top:2px}
+
+@media(max-width:768px){.ea-tab{padding:10px 14px;font-size:14px}.ea-search{width:100%}.ea-controls{width:100%;margin-left:0}.ea-select{flex:1}}
+
+html.dark-theme .ea-title-icon{background:rgba(124,95,217,.14)!important;border-color:rgba(124,95,217,.35)!important;color:#B7A3EC!important}
+html.dark-theme .ea-updated{color:#A0B3C6!important}
+html.dark-theme .ea-tabs,html.dark-theme .ea-card{background:#172A45!important;border-color:rgba(255,255,255,.1)!important}
+html.dark-theme .ea-card{border-top-color:#9C85F0!important}
+html.dark-theme .ea-tab{color:#A0B3C6!important}
+html.dark-theme .ea-tab:hover{background:rgba(124,95,217,.12)!important;color:#B7A3EC!important}
+html.dark-theme .ea-tab.active{background:#7C5FD9!important;color:#fff!important}
+html.dark-theme .ea-count{background:rgba(124,95,217,.18)!important;color:#B7A3EC!important}
+html.dark-theme .ea-tab.active .ea-count{background:rgba(255,255,255,.22)!important;color:#fff!important}
+html.dark-theme .ea-card-label,html.dark-theme .ea-card-foot{color:#A0B3C6!important}
+html.dark-theme .ea-card-value{color:#E0E6F0!important}
+html.dark-theme .ea-card-foot{border-top-color:rgba(255,255,255,.08)!important}
+html.dark-theme .ea-card-icon{background:rgba(59,130,246,.16)!important;border-color:rgba(59,130,246,.35)!important;color:#93C5FD!important}
+html.dark-theme .ea-chip,html.dark-theme .ea-select,html.dark-theme .ea-search input{background:#0F1F3D!important;border-color:rgba(255,255,255,.14)!important;color:#E0E6F0!important}
+html.dark-theme .ea-chip{color:#A0B3C6!important}
+html.dark-theme .ea-chip.active{background:#7C5FD9!important;border-color:#7C5FD9!important;color:#fff!important}
+html.dark-theme .ea-export{background:rgba(124,95,217,.14)!important;border-color:rgba(124,95,217,.35)!important;color:#B7A3EC!important}
+
+/* Dean violet accents for the shared table components */
+.tracker-card .level-pill{background:#F1EDFC;border-color:#CFC2F4;color:#6A4CC4}
+.tracker-card .stu-avatar{background:#F1EDFC;border-color:#D9CFF7;color:#7C5FD9}
+.tracker-card .progress-fill{background:#7C5FD9}
+.tracker-card .page-btn.active{background:#F1EDFC;border-color:#CFC2F4;color:#6A4CC4}
+html.dark-theme .tracker-card .level-pill,html.dark-theme .tracker-card .stu-avatar{background:rgba(124,95,217,.18)!important;border-color:rgba(156,133,240,.4)!important;color:#B7A3EC!important}
+html.dark-theme .tracker-card .progress-fill{background:#9C85F0!important}
+html.dark-theme .tracker-card .page-btn.active{background:rgba(124,95,217,.2)!important;border-color:rgba(156,133,240,.45)!important;color:#B7A3EC!important}
+</style>
 </head>
 <body>
 
@@ -696,18 +785,6 @@ include __DIR__ . '/includes/dean_sidebar.php';
 ?>
 
 <main class="main dean-internal-scroll">
-    <div class="page-header">
-        <div>
-            <div class="page-title">Evaluation Tracker</div>
-            <div class="page-sub">Monitor <?= HIGHER_ED_LABEL ?> student evaluation participation.</div>
-        </div>
-        <div class="period-badge <?= htmlspecialchars($settings['status']['cls']) ?>">
-            <i class="fa-solid fa-calendar-check"></i>
-            <?= htmlspecialchars($settings['academic_year']) ?> · <?= HIGHER_ED_LABEL ?> · <?= htmlspecialchars($settings['academic_term']) ?>
-            — <?= htmlspecialchars($settings['status']['label']) ?>
-        </div>
-    </div>
-
     <?php if (!$structureActive): ?>
     <div class="structure-note">
         <i class="fa-solid fa-circle-info"></i>
@@ -719,66 +796,54 @@ include __DIR__ . '/includes/dean_sidebar.php';
     </div>
     <?php else: ?>
 
-    <?php $activeFilterCount = ($search !== '' ? 1 : 0) + ($yearLevel !== '' ? 1 : 0) + ($status !== '' ? 1 : 0); ?>
-    <div class="tracker-card">
-        <div class="tracker-toolbar">
-            <div class="tracker-heading">
-                <h2>Students Evaluation Tracker</h2>
-                <span class="count" id="trackerStudentCount"><?= number_format($studentsAssigned) ?> student<?= $studentsAssigned === 1 ? '' : 's' ?></span>
-                <span class="live-tracker" id="trackerLiveStatus"><span class="live-dot"></span> Live</span>
-            </div>
-            <div class="toolbar-actions">
-                <div class="filter-wrap">
-                    <button type="button" class="filter-toggle<?= $activeFilterCount ? ' active' : '' ?>" id="filterToggle" aria-expanded="false" aria-controls="trackerFilterMenu">
-                        <i class="fa-solid fa-filter"></i> Filter
-                        <?php if ($activeFilterCount): ?><span class="filter-count"><?= $activeFilterCount ?></span><?php endif; ?>
-                    </button>
-                    <form class="filter-menu" id="trackerFilterMenu" method="GET" action="dean_evaluation_tracker.php">
-                        <div class="filter-menu-title">Filter Students</div>
-                        <div class="filter-field">
-                            <label for="filterSearch">Search Student</label>
-                            <input type="text" id="filterSearch" name="search" placeholder="Student name..." value="<?= htmlspecialchars($search) ?>">
-                        </div>
-                        <div class="filter-field">
-                            <label for="filterYear">College Year Level</label>
-                            <select id="filterYear" name="year_level">
-                                <option value="">All College Years</option>
-                                <?php foreach ($yearLevelOptions as $val => $lbl): ?>
-                                    <option value="<?= htmlspecialchars($val) ?>" <?= $yearLevel === $val ? 'selected' : '' ?>><?= htmlspecialchars($lbl) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="filter-field">
-                            <label for="filterStatus">Evaluation Status</label>
-                            <select id="filterStatus" name="status">
-                                <option value="" <?= $status === '' ? 'selected' : '' ?>>All Statuses</option>
-                                <option value="not_started" <?= $status === 'not_started' ? 'selected' : '' ?>>Not Started</option>
-                                <option value="in_progress" <?= $status === 'in_progress' ? 'selected' : '' ?>>In Progress</option>
-                                <option value="completed" <?= $status === 'completed' ? 'selected' : '' ?>>Completed</option>
-                            </select>
-                        </div>
-                        <input type="hidden" name="page" value="1">
-                        <div class="filter-menu-actions">
-                            <a class="filter-clear" href="dean_evaluation_tracker.php"><i class="fa-solid fa-rotate-left"></i> Clear</a>
-                            <button type="submit" class="filter-apply"><i class="fa-solid fa-check"></i> Apply Filters</button>
-                        </div>
-                    </form>
+    <div class="ea-tabs" role="tablist" aria-label="Tracker categories">
+        <?php foreach (['students' => 'Students', 'faculty' => 'Faculty', 'staff' => 'Staff'] as $tk => $tl): ?>
+        <a class="ea-tab<?= $tab === $tk ? ' active' : '' ?>" role="tab" data-tab="<?= $tk ?>" href="?tab=<?= $tk ?>"><?= $tl ?> <span class="ea-count" id="tabCount_<?= $tk ?>"><?= (int)$tabCounts[$tk] ?></span></a>
+        <?php endforeach; ?>
+    </div>
+
+    <div class="ea-cards" id="eaCards">
+        <?php foreach ($cards as $cd): ?>
+        <div class="ea-card">
+            <div class="ea-card-top">
+                <div>
+                    <div class="ea-card-label"><?= htmlspecialchars($cd['label']) ?></div>
+                    <div class="ea-card-value"><?= (int)$cd['value'] ?></div>
                 </div>
-                <a class="export-btn" href="<?= tracker_qs(['export' => 'csv']) ?>"><i class="fa-solid fa-download"></i> Export</a>
+                <span class="ea-card-icon"><i class="fa-solid fa-<?= $tab === 'students' ? 'graduation-cap' : ($tab === 'faculty' ? 'chalkboard-user' : 'briefcase') ?>"></i></span>
             </div>
+            <div class="ea-card-foot"><b><?= (int)$cd['completed'] ?> completed</b><span class="sep">|</span><span><?= (int)$cd['pending'] ?> pending</span></div>
         </div>
+        <?php endforeach; ?>
+    </div>
 
-        <div class="year-level-bar" aria-label="Filter students by college year level">
-            <div class="year-level-label"><i class="fa-solid fa-graduation-cap"></i><span>College Year Level</span></div>
-            <div class="year-level-options">
-                <a class="year-level-option<?= $yearLevel === '' ? ' active' : '' ?>" href="<?= tracker_qs(['year_level' => '', 'page' => 1]) ?>">All</a>
-                <?php foreach ($yearLevelOptions as $val => $lbl): ?>
-                    <a class="year-level-option<?= $yearLevel === $val ? ' active' : '' ?>" href="<?= tracker_qs(['year_level' => $val, 'page' => 1]) ?>"><?= htmlspecialchars($lbl) ?></a>
-                <?php endforeach; ?>
-            </div>
+    <form class="ea-filterbar" method="GET" action="dean_evaluation_tracker.php" id="trackerFilterForm">
+        <input type="hidden" name="tab" value="<?= htmlspecialchars($tab) ?>">
+        <input type="hidden" name="page" value="1">
+        <?php if ($tab === 'students'): ?>
+        <?php if ($yearLevel !== ''): ?><input type="hidden" name="year_level" value="<?= htmlspecialchars($yearLevel) ?>"><?php endif; ?>
+        <div class="ea-chips" aria-label="Filter students by college year level">
+            <a class="ea-chip<?= $yearLevel === '' ? ' active' : '' ?>" href="<?= tracker_qs(['year_level' => '', 'page' => 1]) ?>">All Levels</a>
+            <?php foreach ($yearLevelOptions as $val => $lbl): ?>
+            <a class="ea-chip<?= $yearLevel === $val ? ' active' : '' ?>" href="<?= tracker_qs(['year_level' => $val, 'page' => 1]) ?>"><?= htmlspecialchars($lbl) ?></a>
+            <?php endforeach; ?>
         </div>
+        <?php endif; ?>
+        <div class="ea-controls">
+            <select class="ea-select" name="status" id="filterStatus" aria-label="Filter by status">
+                <option value="" <?= $status === '' ? 'selected' : '' ?>>All Status</option>
+                <option value="not_started" <?= $status === 'not_started' ? 'selected' : '' ?>>Not Started</option>
+                <option value="in_progress" <?= $status === 'in_progress' ? 'selected' : '' ?>>In Progress</option>
+                <option value="completed" <?= $status === 'completed' ? 'selected' : '' ?>>Completed</option>
+            </select>
+            <label class="ea-search"><i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" name="search" id="filterSearch" placeholder="Search <?= htmlspecialchars($tabNoun) ?> by name..." value="<?= htmlspecialchars($search) ?>"></label>
+            <a class="ea-export" href="<?= tracker_qs(['export' => 'csv']) ?>"><i class="fa-solid fa-download"></i> Export</a>
+        </div>
+    </form>
 
-        <div class="tracker-table-state<?= (!$hasPeriod || empty($pageStudents)) ? ' is-empty-state' : '' ?>" id="trackerTableState">
+    <div class="tracker-card">
+        <div class="tracker-table-state<?= (!$hasPeriod || empty($pageRows)) ? ' is-empty-state' : '' ?>" id="trackerTableState">
         <?php if (!$hasPeriod): ?>
             <div class="table-empty"><p class="empty-note">No active evaluation period right now.</p></div>
         <?php else: ?>
@@ -786,7 +851,7 @@ include __DIR__ . '/includes/dean_sidebar.php';
             <table class="data">
                 <thead>
                     <tr>
-                        <th>Student</th>
+                        <th><?= strtoupper($tabHead) ?></th>
                         <th>Level</th>
                         <th>Required</th>
                         <th>Completed</th>
@@ -795,21 +860,21 @@ include __DIR__ . '/includes/dean_sidebar.php';
                     </tr>
                 </thead>
                 <tbody id="trackerTableBody">
-                    <?php if (empty($pageStudents)): ?>
-                    <tr><td colspan="6"><p class="empty-note">No students match the current filters.</p></td></tr>
+                    <?php if (empty($pageRows)): ?>
+                    <tr><td colspan="6"><p class="empty-note">No <?= htmlspecialchars($tabNounP) ?> match the current filters.</p></td></tr>
                     <?php else: ?>
-                    <?php foreach ($pageStudents as $s): ?>
+                    <?php foreach ($pageRows as $s): ?>
                     <tr>
                         <td>
                             <div class="stu-cell">
                                 <span class="stu-avatar"><i class="fa-solid fa-user"></i></span>
                                 <div class="stu-copy">
                                     <div class="stu-name"><?= htmlspecialchars($s['name']) ?></div>
-                                    <div class="stu-sub">College</div>
+                                    <div class="stu-sub"><?= htmlspecialchars($s['sub']) ?></div>
                                 </div>
                             </div>
                         </td>
-                        <td><span class="level-pill"><?= htmlspecialchars($s['year_level']) ?></span></td>
+                        <td><span class="level-pill"><?= htmlspecialchars($s['level']) ?></span></td>
                         <td><span class="req-number"><?= number_format($s['required']) ?></span></td>
                         <td><span class="completed-number"><?= number_format($s['completed']) ?> / <?= number_format($s['required']) ?></span></td>
                         <td><span class="status-pill <?= htmlspecialchars($s['status']) ?>"><?= htmlspecialchars($s['status_label']) ?></span></td>
@@ -834,7 +899,7 @@ include __DIR__ . '/includes/dean_sidebar.php';
             </table>
         </div>
         <div class="table-footer" id="trackerTableFooter">
-            <div id="trackerShowingText"><?php if ($studentsAssigned > 0): ?>Showing <?= (($page - 1) * $perPage) + 1 ?>–<?= min($studentsAssigned, $page * $perPage) ?> of <?= $studentsAssigned ?> students<?php else: ?>No students to display<?php endif; ?></div>
+            <div id="trackerShowingText"><?php if ($totalAssigned > 0): ?>Showing <?= (($page - 1) * $perPage) + 1 ?>–<?= min($totalAssigned, $page * $perPage) ?> of <?= $totalAssigned ?> <?= htmlspecialchars($tabNounP) ?><?php else: ?>No <?= htmlspecialchars($tabNounP) ?> to display<?php endif; ?></div>
             <div class="pagination" id="trackerPagination">
                 <?php if ($totalPages > 1): ?>
                 <?php
@@ -855,72 +920,60 @@ include __DIR__ . '/includes/dean_sidebar.php';
         </div>
         <?php endif; ?>
         </div>
-    <?php if ($hasPeriod): ?>
-    <div class="info-banner <?= $evalOpen ? '' : 'closed' ?>">
-        <i class="fa-solid fa-circle-info"></i>
-        <div>
-            <b>Student evaluation is currently <?= $evalOpen ? 'open' : 'closed' ?>.</b>
-            <p><?= $evalOpen
-                ? 'The tracker updates automatically as student evaluation assignments are completed.'
-                : 'No new submissions will be recorded until the evaluation window reopens.' ?></p>
-        </div>
     </div>
-    <?php endif; ?>
 
     <?php endif; ?>
 </main>
 <script>
 (function(){
-    const toggle = document.getElementById('filterToggle');
-    const menu = document.getElementById('trackerFilterMenu');
-    if (toggle && menu) {
-        toggle.addEventListener('click', function(e){
-            e.stopPropagation();
-            const open = menu.classList.toggle('open');
-            toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-        });
-        menu.addEventListener('click', function(e){ e.stopPropagation(); });
-        document.addEventListener('click', function(){
-            if (!menu.classList.contains('open')) return;
-            menu.classList.remove('open');
-            toggle.setAttribute('aria-expanded', 'false');
-        });
+    const form = document.getElementById('trackerFilterForm');
+    if (form) {
+        const st = document.getElementById('filterStatus');
+        if (st) st.addEventListener('change', function(){ form.submit(); });
     }
 
     const liveStatus = document.getElementById('trackerLiveStatus');
-    const countEl = document.getElementById('trackerStudentCount');
+    const cardsEl = document.getElementById('eaCards');
     const stateEl = document.getElementById('trackerTableState');
     const bodyEl = document.getElementById('trackerTableBody');
     const footerEl = document.getElementById('trackerTableFooter');
     const showingEl = document.getElementById('trackerShowingText');
     const paginationEl = document.getElementById('trackerPagination');
-    if (!liveStatus || !bodyEl || !stateEl) return;
+    if (!bodyEl || !stateEl) return;
 
-    let busy = false;
-    let lastSignature = '';
+    const PER_PAGE = <?= (int)$perPage ?>;
+    const NOUN_P = <?= json_encode($tabNounP) ?>;
+    const CARD_ICON = <?= json_encode($tab === 'students' ? 'graduation-cap' : ($tab === 'faculty' ? 'chalkboard-user' : 'briefcase')) ?>;
+    let busy = false, lastSignature = '';
 
-    function esc(value){
-        return String(value ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#039;');
+    function esc(v){
+        return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
     }
-    function setLive(text, offline){
+    function setUpdated(label, offline){
+        if (!liveStatus) return;
         liveStatus.classList.toggle('offline', !!offline);
-        liveStatus.innerHTML = '<span class="live-dot"></span> ' + esc(text);
-    }
-    function studentRow(s){
-        const last = s.submitted_at ? '<div class="progress-last">Last: ' + esc(formatDate(s.submitted_at)) + '</div>' : '';
-        return '<tr>' +
-            '<td><div class="stu-cell"><span class="stu-avatar"><i class="fa-solid fa-user"></i></span><div class="stu-copy"><div class="stu-name">' + esc(s.name) + '</div><div class="stu-sub">College</div></div></div></td>' +
-            '<td><span class="level-pill">' + esc(s.year_level || 'College') + '</span></td>' +
-            '<td><span class="req-number">' + Number(s.required || 0).toLocaleString() + '</span></td>' +
-            '<td><span class="completed-number">' + Number(s.completed || 0).toLocaleString() + ' / ' + Number(s.required || 0).toLocaleString() + '</span></td>' +
-            '<td><span class="status-pill ' + esc(s.status) + '">' + esc(s.status_label) + '</span></td>' +
-            '<td><div class="progress-cell"><span class="progress-pct">' + Number(s.progress || 0) + '%</span><div class="progress-main"><div class="progress-track" aria-label="' + Number(s.progress || 0) + ' percent complete"><div class="progress-fill" style="width:' + Number(s.progress || 0) + '%"></div></div>' + last + '</div><span class="progress-chevron" aria-hidden="true">›</span></div></td>' +
-            '</tr>';
+        liveStatus.innerHTML = '<i class="fa-solid fa-rotate"></i> <span>' + esc(label) + '</span>';
     }
     function formatDate(value){
         const d = new Date(value);
         if (Number.isNaN(d.getTime())) return value;
         return d.toLocaleString(undefined,{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+    }
+    function rowHtml(s){
+        const last = s.submitted_at ? '<div class="progress-last">Last: ' + esc(formatDate(s.submitted_at)) + '</div>' : '';
+        const p = Number(s.progress || 0);
+        return '<tr>' +
+            '<td><div class="stu-cell"><span class="stu-avatar"><i class="fa-solid fa-user"></i></span><div class="stu-copy"><div class="stu-name">' + esc(s.name) + '</div><div class="stu-sub">' + esc(s.sub) + '</div></div></div></td>' +
+            '<td><span class="level-pill">' + esc(s.level) + '</span></td>' +
+            '<td><span class="req-number">' + Number(s.required || 0).toLocaleString() + '</span></td>' +
+            '<td><span class="completed-number">' + Number(s.completed || 0).toLocaleString() + ' / ' + Number(s.required || 0).toLocaleString() + '</span></td>' +
+            '<td><span class="status-pill ' + esc(s.status) + '">' + esc(s.status_label) + '</span></td>' +
+            '<td><div class="progress-cell"><span class="progress-pct">' + p + '%</span><div class="progress-main"><div class="progress-track" aria-label="' + p + ' percent complete"><div class="progress-fill" style="width:' + p + '%"></div></div>' + last + '</div><span class="progress-chevron" aria-hidden="true">›</span></div></td>' +
+            '</tr>';
+    }
+    function cardHtml(c){
+        return '<div class="ea-card"><div class="ea-card-top"><div><div class="ea-card-label">' + esc(c.label) + '</div><div class="ea-card-value">' + Number(c.value || 0) + '</div></div><span class="ea-card-icon"><i class="fa-solid fa-' + CARD_ICON + '"></i></span></div>' +
+            '<div class="ea-card-foot"><b>' + Number(c.completed || 0) + ' completed</b><span class="sep">|</span><span>' + Number(c.pending || 0) + ' pending</span></div></div>';
     }
     function pageUrl(page){
         const u = new URL(window.location.href);
@@ -943,12 +996,11 @@ include __DIR__ . '/includes/dean_sidebar.php';
         html+='<a class="page-btn ' + (page>=totalPages?'disabled':'') + '" href="' + esc(pageUrl(Math.min(totalPages,page+1))) + '" aria-label="Next page"><i class="fa-solid fa-chevron-right"></i></a>';
         paginationEl.innerHTML=html;
     }
-    function signature(d){
-        return JSON.stringify([d.requiredTotal,d.studentsAssigned,d.studentsSubmitted,d.pendingStudents,d.completionPct,d.totalPages,d.page,(d.students||[]).map(s=>[s.id,s.completed,s.required,s.progress,s.status,s.submitted_at])]);
-    }
     async function refresh(){
         if (busy) return;
-        busy=true;
+        busy = true;
+        const icon = liveStatus ? liveStatus.querySelector('i') : null;
+        if (icon) icon.classList.add('spin');
         try {
             const u = new URL(window.location.href);
             u.searchParams.set('ajax','1');
@@ -959,39 +1011,39 @@ include __DIR__ . '/includes/dean_sidebar.php';
             const d = await res.json();
             if(!d.ok) throw new Error('Tracker update failed');
 
-            const sig=signature(d);
-            if(sig!==lastSignature){
-                lastSignature=sig;
-                if(countEl) countEl.textContent = Number(d.studentsAssigned||0).toLocaleString() + ' student' + (Number(d.studentsAssigned||0)===1?'':'s');
-                if(d.students && d.students.length){
+            const sig = JSON.stringify([d.counts,d.cards,d.total,d.totalPages,d.page,d.rows]);
+            if(sig !== lastSignature){
+                lastSignature = sig;
+                Object.keys(d.counts || {}).forEach(k=>{ const el=document.getElementById('tabCount_'+k); if(el) el.textContent=Number(d.counts[k]||0); });
+                if(cardsEl && d.cards) cardsEl.innerHTML = d.cards.map(cardHtml).join('');
+                if(d.rows && d.rows.length){
                     stateEl.classList.remove('is-empty-state');
-                    bodyEl.innerHTML=d.students.map(studentRow).join('');
+                    bodyEl.innerHTML = d.rows.map(rowHtml).join('');
                     if(footerEl) footerEl.style.display='flex';
                     if(showingEl){
-                        const first=((Number(d.page||1)-1)*<?= (int)$perPage ?>)+1;
-                        const last=Math.min(Number(d.studentsAssigned||0),Number(d.page||1)*<?= (int)$perPage ?>);
-                        showingEl.textContent='Showing ' + first + '–' + last + ' of ' + Number(d.studentsAssigned||0).toLocaleString() + ' students';
+                        const first=((Number(d.page||1)-1)*PER_PAGE)+1;
+                        const last=Math.min(Number(d.total||0),Number(d.page||1)*PER_PAGE);
+                        showingEl.textContent='Showing ' + first + '–' + last + ' of ' + Number(d.total||0).toLocaleString() + ' ' + NOUN_P;
                     }
                     renderPagination(Number(d.page||1),Number(d.totalPages||1));
                 }else{
                     stateEl.classList.add('is-empty-state');
-                    bodyEl.innerHTML='<tr><td colspan="6"><p class="empty-note">No students match the current filters.</p></td></tr>';
+                    bodyEl.innerHTML='<tr><td colspan="6"><p class="empty-note">No ' + esc(NOUN_P) + ' match the current filters.</p></td></tr>';
                     if(footerEl) footerEl.style.display='none';
-                    if(showingEl) showingEl.textContent='No students to display';
+                    if(showingEl) showingEl.textContent='No ' + NOUN_P + ' to display';
                     if(paginationEl) paginationEl.innerHTML='';
                 }
             }
-            setLive('Live · ' + new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit',second:'2-digit'}), false);
+            setUpdated('Last updated: ' + (d.updatedLabel || new Date().toLocaleString()), false);
         } catch(e){
-            setLive('Live check paused', true);
+            setUpdated('Live check paused', true);
         } finally {
-            busy=false;
+            const ic = liveStatus ? liveStatus.querySelector('i') : null; if (ic) ic.classList.remove('spin');
+            busy = false;
         }
     }
-    refresh();
     setInterval(refresh,5000);
 })();
-</script>
 </script>
 
 <style id="dean-tracker-dark-final">
@@ -1014,5 +1066,5 @@ html.dark-theme table.data thead th {
 }
 </style>
 </body>
-<link rel="stylesheet" href="includes/dean_light_theme.css" id="dean-light-theme-final"/>
+<link rel="stylesheet" href="includes/dean_light_theme.css?v=dashboard-ui-20261009" id="dean-light-theme-final"/>
 </html>

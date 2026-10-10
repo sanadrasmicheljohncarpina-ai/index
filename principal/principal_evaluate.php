@@ -1102,4 +1102,4 @@ main.main > .page-header{
 @media(max-width:700px){.eval-heading-row{align-items:flex-start;}.eval-progress{font-size:11px;}.eval-missing-alert{font-size:12px;}}
 </style>
 
-<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20260927" id="principal-dark-repairs"/>
+<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20261009.3" id="principal-dark-repairs"/>

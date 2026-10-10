@@ -194,6 +194,60 @@ if ($structureActive && $period_id_int > 0) {
         $myRating = null;
     }
 }
+// ── ALL-TERMS RECEIVED-EVALUATION SUMMARY ─────────────────────────────
+// Mirrors the Faculty dashboard's all-time summary. Live responses and the
+// identity-free copies retained by System Archive are combined so older
+// evaluations continue to contribute after an evaluation period is archived.
+// Keep this query aligned with dean_results.php: student school-head reviews
+// and Executive Assistant reviews, submitted/approved only, and never expose
+// or query the evaluator's identity.
+$deanOverallAverage = null;
+$deanOverallResponses = 0;
+$deanOverallScoreSum = 0.0;
+$deanOverallAnswerCount = 0;
+$deanSummaryTargetId = (int)($_SESSION['user_id'] ?? 0);
+
+try {
+    $summaryStmt = $mysqli->prepare("\n        SELECT COUNT(*) AS response_count,\n               COALESCE(SUM(answer_totals.score_sum), 0) AS score_sum,\n               COALESCE(SUM(answer_totals.score_count), 0) AS score_count\n        FROM evaluation_tracker et\n        LEFT JOIN (\n            SELECT tracker_id, SUM(answer_score) AS score_sum, COUNT(answer_score) AS score_count\n            FROM questionnaire_answers\n            GROUP BY tracker_id\n        ) answer_totals ON answer_totals.tracker_id = et.id\n        WHERE ((et.eval_type='student' AND et.evaluation_context='school_head') OR et.eval_type='ea')\n          AND et.status IN ('submitted','approved')\n          AND et.target_user_id=?\n    ");
+    $summaryStmt->bind_param('i', $deanSummaryTargetId);
+    $summaryStmt->execute();
+    $summaryRow = $summaryStmt->get_result()->fetch_assoc() ?: [];
+    $summaryStmt->close();
+
+    $deanOverallResponses += (int)($summaryRow['response_count'] ?? 0);
+    $deanOverallScoreSum += (float)($summaryRow['score_sum'] ?? 0);
+    $deanOverallAnswerCount += (int)($summaryRow['score_count'] ?? 0);
+} catch (Throwable $summaryError) {
+    // Keep the dashboard available if an optional evaluation field/table is
+    // missing in an older installation; archived feedback is attempted below.
+}
+
+try {
+    $keptSummaryStmt = $mysqli->prepare("\n        SELECT COUNT(*) AS response_count,\n               COALESCE(SUM(score_sum), 0) AS score_sum,\n               COALESCE(SUM(score_count), 0) AS score_count\n        FROM feedback_received_keep\n        WHERE target_user_id=?\n    ");
+    $keptSummaryStmt->bind_param('i', $deanSummaryTargetId);
+    $keptSummaryStmt->execute();
+    $keptSummaryRow = $keptSummaryStmt->get_result()->fetch_assoc() ?: [];
+    $keptSummaryStmt->close();
+
+    $deanOverallResponses += (int)($keptSummaryRow['response_count'] ?? 0);
+    $deanOverallScoreSum += (float)($keptSummaryRow['score_sum'] ?? 0);
+    $deanOverallAnswerCount += (int)($keptSummaryRow['score_count'] ?? 0);
+} catch (Throwable $archiveSummaryError) {
+    // An archive table may not exist yet on a fresh deployment.
+}
+
+$deanOverallAverage = $deanOverallAnswerCount > 0
+    ? round($deanOverallScoreSum / $deanOverallAnswerCount, 2)
+    : null;
+
+// Mirror the Faculty workspace's performance labels and 5-point interpretation.
+$deanPerformanceLabel = $deanOverallAverage === null
+    ? '—'
+    : ($deanOverallAverage >= 4 ? 'Excellent' : ($deanOverallAverage >= 3 ? 'Good' : 'Needs Improvement'));
+$deanPerformanceClass = $deanOverallAverage === null
+    ? 'neutral'
+    : ($deanOverallAverage >= 4 ? 'excellent' : ($deanOverallAverage >= 3 ? 'good' : 'needs-work'));
+
 $pendingEvaluationsTotal = $facultyPending + $staffPending + $eaPending;
 
 $mysqli->close();
@@ -230,7 +284,7 @@ body{min-height:100vh;background:var(--page-l);font-family:'DM Sans',sans-serif;
 .page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:28px;flex-wrap:wrap;gap:14px;}
 .page-title{font-family:'Rajdhani',sans-serif;font-size:28px;font-weight:700;color:var(--text-l);letter-spacing:1px;}
 .page-sub{font-size:13px;color:var(--muted-l);margin-top:4px;}
-.card-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:16px;margin-bottom:30px;}
+.card-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:30px;}
 .stat-card-link{display:block;text-decoration:none;color:inherit;min-width:0;}
 .stat-card{background:var(--card-l);border:1px solid var(--line-l);border-radius:14px;padding:20px;box-shadow:var(--shadow-l);}
 .stat-card i{color:var(--violet-dark);font-size:20px;margin-bottom:10px;}
@@ -490,6 +544,213 @@ html.dark-theme a.stat-card-link:hover .stat-card {
   transform:translateY(-1px);
 }
 
+
+/* Faculty-inspired Dean dashboard overview and four headline cards. */
+.dean-dashboard-shell{
+    width:100%;min-width:0;min-height:calc(100vh - 108px);padding:22px 28px 30px;
+    display:flex;flex-direction:column;
+    background:linear-gradient(180deg,#FFFFFF 0%,#F8FAFD 100%);
+    border:1px solid #E1E8F0;border-radius:22px;
+    box-shadow:0 10px 28px rgba(19,38,63,.045);
+}
+.dean-dashboard-intro{margin:2px 2px 18px;}
+.dean-dashboard-kicker{display:flex;align-items:center;gap:7px;margin-bottom:5px;color:#D97706;font-size:11px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;}
+.dean-dashboard-intro h1{margin:0;font-family:'Rajdhani','DM Sans',sans-serif;font-size:28px;line-height:1.05;font-weight:800;letter-spacing:.2px;color:#10243E;}
+.dean-dashboard-intro p{margin-top:7px;font-size:13px;line-height:1.5;color:#5C7187;}
+.dean-dashboard-status{display:inline-flex;align-items:center;gap:7px;margin-top:14px;padding:6px 12px;border-radius:20px;background:#E8FFF1;border:1px solid #91E7B2;color:#168447;font-size:11.5px;font-weight:700;}
+.dean-dashboard-status.closed{background:#FFF1F1;border-color:#F3B0B0;color:#B42318;}
+.dean-schedule-card{background:#FFFFFF;border:1px solid rgba(30,82,144,.13);border-radius:16px;padding:22px 26px;margin:0 0 22px;box-shadow:0 5px 18px rgba(30,82,144,.04);}
+.dean-schedule-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px;align-items:start;}
+.dean-schedule-item{min-width:0;}
+.dean-schedule-label{display:block;margin-bottom:7px;color:#D88900;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;}
+.dean-schedule-value{display:block;color:#10243E;font-size:15px;font-weight:700;line-height:1.35;overflow-wrap:anywhere;}
+.dean-schedule-status{display:inline-flex;align-items:center;padding:6px 14px;border-radius:999px;border:1px solid #91E7B2;background:#E8FFF1;color:#168447;font-size:12px;font-weight:700;}
+.dean-schedule-status.closed{border-color:#F3B0B0;background:#FFF1F1;color:#B42318;}
+.dean-schedule-extras{margin-top:17px;padding-top:14px;border-top:1px solid rgba(30,82,144,.10);}
+.dean-schedule-extras .period-message{padding-top:0;border-top:0;}
+.dean-welcome-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:24px 28px;margin:0 0 20px;border:1px solid rgba(37,99,235,.20);border-radius:17px;background:linear-gradient(135deg,#FFFFFF 0%,#F5F9FF 100%);box-shadow:0 5px 18px rgba(37,99,235,.05);}
+.dean-welcome-text{min-width:0;}
+.dean-welcome-text h2{margin:0 0 5px;color:#11263F;font-family:'Rajdhani','DM Sans',sans-serif;font-size:23px;font-weight:800;letter-spacing:.2px;}
+.dean-welcome-text p{color:#5E7388;font-size:13px;line-height:1.5;}
+.dean-welcome-text p strong{color:#2563EB;font-weight:700;}
+.dean-score-chip{display:flex;flex:1 1 230px;align-self:stretch;flex-direction:column;align-items:center;justify-content:center;max-width:340px;min-width:230px;padding:16px 26px;border:1px solid #CADBFF;border-radius:15px;background:#F0F5FF;text-align:center;}
+.dean-score-value{color:#2563EB;font-family:'Rajdhani','DM Sans',sans-serif;font-size:39px;font-weight:800;line-height:1;}
+.dean-score-label{margin-top:8px;color:#66798D;font-size:11px;letter-spacing:1px;text-transform:uppercase;}
+.dean-faculty-stats-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:0 0 26px;}
+.dean-faculty-stat{position:relative;min-width:0;overflow:hidden;padding:18px 20px 20px;background:#FFFFFF;border:1px solid #E0E7EF;border-radius:15px;box-shadow:0 6px 18px rgba(20,42,67,.045);}
+.dean-faculty-stat::before{position:absolute;top:0;left:0;right:0;height:3px;background:#2563EB;content:'';}
+.dean-faculty-stat:nth-child(2)::before{background:#10B981;}
+.dean-faculty-stat:nth-child(3)::before{background:#F59E0B;}
+.dean-faculty-stat:nth-child(4)::before{background:#3B82F6;}
+.dean-faculty-stat-icon{display:flex;align-items:center;justify-content:center;width:36px;height:36px;margin-bottom:12px;border-radius:10px;font-size:15px;}
+.dean-faculty-stat:nth-child(1) .dean-faculty-stat-icon{background:#E6EEFF;color:#2563EB;}
+.dean-faculty-stat:nth-child(2) .dean-faculty-stat-icon{background:#E5F9ED;color:#10B981;}
+.dean-faculty-stat:nth-child(3) .dean-faculty-stat-icon{background:#FFF4D8;color:#D88900;}
+.dean-faculty-stat:nth-child(4) .dean-faculty-stat-icon{background:#E5F0FF;color:#3478E5;}
+.dean-faculty-stat-label{margin-bottom:12px;color:#5E7388;font-size:10.5px;font-weight:700;letter-spacing:.9px;text-transform:uppercase;}
+.dean-faculty-stat-value{color:#12263F;font-size:28px;font-weight:800;line-height:1.1;overflow-wrap:anywhere;}
+.dean-faculty-stat:nth-child(1) .dean-faculty-stat-value{color:#2563EB;}
+.dean-faculty-stat:nth-child(2) .dean-faculty-stat-value{color:#D88900;}
+.dean-faculty-stat-value.compact{font-size:21px;}
+.dean-operational-heading{margin:2px 2px 14px;}
+.dean-operational-heading h2{margin:0 0 4px;color:#13263F;font-family:'Rajdhani','DM Sans',sans-serif;font-size:20px;font-weight:800;}
+.dean-operational-heading p{color:#6D8194;font-size:12.5px;line-height:1.5;}
+
+/* Expanded overview shortcuts, matching Faculty/Staff while retaining the Dean violet accent. */
+.dean-dashboard-quick-access{margin-top:auto;padding-top:22px;}
+.dean-quick-access-heading{display:flex;align-items:end;justify-content:space-between;gap:16px;margin:0 2px 12px;}
+.dean-quick-access-kicker{display:block;margin-bottom:3px;color:#7C5FD9;font-size:10px;font-weight:800;letter-spacing:1.15px;}
+.dean-quick-access-heading h2{margin:0;color:#13263F;font-family:'Rajdhani','DM Sans',sans-serif;font-size:20px;line-height:1.15;font-weight:800;}
+.dean-quick-access-caption{color:#6D8194;font-size:11px;padding-bottom:2px;}
+.dean-quick-access-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
+.dean-quick-access-card{min-width:0;min-height:92px;display:flex;align-items:center;gap:12px;padding:15px 16px;text-decoration:none;color:inherit;border:1px solid #DEE7F2;border-radius:14px;background:#FFFFFF;box-shadow:0 4px 14px rgba(19,38,63,.035);transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease;}
+.dean-quick-access-card:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(19,38,63,.08);border-color:#C9BDF5;}
+.dean-quick-access-icon{width:42px;height:42px;flex:0 0 42px;display:inline-flex;align-items:center;justify-content:center;border-radius:12px;font-size:17px;}
+.dean-quick-violet .dean-quick-access-icon{background:#F0EBFF;color:#6D4CC3;}
+.dean-quick-blue .dean-quick-access-icon{background:#EAF1FF;color:#2563EB;}
+.dean-quick-amber .dean-quick-access-icon{background:#FFF4DB;color:#D97706;}
+.dean-quick-access-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:4px;}
+.dean-quick-access-copy strong{color:#12263F;font-size:13px;font-weight:700;line-height:1.3;}
+.dean-quick-access-copy small{color:#6D8194;font-size:11.5px;line-height:1.45;}
+.dean-quick-access-arrow{flex:0 0 auto;color:#9C85F0;font-size:12px;transition:transform .18s ease;}
+.dean-quick-access-card:hover .dean-quick-access-arrow{transform:translateX(3px);}
+html.dark-theme .dean-quick-access-heading h2{color:#F8FAFC;}
+html.dark-theme .dean-quick-access-caption{color:#A0B3C6;}
+html.dark-theme .dean-quick-access-card{background:#172A45;border-color:rgba(255,255,255,.08);box-shadow:0 8px 26px rgba(0,0,0,.22);}
+html.dark-theme .dean-quick-access-card:hover{border-color:rgba(156,133,240,.45);}
+html.dark-theme .dean-quick-access-copy strong{color:#F8FAFC;}
+html.dark-theme .dean-quick-access-copy small{color:#A0B3C6;}
+html.dark-theme .dean-quick-violet .dean-quick-access-icon{background:rgba(156,133,240,.15);color:#C4B5FD;}
+html.dark-theme .dean-quick-blue .dean-quick-access-icon{background:rgba(37,99,235,.16);color:#93C5FD;}
+html.dark-theme .dean-quick-amber .dean-quick-access-icon{background:rgba(245,158,11,.15);color:#FCD34D;}
+@media(max-width:900px){.dean-quick-access-grid{grid-template-columns:1fr 1fr;}}
+@media(max-width:600px){.dean-quick-access-grid{grid-template-columns:1fr;}.dean-quick-access-heading{align-items:flex-start;flex-direction:column;gap:4px;}}
+
+html.dark-theme .dean-dashboard-shell{background:linear-gradient(180deg,#0F1F3D 0%,#0A192F 100%);border-color:rgba(255,255,255,.08);box-shadow:0 10px 28px rgba(0,0,0,.2);}
+html.dark-theme .dean-dashboard-intro h1,html.dark-theme .dean-operational-heading h2{color:#F8FAFC;}
+html.dark-theme .dean-dashboard-intro p,html.dark-theme .dean-operational-heading p{color:#A0B3C6;}
+html.dark-theme .dean-schedule-card,html.dark-theme .dean-faculty-stat{background:#172A45;border-color:rgba(255,255,255,.08);box-shadow:0 8px 26px rgba(0,0,0,.22);}
+html.dark-theme .dean-schedule-value,html.dark-theme .dean-welcome-text h2,html.dark-theme .dean-faculty-stat-value{color:#F8FAFC;}
+html.dark-theme .dean-schedule-extras{border-top-color:rgba(255,255,255,.08);}
+html.dark-theme .dean-welcome-bar{background:linear-gradient(135deg,#172A45 0%,#0F1F3D 100%);border-color:rgba(96,165,250,.25);}
+html.dark-theme .dean-welcome-text p,html.dark-theme .dean-faculty-stat-label{color:#A0B3C6;}
+html.dark-theme .dean-score-chip{background:#0F1F3D;border-color:rgba(96,165,250,.25);}
+html.dark-theme .dean-score-label{color:#A0B3C6;}
+html.dark-theme .dean-faculty-stat:nth-child(1) .dean-faculty-stat-icon{background:rgba(37,99,235,.16);color:#93C5FD;}
+html.dark-theme .dean-faculty-stat:nth-child(2) .dean-faculty-stat-icon{background:rgba(16,185,129,.15);color:#6EE7B7;}
+html.dark-theme .dean-faculty-stat:nth-child(3) .dean-faculty-stat-icon{background:rgba(245,158,11,.15);color:#FCD34D;}
+html.dark-theme .dean-faculty-stat:nth-child(4) .dean-faculty-stat-icon{background:rgba(59,130,246,.15);color:#93C5FD;}
+html.dark-theme .dean-schedule-status{background:rgba(16,185,129,.14);border-color:rgba(16,185,129,.30);color:#6EE7B7;}
+html.dark-theme .dean-schedule-status.closed{background:rgba(240,84,84,.12);border-color:rgba(240,84,84,.30);color:#FCA5A5;}
+@media(max-width:1200px){.dean-faculty-stats-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.dean-schedule-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:900px){.dean-dashboard-shell{padding:18px 16px 34px;border-radius:16px;}.dean-schedule-card{padding:18px 20px;}}
+@media(max-width:600px){.dean-faculty-stats-grid{grid-template-columns:1fr 1fr;}.dean-schedule-grid{grid-template-columns:1fr 1fr;gap:16px;}.dean-welcome-bar{padding:18px 20px;}.dean-welcome-text h2{font-size:20px;}.dean-score-chip{min-width:0;max-width:none;flex-basis:100%;}.dean-faculty-stat{padding:16px 14px;}.dean-faculty-stat-value{font-size:23px;}.dean-faculty-stat-value.compact{font-size:18px;}}
+@media(max-width:420px){.dean-faculty-stats-grid{grid-template-columns:1fr;}.dean-schedule-grid{grid-template-columns:1fr 1fr;}.dean-dashboard-intro h1{font-size:25px;}}
+
+/* Faculty-style all-time evaluation summary, using the Dean's violet theme. */
+.overall-summary-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;flex-wrap:wrap;margin-bottom:16px;}
+.overall-summary-heading h2{margin-bottom:6px;}
+.overall-summary-sub{font-size:12.5px;line-height:1.55;color:var(--muted-l);}
+.overall-summary-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;}
+.overall-summary-tile{display:flex;align-items:center;gap:14px;min-width:0;padding:18px;background:var(--input-l);border:1px solid var(--line-l);border-radius:12px;}
+.overall-summary-icon{display:flex;align-items:center;justify-content:center;flex:0 0 46px;width:46px;height:46px;border-radius:12px;background:rgba(124,95,217,.12);color:var(--violet-dark);font-size:19px;}
+.overall-summary-label{font-size:11px;color:var(--muted-l);text-transform:uppercase;letter-spacing:.07em;font-weight:700;margin-bottom:5px;}
+.overall-summary-value{font-family:'Rajdhani',sans-serif;font-size:30px;font-weight:700;color:var(--text-l);line-height:1.1;}
+.overall-summary-value small{font-family:'DM Sans',sans-serif;font-size:13px;color:var(--muted-l);font-weight:600;margin-left:4px;}
+.overall-summary-action{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 14px;border-radius:9px;border:1px solid rgba(124,95,217,.32);background:rgba(124,95,217,.10);color:var(--violet-dark);font-size:12px;font-weight:700;text-decoration:none;white-space:nowrap;}
+.overall-summary-action:hover{background:rgba(124,95,217,.16);border-color:rgba(124,95,217,.5);}
+html.dark-theme .overall-summary-sub{color:#A0B3C6 !important;}
+html.dark-theme .overall-summary-tile{background:#0F1F3D !important;border-color:rgba(255,255,255,.08) !important;}
+html.dark-theme .overall-summary-icon{background:rgba(156,133,240,.15) !important;color:#C4B5FD !important;}
+html.dark-theme .overall-summary-label{color:#A0B3C6 !important;}
+html.dark-theme .overall-summary-value{color:#F8FAFC !important;}
+html.dark-theme .overall-summary-value small{color:#A0B3C6 !important;}
+html.dark-theme .overall-summary-action{background:rgba(156,133,240,.14) !important;border-color:rgba(156,133,240,.30) !important;color:#C4B5FD !important;}
+@media(max-width:700px){.overall-summary-grid{grid-template-columns:1fr;}.overall-summary-action{width:100%;}}
+
+
+
+/* Desktop overview sizing aligned with the Faculty and Staff dashboards.
+   The Dean top bar is fixed, so reserve its height before the dashboard shell. */
+.main.dean-dashboard-main{padding:84px 28px 12px !important;min-width:0;}
+.dean-dashboard-shell{
+  min-height:calc(100vh - 108px);padding:18px 28px 16px;border-radius:22px;
+  display:flex;flex-direction:column;
+}
+.dean-dashboard-intro{margin:0 2px 14px;}
+.dean-dashboard-kicker{margin-bottom:4px;font-size:11px;letter-spacing:1.1px;}
+.dean-dashboard-intro h1{font-size:27px;line-height:1.05;}
+.dean-dashboard-intro p{margin-top:6px;font-size:13px;line-height:1.4;}
+.dean-dashboard-status{margin-top:10px;padding:6px 12px;font-size:11.5px;}
+.dean-schedule-card{padding:14px 20px;margin-bottom:16px;border-radius:15px;}
+.dean-schedule-grid{gap:16px;}
+.dean-schedule-label{margin-bottom:5px;font-size:10.5px;}
+.dean-schedule-value{font-size:14.5px;line-height:1.3;}
+.dean-schedule-status{padding:5px 13px;font-size:11.5px;}
+.dean-schedule-extras{margin-top:8px;padding-top:8px;}
+.dean-schedule-extras .period-message{font-size:12px;line-height:1.35;}
+.countdown-row{gap:10px;margin-top:10px;}
+.countdown-box{padding:8px;}
+.countdown-box .num{font-size:18px;}
+.countdown-box .lbl{font-size:9px;}
+.dean-welcome-bar{gap:12px;padding:18px 24px;margin-bottom:18px;border-radius:16px;}
+.dean-welcome-text h2{font-size:22px;}
+.dean-welcome-text p{font-size:12.5px;line-height:1.4;}
+.dean-score-chip{flex-basis:220px;max-width:300px;min-width:200px;padding:14px 22px;border-radius:14px;}
+.dean-score-value{font-size:36px;}
+.dean-score-label{margin-top:6px;font-size:10.5px;}
+.dean-faculty-stats-grid{gap:12px;margin-bottom:16px;}
+.dean-faculty-stat{padding:14px 17px 16px;border-radius:14px;}
+.dean-faculty-stat-icon{width:32px;height:32px;margin-bottom:9px;border-radius:9px;font-size:14px;}
+.dean-faculty-stat-label{margin-bottom:9px;font-size:10px;letter-spacing:.7px;}
+.dean-faculty-stat-value{font-size:25px;}
+.dean-faculty-stat-value.compact{font-size:19px;}
+.dean-dashboard-quick-access{margin-top:auto;padding-top:10px;}
+.dean-quick-access-heading{margin-bottom:10px;}
+.dean-quick-access-kicker{font-size:10px;margin-bottom:3px;}
+.dean-quick-access-heading h2{font-size:19px;}
+.dean-quick-access-caption{font-size:11px;}
+.dean-quick-access-grid{gap:12px;}
+.dean-quick-access-card{min-height:86px;padding:12px 14px;gap:11px;border-radius:13px;}
+.dean-quick-access-icon{width:38px;height:38px;flex-basis:38px;border-radius:11px;font-size:16px;}
+.dean-quick-access-copy{gap:4px;}
+.dean-quick-access-copy strong{font-size:12.5px;}
+.dean-quick-access-copy small{font-size:10.8px;line-height:1.4;}
+
+/* Short desktop viewports: keep the same hierarchy, trimming only excess padding. */
+@media(max-height:790px) and (min-width:901px){
+  .main.dean-dashboard-main{padding:84px 28px 8px !important;}
+  .dean-dashboard-shell{min-height:calc(100vh - 100px);padding:14px 26px 12px;border-radius:18px;}
+  .dean-dashboard-intro{margin-bottom:11px;}
+  .dean-dashboard-intro h1{font-size:26px;}
+  .dean-dashboard-status{margin-top:8px;padding:5px 11px;}
+  .dean-schedule-card{padding:12px 18px;margin-bottom:13px;}
+  .dean-schedule-extras{margin-top:7px;padding-top:7px;}
+  .dean-welcome-bar{padding:18px 24px;margin-bottom:16px;}
+  .dean-welcome-text h2{font-size:21px;}
+  .dean-score-chip{padding:14px 22px;}
+  .dean-score-value{font-size:34px;}
+  .dean-faculty-stats-grid{gap:10px;margin-bottom:13px;}
+  .dean-faculty-stat{padding:15px 16px 18px;}
+  .dean-faculty-stat-icon{width:32px;height:32px;margin-bottom:9px;}
+  .dean-faculty-stat-label{margin-bottom:9px;}
+  .dean-faculty-stat-value{font-size:23px;}
+  .dean-dashboard-quick-access{padding-top:8px;}
+  .dean-quick-access-heading{margin-bottom:8px;}
+  .dean-quick-access-card{min-height:92px;padding:12px 14px;}
+  .dean-quick-access-icon{width:38px;height:38px;flex-basis:38px;font-size:16px;}
+}
+@media(max-width:900px){
+  .main.dean-dashboard-main{padding:18px 16px 24px !important;}
+  .dean-dashboard-shell{min-height:0;padding:18px 18px 20px;border-radius:16px;}
+  .dean-dashboard-quick-access{margin-top:18px;padding-top:0;}
+}
+@media(max-width:600px){
+  .dean-dashboard-shell{min-height:0;padding:16px 13px 18px;}
+  .dean-score-chip{flex-basis:100%;max-width:none;}
+  .dean-quick-access-heading{align-items:flex-start;flex-direction:column;gap:4px;}
+}
+
 </style>
 </head>
 <body>
@@ -500,151 +761,141 @@ $sidebarScope = HIGHER_ED_LABEL . ' Division';
 include __DIR__ . '/includes/dean_sidebar.php';
 ?>
 
-<main class="main">
-    <div class="page-header">
-        <div>
-            <div class="page-title">Welcome, <?= htmlspecialchars(explode(',', $me['full_name'] ?? 'Dean')[0]) ?></div>
-            <div class="page-sub">Pandan Bay Institute — <?= HIGHER_ED_LABEL ?> Division Oversight</div>
-        </div>
-        <div class="period-badge <?= htmlspecialchars($settings['status']['cls']) ?>">
-            <i class="fa-solid fa-calendar-check"></i>
-            <?= htmlspecialchars($settings['academic_year']) ?> · <?= HIGHER_ED_LABEL ?> · <?= htmlspecialchars($settings['academic_term']) ?>
-            — <?= htmlspecialchars($settings['status']['label']) ?>
-        </div>
-    </div>
+<main class="main dean-dashboard-main">
+<div class="dean-dashboard-shell">
+    <section class="dean-dashboard-intro">
+        <div class="dean-dashboard-kicker"><i class="fa-solid fa-chart-line" aria-hidden="true"></i> Dashboard Overview</div>
+        
+        <span class="dean-dashboard-status <?= ($structureActive && $evalOpen) ? '' : 'closed' ?>">
+            <i class="fa-solid <?= ($structureActive && $evalOpen) ? 'fa-lock-open' : 'fa-lock' ?>" aria-hidden="true"></i>
+            <?php if (!$structureActive): ?>
+                Higher Education is not the active evaluation structure
+            <?php elseif ($evalOpen): ?>
+                Evaluation period is currently open
+            <?php else: ?>
+                Evaluation period is currently closed
+            <?php endif; ?>
+        </span>
+    </section>
 
-    <!-- ── CURRENT EVALUATION PERIOD ── -->
-    <div class="section">
-        <div class="section-header-row">
-            <h2><i class="fa-solid fa-calendar-days"></i> Current Evaluation Period</h2>
-
-            <!-- NOTIFICATION BELL — replaces the old static Notifications
-                 list/section. One button, badge-counted, opposite the
-                 period icon/title on this same header row. Its dropdown
-                 is seeded from $notifications (server render) and then
-                 kept current by polling dean_notifications_api.php on an
-                 interval (see the script block near the end of <body>) so
-                 the Dean sees new notices without reloading the page. -->
-            <div class="notif-bell-wrap">
-                <button type="button" class="notif-bell" id="notifBellBtn" aria-haspopup="true" aria-expanded="false" aria-label="Notifications">
-                    <i class="fa-solid fa-bell"></i>
-                    <span class="notif-badge" id="notifBadge"></span>
-                </button>
-                <div class="notif-dropdown" id="notifDropdown" role="menu" aria-hidden="true">
-                    <div class="notif-dropdown-header">
-                        <span>Notifications</span>
-                        <span class="notif-live-dot" id="notifLiveDot" title="Live — updates automatically"></span>
-                    </div>
-                    <ul class="notif-list" id="notifList">
-                        <?php foreach ($notifications as $n): ?>
-                            <li><i class="fa-solid fa-circle-exclamation"></i> <?= htmlspecialchars(is_array($n) ? ($n['text'] ?? '') : $n) ?></li>
-                        <?php endforeach; ?>
-                    </ul>
-                </div>
+    <!-- Schedule summary mirrors the four-column Faculty dashboard panel. -->
+    <section class="dean-schedule-card" id="dean-evaluation-schedule" aria-label="Current evaluation schedule">
+        <div class="dean-schedule-grid">
+            <div class="dean-schedule-item">
+                <span class="dean-schedule-label">Academic Year</span>
+                <strong class="dean-schedule-value"><?= htmlspecialchars($settings['academic_year'] ?? '—') ?></strong>
             </div>
-        </div>
-        <div class="period-grid">
-            <div class="period-field">
-                <div class="period-field-label">Academic Year</div>
-                <div class="period-field-value"><?= htmlspecialchars($settings['academic_year']) ?></div>
+            <div class="dean-schedule-item">
+                <span class="dean-schedule-label">Evaluation Opens</span>
+                <strong class="dean-schedule-value"><?= !empty($settings['eval_start_display']) ? htmlspecialchars(dean_strip_tz_label($settings['eval_start_display'])) : '—' ?></strong>
             </div>
-            <div class="period-field">
-                <div class="period-field-label">Academic Structure</div>
-                <div class="period-field-value"><?= HIGHER_ED_LABEL ?></div>
+            <div class="dean-schedule-item">
+                <span class="dean-schedule-label">Evaluation Closes</span>
+                <strong class="dean-schedule-value"><?= !empty($settings['eval_end_display']) ? htmlspecialchars(dean_strip_tz_label($settings['eval_end_display'])) : '—' ?></strong>
             </div>
-            <div class="period-field">
-                <div class="period-field-label">Academic Term</div>
-                <div class="period-field-value"><?= htmlspecialchars($settings['academic_term']) ?></div>
-            </div>
-            <div class="period-field">
-                <div class="period-field-label">Status</div>
-                <div class="period-field-value">
-                    <span class="period-badge <?= htmlspecialchars($settings['status']['cls']) ?>" style="font-size:11px;">
-                        <?= htmlspecialchars($settings['status']['label']) ?>
-                    </span>
-                </div>
-            </div>
-            <div class="period-field">
-                <div class="period-field-label">Evaluation Opens</div>
-                <div class="period-field-value period-date"><?= $settings['eval_start_display'] !== '' ? htmlspecialchars(dean_strip_tz_label($settings['eval_start_display'])) : '—' ?></div>
-            </div>
-            <div class="period-field">
-                <div class="period-field-label">Evaluation Closes</div>
-                <div class="period-field-value period-date"><?= $settings['eval_end_display'] !== '' ? htmlspecialchars(dean_strip_tz_label($settings['eval_end_display'])) : '—' ?></div>
+            <div class="dean-schedule-item">
+                <span class="dean-schedule-label">Status</span>
+                <span class="dean-schedule-status <?= ($structureActive && $evalOpen) ? '' : 'closed' ?>">
+                    <?= !$structureActive ? 'Inactive Structure' : htmlspecialchars($settings['status']['label'] ?? ($evalOpen ? 'Open' : 'Closed')) ?>
+                </span>
             </div>
         </div>
         <?php
-        // The shared settings service normally returns message as ['headline', 'sub'].
-        // Keep this rendering defensive so older deployments that still return a
-        // plain string do not trigger a PHP 8 TypeError.
+        // Keep the existing schedule message and optional countdown available below the compact schedule row.
         $periodMessage = $settings['message'] ?? '';
         $periodHeadline = is_array($periodMessage) ? ($periodMessage['headline'] ?? '') : (string)$periodMessage;
         $periodSub = is_array($periodMessage) ? ($periodMessage['sub'] ?? '') : '';
         ?>
-        <div class="period-message">
-            <strong><?= htmlspecialchars(dean_strip_tz_label($periodHeadline)) ?></strong>
-            <?= htmlspecialchars(dean_strip_tz_label($periodSub)) ?>
-        </div>
-
-        <?php if ($settings['countdown_enabled'] && $evalOpen && $settings['eval_end']): ?>
-        <div class="countdown-row" id="countdownRow" data-end="<?= $settings['eval_end'] ? htmlspecialchars(ss_parse_datetime($settings['eval_end'])->format('c')) : '' ?>">
-            <div class="countdown-box"><div class="num" id="cd-days">—</div><div class="lbl">Days</div></div>
-            <div class="countdown-box"><div class="num" id="cd-hours">—</div><div class="lbl">Hours</div></div>
-            <div class="countdown-box"><div class="num" id="cd-mins">—</div><div class="lbl">Minutes</div></div>
+        <?php if (trim((string)$periodHeadline) !== '' || trim((string)$periodSub) !== '' || (!empty($settings['countdown_enabled']) && $evalOpen && !empty($settings['eval_end']))): ?>
+        <div class="dean-schedule-extras">
+            <?php if (trim((string)$periodHeadline) !== '' || trim((string)$periodSub) !== ''): ?>
+            <div class="period-message">
+                <strong><?= htmlspecialchars(dean_strip_tz_label($periodHeadline)) ?></strong>
+                <?= htmlspecialchars(dean_strip_tz_label($periodSub)) ?>
+            </div>
+            <?php endif; ?>
+            <?php if (!empty($settings['countdown_enabled']) && $evalOpen && !empty($settings['eval_end'])): ?>
+            <div class="countdown-row" id="countdownRow" data-end="<?= htmlspecialchars(ss_parse_datetime($settings['eval_end'])->format('c')) ?>">
+                <div class="countdown-box"><div class="num" id="cd-days">—</div><div class="lbl">Days</div></div>
+                <div class="countdown-box"><div class="num" id="cd-hours">—</div><div class="lbl">Hours</div></div>
+                <div class="countdown-box"><div class="num" id="cd-mins">—</div><div class="lbl">Minutes</div></div>
+            </div>
+            <?php endif; ?>
         </div>
         <?php endif; ?>
-    </div>
+    </section>
 
-    <?php if ($structureActive): ?>
+    <section class="dean-welcome-bar" id="dean-overall-summary" aria-label="Dean evaluation summary">
+        <div class="dean-welcome-text">
+            <h2>Welcome, <?= htmlspecialchars($me['full_name'] ?? 'Dean') ?>!</h2>
+            <p><strong>Dean</strong> &nbsp;·&nbsp; <?= htmlspecialchars($settings['academic_year'] ?? '—') ?> — <?= htmlspecialchars($settings['academic_term'] ?? 'Current Term') ?> · <?= HIGHER_ED_LABEL ?></p>
+        </div>
+        <div class="dean-score-chip">
+            <div class="dean-score-value"><?= $deanOverallAverage !== null ? number_format($deanOverallAverage, 2) : '—' ?></div>
+            <div class="dean-score-label">Your Avg Score</div>
+        </div>
+    </section>
 
-    <!-- OVERVIEW STATS — concise dashboard summary for the Dean. -->
-    <div class="card-grid">
-        <a href="dean_evaluation.php?tab=faculty" class="stat-card-link">
-        <div class="stat-card"><i class="fa-solid fa-chalkboard-user"></i><div class="num"><?= $facultyPending ?></div><div class="label">Teachers Awaiting Evaluation</div></div>
-        </a>
-        <a href="dean_evaluation.php?tab=staff" class="stat-card-link">
-        <div class="stat-card"><i class="fa-solid fa-id-badge"></i><div class="num"><?= $staffPending ?></div><div class="label">Staff Awaiting Evaluation</div></div>
-        </a>
-        <a href="dean_evaluation.php?tab=executive_assistant" class="stat-card-link">
-        <div class="stat-card"><i class="fa-solid fa-user-tie"></i><div class="num"><?= $eaPending ?></div><div class="label">Executive Assistant Awaiting Evaluation</div></div>
-        </a>
-        <a href="dean_evaluation_tracker.php" class="stat-card-link">
-        <div class="stat-card"><i class="fa-solid fa-user-graduate"></i><div class="num"><?= $studentParticipationPct ?>%</div><div class="label">Student Submission Progress</div></div>
-        </a>
-        <a href="dean_results.php" class="stat-card-link">
-        <div class="stat-card"><i class="fa-solid fa-star"></i><div class="num"><?= $myRating !== null ? $myRating : '—' ?></div><div class="label">Your Evaluation Rating</div></div>
-        </a>
-        <div class="stat-card"><i class="fa-solid fa-hourglass-half"></i><div class="num"><?= $pendingEvaluationsTotal ?></div><div class="label">Pending Evaluations</div></div>
-    </div>
+    <section class="dean-faculty-stats-grid" id="dean-performance-summary" aria-label="Evaluation summary metrics">
+        <div class="dean-faculty-stat">
+            <div class="dean-faculty-stat-icon"><i class="fa-solid fa-users" aria-hidden="true"></i></div>
+            <div class="dean-faculty-stat-label">Evaluations Received</div>
+            <div class="dean-faculty-stat-value"><?= number_format($deanOverallResponses) ?></div>
+        </div>
+        <div class="dean-faculty-stat">
+            <div class="dean-faculty-stat-icon"><i class="fa-solid fa-circle-check" aria-hidden="true"></i></div>
+            <div class="dean-faculty-stat-label">Overall Average</div>
+            <div class="dean-faculty-stat-value"><?= $deanOverallAverage !== null ? number_format($deanOverallAverage, 2) . ' / 5' : '—' ?></div>
+        </div>
+        <div class="dean-faculty-stat">
+            <div class="dean-faculty-stat-icon"><i class="fa-solid fa-award" aria-hidden="true"></i></div>
+            <div class="dean-faculty-stat-label">Performance Level</div>
+            <div class="dean-faculty-stat-value compact <?= htmlspecialchars($deanPerformanceClass) ?>"><?= htmlspecialchars($deanPerformanceLabel) ?></div>
+        </div>
+        <div class="dean-faculty-stat">
+            <div class="dean-faculty-stat-icon"><i class="fa-solid fa-calendar" aria-hidden="true"></i></div>
+            <div class="dean-faculty-stat-label">Current Period</div>
+            <div class="dean-faculty-stat-value compact"><?= htmlspecialchars($settings['academic_term'] ?? '—') ?></div>
+        </div>
+    </section>
 
-    <?php if (empty($facultyList) && empty($staffList) && empty($eaList)): ?>
-    <div class="stub-note">
-        <i class="fa-solid fa-plug-circle-exclamation"></i>
-        No approved &amp; active Teacher, Staff, or Executive Assistant accounts found for the current structure — check <code>account_status</code>/<code>is_active</code> and College year-level assignment in Manage Privileged Accounts.
-    </div>
-    <?php endif; ?>
+    <section class="dean-dashboard-quick-access" aria-label="Workspace shortcuts">
+        <div class="dean-quick-access-heading">
+            <div>
+                <span class="dean-quick-access-kicker">WORKSPACE SHORTCUTS</span>
+                <h2>Continue where you need to be</h2>
+            </div>
+            <span class="dean-quick-access-caption">Your most-used Dean tools</span>
+        </div>
+        <div class="dean-quick-access-grid">
+            <a class="dean-quick-access-card dean-quick-violet" href="dean_results.php">
+                <span class="dean-quick-access-icon"><i class="fa-solid fa-chart-column" aria-hidden="true"></i></span>
+                <span class="dean-quick-access-copy">
+                    <strong>Your Evaluation</strong>
+                    <small>Review your evaluation feedback and results.</small>
+                </span>
+                <i class="fa-solid fa-arrow-right dean-quick-access-arrow" aria-hidden="true"></i>
+            </a>
+            <a class="dean-quick-access-card dean-quick-blue" href="#dean-evaluation-schedule">
+                <span class="dean-quick-access-icon"><i class="fa-solid fa-calendar-days" aria-hidden="true"></i></span>
+                <span class="dean-quick-access-copy">
+                    <strong>Evaluation Schedule</strong>
+                    <small>Check the current evaluation period and dates.</small>
+                </span>
+                <i class="fa-solid fa-arrow-right dean-quick-access-arrow" aria-hidden="true"></i>
+            </a>
+            <a class="dean-quick-access-card dean-quick-amber" href="#dean-performance-summary">
+                <span class="dean-quick-access-icon"><i class="fa-solid fa-award" aria-hidden="true"></i></span>
+                <span class="dean-quick-access-copy">
+                    <strong>Performance Summary</strong>
+                    <small>View your overall score and performance level.</small>
+                </span>
+                <i class="fa-solid fa-arrow-right dean-quick-access-arrow" aria-hidden="true"></i>
+            </a>
+        </div>
+    </section>
 
-    <?php else: ?>
-
-    <!-- PERSONNEL OVERVIEW — simple headcount summary when the College
-         evaluation period is not currently active. -->
-    <div class="card-grid">
-        <a href="dean_evaluation.php?tab=faculty" class="stat-card-link">
-        <div class="stat-card"><i class="fa-solid fa-chalkboard-user"></i><div class="num"><?= count($facultyList) ?></div><div class="label">Teachers on Record</div></div>
-        </a>
-        <a href="dean_evaluation.php?tab=staff" class="stat-card-link">
-        <div class="stat-card"><i class="fa-solid fa-id-badge"></i><div class="num"><?= count($staffList) ?></div><div class="label">Staff on Record</div></div>
-        </a>
-        <a href="dean_evaluation.php?tab=executive_assistant" class="stat-card-link">
-        <div class="stat-card"><i class="fa-solid fa-user-tie"></i><div class="num"><?= count($eaList) ?></div><div class="label">Executive Assistants on Record</div></div>
-        </a>
-        <a href="dean_evaluation_tracker.php" class="stat-card-link">
-        <div class="stat-card"><i class="fa-solid fa-user-graduate"></i><div class="num"><?= count($studentList) ?></div><div class="label">Students on Record</div></div>
-        </a>
-    </div>
-
-    <?php endif; ?>
-
+</div><!-- /.dean-dashboard-shell -->
 </main>
 
 <script>
@@ -667,142 +918,7 @@ include __DIR__ . '/includes/dean_sidebar.php';
 })();
 </script>
 
-<script>
-(function(){
-    const bellBtn  = document.getElementById('notifBellBtn');
-    const dropdown = document.getElementById('notifDropdown');
-    const badge    = document.getElementById('notifBadge');
-    const list     = document.getElementById('notifList');
-    const liveDot  = document.getElementById('notifLiveDot');
-    if (!bellBtn || !dropdown) return;
 
-    const STORE_KEY = 'pbiDeanPersistentNotifications';
-    const MAX_ITEMS = 40;
-    let stored = loadStored();
-
-    function loadStored(){
-        try {
-            const raw = localStorage.getItem(STORE_KEY);
-            const parsed = raw ? JSON.parse(raw) : [];
-            return Array.isArray(parsed) ? parsed : [];
-        } catch(e){ return []; }
-    }
-    function saveStored(){
-        try { localStorage.setItem(STORE_KEY, JSON.stringify(stored.slice(0, MAX_ITEMS))); } catch(e){}
-    }
-    function stableKey(text){
-        return 'notice:' + String(text || '').trim();
-    }
-    function normalize(n){
-        if (typeof n === 'string') {
-            return {key: stableKey(n), text:n, type:'notice', created_at:null};
-        }
-        n = n || {};
-        return {
-            key: String(n.key || stableKey(n.text || '')),
-            text: String(n.text || ''),
-            type: String(n.type || 'notice'),
-            created_at: n.created_at || null
-        };
-    }
-    function isPlaceholder(n){ return n && n.text === 'No urgent items right now.'; }
-
-    function mergeNotifications(incoming){
-        const map = new Map();
-        stored.forEach(function(item){ if(item && item.key && item.text) map.set(item.key, item); });
-        const fresh = [];
-        (Array.isArray(incoming) ? incoming : []).map(normalize).forEach(function(item){
-            if (!item.text || isPlaceholder(item)) return;
-            const previous = map.get(item.key);
-            if (previous) {
-                map.set(item.key, Object.assign({}, previous, item));
-            } else {
-                item.read = false;
-                if (!item.created_at) item.created_at = new Date().toISOString();
-                map.set(item.key, item);
-                fresh.push(item.key);
-            }
-        });
-        stored = Array.from(map.values()).sort(function(a,b){
-            const da = a.created_at ? new Date(a.created_at).getTime() : 0;
-            const db = b.created_at ? new Date(b.created_at).getTime() : 0;
-            return db - da;
-        }).slice(0, MAX_ITEMS);
-        saveStored();
-        return fresh;
-    }
-
-    function renderNotifications(incoming){
-        mergeNotifications(incoming);
-        list.innerHTML = '';
-        const visible = stored.length ? stored : (Array.isArray(incoming) ? incoming.map(normalize).filter(n => !isPlaceholder(n)) : []);
-        visible.forEach(function(item){
-            const li = document.createElement('li');
-            if (item.type === 'evaluation') li.classList.add('notif-evaluation');
-            const icon = document.createElement('i');
-            const ICONS = {
-                evaluation:  'fa-solid fa-clipboard-check',
-                ea_period:   'fa-solid fa-calendar-days',
-                ea_schedule: 'fa-solid fa-clock'
-            };
-            icon.className = ICONS[item.type] || 'fa-solid fa-circle-exclamation';
-            li.appendChild(icon);
-            li.appendChild(document.createTextNode(' ' + item.text));
-            list.appendChild(li);
-        });
-        const unread = stored.filter(function(n){ return n && !n.read; }).length;
-        if (unread > 0) {
-            badge.textContent = unread > 9 ? '9+' : String(unread);
-            badge.style.display = 'flex';
-        } else {
-            badge.style.display = 'none';
-        }
-    }
-
-    function closeDropdown(){
-        dropdown.classList.remove('open');
-        bellBtn.setAttribute('aria-expanded', 'false');
-        dropdown.setAttribute('aria-hidden', 'true');
-    }
-
-    renderNotifications(<?= json_encode($notifications) ?>);
-
-    bellBtn.addEventListener('click', function(e){
-        e.stopPropagation();
-        const isOpen = dropdown.classList.toggle('open');
-        bellBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-        dropdown.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
-        if (isOpen) {
-            stored = stored.map(function(n){ return Object.assign({}, n, {read:true}); });
-            saveStored();
-            renderNotifications([]);
-        }
-    });
-    document.addEventListener('click', function(e){
-        if (!dropdown.contains(e.target) && e.target !== bellBtn) closeDropdown();
-    });
-    document.addEventListener('keydown', function(e){
-        if (e.key === 'Escape') closeDropdown();
-    });
-
-    // REAL-TIME: the API returns recent submitted evaluation events on every
-    // poll, and the local history keeps previous events from disappearing.
-    const POLL_MS = 10000;
-    function poll(){
-        fetch('dean_notifications_api.php', { credentials: 'same-origin', cache: 'no-store' })
-            .then(function(res){ if (!res.ok) throw new Error('bad status'); return res.json(); })
-            .then(function(data){
-                mergeNotifications(data.notifications);
-                renderNotifications([]);
-                if (liveDot) liveDot.classList.remove('stale');
-            })
-            .catch(function(){
-                if (liveDot) liveDot.classList.add('stale');
-            });
-    }
-    setInterval(poll, POLL_MS);
-})();
-</script>
 <script src="../admin/eval_status_poll.js" defer></script>
 </body>
 </html>

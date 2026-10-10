@@ -14,12 +14,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($username === '' || $password === '') {
         $error = 'Please enter your username and password.';
     } else {
+        // The username must match exactly, including upper/lower case (BINARY).
+        // Passwords are already case-sensitive (password_verify).
         // Accept only the username registered in the users table.
         // The login field is NOT matched against full name or email.
         $stmt = $mysqli->prepare(
             "SELECT id, full_name, password_hash, role, designation, account_status, is_active
              FROM users
-             WHERE username = ? AND role = 'teacher' AND is_active = 1
+             WHERE BINARY username = ? AND role = 'teacher' AND is_active = 1
              LIMIT 1"
         );
 
@@ -175,7 +177,7 @@ body{min-height:100vh;background:radial-gradient(circle at 50% 42%,rgba(255,255,
             </div>
         </div>
         <div style="text-align:right; margin-top:-10px; margin-bottom:14px;">
-            <a href="forgot_password.php" style="font-size:12px; color:var(--teal-hover); text-decoration:none; font-weight:600;">
+            <a href="faculty_forgot_password.php" style="font-size:12px; color:var(--teal-hover); text-decoration:none; font-weight:600;">
                 <i class="fa-solid fa-key"></i> Forgot Password?
             </a>
         </div>

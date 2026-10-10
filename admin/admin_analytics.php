@@ -1476,10 +1476,84 @@ html[data-theme="dark"] .avg-summary{background:#fff!important;border-color:#ddd
 <body class="feature-compact<?= $reportMode ? ' report-mode' : '' ?>">
 <script src="admin_ajax.php"></script>
 <script>
+// Confirm dialog helper: uses the dashboard's PBI.confirm when it is reachable
+// (this page runs in an iframe, so PBI may only exist in the parent window),
+// otherwise falls back to a built-in modal. Never uses the native browser confirm.
+if (!window.saConfirm) (function(){
+    const css = document.createElement('style');
+    css.textContent = `
+    .sa-modal-backdrop{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(16,39,70,.55);backdrop-filter:blur(2px);opacity:0;transition:opacity .15s ease}
+    .sa-modal-backdrop.show{opacity:1}
+    .sa-modal{width:100%;max-width:440px;max-height:calc(100vh - 36px);display:flex;flex-direction:column;background:var(--mid,#fff);color:var(--light,#0B1F3A);border-radius:16px;box-shadow:0 24px 60px rgba(10,30,60,.35);transform:translateY(8px) scale(.98);transition:transform .15s ease;overflow:hidden;font-family:Inter,system-ui,sans-serif}
+    .sa-modal-backdrop.show .sa-modal{transform:none}
+    .sa-modal-head{display:flex;gap:12px;align-items:center;padding:20px 22px 6px}
+    .sa-modal-icon{flex:0 0 38px;height:38px;border-radius:50%;display:grid;place-items:center;font-size:16px;background:rgba(214,69,93,.12);color:#D6455D}
+    .sa-modal.safe .sa-modal-icon{background:rgba(37,99,235,.12);color:#2563EB}
+    .sa-modal-title{margin:0;font-size:16px;font-weight:800;letter-spacing:-.01em}
+    .sa-modal-body{padding:8px 22px 18px;overflow:auto;white-space:pre-line;font-size:13px;line-height:1.55;color:var(--muted,#67819E)}
+    .sa-modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:14px 22px 20px;border-top:1px solid var(--border,#D8E5F4)}
+    .sa-btn{border:1px solid var(--border,#B9CDE5);background:transparent;color:inherit;border-radius:10px;padding:10px 18px;font:700 13px Inter,system-ui,sans-serif;cursor:pointer}
+    .sa-btn.ok{border-color:transparent;color:#fff;background:#D6455D}
+    .sa-modal.safe .sa-btn.ok{background:#2563EB}
+    .sa-btn:focus-visible{outline:3px solid rgba(37,99,235,.35);outline-offset:2px}`;
+    document.head.appendChild(css);
+
+    function builtin(message, opts){
+        opts = opts || {};
+        const danger = opts.danger !== false;
+        let title, body;
+        const text = String(message);
+        if (text.indexOf('\n') > -1) { const i = text.indexOf('\n'); title = text.slice(0, i); body = text.slice(i).trim(); }
+        else { const m = text.match(/^(.*?\?)\s+(.+)$/); title = m ? m[1] : text; body = m ? m[2] : ''; }
+        return new Promise(resolve => {
+            const back = document.createElement('div');
+            back.className = 'sa-modal-backdrop';
+            back.innerHTML = `
+              <div class="sa-modal ${danger ? '' : 'safe'}" role="alertdialog" aria-modal="true">
+                <div class="sa-modal-head"><div class="sa-modal-icon"><i class="fa-solid ${danger ? 'fa-triangle-exclamation' : 'fa-circle-question'}"></i></div><h3 class="sa-modal-title"></h3></div>
+                <div class="sa-modal-body"></div>
+                <div class="sa-modal-foot"><button type="button" class="sa-btn cancel"></button><button type="button" class="sa-btn ok"></button></div>
+              </div>`;
+            back.querySelector('.sa-modal-title').textContent = title;
+            const bodyEl = back.querySelector('.sa-modal-body');
+            if (body) bodyEl.textContent = body; else bodyEl.remove();
+            const okBtn = back.querySelector('.ok'), noBtn = back.querySelector('.cancel');
+            okBtn.textContent = opts.okLabel || 'OK';
+            noBtn.textContent = opts.cancelLabel || 'Cancel';
+            function close(v){ document.removeEventListener('keydown', onKey, true); back.classList.remove('show'); setTimeout(() => back.remove(), 150); resolve(v); }
+            function onKey(e){
+                if (e.key === 'Escape'){ e.preventDefault(); close(false); }
+                else if (e.key === 'Tab'){ e.preventDefault(); (document.activeElement === okBtn ? noBtn : okBtn).focus(); }
+            }
+            okBtn.addEventListener('click', () => close(true));
+            noBtn.addEventListener('click', () => close(false));
+            back.addEventListener('mousedown', e => { if (e.target === back) close(false); });
+            document.addEventListener('keydown', onKey, true);
+            document.body.appendChild(back);
+            requestAnimationFrame(() => { back.classList.add('show'); noBtn.focus(); });
+        });
+    }
+
+    function findPBI(){
+        for (const w of [window, window.parent, window.top]) {
+            try { if (w && w.PBI && typeof w.PBI.confirm === 'function') return w.PBI; } catch (e) {}
+        }
+        return null;
+    }
+
+    window.saConfirm = async function(message, opts){
+        try {
+            const pbi = findPBI();
+            if (pbi) return await pbi.confirm(message, opts);
+        } catch (err) { console.error('PBI.confirm failed, using built-in modal', err); }
+        return builtin(message, opts);
+    };
+})();
+
 // Navigates to a link's href only after the custom (non-native) confirm modal is accepted.
 function confirmNav(link, message, opts){
     (async () => {
-        if (await PBI.confirm(message, opts)) {
+        if (await window.saConfirm(message, opts)) {
             window.location.href = link.href;
         }
     })();
@@ -1903,10 +1977,84 @@ html[data-theme="dark"] table.results-table td a.rt-generate-btn:hover{opacity:.
 </head><body>
 <script src="admin_ajax.php"></script>
 <script>
+// Confirm dialog helper: uses the dashboard's PBI.confirm when it is reachable
+// (this page runs in an iframe, so PBI may only exist in the parent window),
+// otherwise falls back to a built-in modal. Never uses the native browser confirm.
+if (!window.saConfirm) (function(){
+    const css = document.createElement('style');
+    css.textContent = `
+    .sa-modal-backdrop{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(16,39,70,.55);backdrop-filter:blur(2px);opacity:0;transition:opacity .15s ease}
+    .sa-modal-backdrop.show{opacity:1}
+    .sa-modal{width:100%;max-width:440px;max-height:calc(100vh - 36px);display:flex;flex-direction:column;background:var(--mid,#fff);color:var(--light,#0B1F3A);border-radius:16px;box-shadow:0 24px 60px rgba(10,30,60,.35);transform:translateY(8px) scale(.98);transition:transform .15s ease;overflow:hidden;font-family:Inter,system-ui,sans-serif}
+    .sa-modal-backdrop.show .sa-modal{transform:none}
+    .sa-modal-head{display:flex;gap:12px;align-items:center;padding:20px 22px 6px}
+    .sa-modal-icon{flex:0 0 38px;height:38px;border-radius:50%;display:grid;place-items:center;font-size:16px;background:rgba(214,69,93,.12);color:#D6455D}
+    .sa-modal.safe .sa-modal-icon{background:rgba(37,99,235,.12);color:#2563EB}
+    .sa-modal-title{margin:0;font-size:16px;font-weight:800;letter-spacing:-.01em}
+    .sa-modal-body{padding:8px 22px 18px;overflow:auto;white-space:pre-line;font-size:13px;line-height:1.55;color:var(--muted,#67819E)}
+    .sa-modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:14px 22px 20px;border-top:1px solid var(--border,#D8E5F4)}
+    .sa-btn{border:1px solid var(--border,#B9CDE5);background:transparent;color:inherit;border-radius:10px;padding:10px 18px;font:700 13px Inter,system-ui,sans-serif;cursor:pointer}
+    .sa-btn.ok{border-color:transparent;color:#fff;background:#D6455D}
+    .sa-modal.safe .sa-btn.ok{background:#2563EB}
+    .sa-btn:focus-visible{outline:3px solid rgba(37,99,235,.35);outline-offset:2px}`;
+    document.head.appendChild(css);
+
+    function builtin(message, opts){
+        opts = opts || {};
+        const danger = opts.danger !== false;
+        let title, body;
+        const text = String(message);
+        if (text.indexOf('\n') > -1) { const i = text.indexOf('\n'); title = text.slice(0, i); body = text.slice(i).trim(); }
+        else { const m = text.match(/^(.*?\?)\s+(.+)$/); title = m ? m[1] : text; body = m ? m[2] : ''; }
+        return new Promise(resolve => {
+            const back = document.createElement('div');
+            back.className = 'sa-modal-backdrop';
+            back.innerHTML = `
+              <div class="sa-modal ${danger ? '' : 'safe'}" role="alertdialog" aria-modal="true">
+                <div class="sa-modal-head"><div class="sa-modal-icon"><i class="fa-solid ${danger ? 'fa-triangle-exclamation' : 'fa-circle-question'}"></i></div><h3 class="sa-modal-title"></h3></div>
+                <div class="sa-modal-body"></div>
+                <div class="sa-modal-foot"><button type="button" class="sa-btn cancel"></button><button type="button" class="sa-btn ok"></button></div>
+              </div>`;
+            back.querySelector('.sa-modal-title').textContent = title;
+            const bodyEl = back.querySelector('.sa-modal-body');
+            if (body) bodyEl.textContent = body; else bodyEl.remove();
+            const okBtn = back.querySelector('.ok'), noBtn = back.querySelector('.cancel');
+            okBtn.textContent = opts.okLabel || 'OK';
+            noBtn.textContent = opts.cancelLabel || 'Cancel';
+            function close(v){ document.removeEventListener('keydown', onKey, true); back.classList.remove('show'); setTimeout(() => back.remove(), 150); resolve(v); }
+            function onKey(e){
+                if (e.key === 'Escape'){ e.preventDefault(); close(false); }
+                else if (e.key === 'Tab'){ e.preventDefault(); (document.activeElement === okBtn ? noBtn : okBtn).focus(); }
+            }
+            okBtn.addEventListener('click', () => close(true));
+            noBtn.addEventListener('click', () => close(false));
+            back.addEventListener('mousedown', e => { if (e.target === back) close(false); });
+            document.addEventListener('keydown', onKey, true);
+            document.body.appendChild(back);
+            requestAnimationFrame(() => { back.classList.add('show'); noBtn.focus(); });
+        });
+    }
+
+    function findPBI(){
+        for (const w of [window, window.parent, window.top]) {
+            try { if (w && w.PBI && typeof w.PBI.confirm === 'function') return w.PBI; } catch (e) {}
+        }
+        return null;
+    }
+
+    window.saConfirm = async function(message, opts){
+        try {
+            const pbi = findPBI();
+            if (pbi) return await pbi.confirm(message, opts);
+        } catch (err) { console.error('PBI.confirm failed, using built-in modal', err); }
+        return builtin(message, opts);
+    };
+})();
+
 // Navigates to a link's href only after the custom (non-native) confirm modal is accepted.
 function confirmNav(link, message, opts){
     (async () => {
-        if (await PBI.confirm(message, opts)) {
+        if (await window.saConfirm(message, opts)) {
             window.location.href = link.href;
         }
     })();
@@ -2217,10 +2365,84 @@ a { color:inherit; }
 </head><body>
 <script src="admin_ajax.php"></script>
 <script>
+// Confirm dialog helper: uses the dashboard's PBI.confirm when it is reachable
+// (this page runs in an iframe, so PBI may only exist in the parent window),
+// otherwise falls back to a built-in modal. Never uses the native browser confirm.
+if (!window.saConfirm) (function(){
+    const css = document.createElement('style');
+    css.textContent = `
+    .sa-modal-backdrop{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(16,39,70,.55);backdrop-filter:blur(2px);opacity:0;transition:opacity .15s ease}
+    .sa-modal-backdrop.show{opacity:1}
+    .sa-modal{width:100%;max-width:440px;max-height:calc(100vh - 36px);display:flex;flex-direction:column;background:var(--mid,#fff);color:var(--light,#0B1F3A);border-radius:16px;box-shadow:0 24px 60px rgba(10,30,60,.35);transform:translateY(8px) scale(.98);transition:transform .15s ease;overflow:hidden;font-family:Inter,system-ui,sans-serif}
+    .sa-modal-backdrop.show .sa-modal{transform:none}
+    .sa-modal-head{display:flex;gap:12px;align-items:center;padding:20px 22px 6px}
+    .sa-modal-icon{flex:0 0 38px;height:38px;border-radius:50%;display:grid;place-items:center;font-size:16px;background:rgba(214,69,93,.12);color:#D6455D}
+    .sa-modal.safe .sa-modal-icon{background:rgba(37,99,235,.12);color:#2563EB}
+    .sa-modal-title{margin:0;font-size:16px;font-weight:800;letter-spacing:-.01em}
+    .sa-modal-body{padding:8px 22px 18px;overflow:auto;white-space:pre-line;font-size:13px;line-height:1.55;color:var(--muted,#67819E)}
+    .sa-modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:14px 22px 20px;border-top:1px solid var(--border,#D8E5F4)}
+    .sa-btn{border:1px solid var(--border,#B9CDE5);background:transparent;color:inherit;border-radius:10px;padding:10px 18px;font:700 13px Inter,system-ui,sans-serif;cursor:pointer}
+    .sa-btn.ok{border-color:transparent;color:#fff;background:#D6455D}
+    .sa-modal.safe .sa-btn.ok{background:#2563EB}
+    .sa-btn:focus-visible{outline:3px solid rgba(37,99,235,.35);outline-offset:2px}`;
+    document.head.appendChild(css);
+
+    function builtin(message, opts){
+        opts = opts || {};
+        const danger = opts.danger !== false;
+        let title, body;
+        const text = String(message);
+        if (text.indexOf('\n') > -1) { const i = text.indexOf('\n'); title = text.slice(0, i); body = text.slice(i).trim(); }
+        else { const m = text.match(/^(.*?\?)\s+(.+)$/); title = m ? m[1] : text; body = m ? m[2] : ''; }
+        return new Promise(resolve => {
+            const back = document.createElement('div');
+            back.className = 'sa-modal-backdrop';
+            back.innerHTML = `
+              <div class="sa-modal ${danger ? '' : 'safe'}" role="alertdialog" aria-modal="true">
+                <div class="sa-modal-head"><div class="sa-modal-icon"><i class="fa-solid ${danger ? 'fa-triangle-exclamation' : 'fa-circle-question'}"></i></div><h3 class="sa-modal-title"></h3></div>
+                <div class="sa-modal-body"></div>
+                <div class="sa-modal-foot"><button type="button" class="sa-btn cancel"></button><button type="button" class="sa-btn ok"></button></div>
+              </div>`;
+            back.querySelector('.sa-modal-title').textContent = title;
+            const bodyEl = back.querySelector('.sa-modal-body');
+            if (body) bodyEl.textContent = body; else bodyEl.remove();
+            const okBtn = back.querySelector('.ok'), noBtn = back.querySelector('.cancel');
+            okBtn.textContent = opts.okLabel || 'OK';
+            noBtn.textContent = opts.cancelLabel || 'Cancel';
+            function close(v){ document.removeEventListener('keydown', onKey, true); back.classList.remove('show'); setTimeout(() => back.remove(), 150); resolve(v); }
+            function onKey(e){
+                if (e.key === 'Escape'){ e.preventDefault(); close(false); }
+                else if (e.key === 'Tab'){ e.preventDefault(); (document.activeElement === okBtn ? noBtn : okBtn).focus(); }
+            }
+            okBtn.addEventListener('click', () => close(true));
+            noBtn.addEventListener('click', () => close(false));
+            back.addEventListener('mousedown', e => { if (e.target === back) close(false); });
+            document.addEventListener('keydown', onKey, true);
+            document.body.appendChild(back);
+            requestAnimationFrame(() => { back.classList.add('show'); noBtn.focus(); });
+        });
+    }
+
+    function findPBI(){
+        for (const w of [window, window.parent, window.top]) {
+            try { if (w && w.PBI && typeof w.PBI.confirm === 'function') return w.PBI; } catch (e) {}
+        }
+        return null;
+    }
+
+    window.saConfirm = async function(message, opts){
+        try {
+            const pbi = findPBI();
+            if (pbi) return await pbi.confirm(message, opts);
+        } catch (err) { console.error('PBI.confirm failed, using built-in modal', err); }
+        return builtin(message, opts);
+    };
+})();
+
 // Navigates to a link's href only after the custom (non-native) confirm modal is accepted.
 function confirmNav(link, message, opts){
     (async () => {
-        if (await PBI.confirm(message, opts)) {
+        if (await window.saConfirm(message, opts)) {
             window.location.href = link.href;
         }
     })();
@@ -2775,10 +2997,84 @@ a { color:inherit; }
 <body>
 <script src="admin_ajax.php"></script>
 <script>
+// Confirm dialog helper: uses the dashboard's PBI.confirm when it is reachable
+// (this page runs in an iframe, so PBI may only exist in the parent window),
+// otherwise falls back to a built-in modal. Never uses the native browser confirm.
+if (!window.saConfirm) (function(){
+    const css = document.createElement('style');
+    css.textContent = `
+    .sa-modal-backdrop{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(16,39,70,.55);backdrop-filter:blur(2px);opacity:0;transition:opacity .15s ease}
+    .sa-modal-backdrop.show{opacity:1}
+    .sa-modal{width:100%;max-width:440px;max-height:calc(100vh - 36px);display:flex;flex-direction:column;background:var(--mid,#fff);color:var(--light,#0B1F3A);border-radius:16px;box-shadow:0 24px 60px rgba(10,30,60,.35);transform:translateY(8px) scale(.98);transition:transform .15s ease;overflow:hidden;font-family:Inter,system-ui,sans-serif}
+    .sa-modal-backdrop.show .sa-modal{transform:none}
+    .sa-modal-head{display:flex;gap:12px;align-items:center;padding:20px 22px 6px}
+    .sa-modal-icon{flex:0 0 38px;height:38px;border-radius:50%;display:grid;place-items:center;font-size:16px;background:rgba(214,69,93,.12);color:#D6455D}
+    .sa-modal.safe .sa-modal-icon{background:rgba(37,99,235,.12);color:#2563EB}
+    .sa-modal-title{margin:0;font-size:16px;font-weight:800;letter-spacing:-.01em}
+    .sa-modal-body{padding:8px 22px 18px;overflow:auto;white-space:pre-line;font-size:13px;line-height:1.55;color:var(--muted,#67819E)}
+    .sa-modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:14px 22px 20px;border-top:1px solid var(--border,#D8E5F4)}
+    .sa-btn{border:1px solid var(--border,#B9CDE5);background:transparent;color:inherit;border-radius:10px;padding:10px 18px;font:700 13px Inter,system-ui,sans-serif;cursor:pointer}
+    .sa-btn.ok{border-color:transparent;color:#fff;background:#D6455D}
+    .sa-modal.safe .sa-btn.ok{background:#2563EB}
+    .sa-btn:focus-visible{outline:3px solid rgba(37,99,235,.35);outline-offset:2px}`;
+    document.head.appendChild(css);
+
+    function builtin(message, opts){
+        opts = opts || {};
+        const danger = opts.danger !== false;
+        let title, body;
+        const text = String(message);
+        if (text.indexOf('\n') > -1) { const i = text.indexOf('\n'); title = text.slice(0, i); body = text.slice(i).trim(); }
+        else { const m = text.match(/^(.*?\?)\s+(.+)$/); title = m ? m[1] : text; body = m ? m[2] : ''; }
+        return new Promise(resolve => {
+            const back = document.createElement('div');
+            back.className = 'sa-modal-backdrop';
+            back.innerHTML = `
+              <div class="sa-modal ${danger ? '' : 'safe'}" role="alertdialog" aria-modal="true">
+                <div class="sa-modal-head"><div class="sa-modal-icon"><i class="fa-solid ${danger ? 'fa-triangle-exclamation' : 'fa-circle-question'}"></i></div><h3 class="sa-modal-title"></h3></div>
+                <div class="sa-modal-body"></div>
+                <div class="sa-modal-foot"><button type="button" class="sa-btn cancel"></button><button type="button" class="sa-btn ok"></button></div>
+              </div>`;
+            back.querySelector('.sa-modal-title').textContent = title;
+            const bodyEl = back.querySelector('.sa-modal-body');
+            if (body) bodyEl.textContent = body; else bodyEl.remove();
+            const okBtn = back.querySelector('.ok'), noBtn = back.querySelector('.cancel');
+            okBtn.textContent = opts.okLabel || 'OK';
+            noBtn.textContent = opts.cancelLabel || 'Cancel';
+            function close(v){ document.removeEventListener('keydown', onKey, true); back.classList.remove('show'); setTimeout(() => back.remove(), 150); resolve(v); }
+            function onKey(e){
+                if (e.key === 'Escape'){ e.preventDefault(); close(false); }
+                else if (e.key === 'Tab'){ e.preventDefault(); (document.activeElement === okBtn ? noBtn : okBtn).focus(); }
+            }
+            okBtn.addEventListener('click', () => close(true));
+            noBtn.addEventListener('click', () => close(false));
+            back.addEventListener('mousedown', e => { if (e.target === back) close(false); });
+            document.addEventListener('keydown', onKey, true);
+            document.body.appendChild(back);
+            requestAnimationFrame(() => { back.classList.add('show'); noBtn.focus(); });
+        });
+    }
+
+    function findPBI(){
+        for (const w of [window, window.parent, window.top]) {
+            try { if (w && w.PBI && typeof w.PBI.confirm === 'function') return w.PBI; } catch (e) {}
+        }
+        return null;
+    }
+
+    window.saConfirm = async function(message, opts){
+        try {
+            const pbi = findPBI();
+            if (pbi) return await pbi.confirm(message, opts);
+        } catch (err) { console.error('PBI.confirm failed, using built-in modal', err); }
+        return builtin(message, opts);
+    };
+})();
+
 // Navigates to a link's href only after the custom (non-native) confirm modal is accepted.
 function confirmNav(link, message, opts){
     (async () => {
-        if (await PBI.confirm(message, opts)) {
+        if (await window.saConfirm(message, opts)) {
             window.location.href = link.href;
         }
     })();
@@ -3102,8 +3398,6 @@ table.ra-table tbody tr:hover{background:var(--inner);}
                         <a class="ra-view-btn" title="View" aria-label="View" href="?view=students&target_id=<?= $p['id'] ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>&evaluator=<?= urlencode($evaluatorFilter) ?>"><i class="fa-solid fa-eye"></i></a>
                         <?php if ($isArchived && $isMultiRole): ?>
                         <a class="ra-icon-btn" title="Restore" aria-label="Restore" href="?restore_id=<?= $p['id'] ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>&evaluator=<?= urlencode($evaluatorFilter) ?>&view=archived"><i class="fa-solid fa-rotate-left"></i></a>
-                        <?php else: ?>
-                        <button class="ra-icon-btn" title="Archive" aria-label="Archive" onclick="archivePerson(<?= $p['id'] ?>,'<?= htmlspecialchars(addslashes($p['full_name'])) ?>')"><i class="fa-solid fa-box-archive"></i></button>
                         <?php endif; ?>
                     </div>
                 </td>
@@ -3229,11 +3523,6 @@ table.ra-table tbody tr:hover{background:var(--inner);}
     render();
 })();
 
-async function archivePerson(id, name) {
-    if (await PBI.confirm(`Archive "${name}"? They'll be hidden from this list but their evaluation data is kept and can be restored anytime.`, {okLabel:'Archive'})) {
-        window.location.href = `?archive_id=${id}&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>&evaluator=<?= urlencode($evaluatorFilter) ?>`;
-    }
-}
 </script>
 <?php $mysqli->close(); ?>
 <script src="eval_status_poll.js" data-watch="submissions" defer></script>

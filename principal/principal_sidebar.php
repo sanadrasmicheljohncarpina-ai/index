@@ -43,6 +43,240 @@ if (!function_exists('principal_sidebar_assets')) {
 #pbiSidebar .btn-logout-side:hover{background:rgba(240,84,84,.15)!important;color:#fff!important;}
 @media(max-width:768px){#pbiSidebar{position:static!important;width:100%!important;min-width:0!important;max-width:none!important;flex:0 0 auto!important;height:auto!important;min-height:auto!important;overflow:visible!important;} }
 @media print{#pbiSidebar{display:none!important;}}
+
+/* Shared Principal top bar — follows the Faculty portal's fixed header layout. */
+#pbiPrincipalTopbar{box-sizing:border-box!important;position:fixed!important;top:0!important;left:248px!important;right:0!important;height:58px!important;z-index:35!important;display:flex!important;align-items:center!important;justify-content:space-between!important;gap:16px!important;padding:0 26px!important;background:#FFFFFF!important;color:#13263F!important;border-bottom:1px solid #DEE6EF!important;box-shadow:0 2px 14px rgba(15,34,55,.04)!important;font-family:'DM Sans',sans-serif!important;}
+#pbiPrincipalTopbar *{box-sizing:border-box!important;}
+#pbiPrincipalTopbar .pbi-topbar-left,#pbiPrincipalTopbar .pbi-topbar-right{display:flex!important;align-items:center!important;gap:13px!important;min-width:0!important;}
+#pbiPrincipalTopbar .pbi-topbar-title{font-family:'Rajdhani',sans-serif!important;font-size:19px!important;font-weight:700!important;letter-spacing:.4px!important;line-height:1.2!important;color:#13263F!important;white-space:nowrap!important;}
+#pbiPrincipalTopbar .pbi-topbar-hamburger{display:none!important;width:36px!important;height:36px!important;align-items:center!important;justify-content:center!important;border:1px solid #D9E2EC!important;border-radius:9px!important;background:#F8FAFC!important;color:#334155!important;cursor:pointer!important;font-size:15px!important;}
+#pbiPrincipalTopbar .pbi-topbar-period{display:inline-flex!important;align-items:center!important;gap:7px!important;max-width:min(52vw,520px)!important;padding:7px 12px!important;border:1px solid rgba(217,154,43,.28)!important;border-radius:22px!important;background:rgba(217,154,43,.10)!important;color:#9A6700!important;font-size:11px!important;font-weight:700!important;line-height:1.25!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;}
+#pbiPrincipalTopbar .pbi-topbar-period i{flex-shrink:0!important;color:#D99A2B!important;}
+#pbiPrincipalTopbar .pbi-topbar-bell-wrap{position:relative!important;flex-shrink:0!important;}
+#pbiPrincipalTopbar .pbi-topbar-bell{position:relative!important;display:flex!important;align-items:center!important;justify-content:center!important;width:36px!important;height:36px!important;border:1px solid #D9E2EC!important;border-radius:50%!important;background:#FFFFFF!important;color:#64748B!important;font-size:15px!important;cursor:pointer!important;transition:all .18s ease!important;}
+#pbiPrincipalTopbar .pbi-topbar-bell:hover,#pbiPrincipalTopbar .pbi-topbar-bell[aria-expanded="true"]{background:rgba(217,154,43,.10)!important;border-color:rgba(217,154,43,.38)!important;color:#A16207!important;}
+#pbiPrincipalTopbar .pbi-topbar-count{display:none!important;position:absolute!important;top:-4px!important;right:-5px!important;min-width:17px!important;height:17px!important;padding:0 4px!important;border:2px solid #FFFFFF!important;border-radius:20px!important;background:#DC2626!important;color:#FFFFFF!important;font-size:9px!important;font-weight:800!important;line-height:13px!important;text-align:center!important;}
+#pbiPrincipalTopbar .pbi-topbar-count.show{display:block!important;}
+#pbiPrincipalTopbar .pbi-topbar-panel{display:none!important;position:absolute!important;top:calc(100% + 12px)!important;right:0!important;width:min(370px,calc(100vw - 28px))!important;max-height:min(520px,75vh)!important;overflow:hidden!important;background:#FFFFFF!important;border:1px solid #E2E8F0!important;border-radius:14px!important;box-shadow:0 18px 44px rgba(15,23,42,.18)!important;color:#172033!important;}
+#pbiPrincipalTopbar .pbi-topbar-panel.open{display:block!important;}
+#pbiPrincipalTopbar .pbi-topbar-panel-head{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:10px!important;padding:14px 16px!important;border-bottom:1px solid #E2E8F0!important;}
+#pbiPrincipalTopbar .pbi-topbar-panel-head strong{font-size:13px!important;font-weight:800!important;color:#172033!important;}
+#pbiPrincipalTopbar .pbi-topbar-mark-read{border:0!important;background:transparent!important;color:#A16207!important;font-family:inherit!important;font-size:11px!important;font-weight:700!important;cursor:pointer!important;white-space:nowrap!important;}
+#pbiPrincipalTopbar .pbi-topbar-list{list-style:none!important;margin:0!important;padding:8px!important;max-height:350px!important;overflow:auto!important;}
+#pbiPrincipalTopbar .pbi-topbar-list li{display:flex!important;align-items:flex-start!important;gap:10px!important;margin:0 0 5px!important;padding:10px!important;border-radius:9px!important;background:#F8FAFC!important;color:#334155!important;font-size:12px!important;line-height:1.45!important;}
+#pbiPrincipalTopbar .pbi-topbar-list li.unseen{background:rgba(217,154,43,.10)!important;}
+#pbiPrincipalTopbar .pbi-topbar-list li i{margin-top:2px!important;color:#B8801F!important;flex-shrink:0!important;}
+#pbiPrincipalTopbar .pbi-topbar-list li span{min-width:0!important;overflow-wrap:anywhere!important;}
+#pbiPrincipalTopbar .pbi-topbar-empty{padding:25px 16px!important;text-align:center!important;color:#64748B!important;font-size:12px!important;}
+#pbiPrincipalTopbar .pbi-topbar-foot{padding:8px 14px!important;border-top:1px solid #E2E8F0!important;color:#64748B!important;font-size:10px!important;}
+html.principal-theme-dark #pbiPrincipalTopbar{background:#0F1F3D!important;color:#E0E6F0!important;border-bottom-color:rgba(255,255,255,.10)!important;box-shadow:0 2px 14px rgba(0,0,0,.22)!important;}
+html.principal-theme-dark #pbiPrincipalTopbar .pbi-topbar-title{color:#F8FAFC!important;}
+html.principal-theme-dark #pbiPrincipalTopbar .pbi-topbar-hamburger,html.principal-theme-dark #pbiPrincipalTopbar .pbi-topbar-bell{background:#172A45!important;border-color:rgba(255,255,255,.12)!important;color:#D0DAE6!important;}
+html.principal-theme-dark #pbiPrincipalTopbar .pbi-topbar-period{background:rgba(217,154,43,.17)!important;border-color:rgba(240,184,77,.34)!important;color:#F0B84D!important;}
+html.principal-theme-dark #pbiPrincipalTopbar .pbi-topbar-panel{background:#0F1F3D!important;border-color:rgba(255,255,255,.12)!important;color:#E0E6F0!important;}
+html.principal-theme-dark #pbiPrincipalTopbar .pbi-topbar-panel-head{border-color:rgba(255,255,255,.10)!important;}
+html.principal-theme-dark #pbiPrincipalTopbar .pbi-topbar-panel-head strong{color:#F8FAFC!important;}
+html.principal-theme-dark #pbiPrincipalTopbar .pbi-topbar-list li{background:#172A45!important;color:#DCE6F0!important;}
+html.principal-theme-dark #pbiPrincipalTopbar .pbi-topbar-list li.unseen{background:rgba(217,154,43,.14)!important;}
+html.principal-theme-dark #pbiPrincipalTopbar .pbi-topbar-foot{border-color:rgba(255,255,255,.10)!important;color:#A0B3C6!important;}
+#pbiPrincipalTopbar ~ .main,#pbiPrincipalTopbar ~ main.main{margin-top:58px!important;}
+@media(max-width:900px){
+  #pbiSidebar{position:fixed!important;top:0!important;left:0!important;width:248px!important;min-width:248px!important;max-width:248px!important;height:100vh!important;min-height:100vh!important;transform:translateX(-105%)!important;transition:transform .22s ease!important;z-index:40!important;}
+  #pbiSidebar.open{transform:translateX(0)!important;box-shadow:12px 0 34px rgba(0,0,0,.30)!important;}
+  #pbiPrincipalTopbar{left:0!important;}
+  #pbiPrincipalTopbar .pbi-topbar-hamburger{display:flex!important;}
+  #pbiPrincipalTopbar ~ .main,#pbiPrincipalTopbar ~ main.main{margin-left:0!important;}
+}
+@media(max-width:768px){
+  #pbiPrincipalTopbar{position:sticky!important;left:auto!important;right:auto!important;width:100%!important;height:auto!important;min-height:58px!important;padding:10px 14px!important;flex-wrap:wrap!important;gap:8px!important;}
+  #pbiPrincipalTopbar .pbi-topbar-right{margin-left:auto!important;gap:8px!important;}
+  #pbiPrincipalTopbar .pbi-topbar-period{max-width:46vw!important;font-size:10px!important;padding:6px 9px!important;}
+  #pbiPrincipalTopbar .pbi-topbar-title{font-size:17px!important;}
+  #pbiPrincipalTopbar ~ .main,#pbiPrincipalTopbar ~ main.main{margin-top:0!important;margin-left:0!important;padding-top:22px!important;}
+}
+@media print{#pbiPrincipalTopbar{display:none!important;}#pbiPrincipalTopbar ~ .main,#pbiPrincipalTopbar ~ main.main{margin-top:0!important;padding-top:20px!important;}}
+
+/* Shared Principal page workspace. Keep the Principal navy/amber identity,
+   but give every non-dashboard page the same light, inset work surface as the
+   dashboard. This affects presentation only; page data and actions are intact. */
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard){
+  position:relative!important;
+  isolation:isolate!important;
+  background:#F3F6FA!important;
+  color:#172033!important;
+  border:0!important;
+  border-radius:0!important;
+  box-shadow:none!important;
+  min-height:calc(100vh - 58px)!important;
+}
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard)::before{
+  content:""!important;
+  position:absolute!important;
+  top:14px!important;right:16px!important;bottom:0!important;left:16px!important;
+  background:#FFFFFF!important;
+  border:1px solid #E2E8F0!important;
+  border-bottom:0!important;
+  border-radius:18px 18px 0 0!important;
+  box-shadow:0 2px 12px rgba(15,23,42,.025)!important;
+  pointer-events:none!important;
+  z-index:-1!important;
+}
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) > .page-header,
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .page-header:first-child{
+  background:transparent!important;
+  border:0!important;
+  box-shadow:none!important;
+}
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .page-title,
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .page-header h1,
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .section-title{
+  color:#12263F!important;
+}
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .page-sub,
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .page-header p,
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .muted,
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .helper{
+  color:#5B7186!important;
+}
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .section,
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .card,
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .panel,
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .profile-card,
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .tracker-card,
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .de-panel,
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .stat-card,
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .response-card,
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .detail-person-card,
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .detail-results-panel,
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .table-card,
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .table-wrap,
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .content-card,
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .content-panel,
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .filter-bar{
+  background:#FFFFFF!important;
+  color:#172033!important;
+  border-color:#D9E4EF!important;
+  box-shadow:0 4px 16px rgba(20,42,67,.045)!important;
+}
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) table thead th,
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .table-head,
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .table-header{
+  background:#F4F8FF!important;color:#4B6580!important;border-color:#D9E4EF!important;
+}
+#pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) table tbody td{
+  color:#334155!important;border-color:#E2E8F0!important;
+}
+html.principal-theme-dark #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard){
+  background:#0A192F!important;color:#E0E6F0!important;
+}
+html.principal-theme-dark #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard)::before{
+  background:#0F1F3D!important;border-color:rgba(255,255,255,.10)!important;
+  box-shadow:0 4px 20px rgba(0,0,0,.20)!important;
+}
+html.principal-theme-dark #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .page-title,
+html.principal-theme-dark #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .page-header h1,
+html.principal-theme-dark #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .section-title{color:#F8FAFC!important;}
+html.principal-theme-dark #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .page-sub,
+html.principal-theme-dark #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .page-header p,
+html.principal-theme-dark #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .muted,
+html.principal-theme-dark #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .helper{color:#A0B3C6!important;}
+html.principal-theme-dark #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .section,
+html.principal-theme-dark #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .card,
+html.principal-theme-dark #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .panel,
+html.principal-theme-dark #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .profile-card,
+html.principal-theme-dark #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .tracker-card,
+html.principal-theme-dark #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .de-panel,
+html.principal-theme-dark #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .stat-card,
+html.principal-theme-dark #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .response-card,
+html.principal-theme-dark #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .detail-person-card,
+html.principal-theme-dark #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .detail-results-panel,
+html.principal-theme-dark #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .table-card,
+html.principal-theme-dark #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .table-wrap,
+html.principal-theme-dark #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .content-card,
+html.principal-theme-dark #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .content-panel,
+html.principal-theme-dark #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard) .filter-bar{
+  background:#172A45!important;color:#E0E6F0!important;
+  border-color:rgba(255,255,255,.09)!important;box-shadow:0 4px 20px rgba(0,0,0,.24)!important;
+}
+@media(max-width:768px){
+  #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard)::before{top:8px!important;left:8px!important;right:8px!important;border-radius:12px 12px 0 0!important;}
+}
+@media print{
+  #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard){background:#FFFFFF!important;}
+  #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard)::before{background:#FFFFFF!important;border-color:transparent!important;box-shadow:none!important;}
+}
+
+/* Dashboard-matched workspace wrapper for Evaluate Others and Evaluation Received.
+   Keep the Principal's original navy sidebar and amber/gold identity. */
+#pbiPrincipalTopbar ~ main.principal-feature-page::before{
+  display:none!important;content:none!important;
+}
+#pbiPrincipalTopbar ~ main.principal-feature-page{
+  background:#F3F6FB!important;
+  color:#172033!important;
+  padding:28px!important;
+}
+#principalFeatureWorkspace{
+  box-sizing:border-box!important;
+  display:block!important;
+  width:100%!important;
+  max-width:1680px!important;
+  min-width:0!important;
+  min-height:calc(100vh - 112px)!important;
+  margin:0 auto!important;
+  padding:27px 32px 34px!important;
+  background:#FFFFFF!important;
+  color:#172033!important;
+  border:1px solid #DFE7F0!important;
+  border-radius:23px!important;
+  box-shadow:0 2px 10px rgba(15,23,42,.025)!important;
+}
+#principalFeatureWorkspace *{box-sizing:border-box;}
+#principalFeatureWorkspace .principal-feature-header-row{
+  display:flex!important;align-items:flex-start!important;justify-content:space-between!important;
+  gap:18px 24px!important;flex-wrap:wrap!important;margin:0 0 24px!important;
+}
+#principalFeatureWorkspace .principal-feature-heading{flex:1 1 420px!important;min-width:0!important;margin:0!important;padding:0!important;background:transparent!important;border:0!important;box-shadow:none!important;}
+#principalFeatureWorkspace .principal-feature-eyebrow{
+  display:flex!important;align-items:center!important;gap:9px!important;margin:0 0 4px!important;
+  color:#B8801F!important;font-family:'DM Sans',sans-serif!important;font-size:12px!important;
+  font-weight:800!important;letter-spacing:1.25px!important;line-height:1.4!important;text-transform:uppercase!important;
+}
+#principalFeatureWorkspace .principal-feature-eyebrow i{color:#B8801F!important;font-size:13px!important;}
+#principalFeatureWorkspace .principal-feature-heading h1{
+  margin:0!important;color:#10223B!important;font-family:'Rajdhani',sans-serif!important;
+  font-size:clamp(26px,2vw,34px)!important;font-weight:700!important;letter-spacing:.25px!important;line-height:1.18!important;
+}
+#principalFeatureWorkspace .principal-feature-heading p{
+  margin:6px 0 0!important;color:#64748B!important;font-family:'DM Sans',sans-serif!important;
+  font-size:14px!important;line-height:1.55!important;
+}
+#principalFeatureWorkspace .principal-feature-header-meta{display:flex!important;align-items:center!important;justify-content:flex-end!important;gap:10px!important;flex:0 1 auto!important;padding-top:22px!important;}
+#principalFeatureWorkspace .principal-feature-term-picker{margin:5px 0 0!important;}
+#principalFeatureWorkspace .de-section-label{margin-top:6px!important;}
+#principalFeatureWorkspace .de-cat,
+#principalFeatureWorkspace .de-panel,
+#principalFeatureWorkspace .stat-card,
+#principalFeatureWorkspace .section{box-shadow:0 3px 12px rgba(15,23,42,.04)!important;}
+#principalFeatureWorkspace .de-panel{border-radius:16px!important;}
+#principalFeatureWorkspace .section{border-radius:16px!important;}
+html.principal-theme-dark #principalFeatureWorkspace{background:#0F1F3D!important;color:#E0E6F0!important;border-color:rgba(255,255,255,.12)!important;}
+html.principal-theme-dark #principalFeatureWorkspace .principal-feature-heading h1{color:#F8FAFC!important;}
+html.principal-theme-dark #principalFeatureWorkspace .principal-feature-heading p{color:#A0B3C6!important;}
+html.principal-theme-dark #principalFeatureWorkspace .principal-feature-eyebrow,
+html.principal-theme-dark #principalFeatureWorkspace .principal-feature-eyebrow i{color:#F0B84D!important;}
+@media(max-width:1100px){
+  #principalFeatureWorkspace{padding:24px!important;}
+}
+@media(max-width:768px){
+  #pbiPrincipalTopbar ~ main.principal-feature-page{padding:18px 12px 26px!important;}
+  #principalFeatureWorkspace{min-height:0!important;padding:22px 18px 25px!important;border-radius:16px!important;}
+  #principalFeatureWorkspace .principal-feature-header-meta{padding-top:0!important;justify-content:flex-start!important;}
+}
+@media(max-width:520px){
+  #principalFeatureWorkspace{padding:19px 14px 22px!important;}
+  #principalFeatureWorkspace .principal-feature-heading-row{gap:12px!important;}
+}
 </style>
         <?php
     }
@@ -50,8 +284,42 @@ if (!function_exists('principal_sidebar_assets')) {
 
 if (!function_exists('render_principal_sidebar')) {
     function render_principal_sidebar(string $active, array $me, string $scopeLabel, string $photo_src): void {
+        static $principalShellRendered = false;
+        if ($principalShellRendered) return;
+        $principalShellRendered = true;
         principal_sidebar_assets();
         if ($active === 'evaluation') $active = 'evaluations';
+
+        $headerTitles = [
+            'dashboard' => 'Dashboard',
+            'evaluations' => 'Evaluate Others',
+            'tracker' => 'Evaluation Tracker',
+            'results' => 'Evaluation Received',
+            'reports' => 'Evaluation Reports',
+            'settings' => 'Settings',
+            'teachers' => 'Teachers',
+            'staff' => 'School Staff',
+        ];
+        $headerTitle = $headerTitles[$active] ?? 'Principal Workspace';
+        $headerSettings = isset($GLOBALS['settings']) && is_array($GLOBALS['settings']) ? $GLOBALS['settings'] : [];
+        $headerPeriodParts = [];
+        foreach ([
+            $headerSettings['academic_year'] ?? '',
+            $headerSettings['academic_term'] ?? $headerSettings['semester'] ?? '',
+        ] as $part) {
+            $part = trim((string)$part);
+            if ($part !== '') $headerPeriodParts[] = $part;
+        }
+        if (!$headerPeriodParts && isset($GLOBALS['period']) && is_array($GLOBALS['period'])) {
+            $fallbackPeriod = trim((string)($GLOBALS['period']['period_label'] ?? $GLOBALS['period']['semester'] ?? ''));
+            if ($fallbackPeriod !== '') $headerPeriodParts[] = $fallbackPeriod;
+        }
+        $headerPeriodLabel = implode(' · ', $headerPeriodParts);
+        $headerStatusData = isset($headerSettings['status']) && is_array($headerSettings['status']) ? $headerSettings['status'] : [];
+        $headerStatus = strtolower((string)($headerStatusData['cls'] ?? 'gray'));
+        if (!in_array($headerStatus, ['open', 'closed', 'amber', 'gray'], true)) $headerStatus = 'gray';
+        $headerStatusLabel = trim((string)($headerStatusData['label'] ?? ''));
+        $headerUserId = (int)($_SESSION['user_id'] ?? 0);
 
         $fullName = (string)($me['full_name'] ?? 'Principal');
         $parts = preg_split('/\s+/', trim($fullName));
@@ -62,7 +330,7 @@ if (!function_exists('render_principal_sidebar')) {
             'dashboard'   => ['principal_dashboard.php',          'fa-house',            'Dashboard'],
             'evaluations' => ['principal_evaluations.php',        'fa-clipboard-list',   'Evaluate Others'],
             'tracker'     => ['principal_evaluation_tracker.php', 'fa-satellite-dish',   'Evaluation Tracker'],
-            'results'     => ['principal_results.php',            'fa-chart-bar',        "Feedback's Received"],
+            'results'     => ['principal_results.php',            'fa-chart-bar',        "Evaluation Received"],
             'reports'     => ['principal_reports.php',             'fa-chart-line',      'Evaluation Reports'],
             'settings'    => ['principal_account_settings.php',   'fa-gear',            'Settings'],
         ];
@@ -71,8 +339,7 @@ if (!function_exists('render_principal_sidebar')) {
     <div class="portal-brand sidebar-brand">
         <div class="portal-brand-logo"><img src="../image/pbi_logo" alt="PBI" onerror="this.style.display='none'"/></div>
         <div class="portal-brand-copy">
-            <strong>Principal Portal</strong>
-            <span>Evaluation Workspace</span>
+            <strong>Principal Workspace</strong>
         </div>
     </div>
 
@@ -106,11 +373,211 @@ if (!function_exists('render_principal_sidebar')) {
     </nav>
 
     <div class="sidebar-footer">
-        <a href="../logout.php" class="btn-logout-side" onclick="return confirm('Log out of your principal session?')">
+        <a href="../logout.php" class="btn-logout-side" onclick="return principalLogoutPrompt(event)">
             <i class="fa-solid fa-power-off"></i><span>Log Out</span>
         </a>
     </div>
 </aside>
+
+<nav id="pbiPrincipalTopbar" aria-label="Principal page header">
+    <div class="pbi-topbar-left">
+        <button type="button" class="pbi-topbar-hamburger" id="pbiPrincipalMenuBtn" aria-label="Open navigation" aria-expanded="false">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+        <div class="pbi-topbar-title"><?= htmlspecialchars($headerTitle, ENT_QUOTES, 'UTF-8') ?></div>
+    </div>
+    <div class="pbi-topbar-right">
+        <?php if ($headerPeriodLabel !== ''): ?>
+        <div class="pbi-topbar-period <?= htmlspecialchars($headerStatus, ENT_QUOTES, 'UTF-8') ?>" title="<?= htmlspecialchars($headerPeriodLabel . ($headerStatusLabel !== '' ? ' — ' . $headerStatusLabel : ''), ENT_QUOTES, 'UTF-8') ?>">
+            <i class="fa-solid fa-calendar-check"></i>
+            <span><?= htmlspecialchars($headerPeriodLabel, ENT_QUOTES, 'UTF-8') ?></span>
+        </div>
+        <?php endif; ?>
+        <div class="pbi-topbar-bell-wrap" id="pbiPrincipalHeaderBell">
+            <button type="button" class="pbi-topbar-bell" id="pbiPrincipalHeaderBellBtn" aria-label="Notifications" aria-haspopup="true" aria-expanded="false">
+                <i class="fa-regular fa-bell"></i>
+                <span class="pbi-topbar-count" id="pbiPrincipalHeaderBellCount">0</span>
+            </button>
+            <div class="pbi-topbar-panel" id="pbiPrincipalHeaderBellPanel" role="dialog" aria-label="Notifications">
+                <div class="pbi-topbar-panel-head">
+                    <strong><i class="fa-solid fa-bell" style="color:#B8801F;margin-right:6px;"></i>Notifications</strong>
+                    <button type="button" class="pbi-topbar-mark-read" id="pbiPrincipalHeaderMarkRead">Mark all read</button>
+                </div>
+                <ul class="pbi-topbar-list" id="pbiPrincipalHeaderBellList"></ul>
+                <div class="pbi-topbar-foot" id="pbiPrincipalHeaderBellFoot">Checking for updates…</div>
+            </div>
+        </div>
+    </div>
+</nav>
+<script>
+(function(){
+    const topbar = document.getElementById('pbiPrincipalTopbar');
+    const sidebar = document.getElementById('pbiSidebar');
+    const menuBtn = document.getElementById('pbiPrincipalMenuBtn');
+    const bell = document.getElementById('pbiPrincipalHeaderBell');
+    const bellBtn = document.getElementById('pbiPrincipalHeaderBellBtn');
+    const bellPanel = document.getElementById('pbiPrincipalHeaderBellPanel');
+    const bellCount = document.getElementById('pbiPrincipalHeaderBellCount');
+    const bellList = document.getElementById('pbiPrincipalHeaderBellList');
+    const markReadBtn = document.getElementById('pbiPrincipalHeaderMarkRead');
+    const bellFoot = document.getElementById('pbiPrincipalHeaderBellFoot');
+    if (!topbar || !sidebar || !bell || !bellBtn || !bellPanel || !bellList) return;
+
+    const endpoint = 'principal_notifications.php';
+    const storeKey = 'pbi_principal_notifications_<?= $headerUserId ?>';
+    const iconMap = { warn: 'fa-triangle-exclamation', good: 'fa-circle-check', info: 'fa-circle-info' };
+    let stored = [];
+    try {
+        const saved = JSON.parse(localStorage.getItem(storeKey) || '[]');
+        if (Array.isArray(saved)) stored = saved.filter(n => n && n.id && n.text);
+    } catch (e) {}
+
+    function save(){ try { localStorage.setItem(storeKey, JSON.stringify(stored.slice(0, 40))); } catch (e) {} }
+    function updateCount(){
+        const count = stored.filter(n => !n.read).length;
+        bellCount.textContent = count > 9 ? '9+' : String(count);
+        bellCount.classList.toggle('show', count > 0);
+    }
+    function render(items){
+        const byId = new Map(stored.map(n => [String(n.id), n]));
+        (Array.isArray(items) ? items : []).forEach(raw => {
+            if (!raw || raw.id == null || !String(raw.text || '').trim()) return;
+            const id = String(raw.id);
+            const level = Object.prototype.hasOwnProperty.call(iconMap, raw.level) ? raw.level : 'info';
+            const prior = byId.get(id);
+            byId.set(id, { id, text: String(raw.text), level, icon: /^fa-[a-z0-9-]+$/.test(raw.icon || '') ? raw.icon : '', created_at: raw.created_at || (prior && prior.created_at) || new Date().toISOString(), read: prior ? !!prior.read : false });
+        });
+        stored = Array.from(byId.values()).sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)).slice(0, 40);
+        save();
+        bellList.innerHTML = '';
+        if (!stored.length) {
+            const empty = document.createElement('li');
+            empty.className = 'pbi-topbar-empty';
+            empty.textContent = 'No notifications right now.';
+            bellList.appendChild(empty);
+        } else {
+            stored.forEach(item => {
+                const li = document.createElement('li');
+                li.dataset.id = String(item.id);
+                if (!item.read) li.classList.add('unseen');
+                const icon = document.createElement('i');
+                icon.className = 'fa-solid ' + (item.icon || iconMap[item.level] || iconMap.info);
+                const label = document.createElement('span');
+                label.textContent = item.text;
+                li.append(icon, label);
+                bellList.appendChild(li);
+            });
+        }
+        updateCount();
+    }
+    async function poll(){
+        try {
+            const response = await fetch(endpoint + '?_=' + Date.now(), { headers: { 'Accept': 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
+            if (response.status === 401) { bellFoot.textContent = 'Session expired — reload this page'; return; }
+            if (!response.ok) throw new Error('http ' + response.status);
+            const data = await response.json();
+            if (!data || !data.ok) throw new Error('feed unavailable');
+            render(data.items || data.notifications || []);
+            bellFoot.textContent = 'Updated ' + new Date((data.ts || Date.now()/1000) * 1000).toLocaleTimeString();
+        } catch (e) { bellFoot.textContent = 'Offline — retrying'; }
+    }
+    if (menuBtn) menuBtn.addEventListener('click', function(){
+        const isOpen = sidebar.classList.toggle('open');
+        menuBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        menuBtn.setAttribute('aria-label', isOpen ? 'Close navigation' : 'Open navigation');
+    });
+    bellBtn.addEventListener('click', function(event){
+        event.stopPropagation();
+        const isOpen = bellPanel.classList.toggle('open');
+        bellBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        if (isOpen) poll();
+    });
+    markReadBtn.addEventListener('click', function(event){
+        event.stopPropagation();
+        stored = stored.map(n => Object.assign({}, n, { read: true }));
+        save();
+        render(stored);
+    });
+    bellList.addEventListener('click', function(event){
+        const item = event.target.closest('li[data-id]');
+        if (!item) return;
+        stored = stored.map(n => String(n.id) === item.dataset.id ? Object.assign({}, n, { read: true }) : n);
+        save();
+        render(stored);
+    });
+    document.addEventListener('click', function(event){
+        if (!bell.contains(event.target)) { bellPanel.classList.remove('open'); bellBtn.setAttribute('aria-expanded', 'false'); }
+        if (window.matchMedia('(max-width: 900px)').matches && !sidebar.contains(event.target) && !(menuBtn && menuBtn.contains(event.target))) {
+            sidebar.classList.remove('open');
+            if (menuBtn) menuBtn.setAttribute('aria-expanded', 'false');
+        }
+    });
+    document.addEventListener('keydown', function(event){
+        if (event.key === 'Escape') {
+            bellPanel.classList.remove('open'); bellBtn.setAttribute('aria-expanded', 'false');
+            sidebar.classList.remove('open'); if (menuBtn) menuBtn.setAttribute('aria-expanded', 'false');
+        }
+    });
+    render(stored);
+    poll();
+    setInterval(function(){ if (!document.hidden) poll(); }, 10000);
+    document.addEventListener('visibilitychange', function(){ if (!document.hidden) poll(); });
+})();
+</script>
+        <?php
+        // Custom logout confirmation. The browser's native confirm() always prints a
+        // "<site> says" header that cannot be removed, so we use an in-page modal instead.
+        // It sits outside the fixed sidebar so it always overlays the whole page, and it is
+        // only printed once even if the sidebar is rendered from several code paths.
+        static $logoutModalPrinted = false;
+        if (!$logoutModalPrinted) {
+            $logoutModalPrinted = true;
+            ?>
+<style>
+#principalLogoutModal{position:fixed;inset:0;z-index:100000;display:none;align-items:center;justify-content:center;background:rgba(3,10,22,.65);backdrop-filter:blur(3px);}
+#principalLogoutModal.open{display:flex;}
+#principalLogoutModal .plm-box{width:min(380px,90vw);background:#172A45;color:#E0E6F0;border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.55);font-family:'DM Sans',sans-serif;}
+#principalLogoutModal .plm-title{font-size:18px;font-weight:700;color:#fff;margin:0 0 6px;}
+#principalLogoutModal .plm-text{font-size:14px;color:#A0B3C6;margin:0 0 20px;}
+#principalLogoutModal .plm-actions{display:flex;justify-content:flex-end;gap:10px;}
+#principalLogoutModal button{font-family:inherit;font-size:14px;font-weight:600;padding:9px 18px;border-radius:10px;cursor:pointer;border:1px solid rgba(255,255,255,.12);}
+#principalLogoutModal .plm-cancel{background:transparent;color:#E0E6F0;}
+#principalLogoutModal .plm-cancel:hover{background:rgba(255,255,255,.06);}
+#principalLogoutModal .plm-ok{background:#D99A2B;border-color:#D99A2B;color:#0A192F;}
+#principalLogoutModal .plm-ok:hover{background:#E8AC3E;border-color:#E8AC3E;}
+</style>
+<div id="principalLogoutModal" role="dialog" aria-modal="true" aria-labelledby="plmTitle">
+    <div class="plm-box">
+        <h3 class="plm-title" id="plmTitle">Log out</h3>
+        <p class="plm-text">Log out of your principal session?</p>
+        <div class="plm-actions">
+            <button type="button" class="plm-cancel" id="plmCancel">Cancel</button>
+            <button type="button" class="plm-ok" id="plmOk">Log Out</button>
+        </div>
+    </div>
+</div>
+<script>
+function principalLogoutPrompt(e) {
+    if (e) e.preventDefault();
+    var m = document.getElementById('principalLogoutModal');
+    var link = document.querySelector('.btn-logout-side');
+    var href = link ? link.getAttribute('href') : '../logout.php';
+    if (!m) { window.location.href = href; return false; }
+    var close = function () { m.classList.remove('open'); };
+    m.classList.add('open');
+    document.getElementById('plmCancel').onclick = close;
+    document.getElementById('plmOk').onclick = function () { window.location.href = href; };
+    m.onclick = function (ev) { if (ev.target === m) close(); };
+    document.addEventListener('keydown', function esc(ev) {
+        if (ev.key === 'Escape') { close(); document.removeEventListener('keydown', esc); }
+    });
+    document.getElementById('plmCancel').focus();
+    return false;
+}
+</script>
+            <?php
+        }
+        ?>
         <?php
     }
 }

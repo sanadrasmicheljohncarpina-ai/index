@@ -416,7 +416,7 @@ body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,
 @media(max-width:768px){.eval-table th:not(:first-child){width:48px}.eval-rating-cell label{width:32px;height:30px}.eval-qtext{font-size:13px}}
 
 </style>
-<link rel="stylesheet" href="includes/dean_light_theme.css"/>
+<link rel="stylesheet" href="includes/dean_light_theme.css?v=dashboard-ui-20261009"/>
 <style>
 /* Evaluation page: keep the sidebar fixed and scroll the feature workspace internally. */
 html.eval-scroll-lock,
@@ -642,5 +642,5 @@ include __DIR__ . '/includes/dean_sidebar.php';
 </script>
 <script src="../admin/eval_status_poll.js" defer></script>
 </body>
-<link rel="stylesheet" href="includes/dean_light_theme.css" id="dean-light-theme-final"/>
+<link rel="stylesheet" href="includes/dean_light_theme.css?v=dashboard-ui-20261009" id="dean-light-theme-final"/>
 </html>

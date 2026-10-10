@@ -23,50 +23,89 @@ session_write_close();
 $settings = get_system_settings($mysqli);
 $periodId = (int)($settings['period_id'] ?? 0);
 $activeEval = $_GET['eval_type'] ?? 'student';
-if (!in_array($activeEval, ['student','peer'], true)) $activeEval = 'student';
+if (!in_array($activeEval, ['student','peer','staff'], true)) $activeEval = 'student';
 $group = $_GET['group'] ?? 'All';
 // Peer-to-Peer is JHS/SHS teachers only and has no Faculty/Staff split.
-if ($activeEval === 'peer') $group = 'All';
+if (in_array($activeEval, ['peer','staff'], true)) $group = 'All';
 
 $hsLevels = "'Grade 7','Grade 8','Grade 9','Grade 10','Grade 11','Grade 12','Grade 7 - JHS','Grade 8 - JHS','Grade 9 - JHS','Grade 10 - JHS','Grade 11 - SHS','Grade 12 - SHS'";
 $hsScope = "(
     EXISTS (SELECT 1 FROM user_year_levels s1 WHERE s1.user_id=u.id AND s1.year_level IN ($hsLevels))
     OR EXISTS (SELECT 1 FROM teaching_assignments s2 WHERE s2.user_id=u.id AND s2.year_level IN ($hsLevels))
+    OR TRIM(COALESCE(u.year_level,'')) IN ($hsLevels)
+    OR LOWER(TRIM(COALESCE(u.year_level,''))) IN ('jhs','shs','junior high school','senior high school')
+    OR LOWER(TRIM(COALESCE(u.education_level,''))) IN ('junior_high','senior_high','jhs','shs')
 )";
 $anyTeaching = "(
     EXISTS (SELECT 1 FROM user_year_levels a1 WHERE a1.user_id=u.id)
     OR EXISTS (SELECT 1 FROM teaching_assignments a2 WHERE a2.user_id=u.id)
+    OR TRIM(COALESCE(u.year_level,'')) <> ''
+    OR LOWER(TRIM(COALESCE(u.education_level,''))) IN ('junior_high','senior_high','jhs','shs')
 )";
 $scope = "((
     (u.role IN ('teacher','faculty') AND $hsScope)
     OR (u.role='staff' AND ($hsScope OR NOT $anyTeaching))
 ) AND u.role NOT IN ('principal','dean','superadmin') AND u.id <> $meId)";
 
-switch ($group) {
-    case 'Faculty':
-    case 'Teacher':
-        $whereRole = "((u.role IN ('teacher','faculty') OR u.sector='Teacher' OR $anyTeaching) AND $hsScope)";
-        break;
-    case 'Staff':
-        $whereRole = "(u.role='staff' AND NOT $anyTeaching)";
-        break;
-    default:
-        $whereRole = "u.role IN ('teacher','faculty','staff')";
-        break;
+$eaRolesSql = "'ea','executive_assistant','admin','superadmin'";
+$eaTargetPredicate = "(u.role IN ($eaRolesSql) OR LOWER(TRIM(COALESCE(u.designation,'')))='executive assistant')";
+if ($activeEval === 'staff') {
+    $whereRole = $eaTargetPredicate;
+    $scope = "(u.is_active=1 AND $eaTargetPredicate AND u.role NOT IN ('principal','dean') AND u.id <> $meId)";
+} else {
+    switch ($group) {
+        case 'Faculty':
+        case 'Teacher':
+            $whereRole = "((u.role IN ('teacher','faculty') OR u.sector='Teacher' OR $anyTeaching) AND $hsScope)";
+            break;
+        case 'Staff':
+            $whereRole = "(u.role='staff' AND NOT $anyTeaching)";
+            break;
+        default:
+            $whereRole = "u.role IN ('teacher','faculty','staff')";
+            break;
+    }
 }
 
+$hsTeacherIds = "SELECT ht.id FROM users ht
+    WHERE ht.role IN ('teacher','faculty','staff')
+      AND (
+          EXISTS (SELECT 1 FROM user_year_levels h1 WHERE h1.user_id=ht.id AND h1.year_level IN ($hsLevels))
+          OR EXISTS (SELECT 1 FROM teaching_assignments h2 WHERE h2.user_id=ht.id AND h2.year_level IN ($hsLevels))
+          OR TRIM(COALESCE(ht.year_level,'')) IN ($hsLevels)
+          OR LOWER(TRIM(COALESCE(ht.year_level,''))) IN ('jhs','shs','junior high school','senior high school')
+          OR LOWER(TRIM(COALESCE(ht.education_level,''))) IN ('junior_high','senior_high','jhs','shs')
+      )";
+$peerEvaluatorIds = "SELECT pe.id FROM users pe
+    WHERE pe.role IN ('teacher','faculty')
+       OR (pe.role='staff' AND EXISTS (
+            SELECT 1 FROM user_year_levels peyl WHERE peyl.user_id=pe.id
+       ))";
+$nonTeachingStaffIds = "SELECT nts.id FROM users nts WHERE nts.role='staff'
+    AND NOT EXISTS (SELECT 1 FROM user_year_levels ntyl WHERE ntyl.user_id=nts.id)";
+$eaTargetIds = "SELECT eat.id FROM users eat WHERE eat.role IN ($eaRolesSql)
+    OR LOWER(TRIM(COALESCE(eat.designation,'')))='executive assistant'";
+
 if ($activeEval === 'peer') {
-    // Must stay identical to $peerEvalSql in principal_reports.php: both the
-    // evaluator and the evaluated person are JHS/SHS teachers.
-    $hsTeacherIds = "SELECT ht.id FROM users ht
-        WHERE ht.role IN ('teacher','faculty','staff')
-          AND (
-              EXISTS (SELECT 1 FROM user_year_levels h1 WHERE h1.user_id=ht.id AND h1.year_level IN ($hsLevels))
-              OR EXISTS (SELECT 1 FROM teaching_assignments h2 WHERE h2.user_id=ht.id AND h2.year_level IN ($hsLevels))
-          )";
-    $evalClause = "et.eval_type IN ('peer','faculty_peer','staff_peer')
-        AND et.evaluator_id IN ($hsTeacherIds)
+    // Match the actual faculty/staff submit flow: peer submissions are stored
+    // as faculty_peer; the other values remain supported for legacy data.
+    $evalClause = "(
+            et.eval_type IN ('peer','faculty_peer','staff_peer')
+            OR LOWER(TRIM(COALESCE(et.peer_group,''))) IN ('faculty','teacher','staff','teaching staff')
+        )
+        AND et.status IN ('submitted','approved')
+        AND et.evaluator_id IN ($peerEvaluatorIds)
         AND et.target_user_id IN ($hsTeacherIds)";
+} elseif ($activeEval === 'staff') {
+    // Non-teaching Staff -> Executive Assistant submissions use eval_type='staff'
+    // and peer_group='Staff Evaluation'; retain the app's known legacy values.
+    $evalClause = "(
+            et.eval_type='staff'
+            OR LOWER(TRIM(COALESCE(et.peer_group,'')))='staff evaluation'
+        )
+        AND et.status IN ('submitted','approved')
+        AND et.evaluator_id IN ($nonTeachingStaffIds)
+        AND et.target_user_id IN ($eaTargetIds)";
 } else {
     // Must stay identical to $principalStudentEvaluatorSql in principal_reports.php.
     $evalClause = "et.eval_type='student'
@@ -83,25 +122,21 @@ if ($activeEval === 'peer') {
         AND COALESCE(et.evaluation_context,'teacher') IN ('teacher','staff')";
 }
 
-// Student Evaluation reads the period JHS/SHS students actually submitted in
-// (see "STUDENT EVALUATION PERIOD" in principal_reports.php — keep in sync).
+// Use the configured period while it contains matching data; otherwise fall
+// back to the latest period with a completed matching submission. This covers
+// differences between system settings and evaluation_periods.is_active.
 $queryPeriodId = $periodId;
-if ($activeEval === 'student') {
-    $activeOwner = function_exists('sh_gate_applicable_role') ? sh_gate_applicable_role($settings) : null;
-    if ($activeOwner !== 'principal') {
-        $activeHasData = false;
-        if ($periodId > 0) {
-            $q = $mysqli->query("SELECT 1 FROM evaluation_tracker et WHERE et.period_id=$periodId AND $evalClause LIMIT 1");
-            $activeHasData = $q && $q->num_rows > 0;
-        }
-        if (!$activeHasData) {
-            $q = $mysqli->query("SELECT et.period_id FROM evaluation_tracker et
-                WHERE et.period_id IS NOT NULL AND $evalClause
-                ORDER BY et.submitted_at DESC, et.id DESC LIMIT 1");
-            $latest = $q ? $q->fetch_assoc() : null;
-            if ($latest && (int)$latest['period_id'] > 0) $queryPeriodId = (int)$latest['period_id'];
-        }
-    }
+$activeHasData = false;
+if ($periodId > 0) {
+    $q = $mysqli->query("SELECT 1 FROM evaluation_tracker et WHERE et.period_id=$periodId AND $evalClause LIMIT 1");
+    $activeHasData = $q && $q->num_rows > 0;
+}
+if (!$activeHasData && ($activeEval !== 'student' || (function_exists('sh_gate_applicable_role') && sh_gate_applicable_role($settings) !== 'principal'))) {
+    $q = $mysqli->query("SELECT et.period_id FROM evaluation_tracker et
+        WHERE et.period_id IS NOT NULL AND $evalClause
+        ORDER BY et.submitted_at DESC, et.id DESC LIMIT 1");
+    $latest = $q ? $q->fetch_assoc() : null;
+    if ($latest && (int)$latest['period_id'] > 0) $queryPeriodId = (int)$latest['period_id'];
 }
 
 if ($queryPeriodId <= 0) {

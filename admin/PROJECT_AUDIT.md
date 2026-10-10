@@ -30,12 +30,14 @@ The submitted ZIP contains 51 files under `admin/`, including the PHP feature pa
 - `personnel_registry.php` — personnel registry/maintenance.
 
 ### 4. Evaluation execution
-- `evaluate_questionnaire.php` — questionnaire execution/submission flow.
+- `evaluate_questionnaire.php` — retired legacy form; returns HTTP 410. Student evaluation is handled by the authenticated `../student/student_dashboard.php` workflow.
 - `evaluation_tracker.php` — evaluation tracking/status view.
 - `evaluation_tracker1.php` — alternate/legacy tracker implementation retained in the package.
 - `student_tracker.php` — student-focused tracker view.
 - `ea_evaluation.php` — Executive Assistant evaluation roster.
 - `ea_evaluate.php` — per-person Executive Assistant evaluation form.
+
+The former standalone `faculty/my_evaluations.php` report is also retired and returns HTTP 410. Current faculty and staff results are served from their authenticated dashboards. Both legacy files previously assigned fallback user identities and must not be restored as active pages.
 
 ### 5. Results, reporting, and analytics
 - `admin_analytics.php` — evaluation results/reporting surface; filters by evaluation context/type and target group, with archive/restore-related roster handling.

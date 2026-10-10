@@ -4,6 +4,7 @@
 session_start();
 require_once 'db.php';
 require_once '../shared/system_settings_service.php';
+require_once __DIR__ . '/dean_period_resolver.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -18,7 +19,10 @@ if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'dean') {
 session_write_close();
 
 $settings = get_system_settings($mysqli);
-$periodId = (int)($settings['period_id'] ?? 0);
+// Same set of Higher Ed periods the page itself uses.
+$periodIds = dean_higher_ed_period_ids($mysqli, $settings);
+$periodId  = $periodIds ? (int)max($periodIds) : 0;
+$periodWhere = dean_period_sql($periodIds, 'et.period_id');
 $activeEval = $_GET['eval_type'] ?? 'student';
 if (!in_array($activeEval, ['student','peer'], true)) $activeEval = 'student';
 $group = $_GET['group'] ?? 'All';
@@ -125,7 +129,7 @@ $sql = "SELECT
         FROM evaluation_tracker et
         JOIN users u ON u.id=et.target_user_id
         LEFT JOIN questionnaire_answers qa ON qa.tracker_id=et.id
-        WHERE et.period_id=$periodId
+        WHERE $periodWhere
           AND $evalClause
           AND $whereRole
           AND u.is_active=1

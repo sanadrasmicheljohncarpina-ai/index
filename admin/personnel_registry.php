@@ -1,7 +1,18 @@
 <?php
-// admin/add_personnels.php
-session_start();
-require_once 'db.php';
+// admin/personnel_registry.php
+require_once 'session_bootstrap.php';   // starts session, connects DB, requires a logged-in admin-area user
+// Login + role gate: only admin / superadmin may use this page.
+if (!in_array($_SESSION['role'] ?? '', ['admin','superadmin'], true)) {
+    header('Location: admin_login.php');
+    exit;
+}
+require_once 'permissions.php';
+$can_edit = admin_can_edit($mysqli, 'personnel_registry');
+// Every write (add / edit / assign / toggle / delete) needs edit rights; view-only admins can only look.
+if (!$can_edit && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_GET['delete_id']) || isset($_GET['toggle_id']))) {
+    http_response_code(403);
+    exit('View-only access: you do not have permission to change the Personnel Registry.');
+}
 
 $UPLOAD_DIR = defined('UPLOAD_DIR') ? UPLOAD_DIR : '../image/';
 $UPLOAD_URL = defined('UPLOAD_URL') ? UPLOAD_URL : '../image/';
@@ -49,7 +60,7 @@ if (isset($_GET['delete_id'])) {
             $_SESSION['toast_error'] = "Cannot delete login accounts from this page.";
         }
     }
-    header("Location: add_personnels.php?sector=" . urlencode($viewSector)); exit;
+    header("Location: personnel_registry.php?sector=" . urlencode($viewSector)); exit;
 }
 
 // ── TOGGLE VISIBILITY ────────────────────────────────────────
@@ -57,7 +68,7 @@ if (isset($_GET['toggle_id'])) {
     $id = intval($_GET['toggle_id']);
     $mysqli->query("UPDATE users SET is_active = IF(is_active=1,0,1) WHERE id=$id AND source='admin_nologin'");
     $_SESSION['toast'] = "Visibility updated.";
-    header("Location: add_personnels.php?sector=" . urlencode($viewSector)); exit;
+    header("Location: personnel_registry.php?sector=" . urlencode($viewSector)); exit;
 }
 
 // ── ASSIGN DESIGNATION(S) — now supports comma-separated Teacher/Staff ──
@@ -72,7 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'assig
 
     $mysqli->query("UPDATE users SET designation='$desig' WHERE id=$uid AND source='admin_nologin'");
     $_SESSION['toast'] = "Designation updated to '" . ($desig ?: '—') . "'.";
-    header("Location: add_personnels.php?sector=" . urlencode($viewSector)); exit;
+    header("Location: personnel_registry.php?sector=" . urlencode($viewSector)); exit;
 }
 
 // ── ADD PERSONNEL ────────────────────────────────────────────
@@ -112,7 +123,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_p
         $_SESSION['toast_error'] = "Failed to add: " . $stmt->error;
     }
     $stmt->close();
-    header("Location: add_personnels.php?sector=" . urlencode($viewSector)); exit;
+    header("Location: personnel_registry.php?sector=" . urlencode($viewSector)); exit;
 }
 
 // ── EDIT PERSONNEL ───────────────────────────────────────────
@@ -152,7 +163,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
     $stmt->execute();
     $stmt->close();
     $_SESSION['toast'] = "'$full_name' updated successfully.";
-    header("Location: add_personnels.php?sector=" . urlencode($viewSector)); exit;
+    header("Location: personnel_registry.php?sector=" . urlencode($viewSector)); exit;
 }
 
 // Personnel created directly by the EA are trusted records, not self-registered
@@ -441,7 +452,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
 <div class="sector-tabs">
     <?php foreach (['Faculty'=>['fa-chalkboard-user','tab-faculty'],'Staff'=>['fa-briefcase','tab-staff']] as $sector => $meta): ?>
     <a class="sector-tab <?= $viewSector===$sector ? 'active '.$meta[1] : '' ?>"
-       href="add_personnels.php?sector=<?= $sector ?>">
+       href="personnel_registry.php?sector=<?= $sector ?>">
         <i class="fa-solid <?= $meta[0] ?>"></i> <?= $sector ?>
         <span class="tab-badge"><?= $counts[$sector] ?></span>
     </a>
@@ -531,7 +542,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
                         <i class="fa-solid fa-plus"></i>
                     </button>
                 </div>
-                <form method="POST" action="add_personnels.php?sector=<?= urlencode($viewSector) ?>">
+                <form method="POST" action="personnel_registry.php?sector=<?= urlencode($viewSector) ?>">
                     <input type="hidden" name="action"      value="assign_desig"/>
                     <input type="hidden" name="user_id"     value="<?= $u['id'] ?>"/>
                     <input type="hidden" name="designation" class="tag-hidden"
@@ -564,7 +575,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
                 </button>
                 <button class="btn-icon toggle"
                         title="<?= $u['is_active'] ? 'Hide' : 'Show' ?>"
-                        onclick="window.location.href='add_personnels.php?sector=<?= urlencode($viewSector) ?>&toggle_id=<?= $u['id'] ?>'">
+                        onclick="window.location.href='personnel_registry.php?sector=<?= urlencode($viewSector) ?>&toggle_id=<?= $u['id'] ?>'">
                     <i class="fa-solid <?= $u['is_active'] ? 'fa-eye-slash' : 'fa-eye' ?>"></i>
                 </button>
                 <button class="btn-icon danger" title="Remove"
@@ -596,7 +607,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
         </div>
         <button class="modal-close" onclick="closeModal('addModal')"><i class="fa-solid fa-xmark"></i></button>
     </div>
-    <form method="POST" action="add_personnels.php?sector=<?= urlencode($viewSector) ?>" enctype="multipart/form-data">
+    <form method="POST" action="personnel_registry.php?sector=<?= urlencode($viewSector) ?>" enctype="multipart/form-data">
         <input type="hidden" name="action" value="add_personnel"/>
         <div class="form-grid">
             <div class="fg" style="grid-column:1/-1;">
@@ -655,7 +666,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
         </div>
         <button class="modal-close" onclick="closeModal('editModal')"><i class="fa-solid fa-xmark"></i></button>
     </div>
-    <form method="POST" action="add_personnels.php?sector=<?= urlencode($viewSector) ?>" enctype="multipart/form-data">
+    <form method="POST" action="personnel_registry.php?sector=<?= urlencode($viewSector) ?>" enctype="multipart/form-data">
         <input type="hidden" name="action"  value="edit_personnel"/>
         <input type="hidden" name="user_id" id="editUserId"/>
         <div class="form-grid">
@@ -845,7 +856,7 @@ function openEditModal(u) {
 function confirmDelete(id, name) {
     document.getElementById('deleteSubText').textContent =
         `Remove "${name}" from the registry? They will no longer appear in the questionnaire.`;
-    _deleteUrl = `add_personnels.php?sector=<?= urlencode($viewSector) ?>&delete_id=${id}`;
+    _deleteUrl = `personnel_registry.php?sector=<?= urlencode($viewSector) ?>&delete_id=${id}`;
     openModal('deleteModal');
 }
 

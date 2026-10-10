@@ -23,9 +23,8 @@
 
 	if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-		$full_name  = trim($_POST['full_name']  ?? '');
+		$full_name  = trim(preg_replace('/\s+/', ' ', $_POST['full_name'] ?? ''));
 		$username   = trim($_POST['username']   ?? '');
-		$email      = trim($_POST['email']      ?? '');
 		$password   = $_POST['password']        ?? '';
 		$confirm_pw = $_POST['confirm_password']?? '';
 		$department = trim($_POST['department'] ?? '');
@@ -37,10 +36,8 @@
 		if (!csrf_valid($_POST['csrf_token'] ?? '')) { $error = "Your session expired. Please try again."; }
 		elseif (empty($full_name))  { $error = "Full name is required."; }
 		elseif (empty($username))  { $error = "Username is required."; }
-		elseif (empty($email))  { $error = "Email address is required."; }
-		elseif (mb_strlen($full_name) > 100 || mb_strlen($username) > 50 || mb_strlen($email) > 254) { $error = "Full name, username or email is too long."; }
+		elseif (mb_strlen($full_name) > 100 || mb_strlen($username) > 50) { $error = "Full name or username is too long."; }
 		elseif (preg_match('/\s/', $username)) { $error = "Username cannot contain spaces."; }
-		elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) { $error = "Please enter a valid email address."; }
 		elseif (empty($department) || !isset($dept_to_level[$department])) { $error = "Please select your school level."; }
 		elseif (empty($password))  { $error = "Password is required."; }
 		elseif (strlen($password) < 8) { $error = "Password must be at least 8 characters."; }
@@ -63,18 +60,6 @@
 				$error = "Username already taken. Please choose another.";
 			}
 			$chk->close();
-
-			// Check duplicate email
-			if (empty($error)) {
-				$chk2 = $mysqli->prepare("SELECT id FROM users WHERE email = ? LIMIT 1");
-				$chk2->bind_param("s", $email);
-				$chk2->execute();
-				$chk2->store_result();
-				if ($chk2->num_rows > 0) {
-					$error = "Email already registered.";
-				}
-				$chk2->close();
-			}
 		}
 
 		// Insert the account and its security answers together (all or nothing)
@@ -84,14 +69,13 @@
 				$mysqli->begin_transaction();
 				$stmt = $mysqli->prepare(
 					"INSERT INTO users
-					 (full_name, username, email, password_hash, role, designation, department, education_level, year_level, is_active)
-					 VALUES (?, ?, ?, ?, 'student', 'Student', ?, ?, ?, 1)"
+					 (full_name, username, password_hash, role, designation, department, education_level, year_level, is_active)
+					 VALUES (?, ?, ?, 'student', 'Student', ?, ?, ?, 1)"
 				);
 				$stmt->bind_param(
-					"sssssss",
+					"ssssss",
 					$full_name,
 					$username,
-					$email,
 					$hash,
 					$department,
 					$education_level,
@@ -112,7 +96,7 @@
 				error_log('student_register failed: ' . $e->getMessage());
 				$duplicate = ($e instanceof mysqli_sql_exception && (int)$e->getCode() === 1062);
 				$error = $duplicate
-					? "That username or email is already registered."
+					? "That username is already registered."
 					: "Registration failed. Please try again in a moment.";
 			}
 		}
@@ -236,9 +220,20 @@ body::before{display:none;}
 
 /* Header: ringed, glowing logo + stronger divider */
 .logo-ring{
-    border:2px solid var(--gold);
-    box-shadow:0 0 0 4px rgba(217,119,6,.12),0 0 24px rgba(217,119,6,.36);
+    width:76px;height:76px;margin:0 auto 14px;
+    border:3px solid var(--gold-edge);
+    box-shadow:0 0 0 5px rgba(251,191,36,.14),0 0 28px rgba(251,191,36,.45);
 }
+.card-header{margin-bottom:20px;}
+.card-title{font-size:22px;letter-spacing:2px;}
+.card-subtitle{font-size:11px;letter-spacing:1.6px;margin-top:5px;}
+.access-badge{
+    display:inline-flex;align-items:center;gap:8px;margin-top:14px;padding:7px 18px;
+    border-radius:999px;border:1px solid rgba(251,191,36,.38);
+    background:rgba(251,191,36,.08);
+    font-size:12px;font-weight:700;letter-spacing:1.3px;text-transform:uppercase;color:var(--gold-edge);
+}
+.access-badge i{font-size:12px;}
 .divider{background:linear-gradient(90deg,transparent,rgba(217,119,6,.55),transparent);}
 
 /* Fields: inset depth, hover lift, glowing focus ring */
@@ -294,6 +289,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid rgb
 			<img class="logo-ring" src="../image/pbi_logo" alt="PBI Logo"/>
 			<div class="card-title">Student Registration</div>
 			<div class="card-subtitle">Pandan Bay Institute Inc.</div>
+			<div class="access-badge"><i class="fa-solid fa-user-graduate"></i> Student Access</div>
 		</div>
 
 		<?php if ($error): ?>
@@ -305,6 +301,18 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid rgb
 
 		<form method="POST" action="student_register.php" id="regForm" autocomplete="on" novalidate>
 			<?= csrf_field() ?>
+			<div class="divider"></div>
+
+			<div class="form-group" style="margin-bottom:15px;">
+				<label class="form-label">Full Name <span class="req">*</span></label>
+				<div class="input-wrap">
+					<input class="form-input" type="text" name="full_name"
+						   placeholder="First Name, M.I. Last Name" autocomplete="name" required
+						   value="<?= htmlspecialchars($_POST['full_name'] ?? '') ?>"/>
+					<i class="fa-solid fa-id-card f-icon"></i>
+				</div>
+			</div>
+
 			<div class="form-group" style="margin-bottom:15px;">
 				<label class="form-label">School Level <span class="req">*</span></label>
 				<div class="input-wrap select-arr">
@@ -317,19 +325,8 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid rgb
 					<i class="fa-solid fa-school f-icon"></i>
 				</div>
 			</div>
-			<div class="divider"></div>
 
 			<div class="form-grid">
-				<div class="form-group full">
-					<label class="form-label">Full Name <span class="req">*</span></label>
-					<div class="input-wrap">
-						<input class="form-input" type="text" name="full_name"
-							   placeholder="Last Name, First Name M.I." required
-							   value="<?= htmlspecialchars($_POST['full_name'] ?? '') ?>"/>
-						<i class="fa-solid fa-id-card f-icon"></i>
-					</div>
-				</div>
-
 				<div class="form-group">
 					<label class="form-label">Year / Grade Level <span class="req">*</span></label>
 					<div class="input-wrap select-arr">
@@ -347,16 +344,6 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid rgb
 							   placeholder="Choose a username" autocomplete="username" required
 							   value="<?= htmlspecialchars($_POST['username'] ?? '') ?>"/>
 						<i class="fa-solid fa-user f-icon"></i>
-					</div>
-				</div>
-
-				<div class="form-group">
-					<label class="form-label">Email Address <span class="req">*</span></label>
-					<div class="input-wrap">
-						<input class="form-input" type="email" name="email"
-							   placeholder="your@email.com" autocomplete="email" required
-							   value="<?= htmlspecialchars($_POST['email'] ?? '') ?>"/>
-						<i class="fa-solid fa-envelope f-icon"></i>
 					</div>
 				</div>
 
@@ -394,7 +381,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid rgb
 					</span>
 				</summary>
 				<div class="sq-content">
-				<p class="sq-note">Choose 3 different questions only you can answer. If you forget your password, you will need to answer all three, so use short answers you will type the same way every time (for example, just a name). Answers are stored encrypted and are not case-sensitive.</p>
+				<p class="sq-note"></p>
 				<div class="sq-item">
 					<div class="input-wrap select-arr">
 						<select class="form-input sq-select" name="sq_question[1]" id="sq_q1" required>
@@ -475,8 +462,6 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid rgb
 		for (const field of form.querySelectorAll('[required]')) {
 			if (!field.value.trim()) { field.focus(); return 'Please fill in every required field.'; }
 		}
-		const email = form.querySelector('[name="email"]');
-		if (email && !email.checkValidity()) { email.focus(); return 'Please enter a valid email address.'; }
 		const username = form.querySelector('[name="username"]');
 		if (username && /\s/.test(username.value.trim())) { username.focus(); return 'Username cannot contain spaces.'; }
 		const pw = document.getElementById('pw1'), pw2 = document.getElementById('pw2');

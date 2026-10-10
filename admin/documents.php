@@ -1,7 +1,11 @@
 <?php
 // admin/documents.php
-session_start();
-require_once 'db.php';
+require_once 'session_bootstrap.php';   // starts session, connects DB, requires a logged-in admin-area user
+// Login + role gate: only admin / superadmin may use this page.
+if (!in_array($_SESSION['role'] ?? '', ['admin','superadmin'], true)) {
+    header('Location: admin_login.php');
+    exit;
+}
 
 // ── AUTO-CREATE TABLE ─────────────────────────────────────────
 $mysqli->query("CREATE TABLE IF NOT EXISTS system_documents (

@@ -205,7 +205,7 @@ table.data tr.hidden-row{display:none;}
 
 @media(max-width:768px){body{flex-direction:column;}.sidebar{width:100%;min-height:auto;}}
 </style>
-<link rel="stylesheet" href="includes/dean_light_theme.css"/>
+<link rel="stylesheet" href="includes/dean_light_theme.css?v=dashboard-ui-20261009"/>
 </head>
 <body>
 
@@ -369,5 +369,5 @@ document.querySelectorAll('#staffTable th[data-key]').forEach(th => {
 applyFilters();
 </script>
 </body>
-<link rel="stylesheet" href="includes/dean_light_theme.css" id="dean-light-theme-final"/>
+<link rel="stylesheet" href="includes/dean_light_theme.css?v=dashboard-ui-20261009" id="dean-light-theme-final"/>
 </html>
