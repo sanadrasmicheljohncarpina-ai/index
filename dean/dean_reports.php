@@ -128,14 +128,17 @@ $_SESSION['dean_reports_schema_v1'] = 1;
 
 // Portal scope: Reports & Analytics is a pixel/function clone of the EA page,
 // but its dataset is restricted to the current executive's education division.
-$reportScopeSql = "(u.role IN ('dean','principal') OR u.role='staff' OR (u.role IN ('teacher','faculty') AND EXISTS (SELECT 1 FROM user_year_levels scope_uyl WHERE scope_uyl.user_id=u.id AND scope_uyl.year_level IN ('1st Year College','2nd Year College','3rd Year College','4th Year College'))))";
+$reportScopeSql = "(u.role='principal' OR u.role='staff' OR (u.role IN ('teacher','faculty') AND EXISTS (SELECT 1 FROM user_year_levels scope_uyl WHERE scope_uyl.user_id=u.id AND (LOWER(TRIM(scope_uyl.year_level)) LIKE '%college%' OR LOWER(TRIM(scope_uyl.year_level)) REGEXP '^(1st|2nd|3rd|4th)[[:space:]]*year([[:space:]]|$)'))))";
 // Student evaluators are independently restricted below to College. Keep the
 // portal's Higher Education scope explicit here as well for any summary queries.
 // ── STAFF EVALUATION (non-teaching staff evaluating the Executive Assistant) ──
 // The EA account role(s). Adjust this list if your EA accounts use a different users.role value.
-$eaRoles = ['ea','executive_assistant','admin'];
+// The Dean's Evaluate Others page identifies the active Executive Assistant
+// as an approved superadmin account. Include that role here or Staff Evaluation
+// will filter out the real target before it reaches the report.
+$eaRoles = ['ea','executive_assistant','admin','superadmin'];
 $eaRolesSql = implode(',', array_map(static fn($r) => "'" . addslashes($r) . "'", $eaRoles));
-$eaScopeSql = "(u.role IN ($eaRolesSql) AND u.is_active=1)";
+$eaScopeSql = "(u.role IN ($eaRolesSql) AND u.is_active=1 AND u.account_status='approved')";
 $reportStudentScopeSql = "(education_level='higher_ed' OR year_level IN ('1st Year College','2nd Year College','3rd Year College','4th Year College'))";
 
 $toast = $_SESSION['toast'] ?? ''; unset($_SESSION['toast']);
@@ -155,9 +158,9 @@ if (!in_array($activeEval, ['student','peer','staff'], true)) $activeEval = 'stu
 
 $groupFilter = $_GET['group'] ?? 'All';
 $allowedGroups = $activeEval === 'student'
-    ? ['All','Faculty','Staff','Dean']
-    : ['All','Faculty','Teacher'];
-if (!in_array($groupFilter, $allowedGroups, true)) $groupFilter = 'All';
+    ? ['All','Faculty','Staff']
+    : ($activeEval === 'peer' ? ['Faculty','Staff'] : ['All','Faculty','Teacher']);
+if (!in_array($groupFilter, $allowedGroups, true)) $groupFilter = $activeEval === 'peer' ? 'Faculty' : 'All';
 if ($activeEval === 'staff') $groupFilter = 'All';
 // Scope used for the people being evaluated: Staff Evaluation targets the EA only.
 $viewScopeSql = $activeEval === 'staff' ? $eaScopeSql : $reportScopeSql;
@@ -203,55 +206,117 @@ $collegeStudentEvaluatorPlainSql = "evaluator_id IN (
       AND (education_level='higher_ed' OR year_level IN ($collegeLevelsSql))
 )";
 
-// IMPORTANT: Dean Peer-to-Peer is College teachers only. Both sides of a peer
-// evaluation (the evaluator AND the person being evaluated) must be teaching
-// personnel assigned to at least one College year level. A Staff-sector account
-// needs an explicit teaching identity (Teacher sector, Teacher/Faculty secondary
-// role, or a teaching_assignments row); a College year-level row alone is not enough.
-$collegeTeacherIdsSql = "SELECT ct.id FROM users ct
+// Match the Dean Evaluate Others gate: a level is College if its label contains
+// "College" or starts with 1st/2nd/3rd/4th Year. Exact IN() matching missed valid
+// legacy labels such as "1st Year" and could hide valid peer submissions.
+$collegeTeacherYearFilterSql = "(LOWER(TRIM(ctyl.year_level)) LIKE '%college%'
+    OR LOWER(TRIM(ctyl.year_level)) REGEXP '^(1st|2nd|3rd|4th)[[:space:]]*year([[:space:]]|$)')";
+
+// Build evaluator-ID expressions from columns that actually exist in this
+// installation. Some schemas only have evaluator_id; never emit SQL referring
+// to a missing student_id column.
+$trackerColumns = [];
+$trackerColumnsRes = $mysqli->query("SHOW COLUMNS FROM evaluation_tracker");
+if ($trackerColumnsRes) {
+    while ($trackerColumn = $trackerColumnsRes->fetch_assoc()) {
+        $trackerColumns[] = (string)$trackerColumn['Field'];
+    }
+    $trackerColumnsRes->free();
+}
+$trackerEvaluatorPartsSql = [];
+$trackerEvaluatorPartsPlainSql = [];
+if (in_array('evaluator_id', $trackerColumns, true)) {
+    $trackerEvaluatorPartsSql[] = 'NULLIF(et.evaluator_id,0)';
+    $trackerEvaluatorPartsPlainSql[] = 'NULLIF(evaluator_id,0)';
+}
+if (in_array('student_id', $trackerColumns, true)) {
+    $trackerEvaluatorPartsSql[] = 'NULLIF(et.student_id,0)';
+    $trackerEvaluatorPartsPlainSql[] = 'NULLIF(student_id,0)';
+}
+$trackerEvaluatorIdSql = count($trackerEvaluatorPartsSql) > 1
+    ? 'COALESCE(' . implode(', ', $trackerEvaluatorPartsSql) . ')'
+    : ($trackerEvaluatorPartsSql[0] ?? 'NULL');
+$trackerEvaluatorIdPlainSql = count($trackerEvaluatorPartsPlainSql) > 1
+    ? 'COALESCE(' . implode(', ', $trackerEvaluatorPartsPlainSql) . ')'
+    : ($trackerEvaluatorPartsPlainSql[0] ?? 'NULL');
+
+// IMPORTANT: Peer-to-Peer mirrors the Faculty portal's Peer Evaluation > Faculty
+// group: a Faculty member rating another Faculty member, where Faculty = every
+// Teacher/Faculty account PLUS every Staff account with an explicit teaching
+// identity (Teaching Staff). Like the Faculty portal, this does NOT depend on the
+// year level(s) taught (Grade 7-12 or College). The evaluator/target roles are
+// the reliable signal; requiring a hard-coded list of eval_type values hid legacy
+// submissions. A Staff account still needs an explicit teaching identity.
+$facultyPeerIdsSql = "SELECT ct.id FROM users ct
     WHERE (
         ct.role IN ('teacher','faculty')
         OR (ct.role='staff' AND (
-            ct.sector='Teacher'
-            OR LOWER(COALESCE(ct.secondary_role,'')) IN ('teacher','faculty')
+            LOWER(TRIM(COALESCE(ct.sector,'')))='teacher'
+            OR LOWER(TRIM(COALESCE(ct.secondary_role,''))) IN ('teacher','faculty')
+            OR LOWER(COALESCE(ct.designation,'')) REGEXP '(^|[^[:alpha:]])(teacher|teaching staff|faculty|instructor|lecturer|professor)([^[:alpha:]]|$)'
             OR EXISTS (SELECT 1 FROM teaching_assignments ctta WHERE ctta.user_id=ct.id)
         ))
-    )
+    )";
+// ── PEER-TO-PEER: two lanes (Faculty / Staff) ──────────────────────
+// Mirrors the faculty portal's Peer Evaluation page. EVALUATORS are Faculty /
+// Teaching Staff who teach College students (a College year level assigned).
+// TARGETS depend on the lane the evaluator picked in the portal:
+//   Faculty -> Faculty / Teaching Staff  (peer_group 'Faculty')
+//   Staff   -> non-teaching Staff        (peer_group 'Staff')
+$collegeFacultyEvaluatorIdsSql = "SELECT ce.id FROM users ce
+    WHERE ce.id IN ($facultyPeerIdsSql)
       AND EXISTS (SELECT 1 FROM user_year_levels ctyl
-                  WHERE ctyl.user_id=ct.id AND ctyl.year_level IN ($collegeLevelsSql))";
-$peerEvalSql = "$periodSql AND et.eval_type IN ($peerTypesSql)
-    AND et.evaluator_id IN ($collegeTeacherIdsSql)
-    AND et.target_user_id IN ($collegeTeacherIdsSql)";
-$peerEvalPlainSql = "$periodPlainSql AND eval_type IN ($peerTypesSql)
-    AND evaluator_id IN ($collegeTeacherIdsSql)
-    AND target_user_id IN ($collegeTeacherIdsSql)";
+                  WHERE ctyl.user_id=ce.id AND $collegeTeacherYearFilterSql)";
+$peerTargetIdsSql = [
+    'Faculty' => $facultyPeerIdsSql,
+    // Staff accounts WITHOUT a teaching identity (same split as the portal).
+    'Staff'   => "SELECT st.id FROM users st WHERE st.role='staff' AND st.id NOT IN ($facultyPeerIdsSql)",
+];
+// Staff submissions must be the Peer-to-Peer type, because Faculty also
+// submit separate Dean/Principal (school_head) evaluations against the same people.
+$peerLaneSql = static function (string $group, bool $plain) use ($periodSql, $periodPlainSql, $trackerEvaluatorIdSql, $trackerEvaluatorIdPlainSql, $collegeFacultyEvaluatorIdsSql, $peerTargetIdsSql, $peerTypesSql): string {
+    $pre  = $plain ? '' : 'et.';
+    $per  = $plain ? $periodPlainSql : $periodSql;
+    $evr  = $plain ? $trackerEvaluatorIdPlainSql : $trackerEvaluatorIdSql;
+    $sql  = "$per AND $evr IN ($collegeFacultyEvaluatorIdsSql) AND {$pre}target_user_id IN ({$peerTargetIdsSql[$group]})";
+    if ($group !== 'Faculty') $sql .= " AND {$pre}eval_type IN ($peerTypesSql)";
+    return $sql;
+};
+$peerEvalSql      = $peerLaneSql($activeEval === 'peer' ? $groupFilter : 'Faculty', false);
+$peerEvalPlainSql = $peerLaneSql($activeEval === 'peer' ? $groupFilter : 'Faculty', true);
+// Combined (all three lanes) for the top "Peer-to-Peer" badge.
+$peerEvalAllSql = "(" . implode(') OR (', array_map(fn($g) => $peerLaneSql($g, false), array_keys($peerTargetIdsSql))) . ")";
+// Each lane's targets are scoped to that lane's roster.
+if ($activeEval === 'peer') {
+    $viewScopeSql = "u.id IN ({$peerTargetIdsSql[$groupFilter]})";
+}
 
-// Staff Evaluation: NON-TEACHING staff (staff role, no teaching assignment / year level)
-// evaluating the Executive Assistant. Any non-student tracker row that matches
-// that evaluator/target pair counts, so it works whatever eval_type value the
-// staff-to-EA form stores.
+// Staff Evaluation: non-teaching staff evaluating the Executive Assistant.
+// The staff-to-EA evaluator/target pair identifies this report lane even if a
+// legacy eval_type column defaulted to "student" or contains an older label.
 $nonTeachingStaffIdsSql = "SELECT nts.id FROM users nts
     WHERE nts.role='staff'
       AND COALESCE(nts.sector,'') <> 'Teacher'
       AND NOT EXISTS (SELECT 1 FROM user_year_levels ntyl WHERE ntyl.user_id=nts.id)
       AND NOT EXISTS (SELECT 1 FROM teaching_assignments ntta WHERE ntta.user_id=nts.id)";
-$eaTargetIdsSql = "SELECT eat.id FROM users eat WHERE eat.role IN ($eaRolesSql)";
-$staffEvalSql = "$periodSql AND et.eval_type<>$studentTypeSql
-    AND et.evaluator_id IN ($nonTeachingStaffIdsSql)
+$eaTargetIdsSql = "SELECT eat.id FROM users eat
+    WHERE eat.role IN ($eaRolesSql) AND eat.is_active=1 AND eat.account_status='approved'";
+$staffEvalSql = "$periodSql
+    AND $trackerEvaluatorIdSql IN ($nonTeachingStaffIdsSql)
     AND et.target_user_id IN ($eaTargetIdsSql)";
-$staffEvalPlainSql = "$periodPlainSql AND eval_type<>$studentTypeSql
-    AND evaluator_id IN ($nonTeachingStaffIdsSql)
+$staffEvalPlainSql = "$periodPlainSql
+    AND $trackerEvaluatorIdPlainSql IN ($nonTeachingStaffIdsSql)
     AND target_user_id IN ($eaTargetIdsSql)";
 
 $evalTypeSql = match ($activeEval) {
     'peer' => $peerEvalSql,
     'staff' => $staffEvalSql,
-    default => "$periodSql AND et.eval_type=$studentTypeSql AND $collegeStudentEvaluatorSql AND (COALESCE(et.evaluation_context,'teacher') IN ($teacherContextSql,$staffContextSql) OR et.target_user_id IN (SELECT id FROM users WHERE role='dean' AND is_active=1 AND account_status='approved'))"
+    default => "$periodSql AND et.eval_type=$studentTypeSql AND $collegeStudentEvaluatorSql AND (COALESCE(et.evaluation_context,'teacher') IN ($teacherContextSql,$staffContextSql))"
 };
 $evalTypePlainSql = match ($activeEval) {
     'peer' => $peerEvalPlainSql,
     'staff' => $staffEvalPlainSql,
-    default => "$periodPlainSql AND eval_type=$studentTypeSql AND $collegeStudentEvaluatorPlainSql AND (COALESCE(evaluation_context,'teacher') IN ($teacherContextSql,$staffContextSql) OR target_user_id IN (SELECT id FROM users WHERE role='dean' AND is_active=1 AND account_status='approved'))"
+    default => "$periodPlainSql AND eval_type=$studentTypeSql AND $collegeStudentEvaluatorPlainSql AND (COALESCE(evaluation_context,'teacher') IN ($teacherContextSql,$staffContextSql))"
 };
 
 // ── VIEWS ─────────────────────────────────────────────────────
@@ -262,8 +327,10 @@ $tracker_id = intval($_GET['tracker_id'] ?? 0);
 if (($view === 'list') && isset($_GET['group']) && (string)$_GET['group'] !== (string)$groupFilter) {
     $canonicalParams = $_GET;
     $canonicalParams['group'] = $groupFilter;
-    $canonicalPath = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?: 'dean_reports.php';
-    header('Location: ' . $canonicalPath . '?' . http_build_query($canonicalParams), true, 302);
+    // Relative redirect: stays in the current folder even when the address has a
+    // double slash (e.g. localhost//index/dean/), which parse_url() would misread
+    // as a host name and send the browser to the wrong path.
+    header('Location: dean_reports.php?' . http_build_query($canonicalParams), true, 302);
     exit;
 }
 
@@ -374,6 +441,51 @@ function render_exec_sidebar(string $active, array $me, string $photo_src): void
     // other Dean page). Variables stay local to this function.
     $sidebarScope = 'Higher Education Division';
     include __DIR__ . '/includes/dean_sidebar.php';
+    // The top header (white bar) must follow dark mode. Styled here as well as in
+    // includes/dean_portal_header.php so it works no matter which copy of the
+    // shared header/theme files is deployed. ?>
+<style id="dean-header-dark">
+html.dark-theme body header.dean-portal-topbar,
+html.dark-theme body .dean-portal-topbar{background:#0F1F3D !important;color:#E0E6F0 !important;border-bottom:1px solid rgba(255,255,255,.08) !important;box-shadow:0 2px 14px rgba(0,0,0,.35) !important;}
+html.dark-theme body .dean-portal-topbar .dean-header-page-title{color:#E0E6F0 !important;}
+html.dark-theme body .dean-portal-topbar .dean-header-period{background:rgba(156,133,240,.16) !important;border-color:rgba(156,133,240,.38) !important;color:#C4B5FD !important;}
+html.dark-theme body .dean-portal-topbar .dean-header-bell{background:#172A45 !important;border-color:rgba(255,255,255,.12) !important;color:#FBBF24 !important;}
+html.dark-theme body .dean-portal-topbar .dean-header-notif-badge{border-color:#0F1F3D !important;}
+html.dark-theme body .dean-portal-topbar .dean-header-notif-dropdown{background:#172A45 !important;border-color:rgba(255,255,255,.12) !important;color:#E0E6F0 !important;box-shadow:0 18px 48px rgba(0,0,0,.55) !important;}
+html.dark-theme body .dean-portal-topbar .dean-header-notif-heading{border-bottom-color:rgba(255,255,255,.08) !important;color:#A0B3C6 !important;}
+html.dark-theme body .dean-portal-topbar .dean-header-notif-list li{background:#0F1F3D !important;border-color:rgba(255,255,255,.08) !important;color:#CBD5E1 !important;}
+html.dark-theme body .dean-portal-topbar .dean-header-notif-list li.notif-link:hover{background:#1D3350 !important;}
+html.dark-theme body .dean-portal-topbar .dean-header-notif-empty{color:#A0B3C6 !important;}
+</style>
+<script>
+// Belt and braces: inline !important styles beat any stylesheet, and the
+// MutationObserver re-applies them live when the Dark/Light toggle is used.
+(function () {
+    var bar = document.querySelector('.dean-portal-topbar');
+    if (!bar) return;
+    var rules = [
+        ['', {'background':'#0F1F3D','color':'#E0E6F0','border-bottom-color':'rgba(255,255,255,.08)'}],
+        ['.dean-header-page-title', {'color':'#E0E6F0'}],
+        ['.dean-header-period', {'background':'rgba(156,133,240,.16)','border-color':'rgba(156,133,240,.38)','color':'#C4B5FD'}],
+        ['.dean-header-bell', {'background':'#172A45','border-color':'rgba(255,255,255,.12)','color':'#FBBF24'}],
+        ['.dean-header-notif-dropdown', {'background':'#172A45','border-color':'rgba(255,255,255,.12)','color':'#E0E6F0'}]
+    ];
+    function apply() {
+        var dark = document.documentElement.classList.contains('dark-theme');
+        rules.forEach(function (r) {
+            var el = r[0] ? bar.querySelector(r[0]) : bar;
+            if (!el) return;
+            Object.keys(r[1]).forEach(function (prop) {
+                if (dark) el.style.setProperty(prop, r[1][prop], 'important');
+                else el.style.removeProperty(prop);
+            });
+        });
+    }
+    new MutationObserver(apply).observe(document.documentElement, {attributes: true, attributeFilter: ['class']});
+    apply();
+})();
+</script>
+<?php
 }
 
 // SHARED CSS HEAD (used across all sub-views)
@@ -581,7 +693,8 @@ if ($view === 'sheet' && $target_id && $tracker_id) {
     if (!$trk) { http_response_code(404); exit('Evaluation not found in this report scope.'); }
     // Identify the evaluator from the tracker row itself so a hand-edited
     // ?student_id= can never show a name that doesn't match the evaluation.
-    $stu = db_row($mysqli, "SELECT id,full_name,photo FROM users WHERE id=" . (int)($trk['evaluator_id'] ?? 0) . " LIMIT 1");
+    $sheetEvaluatorId = (int)($trk['evaluator_id'] ?? $trk['student_id'] ?? 0);
+    $stu = db_row($mysqli, "SELECT id,full_name,photo FROM users WHERE id=" . $sheetEvaluatorId . " LIMIT 1");
 
     $answers = [];
     // Student Teacher/Multi-Role questionnaires come from evaluation_questions;
@@ -628,7 +741,7 @@ if ($view === 'sheet' && $target_id && $tracker_id) {
     $cq = $mysqli->query("
         SELECT et.id AS tracker_id, et.submitted_at, et.remarks, u.role AS evaluator_role
         FROM evaluation_tracker et
-        JOIN users u ON u.id = et.evaluator_id
+        JOIN users u ON u.id = {$trackerEvaluatorIdSql}
         WHERE et.target_user_id = $target_id AND $evalTypeSql $cumYearWhere
         ORDER BY et.submitted_at DESC
     ");
@@ -840,6 +953,15 @@ button, .btn { font-weight:700; }
 a { color:inherit; }
 </style>
 <link rel="stylesheet" href="includes/dean_light_theme.css?v=dashboard-ui-20261009"/>
+<style id="dean-reports-scrollbar-match">
+/* Evaluation Reports: same thin light-gray scrollbar as Evaluation Received.
+   The old rule used scrollbar-color:var(--light), which is near-black in the light theme. */
+html:not(.dark-theme),html:not(.dark-theme) *{scrollbar-width:thin!important;scrollbar-color:#CBD5E1 transparent!important;}
+html:not(.dark-theme) ::-webkit-scrollbar{width:8px;height:8px;}
+html:not(.dark-theme) ::-webkit-scrollbar-track{background:transparent!important;}
+html:not(.dark-theme) ::-webkit-scrollbar-thumb{background:#CBD5E1!important;border:0!important;border-radius:20px;}
+html:not(.dark-theme) ::-webkit-scrollbar-thumb:hover{background:#A9B6C8!important;}
+</style>
 </head><body class="<?= $reportMode ? 'report-mode' : '' ?>">
 </div>
 <?php render_exec_sidebar('reports', $me, $photo_src); ?>
@@ -1049,169 +1171,264 @@ a { color:inherit; }
 </main>
 
 <style id="executive-original-theme">
-:root{
+/* Scoped to html.dark-theme: in light mode the sheet follows the light report design. */
+html.dark-theme{
  --dark:#0A192F;--mid:#172A45;--inner:#0F1F3D;
  --violet:#7C5FD9;--violet-h:#9C85F0;--violet-dark:#5F45B8;
  --light:#E0E6F0;--muted:#A0B3C6;--border:rgba(255,255,255,.08);
  --accent:#7C5FD9;--accent-h:#9C85F0;--good:#10B981;--danger:#f05454;
  --page-bg:#0A192F;--card-bg:rgba(23,42,69,.85);--card-border:rgba(255,255,255,.08);
 }
-html{background:var(--dark)!important;color-scheme:dark!important;}
-body{background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,.82)),url('../background.png') center center/cover no-repeat fixed!important;background-color:var(--dark)!important;color:var(--light)!important;}
-.main,.content,.page-content{color:var(--light)!important;}
-.page-title,.page-header h1,.section-title,.sheet-name,.target-name{color:#fff!important;}
-.page-sub,.sheet-desig,.target-desig,.muted,.hint,.helper,.description,p{color:var(--muted)!important;}
+html.dark-theme{background:var(--dark)!important;color-scheme:dark!important;}
+html.dark-theme body{background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,.82)),url('../background.png') center center/cover no-repeat fixed!important;background-color:var(--dark)!important;color:var(--light)!important;}
+html.dark-theme .main,
+html.dark-theme .content,
+html.dark-theme .page-content{color:var(--light)!important;}
+html.dark-theme .page-title,
+html.dark-theme .page-header h1,
+html.dark-theme .section-title,
+html.dark-theme .sheet-name,
+html.dark-theme .target-name{color:#fff!important;}
+html.dark-theme .page-sub,
+html.dark-theme .sheet-desig,
+html.dark-theme .target-desig,
+html.dark-theme .muted,
+html.dark-theme .hint,
+html.dark-theme .helper,
+html.dark-theme .description,
+html.dark-theme p{color:var(--muted)!important;}
 /* Cards/panels */
-.card,.panel,.section,.table-card,.content-card,.stat-card,.sum-card,.standing-panel,.eval-card,.eval-banner,.info-banner,.history-card,.gl-card,.amber-card,.green-card,.red-card,.person-row,.target-card,.no-eval,.no-data,.no-evaluated,.comment-section,.avg-summary,.cat-section,.people-list,.evaluator-grid{
+html.dark-theme .card,
+html.dark-theme .panel,
+html.dark-theme .section,
+html.dark-theme .table-card,
+html.dark-theme .content-card,
+html.dark-theme .stat-card,
+html.dark-theme .sum-card,
+html.dark-theme .standing-panel,
+html.dark-theme .eval-card,
+html.dark-theme .eval-banner,
+html.dark-theme .info-banner,
+html.dark-theme .history-card,
+html.dark-theme .gl-card,
+html.dark-theme .amber-card,
+html.dark-theme .green-card,
+html.dark-theme .red-card,
+html.dark-theme .person-row,
+html.dark-theme .target-card,
+html.dark-theme .no-eval,
+html.dark-theme .no-data,
+html.dark-theme .no-evaluated,
+html.dark-theme .comment-section,
+html.dark-theme .avg-summary,
+html.dark-theme .cat-section,
+html.dark-theme .people-list,
+html.dark-theme .evaluator-grid{
  background:rgba(23,42,69,.85)!important;border-color:rgba(255,255,255,.08)!important;box-shadow:0 8px 32px rgba(0,0,0,.45)!important;color:var(--light)!important;
 }
-.table-wrap{background:transparent!important;color:var(--light)!important;}
-table.data th,table.data td,th,td{color:var(--light)!important;border-color:rgba(255,255,255,.08)!important;}
-.q-table{color:var(--light)!important;}
-.q-table th{color:var(--muted)!important;background:rgba(15,31,61,.65)!important;border-color:rgba(255,255,255,.08)!important;}
-.q-table td{color:var(--light)!important;border-color:rgba(255,255,255,.06)!important;}
+html.dark-theme .table-wrap{background:transparent!important;color:var(--light)!important;}
+html.dark-theme table.data th,
+html.dark-theme table.data td,
+html.dark-theme th,
+html.dark-theme td{color:var(--light)!important;border-color:rgba(255,255,255,.08)!important;}
+html.dark-theme .q-table{color:var(--light)!important;}
+html.dark-theme .q-table th{color:var(--muted)!important;background:rgba(15,31,61,.65)!important;border-color:rgba(255,255,255,.08)!important;}
+html.dark-theme .q-table td{color:var(--light)!important;border-color:rgba(255,255,255,.06)!important;}
 /* Tabs and filters */
-.eval-switcher,.tabs,.level-tabs,.status-tabs{background:rgba(23,42,69,.85)!important;border-color:rgba(255,255,255,.08)!important;box-shadow:none!important;}
-.eval-tab,.tab,.level-tab,.status-tab,.group-tab,.desig-subtab{color:var(--muted)!important;background:transparent!important;}
-.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover,.group-tab:hover,.desig-subtab:hover{color:#fff!important;background:rgba(124,95,217,.08)!important;}
-.eval-tab.student.active,.group-tab.active,.desig-subtab.active{background:rgba(124,95,217,.14)!important;color:var(--violet-h)!important;border-color:rgba(124,95,217,.35)!important;}
-.eval-tab.student.active::after{background:var(--violet)!important;}
-.eval-tab.peer.active{background:rgba(124,95,217,.14)!important;color:var(--violet-h)!important;}
-.eval-tab.peer.active::after{background:var(--violet)!important;}
-.tab-badge{background:rgba(255,255,255,.08)!important;color:var(--muted)!important;}
-.eval-tab.student.active .tab-badge,.eval-tab.peer.active .tab-badge{background:rgba(124,95,217,.18)!important;color:var(--violet-h)!important;}
+html.dark-theme .eval-switcher,
+html.dark-theme .tabs,
+html.dark-theme .level-tabs,
+html.dark-theme .status-tabs{background:rgba(23,42,69,.85)!important;border-color:rgba(255,255,255,.08)!important;box-shadow:none!important;}
+html.dark-theme .eval-tab,
+html.dark-theme .tab,
+html.dark-theme .level-tab,
+html.dark-theme .status-tab,
+html.dark-theme .group-tab,
+html.dark-theme .desig-subtab{color:var(--muted)!important;background:transparent!important;}
+html.dark-theme .eval-tab:hover,
+html.dark-theme .tab:hover,
+html.dark-theme .level-tab:hover,
+html.dark-theme .status-tab:hover,
+html.dark-theme .group-tab:hover,
+html.dark-theme .desig-subtab:hover{color:#fff!important;background:rgba(124,95,217,.08)!important;}
+html.dark-theme .eval-tab.student.active,
+html.dark-theme .group-tab.active,
+html.dark-theme .desig-subtab.active{background:rgba(124,95,217,.14)!important;color:var(--violet-h)!important;border-color:rgba(124,95,217,.35)!important;}
+html.dark-theme .eval-tab.student.active::after{background:var(--violet)!important;}
+html.dark-theme .eval-tab.peer.active{background:rgba(124,95,217,.14)!important;color:var(--violet-h)!important;}
+html.dark-theme .eval-tab.peer.active::after{background:var(--violet)!important;}
+html.dark-theme .tab-badge{background:rgba(255,255,255,.08)!important;color:var(--muted)!important;}
+html.dark-theme .eval-tab.student.active .tab-badge,
+html.dark-theme .eval-tab.peer.active .tab-badge{background:rgba(124,95,217,.18)!important;color:var(--violet-h)!important;}
 /* Buttons/links */
-.btn-print,.btn-print.no-print,.back-btn,.btn,.action-btn,.btn-archive,.btn-restore,.btn-solid,.btn-archived-link{background:rgba(124,95,217,.12)!important;border:1px solid rgba(124,95,217,.35)!important;color:var(--violet-h)!important;}
-.btn-print:hover,.back-btn:hover,.btn:hover,.action-btn:hover,.btn-archive:hover,.btn-restore:hover,.btn-solid:hover,.btn-archived-link:hover{background:rgba(124,95,217,.22)!important;color:#fff!important;}
-.btn-solid{background:var(--violet)!important;color:#fff!important;}
+html.dark-theme .btn-print,
+html.dark-theme .btn-print.no-print,
+html.dark-theme .back-btn,
+html.dark-theme .btn,
+html.dark-theme .action-btn,
+html.dark-theme .btn-archive,
+html.dark-theme .btn-restore,
+html.dark-theme .btn-solid,
+html.dark-theme .btn-archived-link{background:rgba(124,95,217,.12)!important;border:1px solid rgba(124,95,217,.35)!important;color:var(--violet-h)!important;}
+html.dark-theme .btn-print:hover,
+html.dark-theme .back-btn:hover,
+html.dark-theme .btn:hover,
+html.dark-theme .action-btn:hover,
+html.dark-theme .btn-archive:hover,
+html.dark-theme .btn-restore:hover,
+html.dark-theme .btn-solid:hover,
+html.dark-theme .btn-archived-link:hover{background:rgba(124,95,217,.22)!important;color:#fff!important;}
+html.dark-theme .btn-solid{background:var(--violet)!important;color:#fff!important;}
 /* accents */
-.eval-banner{background:rgba(124,95,217,.08)!important;border-color:rgba(124,95,217,.25)!important;}
-.eval-banner-title,.eval-banner-icon,.cat-title,.comment-title,.section h2 i,.section h2{color:var(--violet-h)!important;}
-.period-badge{background:rgba(124,95,217,.14)!important;border-color:rgba(124,95,217,.3)!important;color:var(--violet-h)!important;}
-.bar-fill,.avg-bar-fill{background:linear-gradient(90deg,var(--violet-dark),var(--violet-h))!important;}
-.score-bar-bg,.eval-bar-bg,.avg-bar-bg,.bar-wrap{background:rgba(255,255,255,.08)!important;}
-.standing-title.top,.standing-score,.pstat-val,.avg-score-big,.avg-score-label{color:#4ade80!important;}
-.standing-title.low{color:#f87171!important;}
-.person-row:hover,.standing-item:hover{border-color:rgba(124,95,217,.4)!important;background:rgba(124,95,217,.05)!important;}
-.comment-text{background:rgba(15,31,61,.7)!important;color:var(--light)!important;}
-.empty-note,.no-comment,.no-eval{color:var(--muted)!important;}
-label,th{color:var(--muted)!important;}
-input,select,textarea{background:#0F1F3D!important;color:var(--light)!important;border-color:rgba(255,255,255,.12)!important;}
-input::placeholder,textarea::placeholder{color:#7890a8!important;}
+html.dark-theme .eval-banner{background:rgba(124,95,217,.08)!important;border-color:rgba(124,95,217,.25)!important;}
+html.dark-theme .eval-banner-title,
+html.dark-theme .eval-banner-icon,
+html.dark-theme .cat-title,
+html.dark-theme .comment-title,
+html.dark-theme .section h2 i,
+html.dark-theme .section h2{color:var(--violet-h)!important;}
+html.dark-theme .period-badge{background:rgba(124,95,217,.14)!important;border-color:rgba(124,95,217,.3)!important;color:var(--violet-h)!important;}
+html.dark-theme .bar-fill,
+html.dark-theme .avg-bar-fill{background:linear-gradient(90deg,var(--violet-dark),var(--violet-h))!important;}
+html.dark-theme .score-bar-bg,
+html.dark-theme .eval-bar-bg,
+html.dark-theme .avg-bar-bg,
+html.dark-theme .bar-wrap{background:rgba(255,255,255,.08)!important;}
+html.dark-theme .standing-title.top,
+html.dark-theme .standing-score,
+html.dark-theme .pstat-val,
+html.dark-theme .avg-score-big,
+html.dark-theme .avg-score-label{color:#4ade80!important;}
+html.dark-theme .standing-title.low{color:#f87171!important;}
+html.dark-theme .person-row:hover,
+html.dark-theme .standing-item:hover{border-color:rgba(124,95,217,.4)!important;background:rgba(124,95,217,.05)!important;}
+html.dark-theme .comment-text{background:rgba(15,31,61,.7)!important;color:var(--light)!important;}
+html.dark-theme .empty-note,
+html.dark-theme .no-comment,
+html.dark-theme .no-eval{color:var(--muted)!important;}
+html.dark-theme label,
+html.dark-theme th{color:var(--muted)!important;}
+html.dark-theme input,
+html.dark-theme select,
+html.dark-theme textarea{background:#0F1F3D!important;color:var(--light)!important;border-color:rgba(255,255,255,.12)!important;}
+html.dark-theme input::placeholder,
+html.dark-theme textarea::placeholder{color:#7890a8!important;}
 </style>
 <style id="dean-sheet-dark-final">
+/* Scoped to html.dark-theme: in light mode the sheet follows the light report design. */
 /* Final dark theme for the individual evaluation sheet.  The Dean portal
    uses the navy/violet workspace, so the report sheet follows that theme
    instead of reverting to the older white report design. */
-html, body {
+html.dark-theme,
+html.dark-theme body{
   background:#0A192F !important;
   color:#E0E6F0 !important;
   color-scheme:dark !important;
 }
-.main {
+html.dark-theme .main{
   background:transparent !important;
   color:#E0E6F0 !important;
 }
-.individual-sheet,
-.sheet-header,
-.scale-bar,
-.cat-section,
-.comment-section,
-.avg-summary {
+html.dark-theme .individual-sheet,
+html.dark-theme .sheet-header,
+html.dark-theme .scale-bar,
+html.dark-theme .cat-section,
+html.dark-theme .comment-section,
+html.dark-theme .avg-summary{
   background:rgba(23,42,69,.85) !important;
   border-color:rgba(255,255,255,.08) !important;
   box-shadow:0 8px 32px rgba(0,0,0,.28) !important;
   color:#E0E6F0 !important;
 }
-.sheet-header {
+html.dark-theme .sheet-header{
   border-radius:14px !important;
 }
-.sheet-name,
-.avg-score-big,
-.avg-score-label {
+html.dark-theme .sheet-name,
+html.dark-theme .avg-score-big,
+html.dark-theme .avg-score-label{
   color:#fff !important;
 }
-.sheet-desig,
-.eval-by-date,
-.avg-out-of,
-.no-comment,
-.scale-item,
-.scale-bar > span,
-.eval-by-label,
-.avg-bar-label {
+html.dark-theme .sheet-desig,
+html.dark-theme .eval-by-date,
+html.dark-theme .avg-out-of,
+html.dark-theme .no-comment,
+html.dark-theme .scale-item,
+html.dark-theme .scale-bar > span,
+html.dark-theme .eval-by-label,
+html.dark-theme .avg-bar-label{
   color:#A0B3C6 !important;
 }
-.eval-by-name { color:#C4B5FD !important; }
-.sheet-avatar-ph {
+html.dark-theme .eval-by-name{ color:#C4B5FD !important; }
+html.dark-theme .sheet-avatar-ph{
   background:#0F1F3D !important;
   border-color:rgba(255,255,255,.10) !important;
   color:#A0B3C6 !important;
 }
-.eval-type-chip {
+html.dark-theme .eval-type-chip{
   background:rgba(124,95,217,.14) !important;
   border-color:rgba(124,95,217,.35) !important;
   color:#C4B5FD !important;
 }
-.scale-bar { align-items:center; }
-.scale-dot { box-shadow:0 2px 8px rgba(0,0,0,.18); }
-.cat-title,
-.comment-title {
+html.dark-theme .scale-bar{ align-items:center; }
+html.dark-theme .scale-dot{ box-shadow:0 2px 8px rgba(0,0,0,.18); }
+html.dark-theme .cat-title,
+html.dark-theme .comment-title{
   color:#C4B5FD !important;
   border-color:rgba(124,95,217,.30) !important;
 }
-.q-table {
+html.dark-theme .q-table{
   background:#172A45 !important;
   border-color:rgba(255,255,255,.08) !important;
   color:#E0E6F0 !important;
 }
-.q-table thead tr,
-.q-table thead th {
+html.dark-theme .q-table thead tr,
+html.dark-theme .q-table thead th{
   background:#0F1F3D !important;
 }
-.q-table th {
+html.dark-theme .q-table th{
   color:#A0B3C6 !important;
   border-color:rgba(255,255,255,.08) !important;
 }
-.q-table td {
+html.dark-theme .q-table td{
   background:#172A45 !important;
   color:#E0E6F0 !important;
   border-color:rgba(255,255,255,.06) !important;
 }
-.q-table tr:hover td {
+html.dark-theme .q-table tr:hover td{
   background:rgba(124,95,217,.07) !important;
 }
-.q-table td.q-num { color:#8EA5BB !important; }
-.rating-badge {
+html.dark-theme .q-table td.q-num{ color:#8EA5BB !important; }
+html.dark-theme .rating-badge{
   background:#0F1F3D !important;
   border-radius:8px !important;
 }
-.comment-text {
+html.dark-theme .comment-text{
   background:#0F1F3D !important;
   color:#E0E6F0 !important;
   border-color:rgba(255,255,255,.08) !important;
 }
-.avg-bar-bg {
+html.dark-theme .avg-bar-bg{
   background:rgba(255,255,255,.08) !important;
 }
-.avg-bar-val { color:#E0E6F0 !important; }
-.detail-actions .back-btn,
-.back-btn {
+html.dark-theme .avg-bar-val{ color:#E0E6F0 !important; }
+html.dark-theme .detail-actions .back-btn,
+html.dark-theme .back-btn{
   background:#0F1F3D !important;
   color:#E0E6F0 !important;
   border-color:rgba(255,255,255,.14) !important;
 }
-.detail-actions .back-btn:hover,
-.back-btn:hover {
+html.dark-theme .detail-actions .back-btn:hover,
+html.dark-theme .back-btn:hover{
   background:rgba(124,95,217,.22) !important;
   color:#fff !important;
 }
-.btn-print,
-.detail-actions .btn-print {
+html.dark-theme .btn-print,
+html.dark-theme .detail-actions .btn-print{
   background:#7C5FD9 !important;
   color:#fff !important;
 }
-.btn-print:hover { opacity:.9; }
-.individual-sheet > div[style*="No answers found"] {
+html.dark-theme .btn-print:hover{ opacity:.9; }
+html.dark-theme .individual-sheet > div[style*="No answers found"]{
   background:#172A45 !important;
   color:#A0B3C6 !important;
   border-color:rgba(255,255,255,.08) !important;
@@ -1651,81 +1868,82 @@ html.dark-theme ::-webkit-scrollbar-thumb {
 </style>
 
 <style id="dean-report-page-dark-v5">
+/* Scoped to html.dark-theme: in light mode the sheet follows the light report design. */
 /* Whole report page is dark on screen: html, body, the .main workspace and every
    surface/gap around and inside the evaluation sheet. No dependency on the
    html.dark-theme class. Print output is untouched (screen only). */
 @media screen {
-  html:has(body.report-mode),
-  html body.report-mode {
+  html.dark-theme:has(body.report-mode),
+html.dark-theme body.report-mode{
     background:#0A192F !important;
     color:#E0E6F0 !important;
     color-scheme:dark !important;
   }
-  html body.report-mode {
+  html.dark-theme body.report-mode{
     background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,.82)),url('../background.png') center center/cover no-repeat fixed !important;
     background-color:#0A192F !important;
   }
-  html body.report-mode .main {
+  html.dark-theme body.report-mode .main{
     background:#0A192F !important;
     color:#E0E6F0 !important;
     border-color:rgba(255,255,255,.08) !important;
   }
-  html body.report-mode .cumulative-sheet,
-  html body.report-mode .individual-sheet {
+  html.dark-theme body.report-mode .cumulative-sheet,
+html.dark-theme body.report-mode .individual-sheet{
     background:#0A192F !important;
     box-shadow:none !important;
     border-color:rgba(255,255,255,.08) !important;
   }
-  html body.report-mode .cumulative-sheet *,
-  html body.report-mode .individual-sheet * { color:#E0E6F0 !important; }
-  html body.report-mode .cumulative-sheet .cum-topbar,
-  html body.report-mode .cumulative-sheet .cum-topbar * { background:#0F1F3D !important; }
-  html body.report-mode .cumulative-sheet .sheet-header,
-  html body.report-mode .cumulative-sheet .cum-total,
-  html body.report-mode .cumulative-sheet .comment-section,
-  html body.report-mode .cumulative-sheet .cum-empty,
-  html body.report-mode .cumulative-sheet .q-table,
-  html body.report-mode .cumulative-sheet .q-table tbody,
-  html body.report-mode .cumulative-sheet .q-table tr,
-  html body.report-mode .cumulative-sheet .q-table td {
+  html.dark-theme body.report-mode .cumulative-sheet *,
+html.dark-theme body.report-mode .individual-sheet *{ color:#E0E6F0 !important; }
+  html.dark-theme body.report-mode .cumulative-sheet .cum-topbar,
+html.dark-theme body.report-mode .cumulative-sheet .cum-topbar *{ background:#0F1F3D !important; }
+  html.dark-theme body.report-mode .cumulative-sheet .sheet-header,
+html.dark-theme body.report-mode .cumulative-sheet .cum-total,
+html.dark-theme body.report-mode .cumulative-sheet .comment-section,
+html.dark-theme body.report-mode .cumulative-sheet .cum-empty,
+html.dark-theme body.report-mode .cumulative-sheet .q-table,
+html.dark-theme body.report-mode .cumulative-sheet .q-table tbody,
+html.dark-theme body.report-mode .cumulative-sheet .q-table tr,
+html.dark-theme body.report-mode .cumulative-sheet .q-table td{
     background:#172A45 !important;
     border-color:rgba(255,255,255,.08) !important;
     box-shadow:none !important;
   }
-  html body.report-mode .cumulative-sheet .cat-section,
-  html body.report-mode .cumulative-sheet .cat-title {
+  html.dark-theme body.report-mode .cumulative-sheet .cat-section,
+html.dark-theme body.report-mode .cumulative-sheet .cat-title{
     background:transparent !important;
     box-shadow:none !important;
   }
-  html body.report-mode .cumulative-sheet .cat-title,
-  html body.report-mode .cumulative-sheet .cat-title *,
-  html body.report-mode .cumulative-sheet .cum-total-label,
-  html body.report-mode .cumulative-sheet .comment-title { color:#C4B5FD !important; }
-  html body.report-mode .cumulative-sheet .cat-title { border-bottom-color:rgba(255,255,255,.12) !important; }
-  html body.report-mode .cumulative-sheet .q-table thead,
-  html body.report-mode .cumulative-sheet .q-table thead tr,
-  html body.report-mode .cumulative-sheet .q-table th {
+  html.dark-theme body.report-mode .cumulative-sheet .cat-title,
+html.dark-theme body.report-mode .cumulative-sheet .cat-title *,
+html.dark-theme body.report-mode .cumulative-sheet .cum-total-label,
+html.dark-theme body.report-mode .cumulative-sheet .comment-title{ color:#C4B5FD !important; }
+  html.dark-theme body.report-mode .cumulative-sheet .cat-title{ border-bottom-color:rgba(255,255,255,.12) !important; }
+  html.dark-theme body.report-mode .cumulative-sheet .q-table thead,
+html.dark-theme body.report-mode .cumulative-sheet .q-table thead tr,
+html.dark-theme body.report-mode .cumulative-sheet .q-table th{
     background:#0F1F3D !important;
     color:#A0B3C6 !important;
     border-color:rgba(255,255,255,.10) !important;
   }
-  html body.report-mode .cumulative-sheet .q-table tr:hover td { background:#1D3350 !important; }
-  html body.report-mode .cumulative-sheet .rating-badge {
+  html.dark-theme body.report-mode .cumulative-sheet .q-table tr:hover td{ background:#1D3350 !important; }
+  html.dark-theme body.report-mode .cumulative-sheet .rating-badge{
     background:#0F1F3D !important;
     border-color:rgba(255,255,255,.12) !important;
   }
-  html body.report-mode .cumulative-sheet .sheet-desig,
-  html body.report-mode .cumulative-sheet .cum-by,
-  html body.report-mode .cumulative-sheet .cum-by *,
-  html body.report-mode .cumulative-sheet .cum-date-label,
-  html body.report-mode .cumulative-sheet .cum-remark,
-  html body.report-mode .cumulative-sheet .no-comment,
-  html body.report-mode .cumulative-sheet .avg-out-of,
-  html body.report-mode .cumulative-sheet .rating-lbl,
-  html body.report-mode .cumulative-sheet .q-num { color:#A0B3C6 !important; }
-  html body.report-mode .cumulative-sheet .avg-score-big,
-  html body.report-mode .cumulative-sheet .avg-score-label { color:#4ADE80 !important; }
-  html body.report-mode .cumulative-sheet .sheet-avatar-ph {
+  html.dark-theme body.report-mode .cumulative-sheet .sheet-desig,
+html.dark-theme body.report-mode .cumulative-sheet .cum-by,
+html.dark-theme body.report-mode .cumulative-sheet .cum-by *,
+html.dark-theme body.report-mode .cumulative-sheet .cum-date-label,
+html.dark-theme body.report-mode .cumulative-sheet .cum-remark,
+html.dark-theme body.report-mode .cumulative-sheet .no-comment,
+html.dark-theme body.report-mode .cumulative-sheet .avg-out-of,
+html.dark-theme body.report-mode .cumulative-sheet .rating-lbl,
+html.dark-theme body.report-mode .cumulative-sheet .q-num{ color:#A0B3C6 !important; }
+  html.dark-theme body.report-mode .cumulative-sheet .avg-score-big,
+html.dark-theme body.report-mode .cumulative-sheet .avg-score-label{ color:#4ADE80 !important; }
+  html.dark-theme body.report-mode .cumulative-sheet .sheet-avatar-ph{
     background:#0F1F3D !important;
     border-color:rgba(255,255,255,.12) !important;
   }
@@ -1775,7 +1993,7 @@ if ($view === 'students' && $target_id) {
                   FROM questionnaire_answers qa
                  WHERE qa.tracker_id=et.id AND " . rp_current_q_sql('qa', (int)$target_id) . ") AS avg_score
           FROM evaluation_tracker et
-          JOIN users u ON u.id = et.evaluator_id
+          JOIN users u ON u.id = {$trackerEvaluatorIdSql}
          WHERE et.target_user_id = $target_id
            AND $evalTypeSql
            $studentYearWhere
@@ -1887,7 +2105,7 @@ if ($view === 'students' && $target_id) {
     <div class="detail-eval-icon"><i class="fa-solid <?= $evalIcon ?>"></i></div>
     <div>
         <div class="detail-eval-title"><?= htmlspecialchars($evalLabel) ?></div>
-        <div class="detail-eval-sub"><?= $activeEval === 'staff' ? 'Evaluated by non-teaching staff using the Staff Evaluation questionnaire.' : ($activeEval === 'peer' ? 'Evaluated by fellow College teachers.' : 'Evaluated by students using the Student Evaluation questionnaire.') ?></div>
+        <div class="detail-eval-sub"><?= $activeEval === 'staff' ? 'Evaluated by non-teaching staff using the Staff Evaluation questionnaire.' : ($activeEval === 'peer' ? 'Evaluated by College Faculty / Teaching Staff (Peer-to-Peer).' : 'Evaluated by students using the Student Evaluation questionnaire.') ?></div>
     </div>
 </div>
 
@@ -2356,8 +2574,8 @@ $whereRole = match ($activeEval) {
     // classification, not the tracker row's default evaluation_context.
     // A Staff account can be a Teaching Staff member and therefore belongs
     // under Faculty; a true Non-Teaching Staff account belongs under Staff.
-    'student' => "u.role IN ('teacher','staff','faculty','dean')",
-    // Peer targets are restricted to College teachers by $peerEvalSql itself.
+    'student' => "u.role IN ('teacher','staff','faculty')",
+    // Peer targets are restricted to Faculty / Teaching Staff by $peerEvalSql itself.
     'peer'    => "u.role IN ('teacher','faculty','staff')",
     'staff'   => "u.role IN ($eaRolesSql)",
     default   => "u.role IN ('teacher','staff')"
@@ -2403,7 +2621,6 @@ if ($activeEval === 'student') {
         $rawRole  = strtolower(trim((string)($p['role'] ?? '')));
         if ($groupFilter === 'Faculty') return $resolved === 'teacher';
         if ($groupFilter === 'Staff') return $resolved === 'staff';
-        if ($groupFilter === 'Dean') return $rawRole === 'dean' && $resolved === 'school_head';
         return true;
     }));
 }
@@ -2422,11 +2639,10 @@ $totalStudents = db_row($mysqli, "SELECT COUNT(*) AS c
       AND (us.education_level='higher_ed' OR us.year_level IN ('1st Year College','2nd Year College','3rd Year College','4th Year College'))")['c'] ?? 0;
 $facCount = 0;
 $staffCount = 0;
-$studentDeanCount = 0;
 $totalFacStaff = 0;
 
 // Match the EA Student Evaluation roster counts for the Higher Education Dean:
-// Faculty, non-teaching Staff, and Dean. College Student Evaluation does not
+// Faculty and non-teaching Staff. College Student Evaluation does not
 // include Principal targets in the Dean portal.
 $studentRosterQ = $mysqli->query("SELECT id, full_name, designation, photo, role, secondary_role, sector, source,
            EXISTS(SELECT 1 FROM teaching_assignments ta WHERE ta.user_id=u.id) AS has_teaching_assignment,
@@ -2437,7 +2653,7 @@ $studentRosterQ = $mysqli->query("SELECT id, full_name, designation, photo, role
     FROM users u
     WHERE u.is_active=1
       AND u.account_status='approved'
-      AND u.role IN ('teacher','faculty','staff','dean')
+      AND u.role IN ('teacher','faculty','staff')
       AND $reportScopeSql");
 if ($studentRosterQ) {
     while ($rosterUser = $studentRosterQ->fetch_assoc()) {
@@ -2446,14 +2662,11 @@ if ($studentRosterQ) {
             $facCount++;
         } elseif ($g === 'staff') {
             $staffCount++;
-        } elseif ($g === 'school_head') {
-            $role = strtolower(trim((string)($rosterUser['role'] ?? '')));
-            if ($role === 'dean') $studentDeanCount++;
         }
     }
     $studentRosterQ->free();
 }
-$totalFacStaff = $facCount + $staffCount + $studentDeanCount;
+$totalFacStaff = $facCount + $staffCount;
 
 if ($groupFilter === 'Teacher' || $groupFilter === 'Staff') {
     $totalFacStaff = $groupFilter === 'Teacher' ? $facCount : $staffCount;
@@ -2477,10 +2690,15 @@ $multiRoleEvalCount = db_row($mysqli, "SELECT COUNT(DISTINCT et.id) AS c
         WHERE qam.tracker_id=et.id AND uqm.target_type='Multi-Role' AND uqm.eval_type='student'
     )) AND $reportScopeSql")['c'] ?? 0;
 $staffEvalCount = db_row($mysqli, "SELECT COUNT(DISTINCT et.id) AS c FROM evaluation_tracker et WHERE $staffEvalSql")['c'] ?? 0;
-$peerEvalCount = db_row($mysqli, "SELECT COUNT(DISTINCT et.id) AS c FROM evaluation_tracker et WHERE $peerEvalSql")['c'] ?? 0;
-$peerTeacherCount = db_row($mysqli, "SELECT COUNT(*) AS c FROM users u
-    WHERE u.is_active=1 AND u.account_status='approved'
-      AND u.id IN ($collegeTeacherIdsSql)")['c'] ?? 0;
+$peerEvalCount = db_row($mysqli, "SELECT COUNT(DISTINCT et.id) AS c FROM evaluation_tracker et WHERE $peerEvalAllSql")['c'] ?? 0;
+// Per-lane counts of people evaluated (badges on the Faculty / Staff / Dean tabs).
+$peerLaneCounts = [];
+foreach ($peerTargetIdsSql as $laneName => $laneTargetsSql) {
+    $peerLaneCounts[$laneName] = (int)(db_row($mysqli, "SELECT COUNT(DISTINCT et.target_user_id) AS c
+        FROM evaluation_tracker et
+        JOIN users u ON u.id=et.target_user_id AND u.is_active=1
+        WHERE " . $peerLaneSql($laneName, false))['c'] ?? 0);
+}
 
 $staffDesigCounts = [];
 $sdq = $mysqli->query("SELECT designation, COUNT(*) as c FROM users u WHERE u.role='staff' AND u.is_active=1 AND $reportScopeSql GROUP BY designation ORDER BY designation");
@@ -2656,11 +2874,13 @@ a { color:inherit; }
     <div class="reports-peer-note"><i class="fa-solid fa-circle-info"></i><span><strong>Staff Evaluations</strong> — results submitted by non-teaching staff for the Executive Assistant.</span></div>
     <?php else: ?>
     <div class="reports-filter-tabs">
-        <a href="?group=All&eval_type=peer" class="reports-filter-tab active">
-            <i class="fa-solid fa-chalkboard-user"></i><span>College Teachers</span><b><?= $peerTeacherCount ?></b>
+        <?php foreach (['Faculty' => 'fa-chalkboard-user', 'Staff' => 'fa-id-badge'] as $laneName => $laneIcon): ?>
+        <a href="?group=<?= $laneName ?>&eval_type=peer" class="reports-filter-tab <?= $groupFilter===$laneName?'active':'' ?>">
+            <i class="fa-solid <?= $laneIcon ?>"></i><span><?= $laneName ?></span><b><?= (int)($peerLaneCounts[$laneName] ?? 0) ?></b>
         </a>
+        <?php endforeach; ?>
     </div>
-    <div class="reports-peer-note"><i class="fa-solid fa-circle-info"></i><span><strong>Peer-to-Peer Evaluations</strong> — results submitted by fellow College teachers.</span></div>
+    <div class="reports-peer-note"><i class="fa-solid fa-circle-info"></i><span><strong>Peer-to-Peer Evaluations</strong> — <?= $groupFilter==='Staff' ? 'results submitted by College Faculty / Teaching Staff for non-teaching Staff.' : 'results submitted by fellow College Faculty / Teaching Staff.' ?></span></div>
     <?php endif; ?>
 
     <!-- Main data panel styled after the supplied reference layout. -->
@@ -2728,10 +2948,12 @@ a { color:inherit; }
                         $roleLabel = 'Executive Assistant';
                     } else {
                         // In Peer-to-Peer, every row has already passed the explicit
-                        // College teaching-personnel filter. A role='staff' account
+                        // Faculty-group filter. A role='staff' account
                         // admitted via sector/secondary-role/teaching assignment is
                         // displayed as Teaching Staff, not ordinary Non-Teaching Staff.
-                        $roleLabel = in_array($rawRole, ['teacher','faculty'], true) ? 'Faculty' : 'Teaching Staff';
+                        if ($activeEval === 'peer' && $rawRole === 'dean') $roleLabel = 'Dean';
+                        elseif ($activeEval === 'peer' && $groupFilter === 'Staff') $roleLabel = 'Staff';
+                        else $roleLabel = in_array($rawRole, ['teacher','faculty'], true) ? 'Faculty' : 'Teaching Staff';
                     }
                     $isFac = in_array($roleLabel, ['Faculty','Teaching Staff'], true);
                     $lastEval = !empty($p['last_evaluated']) ? date('M d, Y', strtotime($p['last_evaluated'])) : '—';

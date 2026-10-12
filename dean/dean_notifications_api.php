@@ -55,14 +55,14 @@ foreach (dean_ea_notices($settings) as $eaNotice) {
 // a transient change in pending counts cannot make them disappear.
 if ($period_id_int > 0) {
     $collegeLevels = "'1st Year College','2nd Year College','3rd Year College','4th Year College'";
-    $recentEvalSql = "SELECT et.id, et.eval_type, et.submitted_at, target.full_name AS target_name
+    $recentEvalSql = "SELECT et.id, et.eval_type, et.submitted_at, et.target_user_id, target.role AS target_role, target.full_name AS target_name
         FROM evaluation_tracker et
         JOIN users target ON target.id=et.target_user_id
         WHERE et.period_id=" . (int)$period_id_int . "
           AND et.submitted_at IS NOT NULL
           AND target.is_active=1
           AND target.account_status='approved'
-          AND (target.role IN ('dean','principal','staff') OR (target.role IN ('teacher','faculty') AND EXISTS (
+          AND (target.role IN ('principal','staff') OR (target.role IN ('teacher','faculty') AND EXISTS (
               SELECT 1 FROM user_year_levels uyl
               WHERE uyl.user_id=target.id AND uyl.year_level IN ($collegeLevels)
           )))
@@ -75,8 +75,18 @@ if ($period_id_int > 0) {
         foreach ($recent as $ev) {
             $kind = in_array($ev['eval_type'] ?? '', ['peer','faculty_peer','staff_peer'], true)
                 ? 'Peer-to-Peer' : 'Student';
+            // Where a click on this notice goes: the Reports page for this kind of
+            // evaluation (Student -> that person's evaluator list; Peer -> the
+            // Faculty/Staff lane the person belongs to).
+            if ($kind === 'Peer-to-Peer') {
+                $lane = (($ev['target_role'] ?? '') === 'staff') ? 'Staff' : 'Faculty';
+                $evUrl = 'dean_reports.php?eval_type=peer&group=' . $lane;
+            } else {
+                $evUrl = 'dean_reports.php?view=students&target_id=' . (int)$ev['target_user_id'] . '&group=All&eval_type=student';
+            }
             $notifications[] = [
                 'key' => 'evaluation:' . (int)$ev['id'],
+                'url' => $evUrl,
                 'text' => "New {$kind} evaluation received for " . ($ev['target_name'] ?? 'personnel') . ".",
                 'type' => 'evaluation',
                 'created_at' => $ev['submitted_at'] ?? null,
@@ -131,6 +141,9 @@ foreach ($notifications as $idx => $n) {
             'text' => $text,
             'type' => 'notice',
             'created_at' => null,
+            // Pending / completion counts are answered by the Evaluation Tracker.
+            'url' => (stripos($text, 'evaluation') !== false && (stripos($text, 'pending') !== false || stripos($text, 'complete') !== false))
+                ? 'dean_evaluation_tracker.php' : null,
         ];
     }
 }

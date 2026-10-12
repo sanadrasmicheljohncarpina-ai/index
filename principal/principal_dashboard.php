@@ -22,8 +22,8 @@ if (!function_exists('principal_theme_assets')) {
         $done = true;
         ?>
 <script>(function(){try{if(localStorage.getItem('pbi_theme') === 'dark'){document.documentElement.classList.add('principal-theme-dark-pending');}}catch(e){}})();</script>
-<link rel="stylesheet" href="includes/principal_theme.css?v=20261009.1"/>
-<script defer src="includes/principal_theme.js?v=20261009.1"></script>
+<link rel="stylesheet" href="includes/principal_theme.css?v=20261011.4"/>
+<script defer src="includes/principal_theme.js?v=20261011.4"></script>
         <?php
     }
 }
@@ -1626,7 +1626,7 @@ html.principal-theme-dark #principalDashboard .principal-summary-icon { backgrou
 
 </style>
 
-<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20261009.3" id="principal-dark-repairs"/>
+<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20261011.4" id="principal-dark-repairs"/>
 
 <style id="principal-one-view-dashboard-update">
 /* Compact single-view workspace, aligned with the Faculty and Staff dashboards.

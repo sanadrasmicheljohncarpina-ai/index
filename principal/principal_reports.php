@@ -76,8 +76,8 @@ if (!function_exists('principal_theme_assets')) {
         $done = true;
         ?>
 <script>(function(){try{if(localStorage.getItem('pbi_theme') === 'dark'){document.documentElement.classList.add('principal-theme-dark-pending');}}catch(e){}})();</script>
-<link rel="stylesheet" href="includes/principal_theme.css?v=20261009.1"/>
-<script defer src="includes/principal_theme.js?v=20261009.1"></script>
+<link rel="stylesheet" href="includes/principal_theme.css?v=20261011.4"/>
+<script defer src="includes/principal_theme.js?v=20261011.4"></script>
         <?php
     }
 }
@@ -274,8 +274,8 @@ if (!in_array($activeEval, ['student','peer','staff'], true)) $activeEval = 'stu
 $groupFilter = $_GET['group'] ?? 'All';
 $allowedGroups = $activeEval === 'student'
     ? ['All','Faculty','Staff']
-    : ['All','Faculty','Teacher'];
-if (!in_array($groupFilter, $allowedGroups, true)) $groupFilter = 'All';
+    : ($activeEval === 'peer' ? ['Faculty','Staff'] : ['All','Faculty','Teacher']);
+if (!in_array($groupFilter, $allowedGroups, true)) $groupFilter = $activeEval === 'peer' ? 'Faculty' : 'All';
 if ($activeEval === 'staff') $groupFilter = 'All';
 // Scope used for the people being evaluated: Staff Evaluation targets the EA only.
 $viewScopeSql = $activeEval === 'staff' ? $eaScopeSql : $reportScopeSql;
@@ -367,32 +367,46 @@ $principalTeacherIdsSql = "SELECT ht.id FROM users ht
 // eval_type='faculty_peer' (with 'peer'/'staff_peer' retained for legacy rows).
 // Read only completed submissions and keep both evaluator and target in the
 // JHS/SHS teacher scope.
-// Match the faculty/staff submission eligibility rules: a Faculty/Teacher
-// account can submit peer evaluations even if it has not been assigned a grade
-// in user_year_levels yet; Staff accounts only get the peer workflow when EA
-// assigned at least one teaching year level. The RECEIVER still must be a
-// JHS/SHS teaching-scope account, since this is the Principal's Basic Education
-// report. Requiring a JHS/SHS assignment on both evaluator and target was more
-// restrictive than the submission flow and could hide valid received reviews.
+// The Principal only receives Peer-to-Peer submissions from JHS/SHS teachers:
+// BOTH the evaluator and the person being evaluated must be teaching personnel
+// with a JHS/SHS teaching scope (year level or teaching assignment). Teachers
+// who only teach College, non-teaching Staff, Principal and Dean never count.
+// Evaluator scope uses the tolerant matcher (principal_hs_scope.php) because real
+// year-level data is stored in many spellings ('Grade 11', 'Grade 11 - SHS', a
+// value cut off by VARCHAR(10), 'JHS', ...) and an exact list silently dropped
+// valid JHS/SHS teachers. College-only values still never match.
+require_once __DIR__ . '/principal_hs_scope.php';
 $principalPeerEvaluatorIdsSql = "SELECT pe.id FROM users pe
-    WHERE pe.role IN ('teacher','faculty')
-       OR (pe.role='staff' AND EXISTS (
-            SELECT 1 FROM user_year_levels peyl WHERE peyl.user_id=pe.id
-       ))";
-$peerEvalBaseSql = "(
-        et.eval_type IN ($peerTypesSql)
-        OR LOWER(TRIM(COALESCE(et.peer_group,''))) IN ('faculty','teacher','staff','teaching staff')
+    WHERE pe.role IN ('teacher','faculty','staff') AND " . principal_hs_scope_sql('pe');
+// ── PEER-TO-PEER: two lanes (Faculty / Staff) ────────────────────────────────
+// The EVALUATORS are always JHS/SHS teachers (above). The lane decides who is
+// being evaluated, using the same split as the Student Evaluation tab:
+//   Faculty -> JHS/SHS Faculty / Teaching Staff
+//   Staff   -> Non-Teaching Staff (staff account with no year level/assignment)
+$principalPeerStaffLaneIdsSql = "SELECT sx.id FROM users sx
+    WHERE sx.role='staff'
+      AND NOT EXISTS (SELECT 1 FROM user_year_levels sxy WHERE sxy.user_id=sx.id)
+      AND NOT EXISTS (SELECT 1 FROM teaching_assignments sxt WHERE sxt.user_id=sx.id)";
+$principalPeerTargetIdsSql = [
+    'Faculty' => "SELECT fx.id FROM users fx WHERE fx.id IN ($principalTeacherIdsSql) AND fx.id NOT IN ($principalPeerStaffLaneIdsSql)",
+    'Staff'   => $principalPeerStaffLaneIdsSql,
+];
+// $group: 'Faculty' | 'Staff' | 'All' (both lanes, used for the top badge and period choice).
+$principalPeerBase = static function (string $group, bool $plain) use ($peerTypesSql, $principalPeerEvaluatorIdsSql, $principalPeerTargetIdsSql): string {
+    $p = $plain ? '' : 'et.';
+    $targets = isset($principalPeerTargetIdsSql[$group])
+        ? "{$p}target_user_id IN ({$principalPeerTargetIdsSql[$group]})"
+        : "({$p}target_user_id IN ({$principalPeerTargetIdsSql['Faculty']}) OR {$p}target_user_id IN ({$principalPeerTargetIdsSql['Staff']}))";
+    return "(
+        {$p}eval_type IN ($peerTypesSql)
+        OR LOWER(TRIM(COALESCE({$p}peer_group,''))) IN ('faculty','teacher','staff','teaching staff')
     )
-    AND et.status IN ('submitted','approved')
-    AND et.evaluator_id IN ($principalPeerEvaluatorIdsSql)
-    AND et.target_user_id IN ($principalTeacherIdsSql)";
-$peerEvalBasePlainSql = "(
-        eval_type IN ($peerTypesSql)
-        OR LOWER(TRIM(COALESCE(peer_group,''))) IN ('faculty','teacher','staff','teaching staff')
-    )
-    AND status IN ('submitted','approved')
-    AND evaluator_id IN ($principalPeerEvaluatorIdsSql)
-    AND target_user_id IN ($principalTeacherIdsSql)";
+    AND {$p}status IN ('submitted','approved')
+    AND {$p}evaluator_id IN ($principalPeerEvaluatorIdsSql)
+    AND $targets";
+};
+$peerEvalBaseSql      = $principalPeerBase('All', false);
+$peerEvalBasePlainSql = $principalPeerBase('All', true);
 
 // Staff Evaluation is saved with eval_type='staff' and peer_group='Staff Evaluation'.
 // Retain known legacy target-type values where peer_group identifies the form.
@@ -436,10 +450,14 @@ if (!function_exists('principal_reports_choose_data_period')) {
         return $preferredPeriodId;
     }
 }
-$peerPeriodId = principal_reports_choose_data_period($mysqli, $peerEvalBaseSql, $period_id_int);
+// Peer-to-Peer records are STATIC: they are read across every evaluation period and
+// never depend on the academic structure / period that is currently active, so a
+// Faculty record and a Staff record submitted in different periods both stay
+// visible (and are shown together in their tabs) whatever the EA has set.
+$peerPeriodId = 0;
 $staffPeriodId = principal_reports_choose_data_period($mysqli, $staffEvalBaseSql, $period_id_int);
-$peerPeriodSql = $peerPeriodId > 0 ? "et.period_id=" . $peerPeriodId : "1=0";
-$peerPeriodPlainSql = $peerPeriodId > 0 ? "period_id=" . $peerPeriodId : "1=0";
+$peerPeriodSql = "1=1";
+$peerPeriodPlainSql = "1=1";
 $staffPeriodSql = $staffPeriodId > 0 ? "et.period_id=" . $staffPeriodId : "1=0";
 $staffPeriodPlainSql = $staffPeriodId > 0 ? "period_id=" . $staffPeriodId : "1=0";
 $peerEvalSql = "$peerPeriodSql AND ($peerEvalBaseSql)";
@@ -473,13 +491,21 @@ if ($isCumulativeReportRequest && $hasReportTrackerParam && $requestedReportPeri
     }
 }
 
+// The Peer-to-Peer list shows ONE lane at a time; the top badge keeps the combined count.
+$peerLane = ($activeEval === 'peer' && isset($principalPeerTargetIdsSql[$groupFilter])) ? $groupFilter : 'Faculty';
+$peerLaneEvalSql      = "$peerPeriodSql AND (" . $principalPeerBase($peerLane, false) . ")";
+$peerLaneEvalPlainSql = "$peerPeriodPlainSql AND (" . $principalPeerBase($peerLane, true) . ")";
+if ($activeEval === 'peer') {
+    $viewScopeSql = "u.id IN ({$principalPeerTargetIdsSql[$peerLane]}) AND $reportScopeSql";
+}
+
 $evalTypeSql = match ($activeEval) {
-    'peer' => $peerEvalSql,
+    'peer' => $peerLaneEvalSql,
     'staff' => $staffEvalSql,
     default => "$studentPeriodSql AND et.eval_type=$studentTypeSql AND $principalStudentEvaluatorSql AND COALESCE(et.evaluation_context,'teacher') IN ($teacherContextSql,$staffContextSql)"
 };
 $evalTypePlainSql = match ($activeEval) {
-    'peer' => $peerEvalPlainSql,
+    'peer' => $peerLaneEvalPlainSql,
     'staff' => $staffEvalPlainSql,
     default => "$studentPeriodPlainSql AND eval_type=$studentTypeSql AND $principalStudentEvaluatorPlainSql AND COALESCE(evaluation_context,'teacher') IN ($teacherContextSql,$staffContextSql)"
 };
@@ -1107,7 +1133,7 @@ button, .btn { font-weight:700; }
 a { color:inherit; }
 </style>
 <link rel="stylesheet" href="includes/principal_light_theme.css"/>
-<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20261009.3" id="principal-dark-repairs"/>
+<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20261011.4" id="principal-dark-repairs"/>
 </head><body class="<?= $reportMode ? 'report-mode' : '' ?>">
 </div>
 <?php render_exec_sidebar('reports', $me, $photo_src); ?>
@@ -2258,10 +2284,16 @@ $studentEvalCount = db_row($mysqli, "SELECT COUNT(DISTINCT et.id) as c
 $multiRoleEvalCount = 0;
 $staffEvalCount = db_row($mysqli, "SELECT COUNT(DISTINCT et.id) AS c FROM evaluation_tracker et WHERE $staffEvalSql")['c'] ?? 0;
 $peerEvalCount = db_row($mysqli, "SELECT COUNT(DISTINCT et.id) AS c FROM evaluation_tracker et WHERE $peerEvalSql")['c'] ?? 0;
-$peerTeacherCount = db_row($mysqli, "SELECT COUNT(*) AS c FROM users u
-    WHERE u.is_active=1 AND u.account_status='approved'
-      AND u.id IN ($principalTeacherIdsSql)
-      AND $reportScopeSql")['c'] ?? 0;
+$peerLaneCounts = [];
+foreach ($principalPeerTargetIdsSql as $laneName => $laneTargetsSql) {
+    // People evaluated in this lane (all periods), so both tabs show their records at once.
+    $peerLaneCounts[$laneName] = (int)(db_row($mysqli, "SELECT COUNT(DISTINCT et.target_user_id) AS c
+        FROM evaluation_tracker et
+        JOIN users u ON u.id=et.target_user_id
+        WHERE u.is_active=1 AND u.account_status='approved'
+          AND $peerPeriodSql AND (" . $principalPeerBase($laneName, false) . ")
+          AND $reportScopeSql")['c'] ?? 0);
+}
 
 $periodLabelForReport = static function (mysqli $db, int $pid): string {
     if ($pid <= 0) return '';
@@ -2452,11 +2484,13 @@ a { color:inherit; }
     <div class="reports-peer-note"><i class="fa-solid fa-circle-info"></i><span><strong>Staff Evaluations</strong> — results submitted by non-teaching staff for the Executive Assistant.<?php if ($staffUsesFallbackPeriod && $staffReportPeriodLabel !== ''): ?> Showing the latest available submissions from <?= htmlspecialchars($staffReportPeriodLabel) ?> because the configured period has no matching submissions.<?php endif; ?></span></div>
     <?php else: ?>
     <div class="reports-filter-tabs">
-        <a href="?group=All&eval_type=peer" class="reports-filter-tab active">
-            <i class="fa-solid fa-chalkboard-user"></i><span>JHS/SHS Teachers</span><b><?= $peerTeacherCount ?></b>
+        <?php foreach (['Faculty' => 'fa-chalkboard-user', 'Staff' => 'fa-id-badge'] as $laneName => $laneIcon): ?>
+        <a href="?group=<?= $laneName ?>&eval_type=peer" class="reports-filter-tab <?= $groupFilter===$laneName?'active':'' ?>">
+            <i class="fa-solid <?= $laneIcon ?>"></i><span><?= $laneName ?></span><b><?= (int)($peerLaneCounts[$laneName] ?? 0) ?></b>
         </a>
+        <?php endforeach; ?>
     </div>
-    <div class="reports-peer-note"><i class="fa-solid fa-circle-info"></i><span><strong>Peer-to-Peer Evaluations</strong> — results submitted by fellow JHS/SHS teachers.<?php if ($peerUsesFallbackPeriod && $peerReportPeriodLabel !== ''): ?> Showing the latest available submissions from <?= htmlspecialchars($peerReportPeriodLabel) ?> because the configured period has no matching submissions.<?php endif; ?></span></div>
+    <div class="reports-peer-note"><i class="fa-solid fa-circle-info"></i><span><strong>Peer-to-Peer Evaluations</strong> — <?= $groupFilter==='Staff' ? 'results submitted by JHS/SHS teachers for non-teaching Staff.' : 'results submitted by fellow JHS/SHS teachers.' ?><?php if ($peerUsesFallbackPeriod && $peerReportPeriodLabel !== ''): ?> Showing the latest available submissions from <?= htmlspecialchars($peerReportPeriodLabel) ?> because the configured period has no matching submissions.<?php endif; ?></span></div>
     <?php endif; ?>
 
     <!-- Main data panel styled after the supplied reference layout. -->
@@ -2519,7 +2553,7 @@ a { color:inherit; }
                     } elseif ($activeEval === 'staff') {
                         $roleLabel = 'Executive Assistant';
                     } else {
-                        $roleLabel = in_array($rawRole, ['teacher','faculty'], true) ? 'Faculty' : 'Staff';
+                        $roleLabel = $groupFilter === 'Staff' ? 'Staff' : 'Faculty';
                     }
                     $isFac = $roleLabel === 'Faculty';
                     $lastEval = !empty($p['last_evaluated']) ? date('M d, Y', strtotime($p['last_evaluated'])) : '—';

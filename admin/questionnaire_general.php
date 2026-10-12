@@ -433,15 +433,13 @@ html[data-theme="dark"] .qx-group:hover,html[data-theme="dark"] .qx-group:focus-
 html[data-theme="dark"] .qx-title,html[data-theme="dark"] .qx-group-name{color:var(--text)}
 </style>
 <script src="admin_appearance.js"></script>
+<link rel="stylesheet" href="admin_unified_ui.css?v=<?= (int)@filemtime(__DIR__ . '/admin_unified_ui.css') ?>">
 </head>
 <body>
 <div class="wrap">
   <?php if ($scope !== ''): ?>
   <div class="header">
-    <div class="title">
-      <h1>Questionnaire</h1>
-      <p>Assign questions by <strong>evaluation target</strong>. The same target questionnaire is used automatically by every applicable evaluator.</p>
-    </div>
+
     <a class="back-link" href="questionnaire.php"><i class="fa-solid fa-arrow-left"></i> Back to questionnaires</a>
   </div>
   <?php endif; ?>

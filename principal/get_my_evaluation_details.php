@@ -4,6 +4,13 @@ session_start();
 require_once 'db.php';
 header('Content-Type: application/json');
 
+// Treat placeholder comments such as "N/A" or "none" as no written feedback.
+function dean_clean_comment($v): ?string {
+    $t = trim((string)$v);
+    if ($t === '' || preg_match('/^(n\/?a|none|nil|no comments?|no feedback|not applicable|[\s.\-–—]+)$/iu', $t)) return null;
+    return $t;
+}
+
 function fail_json(string $message,int $status=400): void { http_response_code($status); echo json_encode(['ok'=>false,'error'=>$message]); exit; }
 
 $role = $_SESSION['role'] ?? '';
@@ -53,7 +60,7 @@ if($keptId>0){
   'overall_score'=>$count?round($sum/$count,2):0.0,
   'categories'=>$categories,
   'questions'=>$questions,
-  'comment'=>trim((string)($kept['remarks']??''))!==''?$kept['remarks']:null
+  'comment'=>dean_clean_comment($kept['remarks']??'')
  ]);
  $mysqli->close();
  exit;
@@ -123,6 +130,6 @@ echo json_encode([
  'overall_score'=>$overall,
  'categories'=>$categories,
  'questions'=>$questions,
- 'comment'=>trim((string)($tracker['remarks']??''))!==''?$tracker['remarks']:null
+ 'comment'=>dean_clean_comment($tracker['remarks']??'')
 ]);
 $mysqli->close();

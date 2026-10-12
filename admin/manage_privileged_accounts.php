@@ -111,6 +111,7 @@ $mysqli->query("
 ");
 
 $valid_roles = ['principal', 'dean', 'teacher', 'staff', 'student'];
+
 $role_labels = [
     'principal'             => 'Principal',
     'dean'                  => 'Dean',
@@ -585,8 +586,10 @@ $id = intval($_POST['delete_id'] ?? 0);
 // Shows self-registered accounts for the selected role + approval status.
 // Newest-first when reviewing Pending (so the newest registrations surface
 // first for triage); alphabetical once already Approved/Blocked.
-$orderClause = $viewStatus === 'pending' ? 'created_at DESC' : 'full_name ASC';
-$stmt = $mysqli->prepare("SELECT * FROM users WHERE role=? AND account_status=? ORDER BY $orderClause");
+$orderClause = $viewStatus === 'pending' ? 'u.created_at DESC' : 'u.full_name ASC';
+// Tabs are based strictly on the account's role. A Staff account stays in the
+// Staff tab even when it has year-level (teaching) assignments.
+$stmt = $mysqli->prepare("SELECT u.* FROM users u WHERE u.role=? AND u.account_status=? ORDER BY $orderClause");
 $stmt->bind_param("ss", $viewRole, $viewStatus);
 $stmt->execute();
 $entries = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -627,14 +630,19 @@ if ($viewRole === 'student' && $entries && $levelFilter !== '') {
     $entries = array_values(array_filter($entries, fn($u) => classify_student_level($u['year_level']) === $levelFilter));
 }
 
-// Counts: role x status grid, in one query.
+// Counts: role x status grid, in one query. The tab a person appears under
+// follows their account `role` only: Staff stay under Staff even after the EA
+// assigns them a year level to teach, and Faculty is strictly role = 'teacher'.
 $countGrid = [];
 foreach ($valid_roles as $r) { foreach ($valid_statuses as $s) { $countGrid[$r][$s] = 0; } }
-$cq = $mysqli->query("SELECT role, account_status, COUNT(*) c FROM users WHERE role IN ('" . implode("','", $valid_roles) . "') GROUP BY role, account_status");
+$cq = $mysqli->query("SELECT u.role AS report_role, u.account_status, COUNT(*) c
+    FROM users u
+    WHERE u.role IN ('" . implode("','", $valid_roles) . "')
+    GROUP BY u.role, u.account_status");
 if ($cq) {
     while ($row = $cq->fetch_assoc()) {
-        if (isset($countGrid[$row['role']][$row['account_status']])) {
-            $countGrid[$row['role']][$row['account_status']] = (int)$row['c'];
+        if (isset($countGrid[$row['report_role']][$row['account_status']])) {
+            $countGrid[$row['report_role']][$row['account_status']] = (int)$row['c'];
         }
     }
 }
@@ -954,6 +962,7 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
 
 <link rel="stylesheet" href="admin_appearance.css">
 <script src="admin_appearance.js"></script>
+<link rel="stylesheet" href="admin_unified_ui.css?v=<?= (int)@filemtime(__DIR__ . '/admin_unified_ui.css') ?>">
 </head>
 <body class="feature-compact">
 
@@ -966,12 +975,7 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
 
 <a href="admin_dashboard.php" class="back-link" onclick="if(window.parent&&window.parent!==window&&window.parent.showPage){window.parent.showPage('dashboard',window.parent.document.getElementById('link-dashboard'));return false;}"><i class="fa-solid fa-arrow-left"></i> Back to Dashboard</a>
 
-<div class="page-header">
-    <div>
-        <h1>Account Management</h1>
-        <p>Review self-registered accounts and approve or block access — Executive Assistant, School Head, Principal, Dean, Faculty, Staff, and Student</p>
-    </div>
-</div>
+
 
 <div class="sector-tabs">
     <?php foreach ($valid_roles as $r):

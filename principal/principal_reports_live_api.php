@@ -25,8 +25,9 @@ $periodId = (int)($settings['period_id'] ?? 0);
 $activeEval = $_GET['eval_type'] ?? 'student';
 if (!in_array($activeEval, ['student','peer','staff'], true)) $activeEval = 'student';
 $group = $_GET['group'] ?? 'All';
-// Peer-to-Peer is JHS/SHS teachers only and has no Faculty/Staff split.
-if (in_array($activeEval, ['peer','staff'], true)) $group = 'All';
+// Peer-to-Peer has two lanes (Faculty / Staff), like principal_reports.php.
+if ($activeEval === 'staff') $group = 'All';
+if ($activeEval === 'peer' && !in_array($group, ['Faculty','Staff'], true)) $group = 'Faculty';
 
 $hsLevels = "'Grade 7','Grade 8','Grade 9','Grade 10','Grade 11','Grade 12','Grade 7 - JHS','Grade 8 - JHS','Grade 9 - JHS','Grade 10 - JHS','Grade 11 - SHS','Grade 12 - SHS'";
 $hsScope = "(
@@ -76,11 +77,16 @@ $hsTeacherIds = "SELECT ht.id FROM users ht
           OR LOWER(TRIM(COALESCE(ht.year_level,''))) IN ('jhs','shs','junior high school','senior high school')
           OR LOWER(TRIM(COALESCE(ht.education_level,''))) IN ('junior_high','senior_high','jhs','shs')
       )";
+// Peer evaluators must be JHS/SHS teachers too (same rule as principal_reports.php).
+require_once __DIR__ . '/principal_hs_scope.php';
 $peerEvaluatorIds = "SELECT pe.id FROM users pe
-    WHERE pe.role IN ('teacher','faculty')
-       OR (pe.role='staff' AND EXISTS (
-            SELECT 1 FROM user_year_levels peyl WHERE peyl.user_id=pe.id
-       ))";
+    WHERE pe.role IN ('teacher','faculty','staff') AND " . principal_hs_scope_sql('pe');
+$peerStaffLaneIds = "SELECT sx.id FROM users sx WHERE sx.role='staff'
+    AND NOT EXISTS (SELECT 1 FROM user_year_levels sxy WHERE sxy.user_id=sx.id)
+    AND NOT EXISTS (SELECT 1 FROM teaching_assignments sxt WHERE sxt.user_id=sx.id)";
+$peerTargetIds = $group === 'Staff'
+    ? $peerStaffLaneIds
+    : "SELECT fx.id FROM users fx WHERE fx.id IN ($hsTeacherIds) AND fx.id NOT IN ($peerStaffLaneIds)";
 $nonTeachingStaffIds = "SELECT nts.id FROM users nts WHERE nts.role='staff'
     AND NOT EXISTS (SELECT 1 FROM user_year_levels ntyl WHERE ntyl.user_id=nts.id)";
 $eaTargetIds = "SELECT eat.id FROM users eat WHERE eat.role IN ($eaRolesSql)
@@ -95,7 +101,9 @@ if ($activeEval === 'peer') {
         )
         AND et.status IN ('submitted','approved')
         AND et.evaluator_id IN ($peerEvaluatorIds)
-        AND et.target_user_id IN ($hsTeacherIds)";
+        AND et.target_user_id IN ($peerTargetIds)";
+    // The lane's target list is authoritative for who is evaluated.
+    $whereRole = "u.role IN ('teacher','faculty','staff')";
 } elseif ($activeEval === 'staff') {
     // Non-teaching Staff -> Executive Assistant submissions use eval_type='staff'
     // and peer_group='Staff Evaluation'; retain the app's known legacy values.
@@ -139,7 +147,9 @@ if (!$activeHasData && ($activeEval !== 'student' || (function_exists('sh_gate_a
     if ($latest && (int)$latest['period_id'] > 0) $queryPeriodId = (int)$latest['period_id'];
 }
 
-if ($queryPeriodId <= 0) {
+// Peer-to-Peer records are static across all periods (see principal_reports.php).
+$staticPeriod = ($activeEval === 'peer');
+if ($queryPeriodId <= 0 && !$staticPeriod) {
     echo json_encode([
         'signature' => 'no-period',
         'period_id' => 0,
@@ -162,7 +172,7 @@ $sql = "SELECT
         FROM evaluation_tracker et
         JOIN users u ON u.id=et.target_user_id
         LEFT JOIN questionnaire_answers qa ON qa.tracker_id=et.id
-        WHERE et.period_id=$queryPeriodId
+        WHERE " . ($staticPeriod ? '1=1' : "et.period_id=$queryPeriodId") . "
           AND $evalClause
           AND $whereRole
           AND u.is_active=1

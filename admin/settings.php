@@ -50,9 +50,23 @@ html[data-theme="dark"]{--bg:#0b1626;--text:#e7eef8;--muted:#8ba0bd;--panel-bg:#
 .layout{display:block}
 .side{background:var(--panel-bg);border:1px solid var(--panel-border);border-radius:13px;padding:4px;box-shadow:0 4px 18px rgba(32,73,120,.07);display:flex;gap:3px;margin-bottom:15px;overflow-x:auto;-webkit-overflow-scrolling:touch}
 .side button{flex:0 0 auto;border:0;background:transparent;text-align:left;padding:8px 12px;border-radius:8px;color:var(--muted);font:600 12px Inter;cursor:pointer;display:flex;gap:8px;align-items:center;white-space:nowrap}.side button:hover{background:var(--bg);color:var(--accent)}.side button.active{background:var(--accent-soft);color:var(--accent)}.side i{width:16px;text-align:center}
-.side-actions{margin-left:auto;display:flex;align-items:center;gap:10px}
-.side button.side-save-btn{flex:0 0 auto;border:0;border-radius:8px;padding:8px 14px;font:700 12px Inter!important;cursor:pointer;background:#3B6FE0!important;color:#FFFFFF!important;white-space:nowrap;text-align:center}
-.side button.side-save-btn:hover{background:#4C7CEA!important;color:#FFFFFF!important}
+.toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+.toolbar .side{margin-bottom:0;max-width:100%}
+.side-actions{margin-left:auto;display:flex;align-items:center;gap:12px}
+.dirty-hint{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:#B26A06}
+.dirty-hint[hidden]{display:none}
+.dirty-hint i{width:8px;height:8px;border-radius:50%;background:#F0B429;box-shadow:0 0 0 3px rgba(240,180,41,.25)}
+.side-save-btn{display:inline-flex;align-items:center;gap:8px;border:1px solid #0F9F6E;border-radius:10px;padding:9px 16px;font:700 12.5px Inter;cursor:pointer;background:#0F9F6E;color:#fff;white-space:nowrap;transition:background .15s,opacity .15s}
+.side-save-btn:hover:not(:disabled){background:#0C7F59;border-color:#0C7F59}
+.side-save-btn:disabled{background:transparent;color:var(--muted);border-color:var(--panel-border);cursor:not-allowed;opacity:.75}
+/* Fill the workspace: only the form scrolls, not the whole page + the form */
+html body.settings-page:not(.report-mode){height:100vh;overflow:hidden;box-sizing:border-box}
+.settings-page .settings-shell{height:100%;display:flex;flex-direction:column}
+.settings-page .layout{flex:1;min-height:0;display:flex;flex-direction:column}
+.settings-page .panel{flex:1;min-height:0}
+.settings-page .panel-card.section-panel{height:100%}
+.settings-page .panel-card.section-panel > .frame{height:100%!important;min-height:0}
+#section-system,#section-archive{border:0;box-shadow:none;border-radius:0;background:transparent}
 .unsaved-banner{position:fixed;top:0;left:0;right:0;z-index:9999;display:flex;align-items:center;justify-content:center;gap:14px;padding:12px 20px;background:#FFF3D6;border-bottom:2px solid #F0B429;color:#7A5A0A;font:700 12.5px Inter;box-shadow:0 6px 16px rgba(122,90,10,.15);transform:translateY(-100%);opacity:0;transition:transform .22s ease,opacity .22s ease;pointer-events:none}
 .unsaved-banner.show{transform:translateY(0);opacity:1;pointer-events:auto}
 .unsaved-banner i{color:#D97706}
@@ -102,8 +116,9 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
 
 <link rel="stylesheet" href="admin_appearance.css">
 <script src="admin_appearance.js"></script>
+<link rel="stylesheet" href="admin_unified_ui.css?v=<?= (int)@filemtime(__DIR__ . '/admin_unified_ui.css') ?>">
 </head>
-<body>
+<body class="settings-page">
 <div class="unsaved-banner" id="unsavedBanner">
   <i class="fa-solid fa-triangle-exclamation"></i>
   <span>You have unsaved changes in System &amp; Period Settings.</span>
@@ -114,21 +129,22 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
     <div><h1 class="settings-title">Settings</h1><p class="settings-sub"></p></div>
   </div>
   <div class="layout">
+    <div class="toolbar">
     <aside class="side" aria-label="Settings sections">
       <button class="tab-btn" data-tab="system"><i class="fa-solid fa-sliders" style="color:#3B82F6"></i><span>System &amp; Period</span></button>
       <button class="tab-btn" data-tab="archive"><i class="fa-solid fa-box-archive" style="color:#F59E0B"></i><span>System Archive</span></button>
       <button class="tab-btn" data-tab="appearance"><i class="fa-solid fa-palette" style="color:#EC4899"></i><span>Appearance</span></button>
-      <div class="side-actions" id="sideActions" style="display:none">
-        <button class="side-save-btn" id="sideSaveBtn" type="button">Save System Settings</button>
-      </div>
     </aside>
+    <div class="side-actions" id="sideActions" style="display:none">
+      <span class="dirty-hint" id="dirtyHint" hidden><i></i>Unsaved changes</span>
+      <button class="side-save-btn" id="sideSaveBtn" type="button" disabled><i class="fa-solid fa-floppy-disk"></i> Save changes</button>
+    </div>
+    </div>
     <main class="panel">
       <section class="panel-card section-panel" id="section-system">
-        <div class="panel-bar"><div><h2>System &amp; Period Settings</h2><p>Configure the active academic structure and evaluation schedule.</p></div><span class="panel-note">Edit access is permission-controlled.</span></div>
         <iframe class="frame" title="System and Period Settings" src="system_settings.php" scrolling="yes" frameborder="0"></iframe>
       </section>
       <section class="panel-card section-panel" id="section-archive" style="display:none">
-        <div class="panel-bar"><div><h2>System Archive</h2><p>Safely close completed evaluation periods and preserve their history.</p></div><span class="panel-note">Archive access is permission-controlled.</span></div>
         <iframe class="frame" title="System Archive" src="system_archive.php" scrolling="yes" frameborder="0"></iframe>
       </section>
       <section class="panel-card section-panel" id="section-appearance" style="display:none">
@@ -176,7 +192,11 @@ function setTab(tab){buttons.forEach(b=>b.classList.toggle('active',b.dataset.ta
 // (see the tab click handler below), not the instant they start typing.
 window.addEventListener('message', (e) => {
   if (!e.data || e.data.type !== 'system-settings-dirty') return;
-  if (e.data.dirty) return;
+  const d = !!e.data.dirty;
+  const sb = document.getElementById('sideSaveBtn'), hint = document.getElementById('dirtyHint');
+  if (sb) sb.disabled = !d;
+  if (hint) hint.hidden = !d;
+  if (d) return;
   const banner = document.getElementById('unsavedBanner');
   if (banner) banner.classList.remove('show');
 });
@@ -212,7 +232,7 @@ function prepareFrame(iframe){
   // Keep a fixed viewport so long Settings forms scroll INSIDE the feature frame.
   // Do not redirect wheel events to window: Settings is itself commonly embedded
   // inside the dashboard content area, so window.scrollBy() can target the wrong scroller.
-  iframe.style.height='min(760px, calc(100vh - 205px))';
+  /* height is handled by CSS (flex fill) so the page doesn't get a second scrollbar */
 }
 document.querySelectorAll('iframe.frame').forEach(f=>{
   f.addEventListener('load',()=>prepareFrame(f));

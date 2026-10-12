@@ -480,6 +480,11 @@ function student_dashboard_format_period_dt(?DateTimeImmutable $dt, string $tzNa
 $period_opens_label  = student_dashboard_format_period_dt(student_dashboard_parse_period_dt($periodSettings['eval_start'] ?? '', $period_tz), $period_tz_name);
 $period_closes_label = student_dashboard_format_period_dt(student_dashboard_parse_period_dt($periodSettings['eval_end'] ?? '', $period_tz), $period_tz_name);
 
+$period_opens_short  = ($__dt = student_dashboard_parse_period_dt($periodSettings['eval_start'] ?? '', $period_tz)) ? $__dt->format('M j, Y g:i A') : 'Not set';
+$period_closes_short = ($__dt = student_dashboard_parse_period_dt($periodSettings['eval_end'] ?? '', $period_tz)) ? $__dt->format('M j, Y g:i A') : 'Not set';
+$edu_labels = ['elementary'=>'Elementary','junior_high'=>'Junior High School','senior_high'=>'Senior High School','college'=>'College'];
+$student_edu_label = $edu_labels[strtolower(trim((string)$student_level))] ?? 'Student';
+
 // Academic Year: not one of the columns this file already selects from
 // evaluation_periods. Read it if the column exists; otherwise fall back
 // to the Philippine school-year convention (year rolls over ~June) off
@@ -747,7 +752,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
         $new_full_name  = trim($_POST['full_name'] ?? '');
         $new_username   = trim($_POST['username'] ?? '');
         $new_year_level = trim($_POST['year_level'] ?? '');
-        $new_email      = trim($_POST['email'] ?? '');
 
         if ($new_full_name === '') {
             $profile_error = "Full name is required.";
@@ -767,10 +771,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
             // Only blocks actual changes; re-saving other profile fields with
             // the same year level still goes through even while locked.
             $profile_error = $year_level_locked_reason ?: "Year level updates are currently closed.";
-        } elseif ($new_email !== '' && !filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
-            $profile_error = "Please enter a valid email address.";
-        } elseif (mb_strlen($new_email) > 150) {
-            $profile_error = "Email is too long.";
         } else {
             // Username must stay unique across all accounts, not just students.
             $dupChk = $mysqli->prepare("SELECT id FROM users WHERE username = ? AND id <> ? LIMIT 1");
@@ -782,9 +782,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
                 $dupChk->close();
             } else {
                 $dupChk->close();
-                $emailToSave = $new_email !== '' ? $new_email : null;
-                $upd = $mysqli->prepare("UPDATE users SET full_name = ?, username = ?, year_level = ?, email = ? WHERE id = ? AND role = 'student' LIMIT 1");
-                $upd->bind_param("ssssi", $new_full_name, $new_username, $new_year_level, $emailToSave, $student_id);
+                $upd = $mysqli->prepare("UPDATE users SET full_name = ?, username = ?, year_level = ? WHERE id = ? AND role = 'student' LIMIT 1");
+                $upd->bind_param("sssi", $new_full_name, $new_username, $new_year_level, $student_id);
                 $upd->execute();
                 $upd->close();
 
@@ -795,7 +794,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
                 $student_name              = $new_full_name;
                 $student_username          = $new_username;
                 $student_year_level        = $new_year_level;
-                $student_email             = $emailToSave ?? '';
                 $_SESSION['full_name']     = $new_full_name;
                 $profile_success           = "Profile updated.";
             }
@@ -1176,6 +1174,29 @@ $total_evaluatees=count($grouped['Faculty']??[])+count($grouped['Staff']??[])+co
 $total_done=count($done_ids);
 $total_pending     = max(0, $total_evaluatees - $total_done);
 $pct              = $total_evaluatees > 0 ? round(($total_done / $total_evaluatees) * 100) : 0;
+
+// ── LIVE NOTICES (bell): evaluation status + the student's own progress ──
+// Ids embed the values they announce, so a change (opened/closed, one more
+// evaluation done) creates a fresh unread notice and unchanged state is
+// never re-announced.
+$live_notices = [];
+$live_notices[] = [
+    'id'   => 'eval-status-' . substr(md5(($period_is_open ? 'open' : 'closed') . '|' . $period_closes_short), 0, 10),
+    'text' => $period_is_open
+        ? 'Evaluation is open' . ($period_closes_short !== 'Not set' ? ' and closes on ' . $period_closes_short . '.' : '.')
+        : 'Evaluation is currently closed.',
+    'icon' => $period_is_open ? 'fa-lock-open' : 'fa-lock',
+];
+if ($period_is_open && $total_evaluatees > 0) {
+    $live_notices[] = [
+        'id'   => 'eval-progress-' . substr(md5(((int)($activePeriodRow['id'] ?? 0)) . "|$total_done|$total_evaluatees"), 0, 10),
+        'text' => $total_pending > 0
+            ? "You have $total_pending evaluation" . ($total_pending !== 1 ? 's' : '') . " left to complete ($total_done of $total_evaluatees done)."
+            : 'You have completed all your evaluations. Thank you!',
+        'icon' => $total_pending > 0 ? 'fa-hourglass-half' : 'fa-circle-check',
+    ];
+}
+$student_bell_notices = array_merge($live_notices, $student_bell_notices);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -1899,6 +1920,298 @@ body .category-grid .cat-done-pill{margin-top:8px;font-size:10.5px;padding:3px 1
 body.light-theme .student-eval-note{margin:14px 0 22px!important;}
 .page-sub{margin-bottom:0;line-height:1.5;}
 </style>
+<style id="student-title-icons">
+/* ── Top header bar (same layout as the Faculty portal): icon + page title on the
+   left, semester pill + notifications on the right. One accent only (Student gold). ── */
+.student-topbar{position:fixed;top:0;left:248px;right:0;height:58px;z-index:35;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 26px;background:#FFFFFF;color:#13263F;border-bottom:1px solid #DEE6EF;box-shadow:0 2px 14px rgba(15,34,55,.04);box-sizing:border-box;}
+.student-topbar *{box-sizing:border-box;}
+.stb-left,.stb-right{display:flex;align-items:center;gap:13px;min-width:0;}
+.stb-title{display:inline-flex;align-items:center;gap:11px;font-family:'Rajdhani',sans-serif;font-size:21px;font-weight:700;letter-spacing:.3px;line-height:1.2;color:#13263F;white-space:nowrap;}
+.stb-icon{font-size:19px;color:var(--gold);}
+.student-topbar .hamburger-btn{position:static!important;display:none;width:36px;height:36px;margin:0;background:#F8FAFC!important;border:1px solid #D9E2EC!important;color:#334155!important;}
+.student-topbar .workspace-pill{box-shadow:none;background:rgba(217,119,6,.08)!important;border-color:rgba(217,119,6,.28)!important;color:#9A5A06!important;}
+.student-topbar .workspace-pill i{color:var(--gold)!important;}
+.student-topbar .notif-bell{width:36px;height:36px;background:#FFFFFF!important;border-color:#D9E2EC!important;color:#64748B!important;}
+body:not(.light-theme) .student-topbar{background:#0F1F3D;color:#E0E6F0;border-bottom-color:rgba(255,255,255,.10);box-shadow:0 2px 14px rgba(0,0,0,.22);}
+body:not(.light-theme) .stb-title{color:#F8FAFC;}
+body:not(.light-theme) .student-topbar .hamburger-btn{background:#172A45!important;border-color:rgba(255,255,255,.12)!important;color:#D0DAE6!important;}
+body:not(.light-theme) .student-topbar .workspace-pill{background:rgba(217,119,6,.16)!important;border-color:rgba(245,158,11,.34)!important;color:#FBBF24!important;}
+body:not(.light-theme) .student-topbar .notif-bell{background:#172A45!important;border-color:rgba(255,255,255,.12)!important;color:#D0DAE6!important;}
+
+/* ── Evaluate Personnel: same layout as the Admin "Evaluate Others" page ──
+   white card → "Evaluation" heading → step label → large category cards. */
+.eval-main-card{background:#FFFFFF;border:1px solid #E2E8F0;border-radius:18px;padding:26px 30px 30px;box-shadow:0 2px 12px rgba(15,23,42,.045);}
+body:not(.light-theme) .eval-main-card{background:var(--mid);border-color:var(--border);box-shadow:0 8px 24px rgba(0,0,0,.2);}
+.eval-card-title{display:flex;align-items:center;gap:12px;font-family:'Rajdhani',sans-serif;font-size:30px;font-weight:700;line-height:1.1;color:#0F172A;margin-bottom:20px;}
+.eval-card-title i{font-size:21px;color:#2563EB;}
+body:not(.light-theme) .eval-card-title{color:#F8FAFC;}
+.eval-step-label{display:flex;align-items:center;gap:9px;font-size:12px;font-weight:800;letter-spacing:1.1px;text-transform:uppercase;color:#64748B;margin-bottom:14px;}
+.eval-step-label i{font-size:12px;color:#64748B;}
+body:not(.light-theme) .eval-step-label,body:not(.light-theme) .eval-step-label i{color:var(--muted);}
+/* Fixed 3-column track: a card is always one third wide, so two categories keep the same size as three. */
+.eval-main-card .category-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:18px!important;margin-bottom:20px;}
+.eval-main-card .category-grid .cat-btn{min-height:215px!important;padding:28px 18px 24px!important;border-radius:15px;}
+.eval-main-card .category-grid .cat-btn::after{border-radius:0 0 15px 15px;}
+.eval-main-card .category-grid .cat-icon{width:72px;height:72px;font-size:28px;margin-bottom:14px;}
+.eval-main-card .category-grid .cat-name{font-size:22px;margin-bottom:4px;}
+.eval-main-card .category-grid .cat-meta{font-size:14px;}
+@media(max-width:900px){.eval-main-card .category-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;}}
+.eval-main-card .ev-panel{margin-top:6px;margin-bottom:0;}
+@media(max-width:600px){
+  .eval-main-card{padding:20px 16px 22px;}
+  .eval-card-title{font-size:25px;}
+  .eval-main-card .category-grid{grid-template-columns:1fr!important;}
+  .eval-main-card .category-grid .cat-btn{min-height:170px!important;}
+}
+
+/* Dashboard intro: small gold label with the status pill underneath, left-aligned. */
+.dashboard-welcome{display:flex!important;flex-direction:column!important;align-items:flex-start!important;justify-content:flex-start!important;gap:10px!important;margin-bottom:16px!important;}
+.dash-kicker{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;letter-spacing:1.1px;text-transform:uppercase;color:var(--gold);}
+.dash-kicker i{font-size:13px;color:var(--gold);}
+.dashboard-welcome .period-pill{margin:0;}
+
+/* Make room for the bar. student_ui.css forces `margin:24px !important` on .main with a
+   more specific selector, so these use the same selectors to win. */
+@media(min-width:901px){
+  body:has(.app-shell) .main,
+  body.light-theme:has(.app-shell) .main{margin-top:82px!important;min-height:calc(100vh - 106px)!important;}
+}
+/* The in-page heading is Dashboard-only now; other tabs get their title from the bar. */
+.content-topbar.not-dashboard{display:none!important;}
+.view-content:not(#view-dashboard) > .page-title{display:none;}
+
+@media(max-width:900px){
+  .student-topbar{left:0;padding:0 14px;}
+  .student-topbar .hamburger-btn{display:flex;}
+  body:has(.app-shell) .main,
+  body.light-theme:has(.app-shell) .main{margin-top:74px!important;min-height:calc(100vh - 90px)!important;padding-top:22px!important;}
+}
+@media(max-width:600px){.stb-title{font-size:18px;}.student-topbar .workspace-pill{padding:7px 10px;font-size:11px;}}
+
+/* ── Dashboard: staff-style layout (white shell, info row, welcome card, top-bordered stats, shortcuts) ── */
+.sd-shell{--sd-card:#fff;--sd-line:#e2e8f0;--sd-ink:#0f172a;--sd-sub:#64748b;background:#fff;border:1px solid #e6ebf2;border-radius:22px;padding:30px 32px 34px;box-shadow:0 8px 24px rgba(15,23,42,.05);}
+body:not(.light-theme) .sd-shell{--sd-card:var(--inner);--sd-line:var(--border);--sd-ink:#f8fafc;--sd-sub:var(--muted);background:var(--mid);border-color:var(--border);box-shadow:0 8px 24px rgba(0,0,0,.2);}
+.sd-open-pill{display:inline-flex;align-items:center;gap:8px;padding:7px 14px;border-radius:999px;font-size:13px;font-weight:600;margin-bottom:18px;}
+.sd-open-pill.open{background:#ecfdf3;border:1px solid #86efac;color:#15803d;}
+.sd-open-pill.closed{background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;}
+body:not(.light-theme) .sd-open-pill.open{background:rgba(34,197,94,.13);color:#4ade80;border-color:rgba(34,197,94,.3);}
+body:not(.light-theme) .sd-open-pill.closed{background:rgba(240,84,84,.1);color:#fca5a5;border-color:rgba(240,84,84,.3);}
+.sd-period{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px 24px;align-items:center;padding:22px 26px;border:1px solid var(--sd-line);border-radius:16px;background:var(--sd-card);margin-bottom:18px;}
+.sd-lbl{font-size:11.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#d97706;margin-bottom:8px;}
+.sd-val{font-size:17px;font-weight:600;color:var(--sd-ink);white-space:nowrap;}
+.sd-status{display:inline-block;padding:6px 18px;border-radius:999px;font-size:14px;font-weight:600;}
+.sd-status.open{background:#ecfdf3;border:1px solid #86efac;color:#15803d;}
+.sd-status.closed{background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;}
+.sd-note{margin:-6px 0 18px;font-size:12.5px;color:var(--sd-sub);}.sd-note strong{color:var(--sd-ink);}
+.sd-welcome{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:28px 30px;border:1px solid #bbf0d0;border-radius:16px;background:linear-gradient(135deg,#f0fdf6 0%,#fff 70%);margin-bottom:18px;}
+body:not(.light-theme) .sd-welcome{background:linear-gradient(135deg,rgba(34,197,94,.1),var(--inner) 70%);border-color:rgba(34,197,94,.25);}
+.sd-welcome-text{min-width:0;flex:1;}
+.sd-welcome h2{font-family:'Rajdhani',sans-serif;font-size:30px;font-weight:700;color:var(--sd-ink);line-height:1.15;}
+.sd-welcome p{font-size:15px;color:var(--sd-sub);margin-top:8px;}
+.sd-bar{height:8px;max-width:420px;margin-top:16px;background:#e2e8f0;border-radius:20px;overflow:hidden;}
+body:not(.light-theme) .sd-bar{background:rgba(255,255,255,.1);}
+.sd-bar div{height:100%;background:linear-gradient(90deg,#d97706,#f59e0b);border-radius:20px;transition:width .4s ease;}
+.sd-score{flex-shrink:0;min-width:288px;text-align:center;padding:22px 28px;border:1px solid #bbf0d0;border-radius:16px;background:#f0fdf6;}
+body:not(.light-theme) .sd-score{background:rgba(34,197,94,.08);border-color:rgba(34,197,94,.25);}
+.sd-score-num{font-family:'Rajdhani',sans-serif;font-size:50px;font-weight:700;line-height:1;color:#15803d;}
+body:not(.light-theme) .sd-score-num{color:#4ade80;}
+.sd-score-lbl{margin-top:10px;font-size:13px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--sd-sub);}
+.sd-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:34px;}
+.sd-stat{background:var(--sd-card);border:1px solid var(--sd-line);border-top:4px solid var(--c);border-radius:16px;padding:20px 22px 22px;box-shadow:0 4px 14px rgba(15,23,42,.04);}
+.sd-stat .sd-lbl{color:var(--sd-sub);font-size:12px;letter-spacing:1.3px;margin:14px 0 6px;}
+.sd-stat-val{font-size:34px;font-weight:700;line-height:1.1;color:var(--cv);}
+.s-amber{--c:#f59e0b;--cv:#d97706;--ci:#fef3c7;--cf:#b45309}.s-green{--c:#22c55e;--cv:#15803d;--ci:#dcfce7;--cf:#15803d}.s-yellow{--c:#eab308;--cv:#ca8a04;--ci:#fef9c3;--cf:#a16207}.s-blue{--c:#3b82f6;--cv:#2563eb;--ci:#dbeafe;--cf:#1d4ed8}
+.sd-ico{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:10px;background:var(--ci);color:var(--cf);font-size:16px;}
+body:not(.light-theme) .sd-stat-val{color:#f8fafc;}
+.sd-sc-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:16px;}
+.sd-kicker{font-size:12px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:#15803d;margin-bottom:4px;}
+body:not(.light-theme) .sd-kicker{color:#4ade80;}
+.sd-sc-head h3{font-family:'Rajdhani',sans-serif;font-size:24px;font-weight:700;color:var(--sd-ink);}
+.sd-sc-hint{font-size:13px;color:var(--sd-sub);}
+.sd-shortcuts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;}
+.sd-sc{display:flex;align-items:center;gap:16px;text-align:left;font:inherit;cursor:pointer;padding:24px 22px;background:var(--sd-card);border:1px solid var(--sd-line);border-radius:16px;color:var(--sd-ink);transition:border-color .2s,box-shadow .2s,transform .2s;}
+.sd-sc:hover{border-color:#f0c27a;box-shadow:0 8px 20px rgba(15,23,42,.07);transform:translateY(-1px);}
+.sd-sc:focus-visible{outline:2px solid #d97706;outline-offset:2px;}
+.sd-sc-ico{width:52px;height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;}
+.sd-sc-ico.c-green{background:#dcfce7;color:#15803d}.sd-sc-ico.c-blue{background:#dbeafe;color:#2563eb}.sd-sc-ico.c-amber{background:#fef3c7;color:#d97706}
+.sd-sc-body{flex:1;min-width:0;}
+.sd-sc-body strong{display:block;font-size:15px;font-weight:700;color:var(--sd-ink);}
+.sd-sc-body small{display:block;margin-top:5px;font-size:13px;line-height:1.4;color:var(--sd-sub);}
+.sd-arrow{color:#94a3b8;font-size:14px;flex-shrink:0;}
+@media(max-width:1200px){.sd-period{grid-template-columns:repeat(2,minmax(0,1fr));}.sd-stats{grid-template-columns:repeat(2,minmax(0,1fr));}.sd-shortcuts{grid-template-columns:1fr;}.sd-welcome{flex-direction:column;align-items:stretch;}.sd-score{min-width:0;}}
+@media(max-width:600px){.sd-shell{padding:20px 16px 24px;border-radius:18px;}.sd-period{padding:18px;}.sd-val{white-space:normal;}.sd-welcome{padding:20px;}.sd-welcome h2{font-size:25px;}.sd-stats{gap:10px;}.sd-sc-head{flex-direction:column;align-items:flex-start;gap:4px;}}
+
+/* Pale workspace color (#f1f4f8) fills the whole page: no white margin around the content panel. */
+html:has(body.light-theme .app-shell),body.light-theme,body.light-theme:has(.app-shell){background:#f1f4f8!important;}
+body.light-theme:has(.app-shell) .app-shell{background:#f1f4f8!important;}
+body.light-theme:has(.app-shell) .main{background:#f1f4f8!important;border-color:transparent!important;box-shadow:none!important;}
+
+/* ── Dashboard: match the Principal dashboard (compact, uniform gold) ── */
+@media(min-width:901px){body:has(.app-shell) .main,body.light-theme:has(.app-shell) .main{margin:78px 34px 24px 34px!important;padding:0!important;min-height:calc(100vh - 102px)!important;}}
+.sd-shell{padding:22px 32px 28px;border-radius:22px;--gold-d:#b7791f;}
+.sd-kick-top{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;letter-spacing:1.3px;text-transform:uppercase;color:var(--gold-d);margin-bottom:12px;}
+.sd-open-pill{font-size:12.5px;padding:6px 14px;margin-bottom:14px;}
+.sd-period{padding:18px 26px;border-radius:16px;margin-bottom:16px;}
+.sd-lbl{font-size:11px;letter-spacing:1.2px;color:var(--gold-d);margin-bottom:6px;}
+.sd-val{font-size:16px;font-weight:700;}
+.sd-status{font-size:12px;font-weight:700;padding:5px 15px;}
+.sd-welcome{padding:22px 26px;margin-bottom:16px;background:linear-gradient(135deg,#fffaf0 0%,#fff 75%);border-color:#f3e2b8;}
+.sd-welcome h2{font-size:28px;}
+.sd-welcome p{font-size:14px;margin-top:6px;}
+.sd-em{color:var(--gold-d);font-weight:700;}
+.sd-score{min-width:350px;padding:18px 26px;background:#fff8e8;border-color:#f3e2b8;}
+.sd-score-num{font-size:46px;color:var(--gold-d);}
+.sd-score-lbl{font-size:12px;margin-top:8px;}
+.sd-stats{gap:16px;margin-bottom:28px;}
+.sd-stat,.sd-stat.s-amber,.sd-stat.s-green,.sd-stat.s-yellow,.sd-stat.s-blue{--c:#d99a2b;--cv:var(--gold-d);--ci:#fdf0d5;--cf:var(--gold-d);padding:16px 20px 18px;border-top-width:5px;}
+.sd-stat .sd-lbl{color:var(--sd-sub);font-size:11.5px;margin:10px 0 4px;}
+.sd-stat-val{font-size:30px;}
+.sd-ico{width:34px;height:34px;font-size:15px;}
+.sd-sc-head{margin-bottom:12px;}
+.sd-kicker{font-size:11.5px;color:var(--gold-d);margin-bottom:2px;}
+.sd-sc-head h3{font-size:22px;}
+.sd-sc-hint{font-size:12.5px;}
+.sd-sc{padding:18px 20px;gap:14px;}
+.sd-sc-ico,.sd-sc-ico.c-green,.sd-sc-ico.c-blue,.sd-sc-ico.c-amber{width:44px;height:44px;font-size:18px;background:#fdf0d5;color:var(--gold-d);}
+.sd-sc-body strong{font-size:14.5px;}.sd-sc-body small{font-size:12.5px;margin-top:3px;}
+.sd-arrow{color:var(--gold-d);}
+.sd-sc:hover{border-color:#e9c987;}
+body:not(.light-theme) .sd-welcome{background:linear-gradient(135deg,rgba(217,154,43,.12),var(--inner) 75%);border-color:rgba(217,154,43,.3);}
+body:not(.light-theme) .sd-score{background:rgba(217,154,43,.1);border-color:rgba(217,154,43,.3);}
+body:not(.light-theme) .sd-score-num,body:not(.light-theme) .sd-kick-top,body:not(.light-theme) .sd-kicker,body:not(.light-theme) .sd-em,body:not(.light-theme) .sd-arrow{color:#f5b54a;}
+body:not(.light-theme) .sd-stat-val{color:#f5b54a;}
+body:not(.light-theme) .sd-sc-ico{background:rgba(217,154,43,.16);color:#f5b54a;}
+@media(max-width:1200px){.sd-score{min-width:0;}}
+@media(max-width:900px){body:has(.app-shell) .main,body.light-theme:has(.app-shell) .main{padding:0!important;margin:74px 14px 18px!important;}}
+
+/* ── Dashboard: compact sizing tuned to the Principal dashboard (≈12% smaller) ── */
+@media(min-width:901px){body:has(.app-shell) .main,body.light-theme:has(.app-shell) .main{margin:74px 28px 22px 28px!important;min-height:calc(100vh - 96px)!important;}}
+.sd-shell{padding:18px 26px 22px;border-radius:20px;}
+.sd-kick-top{font-size:10.5px;letter-spacing:1.2px;margin-bottom:9px;}
+.sd-open-pill{font-size:11px;padding:5px 12px;margin-bottom:11px;}
+.sd-period{padding:14px 22px;gap:14px 20px;margin-bottom:14px;border-radius:14px;}
+.sd-lbl{font-size:10px;letter-spacing:1.1px;margin-bottom:5px;}
+.sd-val{font-size:14px;}
+.sd-status{font-size:10.5px;padding:4px 13px;}
+.sd-note{font-size:11px;margin:-4px 0 14px;}
+.sd-welcome{padding:16px 22px;margin-bottom:14px;border-radius:14px;}
+.sd-welcome h2{font-size:24px;}
+.sd-welcome p{font-size:12.5px;margin-top:5px;}
+.sd-score{min-width:280px;padding:12px 22px;border-radius:14px;}
+.sd-score-num{font-size:40px;}
+.sd-score-lbl{font-size:10.5px;margin-top:6px;}
+.sd-stats{gap:14px;margin-bottom:22px;}
+.sd-stat,.sd-stat.s-amber,.sd-stat.s-green,.sd-stat.s-yellow,.sd-stat.s-blue{padding:13px 17px 15px;border-top-width:4px;border-radius:14px;}
+.sd-stat .sd-lbl{font-size:10px;margin:8px 0 3px;}
+.sd-stat-val{font-size:26px;}
+.sd-ico{width:30px;height:30px;font-size:13px;border-radius:9px;}
+.sd-sc-head{margin-bottom:9px;}
+.sd-kicker{font-size:10px;}
+.sd-sc-head h3{font-size:19px;}
+.sd-sc-hint{font-size:11px;}
+.sd-shortcuts{gap:14px;}
+.sd-sc{padding:14px 17px;gap:12px;border-radius:14px;}
+.sd-sc-ico,.sd-sc-ico.c-green,.sd-sc-ico.c-blue,.sd-sc-ico.c-amber{width:38px;height:38px;font-size:15px;border-radius:11px;}
+.sd-sc-body strong{font-size:13px;}
+.sd-sc-body small{font-size:11px;margin-top:2px;}
+.sd-arrow{font-size:12px;}
+@media(max-width:1200px){.sd-score{min-width:0;}}
+
+/* ── Other tabs (Evaluate / History / Guidelines / Settings): same look as the Dashboard ── */
+.sd-page-sub{font-size:12px;color:var(--sd-sub);margin:-3px 0 14px;}
+.sd-shell .alert{font-size:12px;padding:9px 12px;border-radius:10px;margin-bottom:12px;box-shadow:none;}
+.sd-shell .empty{padding:30px 16px;font-size:13px;}
+/* Evaluate */
+body .sd-shell .eval-main-card{background:none!important;border:0!important;box-shadow:none!important;padding:0!important;border-radius:0!important;}
+.sd-shell .eval-card-title{font-size:19px;margin-bottom:12px;gap:9px;color:var(--sd-ink)!important;}
+.sd-shell .eval-card-title i{font-size:15px;color:var(--gold-d)!important;}
+.sd-shell .category-grid{gap:14px!important;margin-bottom:14px!important;}
+.sd-shell .cat-btn{--cat-color:#d99a2b!important;background:var(--sd-card)!important;border-color:var(--sd-line)!important;box-shadow:0 4px 14px rgba(15,23,42,.04)!important;min-height:140px!important;padding:16px 14px 14px!important;border-radius:14px!important;}
+.sd-shell .cat-btn::after{height:4px!important;border-radius:0 0 14px 14px!important;}
+.sd-shell .cat-icon{color:var(--gold-d)!important;width:46px!important;height:46px!important;font-size:19px!important;margin-bottom:8px!important;background:#fdf0d5!important;}
+.sd-shell .cat-name{font-size:17px!important;color:var(--sd-ink)!important;}
+.sd-shell .cat-meta{font-size:11.5px!important;}
+.sd-shell .cat-done-pill{font-size:10px!important;margin-top:6px!important;}
+.sd-shell .cat-active-arrow{border-top-color:#d99a2b!important;}
+.sd-shell .ev-panel{border-radius:14px;margin:4px 0 0;box-shadow:none!important;background:var(--sd-card)!important;border-color:var(--sd-line)!important;}
+.sd-shell .ev-head{padding:11px 16px;gap:10px;border-color:var(--sd-line);}
+.sd-shell .ev-head-icon{width:32px;height:32px;font-size:13px;background:#fdf0d5;color:var(--gold-d);}
+.sd-shell .ev-head-title{font-size:17px;color:var(--sd-ink);}
+.sd-shell .ev-grid{padding:14px 16px 16px;gap:10px 12px;}
+.sd-shell .ev-row{padding:10px 13px;gap:11px;border-radius:12px;background:var(--sd-card);border-color:var(--sd-line);}
+.sd-shell .ev-row:hover{border-color:#e9c987;}
+.sd-shell .ev-avatar{width:38px;height:38px;}
+.sd-shell .ev-name{font-size:13px;color:var(--sd-ink);}
+.sd-shell .ev-desig{font-size:11px;}
+.sd-shell .ev-badge{font-size:10px;padding:2px 8px;}
+.sd-shell .ev-btn{height:32px;padding:0 14px;font-size:12px;}
+.sd-shell .ev-btn-eval{background:#d99a2b;border-color:#d99a2b;}
+.sd-shell .ev-btn-eval:hover:not(:disabled){background:var(--gold-d);border-color:var(--gold-d);}
+.sd-shell .ev-btn-eval:disabled{background:#f1f5f9;border-color:#e2e8f0;color:#94a3b8;}
+.sd-shell .ev-foot{padding:9px 16px;font-size:11.5px;background:var(--sd-card);border-color:var(--sd-line);}
+.sd-shell .ev-foot-stats strong{color:var(--gold-d);}
+/* History */
+.sd-shell .history-list{gap:10px;}
+.sd-shell .history-card,.sd-shell .gl-card{background:var(--sd-card)!important;border-color:var(--sd-line)!important;box-shadow:0 4px 14px rgba(15,23,42,.04)!important;border-radius:14px!important;}
+.sd-shell .history-card{padding:12px 16px;gap:12px;}
+.sd-shell .history-avatar,.sd-shell .history-avatar-ph{width:40px;height:40px;}
+.sd-shell .history-name{font-size:13.5px;color:var(--sd-ink)!important;}
+.sd-shell .history-desig{font-size:11px;}.sd-shell .history-comment{font-size:11.5px;}
+.sd-shell .history-score{font-size:14px;color:var(--gold-d);}.sd-shell .history-date{font-size:11px;}
+/* Guidelines + Settings cards */
+.sd-shell .gl-card{padding:16px 18px;margin-bottom:12px;}
+.sd-shell .gl-card h3{font-size:15px;margin-bottom:9px;color:var(--sd-ink)!important;}
+.sd-shell .gl-card h3 i{color:var(--gold-d);}
+.sd-shell .gl-card p,.sd-shell .gl-card li{font-size:12.5px;line-height:1.6;}
+.sd-shell .gl-scale-row{padding:4px 0;}
+.sd-shell .gl-scale-num{width:24px;height:24px;font-size:11.5px;background:#d99a2b;}
+.sd-shell .settings-grid{gap:14px;margin-bottom:12px;}
+.sd-shell .settings-field label{font-size:10px;letter-spacing:1px;margin-bottom:5px;}
+.sd-shell .settings-field input,.sd-shell .settings-field select{padding:9px 12px;font-size:13px;border-radius:9px;}
+.sd-shell .settings-hint,.sd-shell .settings-field-note{font-size:11px;}
+.sd-shell .settings-row .profile-dd-avatar,.sd-shell .settings-row .profile-dd-avatar-ph,.sd-shell .settings-row .profile-dd-avatar-logo{width:54px;height:54px;}
+.sd-shell .settings-row .profile-dd-name{font-size:15px;color:var(--sd-ink)!important;}
+.sd-shell .profile-dd-role{font-size:11.5px;}
+.sd-shell .appearance-choice{padding:8px 14px;font-size:12px;}
+body.light-theme:has(.app-shell) .sd-shell .btn-primary-cta,.sd-shell .btn-primary-cta{min-height:36px;padding:8px 14px!important;font-size:12.5px;border-radius:9px;background:#d99a2b;box-shadow:none;}
+.sd-shell .btn-primary-cta:hover{background:var(--gold-d);}
+@media(max-width:600px){.sd-shell .ev-grid{grid-template-columns:1fr;}}
+
+/* ── Fixed-height white box: the page itself never scrolls; content scrolls inside the box (desktop) ── */
+@media(min-width:901px){
+  html:has(.app-shell),body:has(.app-shell){height:100%;overflow:hidden!important;}
+  body:has(.app-shell) .main,body.light-theme:has(.app-shell) .main{height:calc(100vh - 96px)!important;min-height:0!important;overflow:visible!important;display:flex!important;flex-direction:column;}
+  .main > .alert{flex:none;}
+  .main > .view-content.active{flex:1;min-height:0;display:flex;flex-direction:column;}
+  .main > .view-content.active > .sd-shell{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#d7dee8 transparent;}
+  .sd-shell::-webkit-scrollbar{width:8px;}
+  .sd-shell::-webkit-scrollbar-thumb{background:#d7dee8;border-radius:8px;}
+  body:not(.light-theme) .sd-shell{scrollbar-color:rgba(255,255,255,.18) transparent;}
+  body:not(.light-theme) .sd-shell::-webkit-scrollbar-thumb{background:rgba(255,255,255,.18);}
+}
+
+/* ── Notifications: always-available bell, scrollable list ── */
+.notif-bell{transition:border-color .15s,box-shadow .15s;}
+.notif-bell:hover{border-color:#d99a2b!important;}
+.notif-bell:focus-visible{outline:2px solid #d99a2b;outline-offset:2px;}
+.notif-dropdown{width:350px;z-index:300;border-radius:14px;box-shadow:0 16px 44px rgba(15,23,42,.22);}
+.notif-dd-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px;font-size:13px;}
+.notif-dd-count{min-width:22px;padding:1px 8px;border-radius:999px;background:#fdf0d5;color:#b7791f;font-size:11px;font-weight:700;text-align:center;}
+.notif-dd-count:empty{display:none;}
+.notif-dd-list{max-height:min(60vh,340px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#d7dee8 transparent;padding:8px;display:flex;flex-direction:column;gap:2px;}
+.notif-dd-list::-webkit-scrollbar{width:7px;}
+.notif-dd-list::-webkit-scrollbar-thumb{background:#d7dee8;border-radius:7px;}
+body:not(.light-theme) .notif-dd-list{scrollbar-color:rgba(255,255,255,.2) transparent;}
+body:not(.light-theme) .notif-dd-list::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);}
+.notif-dd-list li{flex:none;align-items:flex-start;gap:10px;padding:10px 11px;font-size:12.5px;line-height:1.5;}
+.notif-dd-list li i{flex:none;width:28px;height:28px;margin:0;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:#fdf0d5;color:#b7791f;font-size:12px;}
+.notif-dd-list li span{flex:1;min-width:0;word-break:break-word;}
+.notif-dd-list li.unseen{background:#fff8e8;}
+.notif-dd-list li.unseen span{font-weight:600;}
+body:not(.light-theme) .notif-dd-list li.unseen{background:rgba(217,154,43,.12);}
+@media(max-width:600px){.notif-dropdown{position:fixed;top:64px;left:14px;right:14px;width:auto;max-width:none;}}
+@media print{.student-topbar{display:none!important;}body:has(.app-shell) .main,body.light-theme:has(.app-shell) .main{margin-top:18px!important;}}
+</style>
 </head>
 <body class="light-theme">
 
@@ -1975,7 +2288,7 @@ body.light-theme .student-eval-note{margin:14px 0 22px!important;}
             <i class="fa-solid fa-house"></i><span>Dashboard</span>
         </div>
         <div class="side-nav-item" id="nav-evaluate" onclick="switchView('evaluate')">
-            <i class="fa-solid fa-star-half-stroke"></i><span>Evaluation others</span>
+            <i class="fa-solid fa-clipboard-check"></i><span>Evaluate Personnel</span>
         </div>
         <div class="side-nav-item" id="nav-history" onclick="switchView('history')">
             <i class="fa-solid fa-clock-rotate-left"></i><span>Evaluation History</span>
@@ -1996,40 +2309,33 @@ body.light-theme .student-eval-note{margin:14px 0 22px!important;}
         </div>
     </aside>
 
-    <div class="main">
-
-        <div class="content-topbar<?= $land_on_settings ? ' not-dashboard' : '' ?>" id="contentTopbar">
+    <header class="student-topbar" id="studentTopbar" aria-label="Student page header">
+        <div class="stb-left">
             <button class="hamburger-btn" onclick="toggleSidebar()" aria-label="Open navigation"><i class="fa-solid fa-bars"></i></button>
-            <div class="workspace-heading">
-                <div class="workspace-kicker"><i class="fa-solid fa-chart-line"></i> Dashboard Overview</div>
-                <div class="workspace-title-row">
-                    <div class="workspace-title-block">
-                        <div class="workspace-title">Student Evaluation Workspace</div>
-                        <div class="workspace-subtitle">Complete your assigned faculty and staff evaluations in one place.</div>
-                    </div>
-                    <div class="workspace-meta">
-                        <div class="workspace-pill">
-                            <i class="fa-regular fa-calendar"></i>
-                            <?= htmlspecialchars($active_period_semester ?: 'No active period') ?>
-                        </div>
-                        <div class="workspace-pill muted">
-                            <i class="fa-solid fa-rotate"></i>
-                            Updated <?= date('M j, Y') ?>
-                        </div>
-                        <div class="notif-bell-wrap">
-                            <button type="button" class="notif-bell" id="notifBellBtn" aria-haspopup="true" aria-expanded="false" aria-label="Notifications">
-                                <i class="fa-solid fa-bell"></i>
-                                <span class="notif-badge" id="notifBadge"></span>
-                            </button>
-                            <div class="notif-dropdown" id="notifDropdown" role="menu" aria-hidden="true">
-                                <div class="notif-dd-head">Notifications</div>
-                                <ul class="notif-dd-list" id="notifList"></ul>
-                            </div>
-                        </div>
-                    </div>
+            <div class="stb-title">
+                <i class="fa-solid <?= $land_on_settings ? 'fa-gear' : 'fa-house' ?> stb-icon" id="wsTitleIcon" aria-hidden="true"></i>
+                <span id="wsTitleText"><?= $land_on_settings ? 'Settings' : 'Dashboard' ?></span>
+            </div>
+        </div>
+        <div class="stb-right">
+            <div class="workspace-pill">
+                <i class="fa-regular fa-calendar"></i>
+                <?= htmlspecialchars($active_period_semester ? $academic_year_label . ' — ' . $active_period_semester : 'No active period') ?>
+            </div>
+            <div class="notif-bell-wrap">
+                <button type="button" class="notif-bell" id="notifBellBtn" aria-haspopup="true" aria-expanded="false" aria-label="Notifications">
+                    <i class="fa-solid fa-bell"></i>
+                    <span class="notif-badge" id="notifBadge"></span>
+                </button>
+                <div class="notif-dropdown" id="notifDropdown" role="menu" aria-hidden="true">
+                    <div class="notif-dd-head"><span>Notifications</span><span class="notif-dd-count" id="notifCount"></span></div>
+                    <ul class="notif-dd-list" id="notifList"></ul>
                 </div>
             </div>
         </div>
+    </header>
+
+    <div class="main">
 
         <?php if (!$student_year_level): ?>
         <div class="alert alert-error"><i class="fa-solid fa-circle-exclamation"></i> Your account has no year level set. Please contact the admin so faculty/staff can be assigned to you correctly.</div>
@@ -2037,92 +2343,73 @@ body.light-theme .student-eval-note{margin:14px 0 22px!important;}
 
         <!-- ══════════════ DASHBOARD VIEW ══════════════ -->
         <div class="view-content<?= $land_on_settings ? '' : ' active' ?>" id="view-dashboard">
-            <div class="dashboard-welcome">
-                <div>
-                    <div class="page-title">
-                        Welcome, <?= htmlspecialchars(explode(' ', $student_name)[0]) ?>
-                        <?php if ($student_year_level): ?>
-                        <span class="year-level-badge"> · <?= htmlspecialchars($student_year_level) ?></span>
-                        <?php endif; ?>
-                    </div>
-                    <div class="page-sub">Here's an overview of your faculty &amp; staff evaluations.</div>
-                </div>
-                <div class="period-pill <?= $period_is_open ? 'open' : 'closed' ?>">
-                    <i class="fa-solid <?= $period_is_open ? 'fa-lock-open' : 'fa-lock' ?>"></i>
-                    Evaluation period is currently <?= $period_is_open ? 'OPEN' : 'CLOSED' ?>
-                </div>
+          <div class="sd-shell">
+            <div class="sd-kick-top"><i class="fa-solid fa-chart-line"></i> Dashboard Overview</div>
+            <div class="sd-open-pill <?= $period_is_open ? 'open' : 'closed' ?>">
+                <i class="fa-solid <?= $period_is_open ? 'fa-lock-open' : 'fa-lock' ?>"></i>
+                Evaluation period is currently <?= $period_is_open ? 'open' : 'closed' ?>
             </div>
 
-            <div class="period-info-card">
-                <div class="period-info-head">
-                    <div class="period-info-title"><i class="fa-solid fa-calendar-days"></i> Current Evaluation Period</div>
-                </div>
-                <div class="period-info-grid">
-                    <div>
-                        <div class="period-info-lbl">Academic Year</div>
-                        <div class="period-info-val"><?= htmlspecialchars($academic_year_label) ?></div>
-                    </div>
-                    <div>
-                        <div class="period-info-lbl">Academic Structure</div>
-                        <div class="period-info-val"><?= htmlspecialchars($academic_structure_label) ?></div>
-                    </div>
-                    <div>
-                        <div class="period-info-lbl">Academic Term</div>
-                        <div class="period-info-val"><?= htmlspecialchars($active_period_semester ?: 'No active period') ?></div>
-                    </div>
-                    <div>
-                        <div class="period-info-lbl">Status</div>
-                        <div class="period-info-val <?= $period_is_open ? 'status-open' : 'status-closed' ?>"><?= $period_is_open ? 'Open' : 'Closed' ?></div>
-                    </div>
-                    <div>
-                        <div class="period-info-lbl">Evaluation Opens</div>
-                        <div class="period-info-val"><?= htmlspecialchars($period_opens_label) ?></div>
-                    </div>
-                    <div>
-                        <div class="period-info-lbl">Evaluation Closes</div>
-                        <div class="period-info-val"><?= htmlspecialchars($period_closes_label) ?></div>
-                    </div>
-                </div>
-                <?php if ($period_control_mode === 'open'): ?>
-                <div class="period-info-note"><strong>Evaluation is open.</strong> Force Open is overriding the configured schedule.</div>
-                <?php elseif ($period_control_mode === 'closed'): ?>
-                <div class="period-info-note"><strong>Evaluation is closed.</strong> Force Closed is overriding the configured schedule.</div>
-                <?php endif; ?>
+            <div class="sd-period">
+                <div><div class="sd-lbl">Academic Year</div><div class="sd-val"><?= htmlspecialchars($academic_year_label) ?></div></div>
+                <div><div class="sd-lbl">Evaluation Opens</div><div class="sd-val"><?= htmlspecialchars($period_opens_short) ?></div></div>
+                <div><div class="sd-lbl">Evaluation Closes</div><div class="sd-val"><?= htmlspecialchars($period_closes_short) ?></div></div>
+                <div><div class="sd-lbl">Status</div><span class="sd-status <?= $period_is_open ? 'open' : 'closed' ?>"><?= $period_is_open ? 'Open' : 'Closed' ?></span></div>
             </div>
-
-            <div class="stat-grid">
-                <div class="stat-card"><i class="fa-solid fa-users"></i><div class="stat-num"><?= $total_evaluatees ?></div><div class="stat-lbl">To evaluate</div></div>
-                <div class="stat-card"><i class="fa-solid fa-circle-check"></i><div class="stat-num"><?= $total_done ?></div><div class="stat-lbl">Completed</div></div>
-                <div class="stat-card"><i class="fa-solid fa-hourglass-half"></i><div class="stat-num"><?= $total_pending ?></div><div class="stat-lbl">Pending</div></div>
-                <div class="stat-card"><i class="fa-solid fa-percent"></i><div class="stat-num"><?= $pct ?>%</div><div class="stat-lbl">Progress</div></div>
-            </div>
-
-            <?php if ($total_evaluatees > 0): ?>
-            <div class="progress-wrap">
-                <div class="progress-label">Progress: <span><?= $total_done ?> of <?= $total_evaluatees ?></span> evaluated</div>
-                <div class="progress-bar-bg"><div class="progress-bar-fill" style="width:<?= $pct ?>%"></div></div>
-                <div class="progress-pct"><?= $pct ?>%</div>
-            </div>
+            <?php if ($period_control_mode === 'open'): ?>
+            <div class="sd-note"><strong>Evaluation is open.</strong> Force Open is overriding the configured schedule.</div>
+            <?php elseif ($period_control_mode === 'closed'): ?>
+            <div class="sd-note"><strong>Evaluation is closed.</strong> Force Closed is overriding the configured schedule.</div>
             <?php endif; ?>
 
-            <div class="dash-cta">
-                <div class="dash-cta-icon"><i class="fa-solid fa-star-half-stroke"></i></div>
-                <div class="dash-cta-text">
-                    <h3><?= $total_pending > 0 ? "You have $total_pending evaluation" . ($total_pending !== 1 ? 's' : '') . " left" : "All evaluations complete" ?></h3>
-                    <p><?= $total_pending > 0 ? 'Head over to Evaluation others to keep going.' : 'Thank you for completing all your evaluations!' ?></p>
+            <div class="sd-welcome">
+                <div class="sd-welcome-text">
+                    <h2>Welcome, <?= htmlspecialchars($student_name) ?>!</h2>
+                    <p><span class="sd-em"><?= htmlspecialchars($student_edu_label . ($student_year_level ? ' · ' . $student_year_level : '')) ?></span> &nbsp;·&nbsp; <?= htmlspecialchars($academic_year_label . ($active_period_semester ? ' — ' . $active_period_semester : '')) ?></p>
                 </div>
-                <button class="btn-primary-cta" onclick="switchView('<?= $total_pending > 0 ? 'evaluate' : 'history' ?>')">
-                    <i class="fa-solid <?= $total_pending > 0 ? 'fa-arrow-right' : 'fa-clock-rotate-left' ?>"></i>
-                    <?= $total_pending > 0 ? ($total_done > 0 ? 'Continue Evaluations' : 'Start Evaluations') : 'View History' ?>
+                <div class="sd-score"><div class="sd-score-num"><?= (int)$pct ?>%</div><div class="sd-score-lbl">Evaluation Completion</div></div>
+            </div>
+
+            <div class="sd-stats">
+                <div class="sd-stat s-amber"><span class="sd-ico"><i class="fa-solid fa-users"></i></span><div class="sd-lbl">To Evaluate</div><div class="sd-stat-val"><?= $total_evaluatees ?></div></div>
+                <div class="sd-stat s-green"><span class="sd-ico"><i class="fa-solid fa-circle-check"></i></span><div class="sd-lbl">Completed</div><div class="sd-stat-val"><?= $total_done ?></div></div>
+                <div class="sd-stat s-yellow"><span class="sd-ico"><i class="fa-solid fa-hourglass-half"></i></span><div class="sd-lbl">Pending</div><div class="sd-stat-val"><?= $total_pending ?></div></div>
+                <div class="sd-stat s-blue"><span class="sd-ico"><i class="fa-solid fa-percent"></i></span><div class="sd-lbl">Progress</div><div class="sd-stat-val"><?= $pct ?>%</div></div>
+            </div>
+
+            <div class="sd-sc-head">
+                <div>
+                    <div class="sd-kicker">Workspace Shortcuts</div>
+                    <h3>Continue where you need to be</h3>
+                </div>
+                <span class="sd-sc-hint">Your most-used student tools</span>
+            </div>
+            <div class="sd-shortcuts">
+                <button type="button" class="sd-sc" onclick="switchView('evaluate')">
+                    <span class="sd-sc-ico c-green"><i class="fa-solid fa-clipboard-check"></i></span>
+                    <span class="sd-sc-body"><strong>Evaluate Personnel</strong><small><?= $total_pending > 0 ? "You have $total_pending evaluation" . ($total_pending !== 1 ? 's' : '') . ' left to complete.' : 'All evaluations complete. Thank you!' ?></small></span>
+                    <i class="fa-solid fa-arrow-right sd-arrow"></i>
+                </button>
+                <button type="button" class="sd-sc" onclick="switchView('history')">
+                    <span class="sd-sc-ico c-blue"><i class="fa-solid fa-clock-rotate-left"></i></span>
+                    <span class="sd-sc-body"><strong>Evaluation History</strong><small>Review the evaluations you've submitted.</small></span>
+                    <i class="fa-solid fa-arrow-right sd-arrow"></i>
+                </button>
+                <button type="button" class="sd-sc" onclick="switchView('guidelines')">
+                    <span class="sd-sc-ico c-amber"><i class="fa-solid fa-circle-info"></i></span>
+                    <span class="sd-sc-body"><strong>Guidelines</strong><small>Read the rating scale and evaluation rules.</small></span>
+                    <i class="fa-solid fa-arrow-right sd-arrow"></i>
                 </button>
             </div>
+          </div>
         </div>
 
         <!-- ══════════════ EVALUATE VIEW ══════════════ -->
         <div class="view-content" id="view-evaluate">
-            <div class="page-title">Evaluation others</div>
-            <div class="page-sub">Select a category to see who is available for evaluation. Faculty and Staff are evaluated separately based on their current assignment.</div>
-            <div class="student-eval-note"><i class="fa-solid fa-circle-info"></i><span>Your responses are recorded for the active evaluation period. Review each rating before you submit.</span></div>
+          <div class="sd-shell">
+          
+
+ 
             <?php if ($submit_success): ?>
             <div class="alert alert-success"><i class="fa-solid fa-circle-check"></i> <?= htmlspecialchars($submit_success) ?></div>
             <?php endif; ?>
@@ -2154,7 +2441,8 @@ body.light-theme .student-eval-note{margin:14px 0 22px!important;}
             <div class="empty"><i class="fa-solid fa-users-slash"></i><p>No evaluations are available right now.</p></div>
             <?php else: ?>
 
-            <div class="section-label">Choose a category</div>
+            <div class="eval-main-card">
+            <div class="eval-card-title"><i class="fa-solid fa-clipboard-check"></i> Your Evaluation</div>
             <div class="category-grid">
                 <?php foreach ($top_level as $group_name => $persons):
                     $slug     = strtolower(str_replace([' ','-'], '_', $group_name));
@@ -2266,14 +2554,18 @@ body.light-theme .student-eval-note{margin:14px 0 22px!important;}
                 </div>
             </div>
             <?php endforeach; ?>
+            </div><!-- /.eval-main-card -->
 
             <?php endif; ?>
+          </div>
         </div>
 
         <!-- ══════════════ HISTORY VIEW ══════════════ -->
         <div class="view-content" id="view-history">
-            <div class="page-title">Evaluation History</div>
-            <div class="page-sub">Faculty, staff, and school heads you've already evaluated.</div>
+          <div class="sd-shell">
+            <div class="sd-kick-top"><i class="fa-solid fa-clock-rotate-left"></i> Evaluation History</div>
+            <div class="sd-page-sub">Faculty, staff, and school heads you've already evaluated.</div>
+
 
             <?php if (empty($history)): ?>
             <div class="empty"><i class="fa-solid fa-clock-rotate-left"></i><p>You haven't submitted any evaluations yet.</p></div>
@@ -2305,12 +2597,15 @@ body.light-theme .student-eval-note{margin:14px 0 22px!important;}
                 <?php endforeach; ?>
             </div>
             <?php endif; ?>
+          </div>
         </div>
 
         <!-- ══════════════ GUIDELINES VIEW ══════════════ -->
         <div class="view-content" id="view-guidelines">
-            <div class="page-title">Evaluation Guidelines</div>
-            <div class="page-sub">How to evaluate faculty and staff fairly and accurately.</div>
+          <div class="sd-shell">
+            <div class="sd-kick-top"><i class="fa-solid fa-circle-info"></i> Guidelines</div>
+            <div class="sd-page-sub">How to evaluate faculty and staff fairly and accurately.</div>
+
 
             <div class="gl-card">
                 <h3><i class="fa-solid fa-scale-balanced"></i> Rating Scale</h3>
@@ -2335,12 +2630,15 @@ body.light-theme .student-eval-note{margin:14px 0 22px!important;}
                 <h3><i class="fa-solid fa-shield-halved"></i> Confidentiality</h3>
                 <p>Your individual ratings and comments are used to help faculty and staff improve. Please answer honestly and constructively.</p>
             </div>
+          </div>
         </div>
 
         <!-- ══════════════ SETTINGS VIEW ══════════════ -->
         <div class="view-content<?= $land_on_settings ? ' active' : '' ?>" id="view-settings">
-            <div class="page-title">Settings</div>
-            <div class="page-sub">Manage your profile and account.</div>
+          <div class="sd-shell">
+            <div class="sd-kick-top"><i class="fa-solid fa-gear"></i> Settings</div>
+            <div class="sd-page-sub">Manage your profile and account.</div>
+
 
             <div class="gl-card">
                 <h3><i class="fa-solid fa-user"></i> Profile</h3>
@@ -2389,10 +2687,6 @@ body.light-theme .student-eval-note{margin:14px 0 22px!important;}
                         <div class="settings-field">
                             <label for="set_username">Username</label>
                             <input type="text" id="set_username" name="username" maxlength="50" required autocomplete="username" value="<?= htmlspecialchars($student_username) ?>"/>
-                        </div>
-                        <div class="settings-field">
-                            <label for="set_email">Email</label>
-                            <input type="email" id="set_email" name="email" maxlength="150" placeholder="you@example.com" value="<?= htmlspecialchars($student_email) ?>"/>
                         </div>
                         <div class="settings-field">
                             <label for="set_yearlevel">Year Level</label>
@@ -2466,6 +2760,7 @@ body.light-theme .student-eval-note{margin:14px 0 22px!important;}
                     <button type="submit" class="btn-primary-cta" id="updatePwBtn"><i class="fa-solid fa-key"></i> Update Password</button>
                 </form>
             </div>
+          </div>
         </div>
 
     </div>
@@ -2503,17 +2798,34 @@ body.light-theme .student-eval-note{margin:14px 0 22px!important;}
 let activePanel     = null;
 let questionsLoaded = false;
 
+// ── Top header (icon + title) follows the active tab ──
+const WS_HEADERS = {
+    dashboard:  {icon: 'fa-house',             title: 'Dashboard'},
+    evaluate:   {icon: 'fa-clipboard-check',    title: 'Evaluate Personnel'},
+    history:    {icon: 'fa-clock-rotate-left', title: 'Evaluation History'},
+    guidelines: {icon: 'fa-circle-info',       title: 'Guidelines'},
+    settings:   {icon: 'fa-gear',              title: 'Settings'}
+};
+function updateWorkspaceHeader(view) {
+    const cfg = WS_HEADERS[view]; if (!cfg) return;
+    const t = document.getElementById('wsTitleText'), i = document.getElementById('wsTitleIcon');
+    if (t) t.textContent = cfg.title;
+    if (i) i.className = 'fa-solid ' + cfg.icon + ' stb-icon';
+}
+
 // ── Sidebar view switching ──
 function switchView(view) {
     // The "Dashboard Overview / Student Evaluation Workspace" heading belongs
     // to the Dashboard tab only; every other tab has its own page title.
     const topbar = document.getElementById('contentTopbar');
     if (topbar) topbar.classList.toggle('not-dashboard', view !== 'dashboard');
+    updateWorkspaceHeader(view);
     document.querySelectorAll('.view-content').forEach(v => v.classList.remove('active'));
     document.getElementById('view-' + view)?.classList.add('active');
     document.querySelectorAll('.side-nav-item').forEach(i => i.classList.remove('active'));
     document.getElementById('nav-' + view)?.classList.add('active');
     closeSidebarMobile();
+    document.querySelectorAll('.sd-shell').forEach(e => { e.scrollTop = 0; });
     window.scrollTo({top: 0, behavior: 'smooth'});
 }
 
@@ -2862,6 +3174,7 @@ document.addEventListener('DOMContentLoaded', function() {
             li.textContent = 'No notifications yet.';
             list.appendChild(li);
         }
+        const cnt = document.getElementById('notifCount'); if (cnt) cnt.textContent = items.length ? String(items.length) : '';
         let unread = 0;
         items.forEach(function(n){
             const isNew = !seen[n.id];

@@ -37,7 +37,7 @@ $evaluatorClause = "et.evaluator_id IN (
       AND (education_level='higher_ed' OR year_level IN ($collegeLevels))
 )";
 
-$scope = "(u.role IN ('dean','principal') OR u.role='staff' OR
+$scope = "(u.role='principal' OR u.role='staff' OR
     (u.role IN ('teacher','faculty') AND EXISTS (
         SELECT 1 FROM user_year_levels scope_uyl
         WHERE scope_uyl.user_id=u.id
@@ -72,9 +72,6 @@ switch ($group) {
             ? $nonTeachingStaffSql
             : "u.role='staff'";
         break;
-    case 'Dean':
-        $whereRole = "u.role='dean'";
-        break;
     case 'Principal':
         $whereRole = $activeEval === 'student'
             ? $teachingFunctionSql
@@ -82,7 +79,7 @@ switch ($group) {
         break;
     default:
         $whereRole = $activeEval === 'student'
-            ? "u.role IN ('teacher','staff','faculty','dean')"
+            ? "u.role IN ('teacher','staff','faculty')"
             : "u.role IN ('teacher','staff','faculty')"; // peer targets are further limited to College teachers below
         break;
 }
@@ -112,10 +109,6 @@ if ($activeEval === 'peer') {
 } else {
     $evalClause = "et.eval_type='student' AND $evaluatorClause AND (
         COALESCE(et.evaluation_context,'teacher') IN ('teacher','staff')
-        OR et.target_user_id IN (
-            SELECT id FROM users
-            WHERE role='dean' AND is_active=1 AND account_status='approved'
-        )
     )";
 }
 

@@ -1472,6 +1472,7 @@ html[data-theme="dark"] .avg-summary{background:#fff!important;border-color:#ddd
 
 <link rel="stylesheet" href="admin_appearance.css">
 <script src="admin_appearance.js"></script>
+<link rel="stylesheet" href="admin_unified_ui.css?v=<?= (int)@filemtime(__DIR__ . '/admin_unified_ui.css') ?>">
 </head>
 <body class="feature-compact<?= $reportMode ? ' report-mode' : '' ?>">
 <script src="admin_ajax.php"></script>
@@ -1974,6 +1975,7 @@ html[data-theme="dark"] table.results-table td a.rt-generate-btn{
 }
 html[data-theme="dark"] table.results-table td a.rt-generate-btn:hover{opacity:.88;}
 </style>
+<link rel="stylesheet" href="admin_unified_ui.css?v=<?= (int)@filemtime(__DIR__ . '/admin_unified_ui.css') ?>">
 </head><body>
 <script src="admin_ajax.php"></script>
 <script>
@@ -2362,6 +2364,7 @@ button, .btn { font-weight:700; }
 a { color:inherit; }
 </style>
 <?php include __DIR__.'/analytics_dark_head.php'; ?>
+<link rel="stylesheet" href="admin_unified_ui.css?v=<?= (int)@filemtime(__DIR__ . '/admin_unified_ui.css') ?>">
 </head><body>
 <script src="admin_ajax.php"></script>
 <script>
@@ -2993,6 +2996,7 @@ button, .btn { font-weight:700; }
 a { color:inherit; }
 </style>
 <?php include __DIR__.'/analytics_dark_head.php'; ?>
+<link rel="stylesheet" href="admin_unified_ui.css?v=<?= (int)@filemtime(__DIR__ . '/admin_unified_ui.css') ?>">
 </head>
 <body>
 <script src="admin_ajax.php"></script>

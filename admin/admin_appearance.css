@@ -1324,3 +1324,24 @@ html[data-theme="dark"] [style*="background: white"]{
 
 /* Dynamic dark-surface safety net */
 html[data-theme="dark"] .pbi-dark-surface{background:var(--panel-bg)!important;color:var(--text)!important;border-color:var(--panel-border)!important;}
+
+
+/* ========================================================================
+   ACTIVE OPTION HIGHLIGHT — Density (Compact/Comfortable) and Theme
+   (Light/Dark/System) buttons. Class is set by admin_appearance.js.
+   ======================================================================== */
+html[data-theme] button.pbi-selected,
+html[data-theme] [role="button"].pbi-selected{
+  background:var(--accent-soft)!important;
+  color:var(--accent)!important;
+  border-color:var(--accent)!important;
+  box-shadow:0 0 0 1px var(--accent) inset!important;
+  font-weight:700!important;
+}
+html[data-theme="dark"] button.pbi-selected,
+html[data-theme="dark"] [role="button"].pbi-selected{
+  background:color-mix(in srgb, var(--accent) 22%, #121d2d)!important;
+  color:#fff!important;
+  border-color:var(--accent)!important;
+}
+html[data-theme] button.pbi-selected:hover{filter:brightness(1.05)}

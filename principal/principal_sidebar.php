@@ -49,6 +49,8 @@ if (!function_exists('principal_sidebar_assets')) {
 #pbiPrincipalTopbar *{box-sizing:border-box!important;}
 #pbiPrincipalTopbar .pbi-topbar-left,#pbiPrincipalTopbar .pbi-topbar-right{display:flex!important;align-items:center!important;gap:13px!important;min-width:0!important;}
 #pbiPrincipalTopbar .pbi-topbar-title{font-family:'Rajdhani',sans-serif!important;font-size:19px!important;font-weight:700!important;letter-spacing:.4px!important;line-height:1.2!important;color:#13263F!important;white-space:nowrap!important;}
+#pbiPrincipalTopbar .pbi-topbar-title{display:inline-flex!important;align-items:center!important;gap:11px!important;}
+#pbiPrincipalTopbar .pbi-topbar-title-icon{flex:0 0 auto!important;font-size:19px!important;line-height:1!important;color:#D99A2B!important;}
 #pbiPrincipalTopbar .pbi-topbar-hamburger{display:none!important;width:36px!important;height:36px!important;align-items:center!important;justify-content:center!important;border:1px solid #D9E2EC!important;border-radius:9px!important;background:#F8FAFC!important;color:#334155!important;cursor:pointer!important;font-size:15px!important;}
 #pbiPrincipalTopbar .pbi-topbar-period{display:inline-flex!important;align-items:center!important;gap:7px!important;max-width:min(52vw,520px)!important;padding:7px 12px!important;border:1px solid rgba(217,154,43,.28)!important;border-radius:22px!important;background:rgba(217,154,43,.10)!important;color:#9A6700!important;font-size:11px!important;font-weight:700!important;line-height:1.25!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;}
 #pbiPrincipalTopbar .pbi-topbar-period i{flex-shrink:0!important;color:#D99A2B!important;}
@@ -63,8 +65,11 @@ if (!function_exists('principal_sidebar_assets')) {
 #pbiPrincipalTopbar .pbi-topbar-panel-head strong{font-size:13px!important;font-weight:800!important;color:#172033!important;}
 #pbiPrincipalTopbar .pbi-topbar-mark-read{border:0!important;background:transparent!important;color:#A16207!important;font-family:inherit!important;font-size:11px!important;font-weight:700!important;cursor:pointer!important;white-space:nowrap!important;}
 #pbiPrincipalTopbar .pbi-topbar-list{list-style:none!important;margin:0!important;padding:8px!important;max-height:350px!important;overflow:auto!important;}
-#pbiPrincipalTopbar .pbi-topbar-list li{display:flex!important;align-items:flex-start!important;gap:10px!important;margin:0 0 5px!important;padding:10px!important;border-radius:9px!important;background:#F8FAFC!important;color:#334155!important;font-size:12px!important;line-height:1.45!important;}
+#pbiPrincipalTopbar .pbi-topbar-list li{display:flex!important;align-items:stretch!important;gap:0!important;margin:0 0 5px!important;padding:0!important;border-radius:9px!important;background:#F8FAFC!important;color:#334155!important;font-size:12px!important;line-height:1.45!important;overflow:hidden!important;}
 #pbiPrincipalTopbar .pbi-topbar-list li.unseen{background:rgba(217,154,43,.10)!important;}
+#pbiPrincipalTopbar .pbi-topbar-list li a.pbi-topbar-notification-link{display:flex!important;align-items:flex-start!important;gap:10px!important;width:100%!important;min-width:0!important;padding:10px!important;border-radius:9px!important;color:inherit!important;text-decoration:none!important;cursor:pointer!important;}
+#pbiPrincipalTopbar .pbi-topbar-list li a.pbi-topbar-notification-link:hover span{text-decoration:underline!important;text-underline-offset:2px!important;}
+#pbiPrincipalTopbar .pbi-topbar-list li a.pbi-topbar-notification-link:focus-visible{outline:2px solid #B8801F!important;outline-offset:-2px!important;}
 #pbiPrincipalTopbar .pbi-topbar-list li i{margin-top:2px!important;color:#B8801F!important;flex-shrink:0!important;}
 #pbiPrincipalTopbar .pbi-topbar-list li span{min-width:0!important;overflow-wrap:anywhere!important;}
 #pbiPrincipalTopbar .pbi-topbar-empty{padding:25px 16px!important;text-align:center!important;color:#64748B!important;font-size:12px!important;}
@@ -92,6 +97,7 @@ html.principal-theme-dark #pbiPrincipalTopbar .pbi-topbar-foot{border-color:rgba
   #pbiPrincipalTopbar .pbi-topbar-right{margin-left:auto!important;gap:8px!important;}
   #pbiPrincipalTopbar .pbi-topbar-period{max-width:46vw!important;font-size:10px!important;padding:6px 9px!important;}
   #pbiPrincipalTopbar .pbi-topbar-title{font-size:17px!important;}
+  #pbiPrincipalTopbar .pbi-topbar-title-icon{font-size:17px!important;}
   #pbiPrincipalTopbar ~ .main,#pbiPrincipalTopbar ~ main.main{margin-top:0!important;margin-left:0!important;padding-top:22px!important;}
 }
 @media print{#pbiPrincipalTopbar{display:none!important;}#pbiPrincipalTopbar ~ .main,#pbiPrincipalTopbar ~ main.main{margin-top:0!important;padding-top:20px!important;}}
@@ -277,6 +283,79 @@ html.principal-theme-dark #principalFeatureWorkspace .principal-feature-eyebrow 
   #principalFeatureWorkspace{padding:19px 14px 22px!important;}
   #principalFeatureWorkspace .principal-feature-heading-row{gap:12px!important;}
 }
+
+/* ==========================================================================
+   Fixed-height workspace (same behaviour as the Dean portal).
+   The sidebar, top bar and white work box keep a fixed size; the content
+   scrolls INSIDE the white box instead of growing it and scrolling the page.
+   Desktop only - below 901px the page flows and scrolls normally.
+   ========================================================================== */
+@media screen and (min-width:901px){
+  html{background:#F3F6FA!important;}
+  html.principal-theme-dark{background:#0A192F!important;}
+  html,html body{height:100vh!important;max-height:100vh!important;overflow:hidden!important;}
+  html body{margin:0!important;}
+
+  /* A) Pages that already have an inner white box (dashboard, Evaluate Others,
+        Evaluation Received): the page frame is fixed, the white box scrolls. */
+  html body #pbiPrincipalTopbar ~ main.main.principal-dashboard,
+  html body #pbiPrincipalTopbar ~ main.main.principal-feature-page{
+    box-sizing:border-box!important;
+    height:calc(100vh - 58px)!important;max-height:calc(100vh - 58px)!important;min-height:0!important;
+    padding-top:14px!important;padding-bottom:16px!important;
+    overflow:hidden!important;display:flex!important;flex-direction:column!important;
+  }
+  html body #pbiPrincipalTopbar ~ main.main.principal-dashboard > .principal-dashboard-shell,
+  html body #pbiPrincipalTopbar ~ main.main.principal-feature-page > #principalFeatureWorkspace{
+    flex:1 1 auto!important;height:auto!important;min-height:0!important;
+    overflow-x:hidden!important;overflow-y:auto!important;
+  }
+  html body #pbiPrincipalTopbar ~ main.main.principal-dashboard > .principal-dashboard-shell > *{flex-shrink:0;}
+
+  /* B) Plain pages (Tracker, Reports, Settings, ...): the main area itself is the
+        white box - fixed height, scrolls inside, no pseudo-element panel. */
+  html body #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard):not(.principal-feature-page){
+    box-sizing:border-box!important;
+    margin:72px 16px 14px 264px!important;
+    height:calc(100vh - 86px)!important;max-height:calc(100vh - 86px)!important;min-height:0!important;
+    overflow-x:hidden!important;overflow-y:auto!important;
+    background:#FFFFFF!important;
+    border:1px solid #E2E8F0!important;border-radius:18px!important;
+    box-shadow:0 2px 12px rgba(15,23,42,.025)!important;
+  }
+  html body #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard):not(.principal-feature-page)::before{display:none!important;}
+  html.principal-theme-dark body #pbiPrincipalTopbar ~ main.main:not(.principal-dashboard):not(.principal-feature-page){
+    background:#0F1F3D!important;border-color:rgba(255,255,255,.10)!important;
+    box-shadow:0 4px 20px rgba(0,0,0,.20)!important;
+  }
+
+  /* Scrollbars live inside the white box and don't shift the layout. */
+  html body #pbiPrincipalTopbar ~ main.main:not(.principal-feature-page):not(.principal-dashboard),
+  html body #pbiPrincipalTopbar ~ main.main > .principal-dashboard-shell,
+  html body #pbiPrincipalTopbar ~ main.main > #principalFeatureWorkspace{
+    overscroll-behavior:contain;scrollbar-gutter:stable;
+    scrollbar-width:thin;scrollbar-color:#AEBAC8 #EEF2F6;
+  }
+  html.principal-theme-dark body #pbiPrincipalTopbar ~ main.main:not(.principal-feature-page):not(.principal-dashboard),
+  html.principal-theme-dark body #pbiPrincipalTopbar ~ main.main > .principal-dashboard-shell,
+  html.principal-theme-dark body #pbiPrincipalTopbar ~ main.main > #principalFeatureWorkspace{scrollbar-color:#2A4468 #0F1F3D;}
+  #pbiPrincipalTopbar ~ main.main::-webkit-scrollbar,
+  #pbiPrincipalTopbar ~ main.main > .principal-dashboard-shell::-webkit-scrollbar,
+  #pbiPrincipalTopbar ~ main.main > #principalFeatureWorkspace::-webkit-scrollbar{width:10px;}
+  #pbiPrincipalTopbar ~ main.main::-webkit-scrollbar-track,
+  #pbiPrincipalTopbar ~ main.main > .principal-dashboard-shell::-webkit-scrollbar-track,
+  #pbiPrincipalTopbar ~ main.main > #principalFeatureWorkspace::-webkit-scrollbar-track{background:#EEF2F6;border-radius:10px;}
+  #pbiPrincipalTopbar ~ main.main::-webkit-scrollbar-thumb,
+  #pbiPrincipalTopbar ~ main.main > .principal-dashboard-shell::-webkit-scrollbar-thumb,
+  #pbiPrincipalTopbar ~ main.main > #principalFeatureWorkspace::-webkit-scrollbar-thumb{background:#AEBAC8;border:2px solid #EEF2F6;border-radius:10px;}
+  html.principal-theme-dark #pbiPrincipalTopbar ~ main.main::-webkit-scrollbar-track,
+  html.principal-theme-dark #pbiPrincipalTopbar ~ main.main > .principal-dashboard-shell::-webkit-scrollbar-track,
+  html.principal-theme-dark #pbiPrincipalTopbar ~ main.main > #principalFeatureWorkspace::-webkit-scrollbar-track{background:#0F1F3D;}
+  html.principal-theme-dark #pbiPrincipalTopbar ~ main.main::-webkit-scrollbar-thumb,
+  html.principal-theme-dark #pbiPrincipalTopbar ~ main.main > .principal-dashboard-shell::-webkit-scrollbar-thumb,
+  html.principal-theme-dark #pbiPrincipalTopbar ~ main.main > #principalFeatureWorkspace::-webkit-scrollbar-thumb{background:#2A4468;border-color:#0F1F3D;}
+}
+@media print{html,html body{height:auto!important;max-height:none!important;overflow:visible!important;}}
 </style>
         <?php
     }
@@ -301,6 +380,18 @@ if (!function_exists('render_principal_sidebar')) {
             'staff' => 'School Staff',
         ];
         $headerTitle = $headerTitles[$active] ?? 'Principal Workspace';
+        // One icon per page (same icons as the sidebar), drawn in the single Principal accent.
+        $headerIcons = [
+            'dashboard'   => 'fa-house',
+            'evaluations' => 'fa-clipboard-list',
+            'tracker'     => 'fa-satellite-dish',
+            'results'     => 'fa-chart-bar',
+            'reports'     => 'fa-chart-line',
+            'settings'    => 'fa-gear',
+            'teachers'    => 'fa-chalkboard-user',
+            'staff'       => 'fa-users',
+        ];
+        $headerIcon = $headerIcons[$active] ?? 'fa-gauge';
         $headerSettings = isset($GLOBALS['settings']) && is_array($GLOBALS['settings']) ? $GLOBALS['settings'] : [];
         $headerPeriodParts = [];
         foreach ([
@@ -384,7 +475,7 @@ if (!function_exists('render_principal_sidebar')) {
         <button type="button" class="pbi-topbar-hamburger" id="pbiPrincipalMenuBtn" aria-label="Open navigation" aria-expanded="false">
             <i class="fa-solid fa-bars"></i>
         </button>
-        <div class="pbi-topbar-title"><?= htmlspecialchars($headerTitle, ENT_QUOTES, 'UTF-8') ?></div>
+        <div class="pbi-topbar-title"><i class="fa-solid <?= htmlspecialchars($headerIcon, ENT_QUOTES, 'UTF-8') ?> pbi-topbar-title-icon" aria-hidden="true"></i><span><?= htmlspecialchars($headerTitle, ENT_QUOTES, 'UTF-8') ?></span></div>
     </div>
     <div class="pbi-topbar-right">
         <?php if ($headerPeriodLabel !== ''): ?>
@@ -433,6 +524,21 @@ if (!function_exists('render_principal_sidebar')) {
     } catch (e) {}
 
     function save(){ try { localStorage.setItem(storeKey, JSON.stringify(stored.slice(0, 40))); } catch (e) {} }
+    // Only same-site Principal pages are followed (e.g. principal_reports.php?...).
+    function safeHref(u){
+        u = typeof u === 'string' ? u.trim() : '';
+        return /^principal_[a-z_]+\.php(\?[^\s]*)?$/.test(u) ? u : '';
+    }
+    function notificationHref(item){
+        const direct = safeHref(item && item.url);
+        if (direct) return direct;
+        const id = String(item && item.id || '');
+        if (/^evaluation-\d+$/.test(id)) return 'principal_results.php';
+        if (id === 'students-pending' || id === 'targets-complete' || /^closing-/.test(id)) return 'principal_evaluation_tracker.php';
+        if (id === 'no-roster') return 'principal_dashboard.php';
+        if (id === 'no-period' || id === 'structure-inactive' || id === 'all-clear' || /^ea-period-/.test(id) || /^ea-schedule-/.test(id) || /^sys-/.test(id)) return 'principal_dashboard.php';
+        return 'principal_dashboard.php';
+    }
     function updateCount(){
         const count = stored.filter(n => !n.read).length;
         bellCount.textContent = count > 9 ? '9+' : String(count);
@@ -445,7 +551,7 @@ if (!function_exists('render_principal_sidebar')) {
             const id = String(raw.id);
             const level = Object.prototype.hasOwnProperty.call(iconMap, raw.level) ? raw.level : 'info';
             const prior = byId.get(id);
-            byId.set(id, { id, text: String(raw.text), level, icon: /^fa-[a-z0-9-]+$/.test(raw.icon || '') ? raw.icon : '', created_at: raw.created_at || (prior && prior.created_at) || new Date().toISOString(), read: prior ? !!prior.read : false });
+            byId.set(id, { id, text: String(raw.text), level, icon: /^fa-[a-z0-9-]+$/.test(raw.icon || '') ? raw.icon : '', url: safeHref(raw.url) || (prior && prior.url) || '', created_at: raw.created_at || (prior && prior.created_at) || new Date().toISOString(), read: prior ? !!prior.read : false });
         });
         stored = Array.from(byId.values()).sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)).slice(0, 40);
         save();
@@ -460,11 +566,18 @@ if (!function_exists('render_principal_sidebar')) {
                 const li = document.createElement('li');
                 li.dataset.id = String(item.id);
                 if (!item.read) li.classList.add('unseen');
+                const link = document.createElement('a');
+                link.className = 'pbi-topbar-notification-link';
+                link.href = notificationHref(item);
+                link.dataset.notificationId = String(item.id);
+                link.setAttribute('aria-label', item.text + ' Open related page');
                 const icon = document.createElement('i');
                 icon.className = 'fa-solid ' + (item.icon || iconMap[item.level] || iconMap.info);
+                icon.setAttribute('aria-hidden', 'true');
                 const label = document.createElement('span');
                 label.textContent = item.text;
-                li.append(icon, label);
+                link.append(icon, label);
+                li.appendChild(link);
                 bellList.appendChild(li);
             });
         }
@@ -499,11 +612,15 @@ if (!function_exists('render_principal_sidebar')) {
         render(stored);
     });
     bellList.addEventListener('click', function(event){
-        const item = event.target.closest('li[data-id]');
-        if (!item) return;
-        stored = stored.map(n => String(n.id) === item.dataset.id ? Object.assign({}, n, { read: true }) : n);
+        const link = event.target.closest('a[data-notification-id]');
+        if (!link) return;
+        const id = link.dataset.notificationId;
+        stored = stored.map(n => String(n.id) === id ? Object.assign({}, n, { read: true }) : n);
         save();
-        render(stored);
+        const item = link.closest('li[data-id]');
+        if (item) item.classList.remove('unseen');
+        updateCount();
+        // Let the anchor's default action navigate to the related page.
     });
     document.addEventListener('click', function(event){
         if (!bell.contains(event.target)) { bellPanel.classList.remove('open'); bellBtn.setAttribute('aria-expanded', 'false'); }

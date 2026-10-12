@@ -130,7 +130,7 @@ if (($settings['period_id'] ?? 0) > 0) {
           AND et.submitted_at IS NOT NULL
           AND target.is_active=1
           AND target.account_status='approved'
-          AND (target.role IN ('dean','principal','staff') OR (target.role IN ('teacher','faculty') AND EXISTS (
+          AND (target.role IN ('principal','staff') OR (target.role IN ('teacher','faculty') AND EXISTS (
               SELECT 1 FROM user_year_levels uyl
               WHERE uyl.user_id=target.id AND uyl.year_level IN ($collegeLevels)
           )))
@@ -758,7 +758,7 @@ html.dark-theme .overall-summary-action{background:rgba(156,133,240,.14) !import
 <?php
 $active = 'dashboard';
 $sidebarScope = HIGHER_ED_LABEL . ' Division';
-include __DIR__ . '/includes/dean_sidebar.php';
+include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_header_dark.php')) include __DIR__ . '/dean_header_dark.php';
 ?>
 
 <main class="main dean-dashboard-main">

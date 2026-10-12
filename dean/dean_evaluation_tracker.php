@@ -781,7 +781,7 @@ html.dark-theme .tracker-card .page-btn.active{background:rgba(124,95,217,.2)!im
 <?php
 $active = 'tracker';
 $sidebarScope = HIGHER_ED_LABEL . ' Division';
-include __DIR__ . '/includes/dean_sidebar.php';
+include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_header_dark.php')) include __DIR__ . '/dean_header_dark.php';
 ?>
 
 <main class="main dean-internal-scroll">

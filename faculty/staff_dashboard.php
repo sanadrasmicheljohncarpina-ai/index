@@ -23,6 +23,7 @@ require_once __DIR__ . '/received_results.php';
 
         $user_id     = $_SESSION['user_id'];
         require_once '../shared/notification_message.php';
+        require_once __DIR__ . '/notification_links.php';
         $full_name   = $_SESSION['full_name']   ?? 'Staff';
         $designation = $_SESSION['designation'] ?? 'Staff';
 
@@ -147,22 +148,16 @@ function staff_schedule_is_open(mysqli $mysqli): bool {
             if (stripos($lvl, 'College') !== false) $staff_teaches_college  = true;
             if (stripos($lvl, 'Grade') !== false)   $staff_teaches_basic_ed = true;
         }
-        // Peer-to-Peer with College Faculty requires an explicit teaching identity
-        // as well as a College assignment; a stray user_year_levels row alone must
-        // not grant a non-teaching Staff account access to the College peer group.
-        $staff_identity_q = $mysqli->prepare("SELECT id, sector, secondary_role FROM users WHERE id=? LIMIT 1");
-        $staff_identity_q->bind_param('i', $user_id);
-        $staff_identity_q->execute();
-        $staff_peer_identity = $staff_identity_q->get_result()->fetch_assoc() ?: [];
-        $staff_identity_q->close();
-        $staff_can_evaluate_college_peer = $staff_teaches_college && peer_has_explicit_teaching_identity($mysqli, $staff_peer_identity);
+        // Peer-to-Peer with the Faculty group is available to any Staff account
+        // the EA has assigned at least one year level to (Teaching Staff).
+        $staff_can_evaluate_faculty_peer = $staff_has_teaching_assignment;
 
         // Human-readable summary of who this Staff account can currently
         // evaluate, used on the Role & Designation page.
         $staff_can_evaluate_parts = [];
         if ($staff_teaches_college)  $staff_can_evaluate_parts[] = 'Dean';
         if ($staff_teaches_basic_ed) $staff_can_evaluate_parts[] = 'Principal';
-        if ($staff_has_teaching_assignment) $staff_can_evaluate_parts[] = 'Fellow Teacher/Staff (Peer Evaluation)';
+        if ($staff_has_teaching_assignment) $staff_can_evaluate_parts[] = 'Fellow Teacher/Staff (Peer-to-Peer Evaluation)';
         if (empty($staff_can_evaluate_parts)) $staff_can_evaluate_parts[] = 'Executive Assistant';
         $staff_can_evaluate_label = implode(', ', $staff_can_evaluate_parts);
 
@@ -364,17 +359,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_account_name']
         $pr = $mysqli->query("SELECT * FROM evaluation_periods WHERE is_active=1 LIMIT 1");
         if ($pr) $period = $pr->fetch_assoc();
 
-        // College peer submissions must use a Higher Education term, since the
+        // Faculty peer submissions must use a Higher Education term, since the
         // Dean report excludes School Year periods. Prefer an active HE term,
         // otherwise use the newest semester/summer row, without changing the
         // active period used for the rest of the Staff dashboard.
         $college_peer_period = null;
         $cpp = $mysqli->query("SELECT * FROM evaluation_periods
             WHERE semester IN ('1st Semester','2nd Semester','Summer')
-            ORDER BY is_active DESC,
-        (CONVERT(school_year USING utf8mb4) COLLATE utf8mb4_unicode_ci =
-            CONVERT((SELECT setting_value FROM system_settings WHERE setting_key='acad_year' LIMIT 1) USING utf8mb4) COLLATE utf8mb4_unicode_ci) DESC,
-        id DESC LIMIT 1");
+            ORDER BY
+                (CONVERT(TRIM(school_year) USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+                    CONVERT(TRIM((SELECT setting_value FROM system_settings WHERE setting_key='acad_year' LIMIT 1)) USING utf8mb4) COLLATE utf8mb4_unicode_ci) DESC,
+                (CONVERT(TRIM(semester) USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+                    CONVERT(TRIM((SELECT setting_value FROM system_settings WHERE setting_key='acad_term' LIMIT 1)) USING utf8mb4) COLLATE utf8mb4_unicode_ci) DESC,
+                is_active DESC,
+                id DESC LIMIT 1");
         if ($cpp) $college_peer_period = $cpp->fetch_assoc();
 
         // Do not use evaluation_periods.is_active as the schedule clock.
@@ -569,32 +567,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_account_name']
         $my_scores = $kept_combined['scores'];
 
         // ── PEER EVALUATION GROUPING (same rules as Faculty dashboard) ───
-        // A user's Peer Evaluation bucket is based on their actual function:
-        //   • Faculty accounts -> Faculty bucket
-        //   • Staff accounts WITH a teaching assignment -> Faculty bucket
-        //   • Staff accounts WITHOUT a teaching assignment -> Staff bucket
-        // This is deliberately DB-backed so a Staff member becomes part of the
-        // Faculty peer roster as soon as the EA assigns a teaching level.
-        function isNonTeachingStaff(mysqli $mysqli, int $user_id): bool {
-            $stmt = $mysqli->prepare(
-                "SELECT NOT EXISTS(
-                    SELECT 1 FROM user_year_levels yl WHERE yl.user_id=?
-                 ) AS is_non_teaching"
-            );
-            $stmt->bind_param('i', $user_id);
-            $stmt->execute();
-            $row = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-            return (bool)($row['is_non_teaching'] ?? false);
-        }
-
-        function peer_has_explicit_teaching_identity(mysqli $mysqli, array $u): bool {
-            $sector = strtolower(trim((string)($u['sector'] ?? '')));
-            $secondary = strtolower(trim((string)($u['secondary_role'] ?? '')));
-            if ($sector === 'teacher' || in_array($secondary, ['teacher','faculty'], true)) return true;
+        // Grouping follows the account role plus the EA's year-level assignment
+        // (user_year_levels, set in Account Management → Assign Year Levels).
+        // It is NOT derived from designation, sector, secondary role, or
+        // teaching_assignments:
+        //   • role teacher/faculty                   -> Faculty group
+        //   • role staff WITH  >= 1 year-level row   -> Faculty group (Teaching Staff)
+        //   • role staff WITHOUT any year-level row  -> Staff group
+        // Checked live, so a Staff account switches groups (and which
+        // questionnaire evaluates them) as soon as the EA assigns or clears
+        // a year level.
+        function peer_has_teaching_assignment(mysqli $mysqli, array $u): bool {
             $uid = (int)($u['id'] ?? 0);
             if ($uid <= 0) return false;
-            $stmt = $mysqli->prepare('SELECT 1 FROM teaching_assignments WHERE user_id=? LIMIT 1');
+            $stmt = $mysqli->prepare('SELECT 1 FROM user_year_levels WHERE user_id=? LIMIT 1');
             if (!$stmt) return false;
             $stmt->bind_param('i', $uid);
             $stmt->execute();
@@ -603,25 +589,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_account_name']
             return $found;
         }
         function resolve_peer_group(mysqli $mysqli, array $u): ?string {
-            // A College year-level entry alone is not sufficient to classify a
-            // Staff-sector facilities/non-teaching account as a College teacher.
             $role = strtolower(trim((string)($u['role'] ?? '')));
             if (in_array($role, ['teacher','faculty'], true)) return 'teacher';
-            if ($role === 'staff') return peer_has_explicit_teaching_identity($mysqli, $u) ? 'teacher' : 'staff';
+            if ($role === 'staff') return peer_has_teaching_assignment($mysqli, $u) ? 'teacher' : 'staff';
             return null;
-        }
-
-        // Same exact College assignment rule used by Dean Peer-to-Peer reports.
-        function staff_user_has_college_peer_level(mysqli $mysqli, int $uid): bool {
-            $stmt = $mysqli->prepare("SELECT 1 FROM user_year_levels
-                WHERE user_id=? AND year_level IN ('1st Year College','2nd Year College','3rd Year College','4th Year College')
-                LIMIT 1");
-            if (!$stmt) return false;
-            $stmt->bind_param('i', $uid);
-            $stmt->execute();
-            $found = (bool) $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-            return $found;
         }
 
         // Show Teaching Staff clearly inside the Faculty bucket while leaving
@@ -850,9 +821,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_account_name']
         $peer_group = null; // 'teacher' | 'staff' | 'dean' | 'principal' | null (Step 1 not yet completed)
 
         if ($page === 'peer' && $staff_has_teaching_assignment) {
-            $pr2 = $mysqli->prepare("SELECT u.id, u.full_name, u.designation, u.photo, u.role, u.sector, u.secondary_role,
-                    EXISTS(SELECT 1 FROM user_year_levels uyl WHERE uyl.user_id=u.id
-                        AND uyl.year_level IN ('1st Year College','2nd Year College','3rd Year College','4th Year College')) AS has_college_peer_level
+            $pr2 = $mysqli->prepare("SELECT u.id, u.full_name, u.designation, u.photo, u.role, u.sector, u.secondary_role
                     FROM users u WHERE u.role IN ('teacher','staff','faculty')
                       AND u.is_active=1 AND u.account_status='approved' AND u.id != ? ORDER BY u.full_name ASC");
             $pr2->bind_param("i", $user_id);
@@ -891,11 +860,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_account_name']
                     $wantedTargetType = ucfirst($peer_group);
                     $peers = array_values(array_filter($staff_eval_targets, fn($t) => $t['target_type'] === $wantedTargetType));
                 } else {
-                    $peers = array_values(array_filter($peers_all, function ($p) use ($mysqli, $peer_group, $staff_can_evaluate_college_peer) {
+                    // Faculty category includes all eligible Faculty/Teaching Staff,
+                    // regardless of their assigned year level.
+                    $peers = array_values(array_filter($peers_all, function ($p) use ($mysqli, $peer_group, $staff_can_evaluate_faculty_peer) {
                         if ($peer_group === 'teacher') {
-                            return $staff_can_evaluate_college_peer
-                                && (int)($p['has_college_peer_level'] ?? 0) === 1
-                                && resolve_peer_group($mysqli, $p) === 'teacher';
+                            return $staff_can_evaluate_faculty_peer && resolve_peer_group($mysqli, $p) === 'teacher';
                         }
                         return resolve_peer_group($mysqli, $p) === $peer_group;
                     }));
@@ -923,11 +892,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_account_name']
                 $peer_target = null;
             } elseif ($peer_target) {
                 $actual_group = resolve_peer_group($mysqli, $peer_target);
-                if ($req_group === 'teacher' && !$staff_can_evaluate_college_peer) {
-                    $peer_group_error = "Faculty Peer-to-Peer Evaluation is only available to Teaching Staff assigned to a College year level.";
-                    $peer_target = null;
-                } elseif ($req_group === 'teacher' && !staff_user_has_college_peer_level($mysqli, (int)$peer_target['id'])) {
-                    $peer_group_error = "Only faculty or teaching staff assigned to a College year level can be evaluated in this group.";
+                if ($req_group === 'teacher' && !$staff_can_evaluate_faculty_peer) {
+                    $peer_group_error = "Faculty Peer-to-Peer Evaluation is only available to Teaching Staff (Staff with an assigned year level).";
                     $peer_target = null;
                 } elseif ($actual_group !== $req_group) {
                     $peer_group_error = "The selected user does not belong to the selected designation.";
@@ -969,7 +935,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_account_name']
             // eligibility can change between page load and submit, so this is
             // re-derived from $my_levels, never trusted from the rendered form.
             if (!$staff_has_teaching_assignment) {
-                $_SESSION['toast_error'] = "Peer Evaluation is only available to Staff with a teaching assignment.";
+                $_SESSION['toast_error'] = "Peer-to-Peer Evaluation is only available to Staff with a teaching assignment.";
                 header("Location: staff_dashboard.php?page=dashboard"); exit;
             }
 
@@ -1008,18 +974,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_account_name']
                 $_SESSION['toast_error'] = "The selected user does not belong to the selected designation.";
                 header("Location: staff_dashboard.php?page=peer&group=" . urlencode($submitted_group)); exit;
             }
-            if ($submitted_group === 'teacher' && !$staff_can_evaluate_college_peer) {
-                $_SESSION['toast_error'] = "Faculty Peer-to-Peer Evaluation is only available to Teaching Staff assigned to a College year level.";
-                header("Location: staff_dashboard.php?page=peer&group=teacher"); exit;
-            }
-            if ($submitted_group === 'teacher' && !staff_user_has_college_peer_level($mysqli, $tid)) {
-                $_SESSION['toast_error'] = "Only faculty or teaching staff assigned to a College year level can be evaluated in this group.";
+            if ($submitted_group === 'teacher' && !$staff_can_evaluate_faculty_peer) {
+                $_SESSION['toast_error'] = "Faculty Peer-to-Peer Evaluation is only available to Teaching Staff (Staff with an assigned year level).";
                 header("Location: staff_dashboard.php?page=peer&group=teacher"); exit;
             }
 
-            // Eligibility check — peer evaluations have no level restriction (per requirements,
-            // staff/faculty can evaluate anyone they've worked with), but this still blocks
-            // self-evaluation and invalid targets before anything gets inserted.
+            // Eligibility check — peer evaluations have no year-level restriction, but this
+            // still blocks self-evaluation and invalid targets before anything gets inserted.
             [$eligible, $eligMsg] = canPeerEvaluate($mysqli, $user_id, $tid);
 
             if (!$eligible) {
@@ -1031,10 +992,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_account_name']
             if ($submitted_group === 'teacher') {
                 $periodStmt = $mysqli->query("SELECT id FROM evaluation_periods
                     WHERE semester IN ('1st Semester','2nd Semester','Summer')
-                    ORDER BY is_active DESC,
-        (school_year = (SELECT setting_value FROM system_settings WHERE setting_key='acad_year' LIMIT 1)) DESC,
-        id DESC LIMIT 1");
-                $periodError = "No Higher Education semester period is configured for College Peer-to-Peer Evaluation.";
+                    ORDER BY
+                (CONVERT(TRIM(school_year) USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+                    CONVERT(TRIM((SELECT setting_value FROM system_settings WHERE setting_key='acad_year' LIMIT 1)) USING utf8mb4) COLLATE utf8mb4_unicode_ci) DESC,
+                (CONVERT(TRIM(semester) USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+                    CONVERT(TRIM((SELECT setting_value FROM system_settings WHERE setting_key='acad_term' LIMIT 1)) USING utf8mb4) COLLATE utf8mb4_unicode_ci) DESC,
+                is_active DESC,
+                id DESC LIMIT 1");
+                $periodError = "No semester period is configured for Faculty Peer-to-Peer Evaluation.";
             } else {
                 $periodStmt = $mysqli->query("SELECT id FROM evaluation_periods WHERE is_active=1 LIMIT 1");
                 $periodError = "No evaluation period is currently open.";
@@ -1103,12 +1068,12 @@ $tracker_id = $mysqli->insert_id; $trk->close();
                     $mysqli->commit();
 
                     // Notify the evaluated staff member — anonymously, no evaluator identity attached.
-                    $notif_msg = "You have received a new peer evaluation.";
+                    $notif_msg = "You have received a new peer-to-peer evaluation.";
                     $nins = $mysqli->prepare("INSERT INTO notifications (type, user_id, message) VALUES ('evaluation_received', ?, ?)");
                     $nins->bind_param("is", $tid, $notif_msg);
                     $nins->execute(); $nins->close();
 
-                    $_SESSION['toast'] = "Peer evaluation submitted!";
+                    $_SESSION['toast'] = "Peer-to-Peer evaluation submitted!";
                 } catch (Exception $e) {
                     $mysqli->rollback();
                     error_log('[staff_dashboard] submit_peer failed for evaluator=' . $user_id . ' target=' . $tid . ': ' . $e->getMessage());
@@ -1338,6 +1303,9 @@ body.light-theme .welcome-bar h2,
         .notif-list::-webkit-scrollbar-thumb{background:rgba(148,163,184,.55);border-radius:8px;}
         .notif-item{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-bottom:1px solid rgba(255,255,255,.05);position:relative;}
         .notif-item:last-child{border-bottom:none;}
+        a.notif-item{text-decoration:none;color:inherit;cursor:pointer;transition:background .15s ease;}
+        a.notif-item:hover,a.notif-item:focus-visible{background:rgba(255,255,255,.07);outline:none;}
+        body.light-theme a.notif-item:hover,body.light-theme a.notif-item:focus-visible{background:rgba(15,31,61,.06);}
         .notif-item.unread{background:rgba(99,102,241,.07);}
         .notif-item.unread::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--teal);border-radius:0 2px 2px 0;}
         .notif-icon{width:30px;height:30px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;margin-top:1px;}
@@ -1346,7 +1314,7 @@ body.light-theme .welcome-bar h2,
         .notif-empty{text-align:center;padding:32px 16px;color:var(--muted);font-size:13px;}
         .notif-empty i{font-size:28px;display:block;margin-bottom:8px;opacity:.2;}
         .live-notif-toast{position:fixed;top:74px;right:28px;z-index:250;max-width:380px;display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:1px solid rgba(16,185,129,.35);border-radius:12px;background:var(--mid);box-shadow:0 16px 40px rgba(0,0,0,.25);color:var(--light);opacity:0;transform:translateY(-10px);pointer-events:none;transition:opacity .22s ease,transform .22s ease;}
-        .live-notif-toast.show{opacity:1;transform:translateY(0);}
+        .live-notif-toast.show{opacity:1;transform:translateY(0);pointer-events:auto;cursor:pointer;}
         .live-notif-toast-icon{width:30px;height:30px;flex:0 0 30px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(16,185,129,.12);color:#10b981;}
         .live-notif-toast strong{display:block;font-size:12px;color:#fff;margin-bottom:2px;}
         .live-notif-toast span{display:block;font-size:12px;line-height:1.4;color:var(--light);}
@@ -1487,6 +1455,9 @@ body.light-theme .welcome-bar h2,
         .eval-group-count{font-size:12.5px;color:var(--muted);}
         body.light-theme .eval-group-title{color:var(--light);}
         body.light-theme .eval-group-card:hover{border-color:#15803D;box-shadow:0 8px 24px rgba(21,128,61,.08);}
+        .eval-group-card.is-selected{border-color:var(--teal);background:rgba(99,102,241,.10);}
+        body.light-theme .eval-group-card.is-selected{border-color:#15803D;background:rgba(21,128,61,.06);}
+        .peer-inline-categories{margin-bottom:22px;}
 
         /* Text input row */
         .custom-role-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px;display:flex;align-items:center;gap:6px;}
@@ -2408,6 +2379,363 @@ body.light-theme .quick-access-card:hover .quick-access-arrow { color: #15803D; 
  .staff-eval-modal{height:calc(100vh - 24px);max-height:calc(100vh - 24px);}
 }
 
+/* Top-bar page title — dark title, icon in the portal accent colour */
+.top-nav .nav-page-title,body.light-theme .top-nav .nav-page-title{display:flex;align-items:center;gap:9px;font-family:'Rajdhani',sans-serif !important;font-size:20px !important;font-weight:700 !important;letter-spacing:.4px !important;text-transform:none !important;background:transparent !important;text-shadow:none !important;-webkit-font-smoothing:antialiased;}
+.top-nav .nav-page-title i{font-size:16px;color:var(--teal);}
+.top-nav .nav-page-title span{background:transparent !important;}
+@media(max-width:600px){.top-nav .nav-page-title{font-size:17px !important;}}
+/* Pages without an in-page title block: keep the status pill tight to the top */
+.dashboard-intro .status-pill{margin-top:0 !important;}
+.settings-page-head{justify-content:flex-end;}
+/* ===== Settings — same visual language as the Dashboard (mirrors the Faculty portal) ===== */
+.settings-intro{display:flex;align-items:flex-start;justify-content:flex-end;gap:20px;flex-wrap:wrap}
+.settings-shell .settings-grid{margin-top:0;gap:14px;}
+.settings-shell .settings-card{--sc-bar:var(--teal);--sc-ico:var(--teal);--sc-ico-bg:color-mix(in srgb,var(--teal) 14%,transparent);position:relative;overflow:hidden;background:var(--mid);border:1px solid var(--border);border-radius:var(--radius);padding:22px 24px 24px;}
+.settings-shell .settings-card::before{content:'';position:absolute;left:0;right:0;top:0;height:3px;background:var(--sc-bar);}
+.settings-shell .settings-card:nth-child(2),.settings-shell .settings-card:nth-child(5){--sc-bar:#10B981;--sc-ico:#10B981;--sc-ico-bg:#E5F9ED;}
+.settings-shell .settings-card:nth-child(3){--sc-bar:#F59E0B;--sc-ico:#D88900;--sc-ico-bg:#FFF4D8;}
+.settings-shell .settings-card:nth-child(4){--sc-bar:#3B82F6;--sc-ico:#3478E5;--sc-ico-bg:#E5F0FF;}
+.settings-shell .settings-card-head{align-items:flex-start;gap:14px;margin-bottom:18px;}
+.settings-shell .settings-card-head .sicon{width:42px;height:42px;flex:0 0 42px;border-radius:12px;font-size:17px;background:var(--sc-ico-bg);color:var(--sc-ico);}
+.settings-shell .settings-card-head h3{margin:0 0 4px;font-family:'Rajdhani',sans-serif;font-size:21px;font-weight:800;line-height:1.15;}
+.settings-shell .settings-card-head p{margin:0;font-size:13px;line-height:1.5;}
+.settings-shell .setting-row strong{font-size:13.5px;}
+.settings-shell .setting-row span{font-size:12px;}
+body.light-theme .settings-shell{min-height:0 !important;display:block !important;}
+body.light-theme .settings-shell .settings-card{background:#FFFFFF;border:1px solid #E0E7EF;border-radius:15px;box-shadow:0 6px 18px rgba(20,42,67,.045);}
+body.light-theme .settings-shell .settings-card-head h3{color:#10243E;}
+body.light-theme .settings-shell .settings-card-head p{color:#5E7388;}
+body.light-theme .settings-shell .setting-row strong{color:#10243E;}
+body.light-theme .settings-shell .setting-row span{color:#5E7388;}
+@media(max-width:600px){.settings-shell .settings-card{padding:18px 18px 20px;}}
+
+/* ================================================================
+   DARK MODE — STAFF DASHBOARD
+   Mirrors the light-theme dashboard (shell card, status pill, compact
+   schedule / welcome / stat cards, quick-access shortcuts) using
+   dark-surface colours. Scoped to body:not(.light-theme) so light mode
+   is untouched.
+   ================================================================ */
+body:not(.light-theme) .main{padding:14px 24px 16px !important;}
+body:not(.light-theme) .dashboard-shell{
+    background:linear-gradient(180deg,#112240 0%,#0D1D36 100%);
+    border:1px solid rgba(255,255,255,.08);border-radius:22px;
+    padding:16px 24px 18px !important;
+    box-shadow:0 10px 28px rgba(0,0,0,.30);
+    min-height:calc(100vh - 110px) !important;
+    display:flex;flex-direction:column;
+}
+body:not(.light-theme) .settings-shell{min-height:0 !important;display:block !important;}
+
+/* Intro + status pill */
+body:not(.light-theme) .dashboard-intro{margin:0 2px 12px !important;}
+body:not(.light-theme) .dashboard-intro .status-pill{
+    display:inline-flex;align-items:center;gap:7px;padding:5px 10px !important;border-radius:20px;
+    background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.35);color:#4ADE80;
+    font-size:11.5px;font-weight:700;
+}
+body:not(.light-theme) .dashboard-intro .status-pill.closed{
+    background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.35);color:#F87171;
+}
+
+/* Schedule card */
+body:not(.light-theme) .evaluation-schedule-card{
+    background:var(--mid);border:1px solid rgba(255,255,255,.08);
+    padding:14px 22px !important;margin-bottom:14px !important;box-shadow:0 5px 18px rgba(0,0,0,.20);
+}
+body:not(.light-theme) .schedule-summary-grid{gap:16px;}
+body:not(.light-theme) .schedule-label{margin-bottom:5px;}
+body:not(.light-theme) .schedule-summary-item strong{color:#F1F5F9;}
+
+/* Welcome bar + score chip */
+body:not(.light-theme) .welcome-bar{
+    background:linear-gradient(135deg,#172A45 0%,rgba(22,163,74,.12) 100%) !important;
+    border:1px solid rgba(34,197,94,.25) !important;border-radius:17px !important;
+    padding:15px 22px !important;margin-bottom:14px !important;gap:12px;
+    box-shadow:0 5px 18px rgba(0,0,0,.18);
+}
+body:not(.light-theme) .welcome-bar h2{color:#F8FAFC !important;font-size:23px !important;}
+body:not(.light-theme) .welcome-bar p{color:#A0B3C6 !important;}
+body:not(.light-theme) .welcome-bar p strong{color:#4ADE80 !important;}
+body:not(.light-theme) .score-chip{
+    background:rgba(22,163,74,.12) !important;border:1px solid rgba(34,197,94,.30) !important;
+    border-radius:15px !important;max-width:340px;min-width:230px;padding:10px 20px !important;
+}
+body:not(.light-theme) .score-chip .big{color:#4ADE80 !important;font-size:34px !important;}
+body:not(.light-theme) .score-chip .lbl{color:#A0B3C6 !important;margin-top:5px !important;}
+
+/* Stat cards */
+body:not(.light-theme) .stats-grid{gap:12px !important;margin-bottom:0 !important;}
+body:not(.light-theme) .stat-box{
+    position:relative;background:var(--mid) !important;border:1px solid rgba(255,255,255,.08) !important;
+    border-radius:15px !important;padding:13px 16px 15px !important;overflow:hidden;
+    box-shadow:0 6px 18px rgba(0,0,0,.20) !important;
+}
+body:not(.light-theme) .stat-box::before{content:'';position:absolute;left:0;right:0;top:0;height:3px;background:#16A34A;}
+body:not(.light-theme) .stat-box:nth-child(2)::before{background:#10B981;}
+body:not(.light-theme) .stat-box:nth-child(3)::before{background:#F59E0B;}
+body:not(.light-theme) .stat-box:nth-child(4)::before{background:#3B82F6;}
+body:not(.light-theme) .stat-box-icon{width:30px;height:30px;border-radius:10px;display:flex;align-items:center;justify-content:center;margin-bottom:8px;font-size:15px;}
+body:not(.light-theme) .stat-box-icon.green{background:rgba(34,197,94,.16);color:#4ADE80;}
+body:not(.light-theme) .stat-box-icon.mint{background:rgba(16,185,129,.16);color:#34D399;}
+body:not(.light-theme) .stat-box-icon.gold{background:rgba(245,158,11,.16);color:#FBBF24;}
+body:not(.light-theme) .stat-box-icon.sky{background:rgba(59,130,246,.16);color:#60A5FA;}
+body:not(.light-theme) .stat-box-lbl{color:#A0B3C6 !important;font-size:10.5px !important;letter-spacing:.9px !important;margin-bottom:8px !important;}
+body:not(.light-theme) .stat-box-val{color:#F1F5F9 !important;font-size:26px !important;}
+body:not(.light-theme) .stat-box-val.teal{color:#4ADE80 !important;}
+body:not(.light-theme) .stat-box-val.gold{color:#FBBF24 !important;}
+body:not(.light-theme) .stat-box-link:hover{border-color:rgba(74,222,128,.45) !important;box-shadow:0 8px 18px rgba(0,0,0,.30) !important;}
+
+/* Quick access shortcuts */
+body:not(.light-theme) .dashboard-quick-access{margin-top:auto;padding-top:22px;}
+body:not(.light-theme) .quick-access-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin:0 2px 12px;}
+body:not(.light-theme) .quick-access-kicker{display:block;margin-bottom:3px;color:#4ADE80;font-size:10px;font-weight:800;letter-spacing:1.15px;}
+body:not(.light-theme) .quick-access-heading h2{color:#F8FAFC;font-family:'Rajdhani',sans-serif;font-size:19px;line-height:1.15;font-weight:800;}
+body:not(.light-theme) .quick-access-caption{color:#8FA6BF;font-size:11px;padding-bottom:2px;}
+body:not(.light-theme) .quick-access-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
+body:not(.light-theme) .quick-access-card{
+    min-width:0;min-height:92px;display:flex;align-items:center;gap:12px;padding:15px 16px;
+    text-decoration:none;background:var(--mid);border:1px solid rgba(255,255,255,.08);border-radius:14px;
+    box-shadow:0 4px 14px rgba(0,0,0,.20);
+    transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease;
+}
+body:not(.light-theme) .quick-access-card:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.32);border-color:rgba(74,222,128,.40);}
+body:not(.light-theme) .quick-access-icon{width:42px;height:42px;flex:0 0 42px;display:inline-flex;align-items:center;justify-content:center;border-radius:12px;font-size:17px;}
+body:not(.light-theme) .quick-blue .quick-access-icon{background:rgba(59,130,246,.16);color:#60A5FA;}
+body:not(.light-theme) .quick-green .quick-access-icon{background:rgba(16,185,129,.16);color:#34D399;}
+body:not(.light-theme) .quick-amber .quick-access-icon{background:rgba(245,158,11,.16);color:#FBBF24;}
+body:not(.light-theme) .quick-access-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:4px;}
+body:not(.light-theme) .quick-access-copy strong{color:#F1F5F9;font-size:12.5px;line-height:1.25;font-weight:800;}
+body:not(.light-theme) .quick-access-copy small{color:#A0B3C6;font-size:11px;line-height:1.4;}
+body:not(.light-theme) .quick-access-arrow{color:#8FA6BF;font-size:12px;flex:0 0 auto;transition:transform .18s ease,color .18s ease;}
+body:not(.light-theme) .quick-access-card:hover .quick-access-arrow{color:#4ADE80;transform:translateX(3px);}
+
+@media(max-width:1100px){
+    body:not(.light-theme) .dashboard-shell{min-height:calc(100vh - 100px) !important;}
+    body:not(.light-theme) .settings-shell{min-height:0 !important;}
+    body:not(.light-theme) .quick-access-grid{grid-template-columns:1fr;}
+    body:not(.light-theme) .quick-access-card{min-height:76px;}
+}
+@media(max-width:900px){
+    body:not(.light-theme) .main{padding:14px 14px 18px !important;}
+    body:not(.light-theme) .dashboard-shell{padding:16px 14px 18px !important;border-radius:16px;min-height:0 !important;}
+    body:not(.light-theme) .evaluation-schedule-card{padding:13px 16px !important;}
+    body:not(.light-theme) .welcome-bar{padding:14px 16px !important;}
+    body:not(.light-theme) .dashboard-quick-access{margin-top:22px;padding-top:0;}
+    body:not(.light-theme) .quick-access-heading{align-items:flex-start;flex-direction:column;gap:4px;}
+}
+
+/* Settings page shares the dashboard shell — keep its accents readable on dark */
+body:not(.light-theme) .settings-shell .settings-card{--sc-ico:#4ADE80;--sc-ico-bg:rgba(34,197,94,.16);}
+body:not(.light-theme) .settings-shell .settings-card:nth-child(2),
+body:not(.light-theme) .settings-shell .settings-card:nth-child(5){--sc-ico:#34D399;--sc-ico-bg:rgba(16,185,129,.16);}
+body:not(.light-theme) .settings-shell .settings-card:nth-child(3){--sc-ico:#FBBF24;--sc-ico-bg:rgba(245,158,11,.16);}
+body:not(.light-theme) .settings-shell .settings-card:nth-child(4){--sc-ico:#60A5FA;--sc-ico-bg:rgba(59,130,246,.16);}
+body:not(.light-theme) .settings-appearance-current{background:rgba(59,130,246,.14);border-color:rgba(96,165,250,.30);color:#93C5FD;}
+body:not(.light-theme) .appearance-choice.active{background:rgba(59,130,246,.16);border-color:rgba(96,165,250,.35);color:#93C5FD;}
+
+/* ================================================================
+   STAFF EVALUATION — same look as the Dashboard (shell, cards, accents)
+   ================================================================ */
+.dashboard-shell.ea-eval-wrap{max-width:none;}
+.ea-eval-wrap .ea-tab-row{margin-bottom:14px;gap:12px;}
+.ea-eval-wrap .ea-toolbar,.ea-eval-wrap .ea-table-card{position:relative;overflow:hidden;border-radius:15px;box-shadow:0 6px 18px rgba(20,42,67,.045);}
+.ea-eval-wrap .ea-toolbar{padding:16px 20px;margin-bottom:14px;}
+.ea-eval-wrap .ea-toolbar::before,.ea-eval-wrap .ea-table-card::before{content:'';position:absolute;left:0;right:0;top:0;height:3px;background:#16A34A;z-index:1;}
+.ea-eval-wrap .ea-table-card::before{background:#3B82F6;}
+.ea-kicker{display:block;margin-bottom:3px;color:#15803D;font-size:10px;font-weight:800;letter-spacing:1.15px;text-transform:uppercase;}
+.ea-toolbar-title{margin:0;color:var(--light);font-family:'Rajdhani',sans-serif;font-size:19px;line-height:1.15;font-weight:800;}
+.ea-toolbar-sub{margin:4px 0 0;color:var(--muted);font-size:12.5px;}
+
+body:not(.light-theme) .ea-kicker{color:#4ADE80;}
+body:not(.light-theme) .ea-toolbar-title{color:#F8FAFC;}
+body:not(.light-theme) .ea-eval-wrap .ea-toolbar,
+body:not(.light-theme) .ea-eval-wrap .ea-table-card{border-color:rgba(255,255,255,.08);box-shadow:0 6px 18px rgba(0,0,0,.20);}
+body:not(.light-theme) .ea-tab{background:rgba(22,163,74,.10);border-color:rgba(34,197,94,.25);color:#CBD8E8;}
+body:not(.light-theme) .ea-tab i{color:#4ADE80;}
+body:not(.light-theme) .ea-tab:hover{background:rgba(22,163,74,.16);border-color:rgba(74,222,128,.45);color:#fff;}
+body:not(.light-theme) .ea-tab.active{background:linear-gradient(135deg,rgba(22,163,74,.24),rgba(22,163,74,.10));border-color:#16A34A;color:#fff;box-shadow:none;}
+body:not(.light-theme) .ea-tab.active i{color:#4ADE80;}
+body:not(.light-theme) .ea-role-pill{background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.25);color:#86EFAC;}
+body:not(.light-theme) .ea-avatar{border-color:rgba(34,197,94,.35);color:#4ADE80;}
+body:not(.light-theme) .ea-table tbody tr:hover{background:rgba(34,197,94,.05);}
+body:not(.light-theme) .period-badge{background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.30);color:#4ADE80;}
+
+/* ================================================================
+   CATEGORY PICKER — same look as the Executive Assistant's
+   "Evaluate Others → Choose category" (large icon cards, no progress
+   pills, no accent bottom border). Used by Faculty + Teaching Staff
+   Peer-to-Peer Evaluation. Works in light and dark mode.
+   ================================================================ */
+.cat-heading{display:flex;align-items:center;gap:12px;margin:0 0 22px;font-family:'Rajdhani',sans-serif;font-size:26px;line-height:1.1;font-weight:800;color:var(--light);}
+.cat-heading i{font-size:20px;color:var(--teal);}
+body .section-card:has(.cat-select){padding:28px 34px 32px !important;}
+.eval-group-grid.cat-select{grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:24px;margin-bottom:0;}
+body .eval-group-grid.cat-select .eval-group-card.eval-group-card{
+    min-height:230px;padding:38px 20px !important;justify-content:center;
+    border:1px solid #E2E9F2 !important;border-bottom:1px solid #E2E9F2 !important;border-radius:16px;
+    background:#FFFFFF !important;box-shadow:none;
+    transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease;
+}
+body .eval-group-grid.cat-select .eval-group-card.eval-group-card:hover{transform:translateY(-2px);border-color:#C9D6E6 !important;box-shadow:0 8px 20px rgba(20,42,67,.07);}
+body .eval-group-grid.cat-select .eval-group-card.eval-group-card.is-selected{border-color:var(--teal) !important;border-bottom-color:var(--teal) !important;box-shadow:0 0 0 1px var(--teal);}
+.eval-group-grid.cat-select .eval-group-icon{width:80px;height:80px;font-size:28px;margin-bottom:22px;}
+body .eval-group-grid.cat-select .eval-group-title.eval-group-title{font-family:'DM Sans',sans-serif;font-size:24px;font-weight:700;color:#10243E !important;margin-bottom:6px;}
+body .eval-group-grid.cat-select .eval-group-count.eval-group-count{font-size:15px;color:#64788E !important;}
+
+/* dark mode */
+body:not(.light-theme) .eval-group-grid.cat-select .eval-group-card.eval-group-card{background:var(--inner) !important;border-color:rgba(255,255,255,.10) !important;border-bottom-color:rgba(255,255,255,.10) !important;}
+body:not(.light-theme) .eval-group-grid.cat-select .eval-group-card.eval-group-card:hover{border-color:rgba(255,255,255,.22) !important;box-shadow:0 8px 20px rgba(0,0,0,.30);}
+body:not(.light-theme) .eval-group-grid.cat-select .eval-group-card.eval-group-card.is-selected{border-color:var(--teal) !important;}
+body:not(.light-theme) .eval-group-grid.cat-select .eval-group-title.eval-group-title{color:#F1F5F9 !important;}
+body:not(.light-theme) .eval-group-grid.cat-select .eval-group-count.eval-group-count{color:#A0B3C6 !important;}
+
+/* once a category is chosen the picker stays as a compact switcher above the list */
+@media(max-width:600px){.cat-heading{font-size:22px;}body .section-card:has(.cat-select){padding:20px 18px 24px !important;}}
+
+/* Peer-to-Peer Evaluation → same page frame as the Admin "Evaluate Others" screen */
+.cat-heading{font-size:30px;gap:13px;}
+.cat-heading i{font-size:22px;color:#2563EB;}
+body .section-card:has(.cat-select){min-height:calc(100vh - 130px);padding:34px 36px 40px !important;border-radius:20px;}
+body .eval-group-grid.cat-select .eval-group-title.eval-group-title{font-size:25px;}
+body .eval-group-grid.cat-select .eval-group-count.eval-group-count{font-size:16px;}
+body .eval-group-grid.cat-select .eval-group-card.eval-group-card{min-height:235px;border-radius:18px;}
+@media(max-width:900px){body .section-card:has(.cat-select){min-height:0;padding:22px 18px 26px !important;}}
+
+/* Category picker sizing — exact metrics from the admin "Evaluate Others" screen */
+body .section-card:has(.cat-select){padding:24px 28px 22px !important;border-radius:14px;}
+.cat-heading{font-size:26px;gap:11px;margin:0 0 14px;font-weight:700;letter-spacing:.1px;}
+.cat-heading i{font-size:22px;}
+.eval-group-grid.cat-select{gap:18px;}
+body .eval-group-grid.cat-select .eval-group-card.eval-group-card{min-height:188px;padding:22px 18px !important;border-radius:14px;}
+.eval-group-grid.cat-select .eval-group-icon{width:64px;height:64px;font-size:25px;margin-bottom:15px;}
+body .eval-group-grid.cat-select .eval-group-title.eval-group-title{font-size:20px;margin-bottom:3px;}
+body .eval-group-grid.cat-select .eval-group-count.eval-group-count{font-size:13.5px;}
+/* compact switcher shown once a category is chosen */
+@media(max-width:900px){body .section-card:has(.cat-select){padding:20px !important;}}
+@media(max-width:560px){.cat-heading{font-size:23px;}body .section-card:has(.cat-select){padding:16px !important;}body .eval-group-grid.cat-select .eval-group-card.eval-group-card{min-height:150px;}}
+.cat-heading{font-size:21px;gap:9px;margin:0 0 14px;}
+.cat-heading i{font-size:16px;color:#16A34A !important;}
+@media(max-width:560px){.cat-heading{font-size:19px;}.cat-heading i{font-size:15px;}}
+
+/* ================================================================
+   PEER-TO-PEER EVALUATION — roster + popup, same structure as the
+   Admin "Evaluate Others" screen. Colours follow the Staff green theme.
+   ================================================================ */
+.peer-inline-categories{background:var(--mid);border:1px solid var(--border);border-radius:14px;padding:24px 28px 22px;margin-bottom:20px;box-shadow:0 6px 18px rgba(20,42,67,.045);}
+body:not(.light-theme) .peer-inline-categories{box-shadow:0 6px 18px rgba(0,0,0,.20);}
+@media(max-width:900px){.peer-inline-categories{padding:20px;}}
+@media(max-width:560px){.peer-inline-categories{padding:16px;}}
+.cat-heading i{color:var(--teal) !important;}
+.roster-panel{
+    --rp-panel:#FFFFFF;--rp-line:#DCE8F5;--rp-soft:#F8FBFF;--rp-card:#FFFFFF;--rp-card-border:#D7E3EF;
+    --rp-text:#10243F;--rp-muted:#587089;--rp-muted2:#7E93AB;--rp-icon:#DCFCE7;--rp-icon-fg:#16A34A;
+    --rp-photo:#F2F6FB;--rp-photo-border:#C9D9EA;--rp-view-border:#9FB4CA;
+    margin-top:0;scroll-margin-top:12px;background:var(--rp-panel);border:1px solid var(--rp-line);border-radius:14px;overflow:hidden;
+    box-shadow:0 6px 18px rgba(20,42,67,.045);
+}
+body:not(.light-theme) .roster-panel{
+    --rp-panel:var(--mid);--rp-line:rgba(255,255,255,.09);--rp-soft:var(--inner);--rp-card:var(--inner);--rp-card-border:rgba(255,255,255,.10);
+    --rp-text:#F5F7FB;--rp-muted:#9CB0CA;--rp-muted2:#8298B4;--rp-icon:rgba(34,197,94,.16);--rp-icon-fg:#4ADE80;
+    --rp-photo:#18304E;--rp-photo-border:#2B476A;--rp-view-border:#34506F;
+    box-shadow:0 6px 18px rgba(0,0,0,.20);
+}
+.roster-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px 16px;padding:18px 22px;border-bottom:1px solid var(--rp-line);background:var(--rp-soft);}
+.roster-heading{display:flex;align-items:center;gap:11px;}
+.roster-heading .roster-icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--rp-icon);color:var(--rp-icon-fg);font-size:15px;}
+.roster-heading h2{margin:0;font-family:'DM Sans',sans-serif;font-size:20px;font-weight:700;color:var(--rp-text);}
+.roster-stats{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px;color:var(--rp-muted);font-size:12.5px;}
+.roster-stats strong{color:var(--rp-text);}
+.roster-stats .period{display:inline-flex;align-items:center;gap:6px;}
+.person-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:18px;background:var(--rp-panel);}
+.person-card{display:flex;align-items:center;gap:13px;background:var(--rp-card);border:1px solid var(--rp-card-border);border-radius:11px;padding:13px 14px;min-width:0;}
+.person-photo{width:44px;height:44px;border-radius:50%;background:var(--rp-photo);border:1px solid var(--rp-photo-border);display:flex;align-items:center;justify-content:center;color:var(--rp-muted);flex-shrink:0;overflow:hidden;}
+.person-photo img{width:100%;height:100%;object-fit:cover;display:block;}
+.person-info{min-width:0;flex:1;}
+.person-name{font-size:14.5px;font-weight:800;color:var(--rp-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.person-meta{margin-top:3px;color:var(--rp-muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.person-card .status-pill{display:inline-flex;align-items:center;gap:5px;margin-top:7px;padding:4px 10px;border-radius:999px;font-size:11.5px;font-weight:800;}
+.person-card .status-pill.done{background:rgba(52,211,153,.12);color:#11805F;border:1px solid rgba(52,211,153,.18);}
+.person-card .status-pill.pending{background:rgba(245,158,11,.12);color:#A66000;border:1px solid rgba(245,158,11,.18);}
+body:not(.light-theme) .person-card .status-pill.done{color:#6EE7B7;}
+body:not(.light-theme) .person-card .status-pill.pending{color:#F8C465;}
+.person-action{flex-shrink:0;}
+.btn-action{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 14px;border-radius:8px;text-decoration:none;font-size:12.5px;font-weight:800;border:1px solid transparent;font-family:'DM Sans',sans-serif;}
+.btn-action.evaluate{background:var(--teal);color:#fff;border-color:var(--teal);}
+.btn-action.evaluate:hover{background:var(--teal-hover);border-color:var(--teal-hover);}
+.btn-action.view{background:transparent;color:var(--rp-muted);border-color:var(--rp-view-border);}
+.btn-action.is-disabled{cursor:not-allowed;opacity:.6;}
+.btn-action.view.is-disabled{cursor:default;opacity:1;}
+.roster-empty{text-align:center;padding:44px 20px;color:var(--rp-muted2);font-size:12.5px;}
+.roster-empty i{display:block;margin-bottom:10px;font-size:26px;opacity:.45;}
+.roster-panel a:focus-visible,.eval-group-card:focus-visible{outline:2px solid var(--teal);outline-offset:2px;}
+@media(max-width:900px){.person-grid{grid-template-columns:1fr;}}
+@media(max-width:560px){.person-card{align-items:flex-start;flex-wrap:wrap;}.person-action{width:100%;}.person-action .btn-action{width:100%;}}
+
+
+/* ---- match the Admin "Evaluate Others" screen exactly ---- */
+body .section-card.peer-shell{min-height:0 !important;}
+.peer-shell .roster-panel{margin-top:22px;box-shadow:none;}
+body .eval-group-grid.cat-select .eval-group-card.eval-group-card:hover{background:#F2FBF6 !important;border-color:rgba(22,163,74,.45) !important;box-shadow:0 10px 24px rgba(16,24,40,.08) !important;transform:translateY(-2px);}
+body .eval-group-grid.cat-select .eval-group-card.eval-group-card.is-selected{background:#F2FBF6 !important;border-color:var(--teal) !important;border-bottom-color:var(--teal) !important;box-shadow:0 0 0 3px rgba(22,163,74,.14) !important;}
+body:not(.light-theme) .eval-group-grid.cat-select .eval-group-card.eval-group-card:hover,
+body:not(.light-theme) .eval-group-grid.cat-select .eval-group-card.eval-group-card.is-selected{background:#14301F !important;}
+.person-card{border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.04);}
+.btn-action{border-radius:10px;padding:10px 16px;font-weight:700;}
+.roster-heading h2{font-size:22px;letter-spacing:-.005em;}
+
+/* fixed-height white box: whitespace stays put and the scrollbar lives INSIDE the box (same as the EA screen) */
+body .section-card.peer-box{height:calc(100vh - 116px);min-height:0 !important;margin-bottom:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#B7C6D8 transparent;}
+body .section-card.peer-box::-webkit-scrollbar{width:8px;}
+body .section-card.peer-box::-webkit-scrollbar-thumb{background:#B7C6D8;border-radius:8px;}
+body .section-card.peer-box::-webkit-scrollbar-track{background:transparent;}
+body:not(.light-theme) .section-card.peer-box{scrollbar-color:#3A5578 transparent;}
+body:not(.light-theme) .section-card.peer-box::-webkit-scrollbar-thumb{background:#3A5578;}
+@media(max-width:900px){body .section-card.peer-box{height:auto;overflow:visible;}}
+
+/* Role & Designation page */
+/* ===== All pages: the white shell has a fixed height and scrolls INSIDE itself (page never scrolls) ===== */
+html body .dashboard-shell{height:calc(100vh - 116px);min-height:0 !important;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#B7C6D8 transparent;}
+html body .dashboard-shell > *{flex-shrink:0;}
+html body.light-theme .dashboard-shell{padding-bottom:28px !important;}
+html body .dashboard-shell::-webkit-scrollbar{width:8px;}
+html body .dashboard-shell::-webkit-scrollbar-thumb{background:#B7C6D8;border-radius:8px;}
+html body .dashboard-shell::-webkit-scrollbar-track{background:transparent;}
+html body:not(.light-theme) .dashboard-shell{scrollbar-color:#3A5578 transparent;}
+html body:not(.light-theme) .dashboard-shell::-webkit-scrollbar-thumb{background:#3A5578;}
+.main > .toast{position:fixed;top:72px;right:28px;z-index:300;margin:0;max-width:420px;box-shadow:0 10px 28px rgba(0,0,0,.18);}
+@media(max-width:900px){html body .dashboard-shell{height:auto;overflow:visible;}.main > .toast{left:14px;right:14px;max-width:none;}}
+body .dashboard-shell.role-shell{display:block !important;padding:24px 28px !important;}
+.role-shell .profile-hero{margin-bottom:20px;}
+.role-shell .role-card{margin-bottom:0;}
+@media(max-width:900px){body .dashboard-shell.role-shell{padding:18px 16px !important;}}
+
+/* evaluation popup */
+.peer-eval-overlay{position:fixed;inset:0;z-index:280;display:flex;align-items:flex-start;justify-content:center;padding:28px 16px;overflow-y:auto;background:rgba(8,20,39,.58);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);}
+.peer-eval-dialog{width:100%;max-width:960px;max-height:calc(100vh - 56px);min-height:0;display:flex;flex-direction:column;overflow:hidden;background:var(--mid);border:1px solid var(--border);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.35);}
+.peer-eval-dialog-header{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:18px 24px;border-bottom:1px solid var(--border);background:var(--mid);flex:0 0 auto;}
+.peer-eval-target{display:flex;align-items:center;gap:14px;min-width:0;}
+.peer-eval-avatar{width:56px;height:56px;border-radius:50%;object-fit:cover;border:2px solid var(--teal);flex-shrink:0;}
+.peer-eval-avatar-placeholder{display:flex;align-items:center;justify-content:center;background:var(--inner);color:var(--muted);font-size:20px;}
+.peer-eval-target-copy{min-width:0;}
+.peer-eval-target-copy h2{margin:0;color:var(--light);font-family:'Rajdhani',sans-serif;font-size:22px;font-weight:700;line-height:1.15;overflow-wrap:anywhere;}
+.peer-eval-target-copy p{margin:2px 0 0;color:var(--muted);font-size:13px;}
+.peer-eval-close{width:38px;height:38px;display:flex;align-items:center;justify-content:center;flex-shrink:0;border-radius:9px;color:var(--muted);font-size:22px;text-decoration:none;}
+.peer-eval-close:hover{background:var(--inner);color:var(--light);}
+.peer-eval-form{display:flex;flex:1 1 auto;min-height:0;flex-direction:column;}
+.peer-eval-scroll{padding:20px 24px;overflow-y:auto;overscroll-behavior:contain;min-height:0;flex:1 1 auto;}
+.peer-eval-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 24px;border-top:1px solid var(--border);background:var(--mid);flex:0 0 auto;}
+.peer-eval-footer .btn-cancel-peer{display:inline-flex;align-items:center;justify-content:center;padding:12px 20px;border-radius:10px;border:1px solid var(--border);background:var(--inner);color:var(--light);font-size:14px;font-weight:600;text-decoration:none;white-space:nowrap;}
+.peer-eval-footer .btn-submit{flex:1;justify-content:center;min-height:48px;}
+.peer-eval-empty{padding:28px;color:var(--muted);display:flex;gap:10px;align-items:center;}
+.peer-eval-empty i{color:#d97706;}
+@media(max-width:700px){
+ .peer-eval-overlay{padding:8px;align-items:center;}
+ .peer-eval-dialog{height:calc(100vh - 16px);max-height:calc(100vh - 16px);}
+ .peer-eval-dialog-header{padding:16px;}
+ .peer-eval-scroll{padding:16px 12px 20px;}
+ .peer-eval-footer{padding:12px;}
+}
 </style>
         </head>
         <body class="light-theme">
@@ -2455,7 +2783,7 @@ body.light-theme .quick-access-card:hover .quick-access-arrow { color: #15803D; 
                 </a>
                 <?php else: ?>
                 <a href="staff_dashboard.php?page=peer" class="nav-link <?= in_array($page,['peer','peer_eval','staff_eval','staff_eval_form'])?'active':'' ?>">
-                    <i class="fa-solid fa-people-arrows"></i><span>Evaluate Others</span>
+                    <i class="fa-solid fa-people-arrows"></i><span>Peer-to-Peer Evaluation</span>
                 </a>
                 <?php endif; ?>
 
@@ -2530,8 +2858,15 @@ body.light-theme .quick-access-card:hover .quick-access-arrow { color: #15803D; 
                         'staff_eval'=> $staff_has_teaching_assignment ? 'Evaluate Others' : 'Staff Evaluation',
                         'staff_eval_form'=> $staff_has_teaching_assignment ? 'Evaluate Others' : 'Staff Evaluation',
                         'peer'=>'Evaluate Others','peer_eval'=>'Evaluate Others','settings'=>'Settings'];
-                    echo $titles[$page] ?? 'Dashboard';
+                    $p2p_icon = 'fa-clipboard-check';
+                    $title_icons = ['dashboard'=>'fa-house','profile'=>'fa-id-badge','my_results'=>'fa-chart-bar',
+                        'staff_eval'=> $staff_has_teaching_assignment ? $p2p_icon : 'fa-users',
+                        'staff_eval_form'=> $staff_has_teaching_assignment ? $p2p_icon : 'fa-users',
+                        'peer'=>$p2p_icon,'peer_eval'=>$p2p_icon,'settings'=>'fa-gear'];
+                    $title_key = isset($titles[$page]) ? $page : 'dashboard';
                     ?>
+                    <i class="fa-solid <?= $title_icons[$title_key] ?>"<?= $title_icons[$title_key] === 'fa-clipboard-check' ? ' style="color:#16A34A"' : '' ?> aria-hidden="true"></i>
+                    <span><?= htmlspecialchars($titles[$title_key]) ?></span>
                 </div>
             </div>
             <div class="nav-right">
@@ -2566,13 +2901,13 @@ body.light-theme .quick-access-card:hover .quick-access-arrow { color: #15803D; 
                                 $n_icon  = $is_eval ? 'fa-star' : 'fa-id-badge';
                                 $n_color = $is_eval ? '#facc15' : '#2B6CB0';
                             ?>
-                            <div class="notif-item <?= empty($n['is_read'])?'unread':'' ?>" data-notification-id="<?= (int)$n['id'] ?>">
+                            <a class="notif-item <?= empty($n['is_read'])?'unread':'' ?>" data-notification-id="<?= (int)$n['id'] ?>" href="<?= htmlspecialchars(notif_link_for((string)$n['type'], 'staff')) ?>">
                                 <div class="notif-icon" style="color:<?= $n_color ?>;background:<?= $n_color ?>22;"><i class="fa-solid <?= $n_icon ?>"></i></div>
                                 <div style="flex:1;min-width:0;">
                                     <div class="notif-text"><?= htmlspecialchars($n['message']) ?></div>
                                     <div class="notif-meta"><?= date('M d, Y g:i A', strtotime($n['created_at'])) ?></div>
                                 </div>
-                            </div>
+                            </a>
                             <?php endforeach; endif; ?>
                         </div>
                     </div>
@@ -2595,9 +2930,6 @@ body.light-theme .quick-access-card:hover .quick-access-arrow { color: #15803D; 
 
         <div class="dashboard-shell">
             <div class="dashboard-intro">
-                <div class="dashboard-kicker"><i class="fa-solid fa-chart-line"></i> Dashboard Overview</div>
-                <h1>Staff Evaluation Workspace</h1>
-                <p>Review your evaluation results and manage your professional evaluation activities in one place.</p>
                 <?php if ($period): ?>
                 <span class="status-pill <?= $evaluation_open ? '' : 'closed' ?>">
                     <i class="fa-solid <?= $evaluation_open ? 'fa-lock-open' : 'fa-lock' ?>"></i>
@@ -2689,6 +3021,8 @@ body.light-theme .quick-access-card:hover .quick-access-arrow { color: #15803D; 
         <!-- ══════════ MY PROFILE & ROLE ══════════ -->
         <?php elseif ($page === 'profile'): ?>
 
+        <div class="dashboard-shell settings-shell role-shell">
+
         <!-- Hero card with photo, name, and current role. -->
         <div class="profile-hero">
             <div class="profile-hero-left">
@@ -2774,19 +3108,19 @@ body.light-theme .quick-access-card:hover .quick-access-arrow { color: #15803D; 
             </div>
         </div>
 
+        </div><!-- /role-shell -->
+
         <?php elseif ($page === 'settings'): ?>
 
-<div class="settings-page-head">
-    <div>
-        <div class="settings-page-kicker"><i class="fa-solid fa-gear"></i> Personal Settings</div>
-        <h2 class="settings-page-title">Settings</h2>
-        <p class="settings-page-subtitle">Manage your account preferences, appearance, notifications, security, and evaluation access.</p>
-    </div>
+<!-- SETTINGS — same shell/card language as the Dashboard (matches the Faculty portal) -->
+<div class="dashboard-shell settings-shell">
+
+<div class="dashboard-intro settings-intro">
     <div class="settings-appearance-current"><i class="fa-solid fa-circle-half-stroke"></i> Current: <span id="appearanceVal">Light</span></div>
 </div>
 
 <div class="settings-grid">
-<div class="settings-card">
+<div class="settings-card full">
             <div class="settings-card-head">
                 <div class="sicon"><i class="fa-solid fa-palette"></i></div>
                 <div><h3>Appearance</h3><p>Choose how the portal is displayed on this device.</p></div>
@@ -2831,6 +3165,8 @@ body.light-theme .quick-access-card:hover .quick-access-arrow { color: #15803D; 
             <div class="settings-card full"><div class="settings-card-head"><div class="sicon"><i class="fa-solid fa-briefcase"></i></div><div><h3>Staff Evaluation Access</h3><p>Your permitted actions in the Employee Performance Management System.</p></div></div><div class="account-facts"><div class="account-fact"><label>Can Evaluate</label><b><?= htmlspecialchars($staff_can_evaluate_label) ?></b></div><div class="account-fact"><label>Can View</label><b>Own Evaluation Results</b></div><div class="account-fact"><label>Privacy</label><b>Evaluator identity remains protected</b></div></div></div>
         </div>
 
+</div>
+
         <!-- ══════════ MY RESULTS ══════════ -->
         <?php elseif ($page === 'my_results'): ?>
 
@@ -2840,7 +3176,15 @@ body.light-theme .quick-access-card:hover .quick-access-arrow { color: #15803D; 
         <?php elseif ($page === 'staff_eval' && !$staff_has_teaching_assignment): ?>
 
         <!-- ══════════ STAFF EVALUATION (Executive Assistant, non-teaching Staff only) ══════════ -->
-        <div class="ea-eval-wrap">
+        <div class="ea-eval-wrap dashboard-shell">
+            <?php if ($period): ?>
+            <div class="dashboard-intro">
+                <span class="status-pill <?= $evaluation_open ? '' : 'closed' ?>">
+                    <i class="fa-solid <?= $evaluation_open ? 'fa-lock-open' : 'fa-lock' ?>"></i>
+                    <?= $evaluation_open ? 'Evaluation period is currently open' : 'Evaluation is currently closed — waiting for the scheduled opening' ?>
+                </span>
+            </div>
+            <?php endif; ?>
             <div class="ea-tab-row">
                 <?php foreach ($staff_eval_targets as $target): ?>
                     <?php $isDoneTarget = false;
@@ -2863,8 +3207,9 @@ body.light-theme .quick-access-card:hover .quick-access-arrow { color: #15803D; 
 
             <div class="ea-toolbar">
                 <div>
-                    <div style="font-size:12px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);font-weight:700;">Staff Evaluation</div>
-                    <div style="font-size:14px;color:var(--light);margin-top:4px;">Evaluate the Executive Assistant using the questionnaire configured by the admin.</div>
+                    <span class="ea-kicker">Staff Evaluation</span>
+                    <h2 class="ea-toolbar-title">Evaluate the Executive Assistant</h2>
+                    <p class="ea-toolbar-sub">Uses the questionnaire configured by the admin.</p>
                 </div>
                 <span class="ea-status <?= $staff_eval_already_done ? 'done' : '' ?>">
                     <i class="fa-solid <?= $staff_eval_already_done ? 'fa-circle-check' : 'fa-clipboard-list' ?>"></i>
@@ -3008,8 +3353,8 @@ body.light-theme .quick-access-card:hover .quick-access-arrow { color: #15803D; 
                             <?php endforeach; ?>
 
                             <div class="staff-eval-comments-card">
-                                <label class="staff-eval-comments-label" for="staffEvalComments"><i class="fa-solid fa-comment-dots"></i> Comments &amp; Suggestions <span>(optional)</span></label>
-                                <textarea class="comments-box" id="staffEvalComments" name="comments" placeholder="Share your thoughts about this <?= htmlspecialchars($staff_eval_target['target_label']) ?>…"></textarea>
+                                <label class="staff-eval-comments-label" for="staffEvalComments"><i class="fa-solid fa-comment-dots"></i> Comments &amp; Suggestions</label>
+                                <textarea class="comments-box" id="staffEvalComments" name="comments" placeholder="Share your thoughts, suggestions, or concerns about this person's performance."></textarea>
                             </div>
                         </div>
                         <footer class="staff-eval-modal-foot">
@@ -3128,23 +3473,21 @@ if(peerEvalForm){
         <!-- ══════════ PEER EVALUATION — LOCKED FOR NON-TEACHING STAFF ══════════ -->
         <?php elseif (in_array($page, ['peer','peer_eval'], true) && !$staff_has_teaching_assignment): ?>
 
-        <div class="section-card">
-            <div class="empty-state"><i class="fa-solid fa-lock"></i><p>Peer Evaluation is only available to Staff with a teaching assignment. Use Staff Evaluation instead.</p></div>
+        <div class="section-card peer-box">
+            <div class="empty-state"><i class="fa-solid fa-lock"></i><p>Peer-to-Peer Evaluation is only available to Staff with a teaching assignment. Use Staff Evaluation instead.</p></div>
         </div>
 
         <!-- ══════════ PEER EVALUATION — STEP 1: CHOOSE DESIGNATION ══════════ -->
         <?php elseif ($page === 'peer' && $peer_group === null): ?>
 
-        <div class="section-card">
-            <div class="section-card-title"><i class="fa-solid fa-users" style="color:var(--teal)"></i> Peer Evaluation</div>
-            <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">First, choose which designation you'd like to evaluate. You'll then pick a specific person from that list.</p>
+        <div class="section-card peer-box">
             <?php if (!$evaluation_open): ?>
             <div class="no-period-warn"><i class="fa-solid fa-clock"></i> Evaluation is currently closed until the scheduled opening time.</div>
             <?php endif; ?>
 
             <?php
-                $college_teacher_targets = array_values(array_filter($peers_all, fn($p) => (int)($p['has_college_peer_level'] ?? 0) === 1 && resolve_peer_group($mysqli, $p) === 'teacher'));
-                $teacher_count   = $staff_can_evaluate_college_peer ? count($college_teacher_targets) : 0;
+                $faculty_peer_targets = array_values(array_filter($peers_all, fn($p) => resolve_peer_group($mysqli, $p) === 'teacher'));
+                $teacher_count   = $staff_can_evaluate_faculty_peer ? count($faculty_peer_targets) : 0;
                 $staff_count     = count(array_filter($peers_all, fn($p) => resolve_peer_group($mysqli, $p) === 'staff'));
                 $dean_count      = count(array_filter($staff_eval_targets, fn($t) => $t['target_type'] === 'Dean'));
                 $principal_count = count(array_filter($staff_eval_targets, fn($t) => $t['target_type'] === 'Principal'));
@@ -3153,178 +3496,214 @@ if(peerEvalForm){
             <?php if (!$anything_to_evaluate): ?>
             <div class="empty-state"><i class="fa-solid fa-users"></i><p>No eligible Faculty/Staff peers are currently available.</p></div>
             <?php else: ?>
-            <div class="role-chips-label"><i class="fa-solid fa-bolt" style="color:var(--teal)"></i> Step 1: Select Evaluation Group</div>
-            <div class="eval-group-grid">
-                <?php if ($staff_can_evaluate_college_peer): ?>
-                <a href="staff_dashboard.php?page=peer&group=teacher" class="eval-group-card">
+            <h2 class="cat-heading"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i> Choose category</h2>
+            <div class="eval-group-grid cat-select">
+                <?php if ($staff_can_evaluate_faculty_peer): ?>
+                <a href="staff_dashboard.php?page=peer&group=teacher#roster" class="eval-group-card">
                     <div class="eval-group-icon blue"><i class="fa-solid fa-chalkboard-user"></i></div>
-                    <div class="eval-group-title">College Faculty</div>
+                    <div class="eval-group-title">Faculty</div>
                     <div class="eval-group-count"><?= $teacher_count ?> member<?= $teacher_count == 1 ? '' : 's' ?></div>
                 </a>
                 <?php endif; ?>
-                <a href="staff_dashboard.php?page=peer&group=staff" class="eval-group-card">
+                <a href="staff_dashboard.php?page=peer&group=staff#roster" class="eval-group-card">
                     <div class="eval-group-icon green"><i class="fa-solid fa-briefcase"></i></div>
                     <div class="eval-group-title">Staff</div>
                     <div class="eval-group-count"><?= $staff_count ?> member<?= $staff_count == 1 ? '' : 's' ?></div>
                 </a>
                 <?php if ($staff_teaches_college): ?>
-                <a href="staff_dashboard.php?page=peer&group=dean" class="eval-group-card">
+                <a href="staff_dashboard.php?page=peer&group=dean#roster" class="eval-group-card">
                     <div class="eval-group-icon gold"><i class="fa-solid fa-graduation-cap"></i></div>
                     <div class="eval-group-title">Dean</div>
                     <div class="eval-group-count"><?= $dean_count ?> member<?= $dean_count == 1 ? '' : 's' ?></div>
                 </a>
                 <?php endif; ?>
                 <?php if ($staff_teaches_basic_ed): ?>
-                <a href="staff_dashboard.php?page=peer&group=principal" class="eval-group-card">
+                <a href="staff_dashboard.php?page=peer&group=principal#roster" class="eval-group-card">
                     <div class="eval-group-icon purple"><i class="fa-solid fa-user-tie"></i></div>
                     <div class="eval-group-title">Principal</div>
                     <div class="eval-group-count"><?= $principal_count ?> member<?= $principal_count == 1 ? '' : 's' ?></div>
                 </a>
                 <?php endif; ?>
             </div>
-            <div class="peer-select-hint"><i class="fa-solid fa-circle-info"></i> Please select a designation before proceeding.</div>
             <?php endif; ?>
         </div>
 
-        <!-- ══════════ PEER EVALUATION — STEP 2: FILTERED USER LIST (CARD GRID) ══════════ -->
+        <!-- ══════════ PEER EVALUATION — STEP 2: CATEGORY SWITCHER + ROSTER (same layout as Admin "Evaluate Others") ══════════ -->
         <?php elseif ($page === 'peer' && $peer_group !== null): ?>
 
-        <?php $is_supervisor_group = in_array($peer_group, ['dean', 'principal'], true); ?>
-        <a href="staff_dashboard.php?page=peer" class="back-link"><i class="fa-solid fa-arrow-left"></i> Change Designation</a>
-
-        <div class="section-card">
-            <div class="section-card-title">
-                <i class="fa-solid <?= $is_supervisor_group ? ($peer_group === 'dean' ? 'fa-graduation-cap' : 'fa-user-tie') : 'fa-users' ?>" style="color:var(--teal)"></i>
-                <?= $is_supervisor_group ? htmlspecialchars($peer_group_labels[$peer_group]) : 'Fellow ' . htmlspecialchars($peer_group_labels[$peer_group]) . ' Members' ?>
-            </div>
-            <?php if (!$evaluation_open): ?>
-            <div class="no-period-warn"><i class="fa-solid fa-clock"></i> Evaluation is currently closed until the scheduled opening time.</div>
-            <?php endif; ?>
-            <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">
-                <?= $is_supervisor_group ? 'Evaluate your ' . htmlspecialchars(strtolower($peer_group_labels[$peer_group])) . ' using the questionnaire configured by the admin.' : 'Select a colleague to evaluate. Your identity will be kept confidential.' ?>
-            </p>
-
-            <?php if (empty($peers)): ?>
-            <div class="empty-state"><i class="fa-solid fa-users"></i><p>No <?= $is_supervisor_group ? htmlspecialchars(strtolower($peer_group_labels[$peer_group])) : 'registered ' . htmlspecialchars(strtolower($peer_group_labels[$peer_group])) ?><?= $is_supervisor_group ? ' is currently available for your teaching level(s).' : ' users found.' ?></p></div>
-            <?php else: ?>
-
-            <!-- Cards populated dynamically from active users whose designation resolves
-                 to the selected group (excluding self). Newly added accounts appear
-                 automatically — no code change needed. -->
-            <div class="peer-card-grid">
-                <?php foreach ($peers as $p): $done = $is_supervisor_group ? in_array($p['id'], $done_supervisors) : in_array($p['id'], $done_peers); ?>
-                <div class="peer-card <?= $done ? 'is-done' : '' ?>">
-                    <?php if (!empty($p['photo'])): ?>
-                    <img class="peer-card-photo" src="../image/<?= htmlspecialchars($p['photo']) ?>" alt="<?= htmlspecialchars($p['full_name']) ?>"/>
-                    <?php else: ?>
-                    <div class="peer-card-photo peer-card-photo-ph"><i class="fa-solid fa-user"></i></div>
-                    <?php endif; ?>
-                    <div class="peer-card-name"><?= htmlspecialchars($p['full_name']) ?></div>
-                    <div class="peer-card-desig"><?= htmlspecialchars(peer_display_label($mysqli, $p, $peer_group, $peer_group_labels)) ?></div>
-                    <?php if ($done): ?>
-                    <button type="button" class="peer-card-btn done" disabled><i class="fa-solid fa-circle-check"></i> Evaluated</button>
-                    <?php elseif (!$evaluation_open): ?>
-                    <span class="peer-card-btn" style="opacity:.55;cursor:not-allowed;"><i class="fa-solid fa-clock"></i> Scheduled</span>
-                    <?php elseif ($is_supervisor_group): ?>
-                    <a href="staff_dashboard.php?page=staff_eval_form&tid=<?= (int)$p['id'] ?>" class="peer-card-btn">Evaluate</a>
-                    <?php else: ?>
-                    <a href="staff_dashboard.php?page=peer_eval&tid=<?= (int)$p['id'] ?>&group=<?= urlencode($peer_group) ?>" class="peer-card-btn">Evaluate</a>
-                    <?php endif; ?>
-                </div>
+        <?php
+            $is_supervisor_group = in_array($peer_group, ['dean', 'principal'], true);
+            $sel_faculty_targets = array_values(array_filter($peers_all, fn($p) => resolve_peer_group($mysqli, $p) === 'teacher'));
+            $sel_counts = [
+                'teacher'   => $staff_can_evaluate_faculty_peer ? count($sel_faculty_targets) : 0,
+                'staff'     => count(array_filter($peers_all, fn($p) => resolve_peer_group($mysqli, $p) === 'staff')),
+                'dean'      => count(array_filter($staff_eval_targets, fn($t) => $t['target_type'] === 'Dean')),
+                'principal' => count(array_filter($staff_eval_targets, fn($t) => $t['target_type'] === 'Principal')),
+            ];
+            $sel_cards = [
+                ['teacher',   'Faculty',   'blue',   'fa-chalkboard-user', $staff_can_evaluate_faculty_peer],
+                ['staff',     'Staff',     'green',  'fa-briefcase',       true],
+                ['dean',      'Dean',      'gold',   'fa-graduation-cap',  $staff_teaches_college],
+                ['principal', 'Principal', 'purple', 'fa-user-tie',        $staff_teaches_basic_ed],
+            ];
+            $done_ids = $is_supervisor_group ? $done_supervisors : $done_peers;
+            $done_in_group = count(array_intersect(array_map('intval', array_column($peers, 'id')), array_map('intval', $done_ids)));
+            $displayPeerPeriod = ($peer_group === 'teacher' && !empty($college_peer_period)) ? $college_peer_period : $period;
+            $roster_icons = ['teacher'=>'fa-chalkboard-user','staff'=>'fa-briefcase','principal'=>'fa-user-tie','dean'=>'fa-graduation-cap'];
+            $roster_icon  = $roster_icons[$peer_group] ?? 'fa-users';
+        ?>
+        <div class="section-card peer-shell peer-box">
+            <h2 class="cat-heading"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i> Choose category</h2>
+            <div class="eval-group-grid cat-select">
+                <?php foreach ($sel_cards as [$g, $label, $color, $icon, $show]): if (!$show) continue; $is_sel = ($peer_group === $g); ?>
+                <a href="staff_dashboard.php?page=peer<?= $is_sel ? '' : '&group=' . $g . '#roster' ?>" class="eval-group-card <?= $is_sel ? 'is-selected' : '' ?>" <?= $is_sel ? 'aria-current="true"' : '' ?>>
+                    <div class="eval-group-icon <?= $color ?>"><i class="fa-solid <?= $icon ?>"></i></div>
+                    <div class="eval-group-title"><?= $label ?></div>
+                    <div class="eval-group-count"><?= $sel_counts[$g] ?> member<?= $sel_counts[$g] == 1 ? '' : 's' ?></div>
+                </a>
                 <?php endforeach; ?>
             </div>
-
-            <?php $done_in_group = count(array_intersect(array_column($peers, 'id'), $is_supervisor_group ? $done_supervisors : $done_peers)); ?>
-            <?php if ($done_in_group > 0): ?>
-            <div class="peer-select-hint warn" style="margin-top:18px;"><i class="fa-solid fa-circle-check"></i> You've already evaluated <?= $done_in_group ?> of <?= count($peers) ?> <?= htmlspecialchars(strtolower($peer_group_labels[$peer_group])) ?><?= $is_supervisor_group ? '' : ' members' ?> this period.</div>
-            <?php endif; ?>
-
-            <?php endif; ?>
-        </div>
-
-        <!-- ══════════ PEER EVAL FORM ══════════ -->
-        <?php elseif ($page === 'peer_eval' && $peer_target): ?>
-
-        <a href="staff_dashboard.php?page=peer&group=<?= urlencode($peer_eval_group) ?>" class="back-link"><i class="fa-solid fa-arrow-left"></i> Back to <?= htmlspecialchars($peer_group_labels[$peer_eval_group]) ?> List</a>
 
         <?php if (!$evaluation_open): ?>
         <div class="no-period-warn"><i class="fa-solid fa-clock"></i> Evaluation is currently closed until the scheduled opening time.</div>
         <?php endif; ?>
 
-        <div class="eval-header-bar">
-            <?php if (!empty($peer_target['photo'])): ?>
-            <img class="eval-photo-lg" src="<?= UPLOAD_URL . htmlspecialchars($peer_target['photo']) ?>" alt=""/>
+        <section class="roster-panel" id="roster">
+            <div class="roster-head">
+                <div class="roster-heading">
+                    <div class="roster-icon"><i class="fa-solid <?= $roster_icon ?>"></i></div>
+                    <h2><?= htmlspecialchars($peer_group_labels[$peer_group] ?? ucfirst($peer_group)) ?></h2>
+                </div>
+                <div class="roster-stats">
+                    <span><strong><?= count($peers) ?></strong> <?= count($peers) === 1 ? 'member' : 'members' ?></span>
+                    <span><strong><?= $done_in_group ?></strong> completed</span>
+                    <span><strong><?= max(0, count($peers) - $done_in_group) ?></strong> pending</span>
+                    <span class="period"><i class="fa-regular fa-calendar"></i> <?= htmlspecialchars($displayPeerPeriod['period_label'] ?? $displayPeerPeriod['semester'] ?? 'Current Period') ?></span>
+                </div>
+            </div>
+
+            <?php if (empty($peers)): ?>
+            <div class="roster-empty"><i class="fa-solid fa-user-slash"></i>
+                <?= $is_supervisor_group ? 'No ' . htmlspecialchars(strtolower($peer_group_labels[$peer_group])) . ' is currently available for your teaching level(s).' : 'No registered ' . htmlspecialchars(strtolower($peer_group_labels[$peer_group])) . ' members found.' ?>
+            </div>
             <?php else: ?>
-            <div class="eval-photo-ph"><i class="fa-solid fa-user"></i></div>
+            <div class="person-grid">
+                <?php foreach ($peers as $p):
+                    $done = in_array((int)$p['id'], array_map('intval', $done_ids), true);
+                    $peer_label = peer_display_label($mysqli, $p, $peer_group, $peer_group_labels);
+                    $evalHref = $is_supervisor_group
+                        ? 'staff_dashboard.php?page=staff_eval_form&tid=' . (int)$p['id']
+                        : 'staff_dashboard.php?page=peer_eval&tid=' . (int)$p['id'] . '&group=' . urlencode($peer_group);
+                ?>
+                <article class="person-card">
+                    <div class="person-photo">
+                        <?php if (!empty($p['photo'])): ?><img src="../image/<?= htmlspecialchars($p['photo']) ?>" alt="" loading="lazy" onerror="this.parentNode.innerHTML='<i class=&quot;fa-solid fa-user&quot;></i>'"/><?php else: ?><i class="fa-solid fa-user"></i><?php endif; ?>
+                    </div>
+                    <div class="person-info">
+                        <div class="person-name" title="<?= htmlspecialchars($p['full_name']) ?>"><?= htmlspecialchars($p['full_name']) ?></div>
+                        <div class="person-meta" title="<?= htmlspecialchars($peer_label) ?>"><?= htmlspecialchars($peer_label) ?></div>
+                        <span class="status-pill <?= $done ? 'done' : 'pending' ?>"><i class="fa-solid <?= $done ? 'fa-check' : 'fa-hourglass-half' ?>"></i> <?= $done ? 'Completed' : 'Pending' ?></span>
+                    </div>
+                    <div class="person-action">
+                        <?php if ($done): ?>
+                        <span class="btn-action view is-disabled"><i class="fa-solid fa-check"></i> Evaluated</span>
+                        <?php elseif (!$evaluation_open): ?>
+                        <span class="btn-action evaluate is-disabled" aria-disabled="true"><i class="fa-solid fa-clock"></i> Scheduled</span>
+                        <?php else: ?>
+                        <a class="btn-action evaluate" href="<?= $evalHref ?>"><i class="fa-solid fa-pen"></i> Evaluate</a>
+                        <?php endif; ?>
+                    </div>
+                </article>
+                <?php endforeach; ?>
+            </div>
             <?php endif; ?>
-            <div>
-                <div class="eval-name"><?= htmlspecialchars($peer_target['full_name']) ?></div>
-                <div class="eval-desig"><?= htmlspecialchars($peer_target['designation'] ?? 'Staff') ?></div>
-            </div>
+        </section>
         </div>
 
-        <?php if (!$evaluation_open): ?>
-        <div class="empty-state"><i class="fa-solid fa-clock"></i><p>Evaluation is currently closed. It will open at the scheduled time set by the administrator.</p></div>
-        <?php elseif (empty($peer_questions)): ?>
-        <div style="background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.2);border-radius:10px;padding:18px;color:#fcd34d;font-size:13px;display:flex;gap:10px;">
-            <i class="fa-solid fa-triangle-exclamation"></i> No peer evaluation questions set up yet. Please contact the admin.
-        </div>
-        <?php else: ?>
+        <!-- ══════════ PEER EVAL FORM (popup, same as Admin / Faculty) ══════════ -->
+        <?php elseif ($page === 'peer_eval' && $peer_target): ?>
+        <?php $peerBackUrl = 'staff_dashboard.php?page=peer&group=' . urlencode($peer_eval_group) . '#roster'; ?>
 
-        <div class="scale-legend">
-            <?php foreach ([5=>'Always',4=>'Often',3=>'Sometimes',2=>'Rarely',1=>'Never'] as $n=>$lbl): ?>
-            <div class="scale-legend-item">
-                <div class="scale-legend-num"><?= $n ?></div>
-                <div class="scale-legend-lbl"><?= $lbl ?></div>
-            </div>
-            <?php endforeach; ?>
-        </div>
+        <div class="peer-eval-overlay">
+          <section class="peer-eval-dialog" role="dialog" aria-modal="true" aria-labelledby="peerEvalTitle">
+            <header class="peer-eval-dialog-header">
+              <div class="peer-eval-target">
+                <?php if (!empty($peer_target['photo'])): ?>
+                  <img class="peer-eval-avatar" src="<?= UPLOAD_URL . htmlspecialchars($peer_target['photo']) ?>" alt=""/>
+                <?php else: ?>
+                  <div class="peer-eval-avatar peer-eval-avatar-placeholder"><i class="fa-solid fa-user"></i></div>
+                <?php endif; ?>
+                <div class="peer-eval-target-copy">
+                  <h2 id="peerEvalTitle"><?= htmlspecialchars($peer_target['full_name']) ?></h2>
+                  <p><?= htmlspecialchars(peer_display_label($mysqli, $peer_target, $peer_eval_group ?? 'staff', $peer_group_labels)) ?></p>
+                </div>
+              </div>
+              <a class="peer-eval-close" href="<?= htmlspecialchars($peerBackUrl) ?>" aria-label="Close evaluation"><i class="fa-solid fa-xmark"></i></a>
+            </header>
 
-        <form method="POST" action="staff_dashboard.php?page=peer_eval&tid=<?= $peer_target['id'] ?>&group=<?= urlencode($peer_eval_group) ?>" id="evalForm" novalidate>
-            <div class="eval-validation-alert" id="peerEvalValidation" role="alert" aria-live="assertive"></div>
-            <div class="eval-progress" id="peerEvalProgress" aria-live="polite">0 of 0 questions answered</div>
-            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>"/>
-            <input type="hidden" name="submit_peer" value="1"/>
-            <input type="hidden" name="target_id"   value="<?= $peer_target['id'] ?>"/>
-            <input type="hidden" name="group"       value="<?= htmlspecialchars($peer_eval_group) ?>"/>
+            <?php if (!$evaluation_open): ?>
+              <div class="peer-eval-empty"><i class="fa-solid fa-clock"></i> Evaluation is currently closed. It will open at the scheduled time set by the administrator.</div>
+              <footer class="peer-eval-footer"><a class="btn-cancel-peer" href="<?= htmlspecialchars($peerBackUrl) ?>">Back to Peer-to-Peer Evaluation</a></footer>
+            <?php elseif (empty($peer_questions)): ?>
+              <div class="peer-eval-empty"><i class="fa-solid fa-triangle-exclamation"></i> No peer-to-peer evaluation questions set up yet. Please contact the admin.</div>
+              <footer class="peer-eval-footer"><a class="btn-cancel-peer" href="<?= htmlspecialchars($peerBackUrl) ?>">Back to Peer-to-Peer Evaluation</a></footer>
+            <?php else: ?>
+            <form class="peer-eval-form" method="POST" action="staff_dashboard.php?page=peer_eval&tid=<?= $peer_target['id'] ?>&group=<?= urlencode($peer_eval_group) ?>" id="evalForm" novalidate>
+              <div class="peer-eval-scroll">
+                <div class="eval-validation-alert" id="peerEvalValidation" role="alert" aria-live="assertive"></div>
+                <div class="eval-progress" id="peerEvalProgress" aria-live="polite">0 of 0 questions answered</div>
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>"/>
+                <input type="hidden" name="submit_peer" value="1"/>
+                <input type="hidden" name="target_id"   value="<?= $peer_target['id'] ?>"/>
+                <input type="hidden" name="group"       value="<?= htmlspecialchars($peer_eval_group) ?>"/>
 
-            <?php $qno=1; foreach ($peer_categories as $cat_name => $cat_qs): ?>
-            <div class="cat-group-title" style="margin-bottom:9px;"><i class="fa-solid fa-layer-group"></i> <?= htmlspecialchars($cat_name) ?></div>
-            <div class="compact-eval-table-wrap">
-                <table class="compact-eval-table">
-                    <thead><tr><th>Question</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th></tr></thead>
-                    <tbody>
-                    <?php foreach($cat_qs as $q): ?>
-                    <tr class="eval-question-row peer-eval-question-row">
-                        <td><div class="compact-eval-qtext"><span class="compact-eval-qno"><?= $qno++ ?>.</span><?= htmlspecialchars($q['question_text']) ?></div></td>
-                        <?php for($r=5;$r>=1;$r--): $optId='peer_r_' . (int)$q['id'] . '_' . $r; ?><td><div class="compact-eval-rating"><input type="radio" name="ratings[<?= (int)$q['id'] ?>]" id="<?= $optId ?>" value="<?= $r ?>"><label for="<?= $optId ?>"><?= $r ?></label></div></td><?php endfor; ?>
-                    </tr>
+                <div class="scale-legend">
+                    <?php foreach ([5=>'Always',4=>'Often',3=>'Sometimes',2=>'Rarely',1=>'Never'] as $n=>$lbl): ?>
+                    <div class="scale-legend-item"><div class="scale-legend-num"><?= $n ?></div><div class="scale-legend-lbl"><?= $lbl ?></div></div>
                     <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-            <?php endforeach; ?>
+                </div>
 
-            <div class="comments-card">
-                <div style="font-size:13px;font-weight:700;color:var(--teal-hover);margin-bottom:10px;"><i class="fa-solid fa-comment-dots"></i> Comments &amp; Suggestions</div>
-                <textarea class="comments-box" name="comments" placeholder="Share your thoughts about this person's performance…"></textarea>
-            </div>
+                <?php $qno=1; foreach ($peer_categories as $cat_name => $cat_qs): ?>
+                <div class="cat-group-title" style="margin-bottom:9px;"><i class="fa-solid fa-layer-group"></i> <?= htmlspecialchars($cat_name) ?></div>
+                <div class="compact-eval-table-wrap">
+                    <table class="compact-eval-table">
+                        <thead><tr><th>Question</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th></tr></thead>
+                        <tbody>
+                        <?php foreach($cat_qs as $q): ?>
+                        <tr class="eval-question-row peer-eval-question-row">
+                            <td><div class="compact-eval-qtext"><span class="compact-eval-qno"><?= $qno++ ?>.</span><?= htmlspecialchars($q['question_text']) ?></div></td>
+                            <?php for($r=5;$r>=1;$r--): $optId='peer_r_' . (int)$q['id'] . '_' . $r; ?><td><div class="compact-eval-rating"><input type="radio" name="ratings[<?= (int)$q['id'] ?>]" id="<?= $optId ?>" value="<?= $r ?>"><label for="<?= $optId ?>"><?= $r ?></label></div></td><?php endfor; ?>
+                        </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <?php endforeach; ?>
 
-            <div class="submit-row">
-                <span style="font-size:13px;color:var(--muted);"><i class="fa-solid fa-circle-info" style="color:#60a5fa;margin-right:5px"></i>Rate each question 1 (Never) to 5 (Always). All required.</span>
-                <button type="submit" class="btn-submit" ><i class="fa-solid fa-paper-plane"></i> Submit Evaluation</button>
-            </div>
-        </form>
-        <?php endif; ?>
+                <div class="comments-card">
+                    <div style="font-size:13px;font-weight:700;color:var(--teal-hover);margin-bottom:10px;"><i class="fa-solid fa-comment-dots"></i> Comments &amp; Suggestions</div>
+                    <textarea class="comments-box" name="comments" placeholder="Share your thoughts, suggestions, or concerns about this person's performance."></textarea>
+                </div>
+              </div>
+              <footer class="peer-eval-footer">
+                <a class="btn-cancel-peer" href="<?= htmlspecialchars($peerBackUrl) ?>">Cancel</a>
+                <button type="submit" class="btn-submit"><i class="fa-solid fa-paper-plane"></i> Submit Evaluation</button>
+              </footer>
+            </form>
+            <?php endif; ?>
+          </section>
+        </div>
 
         <!-- ══════════ PEER EVAL — INVALID / MISSING TARGET ══════════ -->
         <?php elseif ($page === 'peer_eval' && !$peer_target): ?>
 
+        <div class="section-card peer-box">
         <a href="staff_dashboard.php?page=peer" class="back-link"><i class="fa-solid fa-arrow-left"></i> Back to Peer Selection</a>
 
         <div style="background:rgba(240,84,84,.08);border:1px solid rgba(240,84,84,.25);border-radius:10px;padding:18px;color:#fca5a5;font-size:13px;display:flex;gap:10px;">
             <i class="fa-solid fa-circle-exclamation"></i>
             <?= htmlspecialchars($peer_group_error ?: "Selected user does not exist, is inactive, or is not a valid Staff account. Please choose someone from the list.") ?>
+        </div>
         </div>
 
         <?php endif; ?>
@@ -3523,6 +3902,30 @@ document.addEventListener('DOMContentLoaded', function() {
         let notificationKnownIds = new Set();
         let notificationFirstRefresh = true;
         let notificationRefreshBusy = false;
+        const NOTIF_CSRF = <?= json_encode($csrf_token) ?>;
+
+        // Mark one notification read, then open the page it points to.
+        function openNotification(id, href) {
+            let done = false;
+            const go = () => { if (done) return; done = true; if (href) window.location.href = href; };
+            if (!id) { go(); return; }
+            const timer = setTimeout(go, 1200); // never let a slow request block navigation
+            fetch('notifications_api.php', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ mark_notification_id: String(id), csrf_token: NOTIF_CSRF })
+            }).catch(() => {}).finally(() => { clearTimeout(timer); go(); });
+        }
+
+        // Clicking an unread notification marks it read first; read ones just follow the link.
+        document.addEventListener('click', function(e) {
+            const item = e.target.closest('a.notif-item');
+            if (!item || !item.classList.contains('unread')) return;
+            if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+            e.preventDefault();
+            openNotification(Number(item.dataset.notificationId) || 0, item.getAttribute('href'));
+        });
 
         function toggleNotifDropdown(e) {
             e.stopPropagation();
@@ -3574,13 +3977,13 @@ document.addEventListener('DOMContentLoaded', function() {
             list.innerHTML = items.map(n => {
                 const v = notificationVisual(n.type);
                 const unread = Number(n.is_read) === 0;
-                return `<div class="notif-item ${unread ? 'unread' : ''}" data-notification-id="${Number(n.id) || 0}">\n` +
+                return `<a class="notif-item ${unread ? 'unread' : ''}" data-notification-id="${Number(n.id) || 0}" href="${escapeNotificationHtml(n.link || 'staff_dashboard.php?page=dashboard')}">\n` +
                     `  <div class="notif-icon" style="color:${v.color};background:${v.color}22;"><i class="fa-solid ${v.icon}"></i></div>\n` +
                     `  <div style="flex:1;min-width:0;">\n` +
                     `    <div class="notif-text">${escapeNotificationHtml(n.message)}</div>\n` +
                     `    <div class="notif-meta">${escapeNotificationHtml(n.created_at_label)}</div>\n` +
                     `  </div>\n` +
-                    `</div>`;
+                    `</a>`;
             }).join('');
         }
 
@@ -3616,6 +4019,7 @@ document.addEventListener('DOMContentLoaded', function() {
             toast.className = 'live-notif-toast';
             toast.innerHTML = `<div class="live-notif-toast-icon"><i class="fa-solid fa-bell"></i></div>` +
                 `<div><strong>New notification</strong><span>${escapeNotificationHtml(notification.message)}</span></div>`;
+            toast.addEventListener('click', () => openNotification(Number(notification.id) || 0, notification.link || 'staff_dashboard.php?page=dashboard'));
             document.body.appendChild(toast);
             requestAnimationFrame(() => toast.classList.add('show'));
             setTimeout(() => {

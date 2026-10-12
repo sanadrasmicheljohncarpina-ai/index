@@ -1872,7 +1872,7 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { display:none !important; widt
 <!-- Custom confirm modal: replaces the native "localhost says" browser confirm() dialog -->
 <div class="pbi-confirm-overlay" id="pbiConfirmOverlay">
     <div class="pbi-confirm-card">
-        <div class="pbi-confirm-msg">Terminate your administrative session?</div>
+        <div class="pbi-confirm-msg">Are you sure you want to logout?</div>
         <div class="pbi-confirm-actions">
             <button type="button" class="pbi-confirm-btn cancel" id="pbiConfirmCancel">Cancel</button>
             <button type="button" class="pbi-confirm-btn ok" id="pbiConfirmOk">OK</button>
@@ -2291,27 +2291,7 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { display:none !important; widt
 <div class="page-content">
     <div id="dashboard" class="page">
         <div class="pbi-dashboard-container">
-            <header class="pbi-dashboard-heading">
-                <div class="pbi-heading-topline">
-                    <div>
-                        <div class="pbi-dashboard-kicker"><i class="fa-solid fa-chart-line"></i> Dashboard Overview</div>
-                        <p class="pbi-dashboard-greeting"><?= htmlspecialchars($greeting) ?>, <?= htmlspecialchars($firstName) ?>! <span class="wave">👋</span></p>
-                        <h1 class="pbi-system-title"><?= htmlspecialchars($workspaceTitle) ?></h1>
-                        <p class="pbi-system-subtitle"><?= htmlspecialchars($workspaceSubtitle) ?></p>
-                        <p class="pbi-system-subtitle">Here's what's happening with the evaluation system today.</p>
-                    </div>
-                    <div class="pbi-dashboard-meta">
-                        <div class="dashboard-notification-control">
-                            <div class="notif-wrap" id="notifWrap">
-                                <button class="notif-btn" id="notifBtn" onclick="toggleNotifDropdown(event)" title="Notifications" aria-label="Notifications">
-                                    <i class="fa-regular fa-bell"></i>
-                                    <span class="notif-badge" id="notifBadge">0</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </header>
+            <!-- Dashboard heading removed; the notification bell now lives in the page header bar. -->
 
             <!-- ── STAT CARDS ── -->
             <div class="pbi-stats-row">
@@ -2504,7 +2484,7 @@ function pbiConfirm(message, opts){
 function pbiConfirmLogout(link){
     var cur=document.querySelector('.page.active');
     var go=function(){
-        pbiConfirm('Terminate your administrative session?', {okLabel:'OK'}).then(function(ok){
+        pbiConfirm('Are you sure you want to logout?', {okLabel:'OK'}).then(function(ok){
             if(ok) window.location.href=link.href;
         });
     };
@@ -3214,6 +3194,232 @@ html body:has(#dashboard.active) .pbi-panel{padding:22px 24px!important;}
 }
 </style>
 
+
+<!-- ═══ PAGE HEADER (faculty-style: accent-colored icon + page title) ═══ -->
+<style id="admin-page-header">
+:root{--adm-hdr-h:58px;}
+.pbi-admin-topbar{
+    position:fixed;top:0;right:0;left:calc(var(--sidebar-w) * var(--sidebar-scale));
+    height:var(--adm-hdr-h);padding:0 28px;display:flex;align-items:center;gap:12px;
+    background:#FFFFFF;border-bottom:1px solid var(--accent-soft-border,#B9E4D3);
+    box-shadow:0 2px 8px rgba(22,48,76,.035);z-index:200;box-sizing:border-box;
+}
+.pbi-admin-topbar-icon{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;color:var(--blue-accent,#0F9F6E);font-size:22px;line-height:1;}
+.pbi-admin-topbar-icon i{color:var(--blue-accent,#0F9F6E);}
+.pbi-admin-topbar-title{min-width:0;font-family:'Rajdhani','Inter',Arial,sans-serif;font-size:22px;line-height:1.1;font-weight:700;letter-spacing:.25px;color:var(--text-dark,#0B1F3A);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+html[data-theme="dark"] .pbi-admin-topbar{background:var(--panel-bg,#121f33);border-bottom-color:var(--panel-border,#22344d);box-shadow:0 2px 14px rgba(0,0,0,.35);}
+html[data-theme="dark"] .pbi-admin-topbar-title{color:var(--text,#e7eef8);}
+.pbi-admin-topbar{justify-content:flex-start;}
+.pbi-admin-topbar .pbi-topbar-notif{position:static!important;margin:0 0 0 auto!important;top:auto!important;right:auto!important;display:flex!important;align-items:center;}
+.pbi-admin-topbar .notif-wrap{margin:0!important;}
+.notif-dropdown{top:calc(var(--adm-hdr-h) + 6px)!important;}
+/* Make room for the header (these match the specificity of the layout rules above). */
+html body .page-content,
+html body:has(.pbi-dashboard-container) .page-content,
+html body:has(#dashboard.active) .page-content{margin-top:var(--adm-hdr-h)!important;}
+html body:has(#dashboard.active) .page-content{min-height:calc(100vh - var(--adm-hdr-h))!important;}
+html body:has(.pbi-dashboard-container) .iframe-box{height:calc(100vh - var(--adm-hdr-h) - (var(--dash-top-gap,14px) * 2))!important;}
+@media(max-width:900px){
+    .pbi-admin-topbar{left:0;padding:0 16px;}
+    .pbi-admin-topbar-icon,.pbi-admin-topbar-title{font-size:20px;}
+}
+</style>
+<header class="pbi-admin-topbar" id="pbiAdminTopbar" aria-label="Admin workspace header">
+    <span class="pbi-admin-topbar-icon" aria-hidden="true"><i class="fa-solid fa-house" id="pbiAdminTopbarIcon"></i></span>
+    <div class="pbi-admin-topbar-title" id="pbiAdminTopbarTitle">Dashboard</div>
+    <div class="dashboard-notification-control pbi-topbar-notif">
+        <div class="notif-wrap" id="notifWrap">
+            <button class="notif-btn" id="notifBtn" onclick="toggleNotifDropdown(event)" title="Notifications" aria-label="Notifications">
+                <i class="fa-regular fa-bell"></i>
+                <span class="notif-badge" id="notifBadge">0</span>
+            </button>
+        </div>
+    </div>
+</header>
+<script>
+(function(){
+    var META={
+        dashboard:    ['fa-house','Dashboard'],
+        reports:      ['fa-file-signature','Questionnaire'],
+        tracker:      ['fa-satellite-dish','Evaluation Tracker'],
+        ea_eval:      ['fa-clipboard-check',<?= json_encode($isExecutiveAssistant ? 'Evaluate Others' : 'EA Evaluations') ?>],
+        ea_results:   ['fa-star-half-stroke','Evaluation Received'],
+        analytics:    ['fa-chart-line','Evaluation Reports'],
+        registrations:['fa-users-gear','Account Management'],
+        system_logs:  ['fa-clock-rotate-left','System Logs'],
+        settings:     ['fa-gear','Settings']
+    };
+    var icon=document.getElementById('pbiAdminTopbarIcon'),title=document.getElementById('pbiAdminTopbarTitle');
+    function update(id){
+        var m=META[id]||META.dashboard;
+        if(icon) icon.className='fa-solid '+m[0];
+        if(title) title.textContent=m[1];
+    }
+    if(typeof _showPageNow==='function'){
+        var orig=_showPageNow;
+        _showPageNow=function(pageId,element){ orig(pageId,element); update(pageId); };
+    }
+    try{ update(localStorage.getItem('activePage')||'dashboard'); }catch(e){ update('dashboard'); }
+})();
+</script>
+
+<style id="admin-dashboard-white-panel">
+/* White rounded workspace card for the dashboard, matching the Questionnaire / tracker pages. */
+html body:has(#dashboard.active) .page-content{
+    padding:var(--dash-top-gap,14px) 22px!important;
+}
+html body:has(#dashboard.active) .pbi-dashboard-container{
+    max-width:none!important;
+    box-sizing:border-box!important;
+    background:#FFFFFF!important;
+    border:1px solid #E3EAF3!important;
+    border-radius:18px!important;
+    box-shadow:0 1px 2px rgba(16,24,40,.04),0 6px 18px rgba(16,24,40,.05)!important;
+    padding:26px 28px 30px!important;
+    min-height:calc(100vh - var(--adm-hdr-h) - (var(--dash-top-gap,14px) * 2))!important;
+}
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-dashboard-container{
+    background:var(--panel-bg,#121f33)!important;
+    border-color:var(--panel-border,#22344d)!important;
+    box-shadow:0 6px 22px rgba(0,0,0,.35)!important;
+}
+@media(max-width:760px){
+    html body:has(#dashboard.active) .page-content{padding:var(--dash-top-gap,14px) 12px!important;}
+    html body:has(#dashboard.active) .pbi-dashboard-container{padding:16px!important;border-radius:14px!important;}
+}
+</style>
+<style id="admin-unified-workspace">
+/* Every sidebar tab now uses the same workspace as the Dashboard:
+   soft #F4F7FB canvas + one white, rounded, bordered card.  For the iframe
+   tabs the <iframe> itself is that card (its inner look comes from
+   admin_unified_ui.css, loaded by each feature page). */
+html:not([data-theme="dark"]) body:has(.pbi-dashboard-container){background:#F4F7FB!important;}
+html body:has(.pbi-dashboard-container) .page-content{
+    padding:var(--dash-top-gap,14px) 22px!important;
+    margin-top:var(--adm-hdr-h)!important;
+}
+html body .page:has(>iframe){background:transparent!important;}
+html body .iframe-box{
+    background:#FFFFFF!important;
+    border:1px solid #E3EAF3!important;
+    border-radius:18px!important;
+    box-shadow:0 1px 2px rgba(16,24,40,.04),0 6px 18px rgba(16,24,40,.05)!important;
+    box-sizing:border-box!important;
+}
+html[data-theme="dark"] body .iframe-box{
+    background:var(--panel-bg,#121f33)!important;
+    border-color:var(--panel-border,#22344d)!important;
+    box-shadow:0 6px 22px rgba(0,0,0,.35)!important;
+}
+@media(max-width:760px){
+    html body:has(.pbi-dashboard-container) .page-content{padding:var(--dash-top-gap,14px) 12px!important;}
+    html body .iframe-box{border-radius:14px!important;}
+}
+</style>
+
+<style id="dashboard-dark-mode">
+/* ------------------------------------------------------------------
+   Dashboard dark mode (loaded last on purpose).
+   The grounded-layout block above forces white card surfaces in every theme,
+   which left light text on white in dark mode. These rules re-colour the
+   dashboard cards, status panel and lists to match the other dark pages.
+   Light theme is untouched: every rule here is scoped to data-theme="dark".
+   ------------------------------------------------------------------ */
+html[data-theme="dark"] body:has(#dashboard.active){
+    --dd-card:#172A45;      /* cards / panels sitting on the dark workspace */
+    --dd-inset:#0F1F3D;     /* tiles and tracks inside a card */
+    --dd-line:#284260;      /* borders and dividers */
+    --dd-text:#E7ECF3;      /* primary text */
+    --dd-muted:#9FB2C9;     /* labels and captions */
+}
+
+/* Card surfaces */
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-stat-card,
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-period-box,
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-panel{
+    background:var(--dd-card)!important;
+    border-color:var(--dd-line)!important;
+    box-shadow:0 6px 18px rgba(0,0,0,.28)!important;
+}
+
+/* Muted text */
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-stat-label,
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-stat-sub,
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-stat-trend.flat,
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-period-label,
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-period-meta,
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-period-tile-label,
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-period-tile-sub,
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-panel-title,
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-personnel-meta,
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-attention-item .chev{
+    color:var(--dd-muted)!important;
+}
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-period-meta .sep{color:#5B7391!important;}
+
+/* Primary text */
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-stat-value,
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-period-value,
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-period-tile-value,
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-personnel-name,
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-personnel-count,
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-attention-item,
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-completion-ring-inner{
+    color:var(--dd-text)!important;
+}
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-period-tile-value.green{color:#52E49A!important;}
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-period-tile-value.gold{color:#F4B73F!important;}
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-stat-trend.up{color:#52E49A!important;}
+
+/* Status badge (Forced Open / Closed / Scheduled / ...) */
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-period-badge.green{background:rgba(15,159,110,.16)!important;color:#52E49A!important;border-color:rgba(82,228,154,.38)!important;}
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-period-badge.red{background:rgba(214,69,93,.16)!important;color:#FF8FA1!important;border-color:rgba(255,143,161,.38)!important;}
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-period-badge.yellow{background:rgba(199,122,8,.18)!important;color:#F4B73F!important;border-color:rgba(244,183,63,.38)!important;}
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-period-badge.gray{background:rgba(159,178,201,.12)!important;color:var(--dd-muted)!important;border-color:var(--dd-line)!important;}
+
+/* Status tiles inside the period box */
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-period-tile{
+    background:var(--dd-inset)!important;
+    border:1px solid var(--dd-line)!important;
+}
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-period-tile.tile-submitted{background:rgba(15,159,110,.14)!important;border-color:rgba(82,228,154,.30)!important;}
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-period-tile.tile-pending{background:rgba(199,122,8,.16)!important;border-color:rgba(244,183,63,.30)!important;}
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-progress-track{background:#22385A!important;}
+
+/* Participation ring */
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-completion-ring{
+    background:conic-gradient(#EAB308 calc(var(--pct)*1%), #2A405C 0)!important;
+}
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-completion-ring-inner{background:var(--dd-card)!important;}
+
+/* Icon circles */
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-stat-card.stat-teal .pbi-stat-icon-circle,
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-personnel-icon.teal{background:rgba(15,159,110,.20)!important;color:#3DDC97!important;}
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-stat-card.stat-skyblue .pbi-stat-icon-circle,
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-personnel-icon.skyblue{background:rgba(201,162,39,.20)!important;color:#E3B93C!important;}
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-stat-card.stat-violet .pbi-stat-icon-circle,
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-personnel-icon.violet{background:rgba(139,108,246,.22)!important;color:#A995FF!important;}
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-stat-card.stat-gold .pbi-stat-icon-circle{background:rgba(199,122,8,.22)!important;color:#F4B73F!important;}
+
+/* Personnel overview + Needs attention lists */
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-personnel-item,
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-attention-item{border-bottom-color:var(--dd-line)!important;box-shadow:none!important;}
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-attention-item:last-child,
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-personnel-item:last-child{border-bottom:none!important;}
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-attention-item.is-clickable:hover{background:rgba(255,255,255,.05)!important;}
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-attention-item.is-clickable:hover .chev{color:#52E49A!important;}
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-attention-item .warn{color:#FF8F6B!important;}
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-attention-item .info{color:#E3B93C!important;}
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-attention-item .ok{color:#3DDC97!important;}
+
+/* View All button */
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-panel-viewall{
+    background:transparent!important;
+    color:#52E49A!important;
+    border-color:var(--dd-line)!important;
+}
+html[data-theme="dark"] body:has(#dashboard.active) .pbi-panel-viewall:hover{background:rgba(15,159,110,.16)!important;}
+</style>
 <script src="eval_status_poll.js" defer></script>
 
 <!-- EA evaluation popup: lives at the top level so the blur covers the whole screen (sidebar + header included). -->

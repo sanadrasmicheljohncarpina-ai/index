@@ -59,7 +59,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // ── PROFILE DETAILS ───────────────────────────────────────────
         if ($action === 'update_profile') {
             $newName       = trim((string)($_POST['full_name'] ?? ''));
-            $newEmail      = trim((string)($_POST['email'] ?? ''));
             $newUsername   = trim((string)($_POST['username'] ?? ''));
             $newDesignation = trim((string)($_POST['designation'] ?? ''));
 
@@ -67,12 +66,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = "Full name can't be empty.";
             } elseif (mb_strlen($newName) > 150) {
                 $errors[] = 'Full name must be 150 characters or fewer.';
-            }
-
-            if ($newEmail === '' || !filter_var($newEmail, FILTER_VALIDATE_EMAIL)) {
-                $errors[] = 'Please enter a valid email address.';
-            } elseif (mb_strlen($newEmail) > 150) {
-                $errors[] = 'Email must be 150 characters or fewer.';
             }
 
             if ($newUsername === '') {
@@ -89,29 +82,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if (!$errors) {
                 try {
-                    // Keep account identifiers unique while excluding this Dean.
-                    $check = $mysqli->prepare('SELECT id, username, email FROM users WHERE (username = ? OR email = ?) AND id <> ? LIMIT 1');
-                    $check->bind_param('ssi', $newUsername, $newEmail, $userId);
+                    // Keep the username unique while excluding this Dean.
+                    $check = $mysqli->prepare('SELECT id, username FROM users WHERE username = ? AND id <> ? LIMIT 1');
+                    $check->bind_param('si', $newUsername, $userId);
                     $check->execute();
                     $duplicate = $check->get_result()->fetch_assoc();
                     $check->close();
 
                     if ($duplicate) {
-                        if (($duplicate['username'] ?? '') === $newUsername) {
-                            $errors[] = 'That username is already in use.';
-                        } else {
-                            $errors[] = 'That email address is already in use.';
-                        }
+                        $errors[] = 'That username is already in use.';
                     } else {
                         $stmt = $mysqli->prepare("UPDATE users
-                            SET full_name = ?, email = ?, username = ?, designation = ?
+                            SET full_name = ?, username = ?, designation = ?
                             WHERE id = ? AND role = 'dean'");
-                        $stmt->bind_param('ssssi', $newName, $newEmail, $newUsername, $newDesignation, $userId);
+                        $stmt->bind_param('sssi', $newName, $newUsername, $newDesignation, $userId);
                         $stmt->execute();
                         $stmt->close();
 
                         $me['full_name'] = $newName;
-                        $me['email'] = $newEmail;
                         $me['username'] = $newUsername;
                         $me['designation'] = $newDesignation;
                         $_SESSION['full_name'] = $newName;
@@ -229,7 +217,7 @@ $sidebarScope = 'Higher Education Division';
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PBI — Dean Account Settings</title>
+<title>PBI — Settings</title>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
@@ -322,55 +310,127 @@ html.dark-theme main.main.dean-internal-scroll::-webkit-scrollbar-thumb:hover {
   }
 }
 </style>
+<script>
+(function(){try{var d=document.documentElement;
+if(localStorage.getItem('dean_density')==='compact')d.classList.add('dean-density-compact');
+if(localStorage.getItem('dean_reduce_motion')==='1')d.classList.add('dean-reduce-motion');}catch(e){}})();
+</script>
 </head>
 <body>
-<?php $photo_src = $photoUrl; include __DIR__ . '/includes/dean_sidebar.php'; ?>
+<?php $photo_src = $photoUrl; include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_header_dark.php')) include __DIR__ . '/dean_header_dark.php'; ?>
 <main class="main dean-internal-scroll">
     <div class="page-header">
-        <div class="page-title">Account Settings</div>
+        <div class="page-title"></div>
     </div>
 
     <?php if ($success): ?><div class="alert success"><i class="fa-solid fa-circle-check"></i><?= htmlspecialchars($success) ?></div><?php endif; ?>
     <?php foreach ($errors as $err): ?><div class="alert error"><i class="fa-solid fa-circle-exclamation"></i><?= htmlspecialchars($err) ?></div><?php endforeach; ?>
 
-    <div class="section">
-        <h2><i class="fa-solid fa-palette"></i> Appearance</h2>
-        <div class="setting-row">
+    <div class="section appearance-settings-section ac-card ac-c1" id="dean-appearance-settings">
+        <div class="appearance-heading-row ac-head">
+            <span class="ac-icon"><i class="fa-solid fa-palette"></i></span>
             <div>
-                <strong>Theme</strong>
-                <div class="appearance-hint">Light is the default portal appearance. Current: <span id="appearanceVal">Light</span></div>
+                <h2>Appearance</h2>
+                <p class="appearance-subtitle ac-sub">Choose your theme, content spacing, and motion preferences.</p>
             </div>
-            <div class="appearance-choice-row">
-                <button type="button" class="appearance-choice" id="appearanceLightBtn" onclick="setAppearance('light')"><i class="fa-solid fa-sun"></i> Light</button>
-                <button type="button" class="appearance-choice" id="appearanceDarkBtn" onclick="setAppearance('dark')"><i class="fa-solid fa-moon"></i> Dark</button>
-            </div>
+            <span class="appearance-device-badge"><i class="fa-solid fa-laptop"></i> Saved on this device</span>
+        </div>
+
+        <div class="appearance-feature-grid">
+            <section class="appearance-control-card appearance-theme-card" aria-labelledby="appearanceThemeHeading">
+                <div class="appearance-control-head">
+                    <span class="appearance-control-icon"><i class="fa-solid fa-circle-half-stroke"></i></span>
+                    <div>
+                        <h3 id="appearanceThemeHeading">Theme mode</h3>
+                        <p>Choose a look that suits your environment.</p>
+                    </div>
+                </div>
+                <div class="appearance-theme-options" role="group" aria-label="Theme mode">
+                    <button type="button" class="appearance-choice" id="appearanceLightBtn" data-theme-choice="light" aria-pressed="false" onclick="setDeanAppearance('light')">
+                        <span class="appearance-choice-icon"><i class="fa-solid fa-sun"></i></span>
+                        <span class="appearance-choice-copy"><strong>Light</strong><small>Bright and clean</small></span>
+                        <span class="appearance-choice-check"><i class="fa-solid fa-check"></i></span>
+                    </button>
+                    <button type="button" class="appearance-choice" id="appearanceDarkBtn" data-theme-choice="dark" aria-pressed="false" onclick="setDeanAppearance('dark')">
+                        <span class="appearance-choice-icon"><i class="fa-solid fa-moon"></i></span>
+                        <span class="appearance-choice-copy"><strong>Dark</strong><small>Low-light friendly</small></span>
+                        <span class="appearance-choice-check"><i class="fa-solid fa-check"></i></span>
+                    </button>
+                    <button type="button" class="appearance-choice" id="appearanceSystemBtn" data-theme-choice="system" aria-pressed="false" onclick="setDeanAppearance('system')">
+                        <span class="appearance-choice-icon"><i class="fa-solid fa-desktop"></i></span>
+                        <span class="appearance-choice-copy"><strong>System</strong><small>Follow device setting</small></span>
+                        <span class="appearance-choice-check"><i class="fa-solid fa-check"></i></span>
+                    </button>
+                </div>
+                <div class="appearance-inline-status"><i class="fa-solid fa-circle-info"></i> Current mode: <strong id="appearanceCurrentMode">Light</strong></div>
+            </section>
+
+            <section class="appearance-control-card" aria-labelledby="appearanceLayoutHeading">
+                <div class="appearance-control-head">
+                    <span class="appearance-control-icon"><i class="fa-solid fa-sliders"></i></span>
+                    <div>
+                        <h3 id="appearanceLayoutHeading">Interface spacing</h3>
+                        <p>Choose how much space appears around tables and content.</p>
+                    </div>
+                </div>
+                <div class="appearance-density-options" role="group" aria-label="Interface spacing">
+                    <button type="button" class="appearance-density-choice" data-density-choice="comfortable" aria-pressed="false" onclick="setDeanDensity('comfortable')"><i class="fa-solid fa-expand"></i><span><strong>Comfortable</strong><small>More breathing room</small></span></button>
+                    <button type="button" class="appearance-density-choice" data-density-choice="compact" aria-pressed="false" onclick="setDeanDensity('compact')"><i class="fa-solid fa-compress"></i><span><strong>Compact</strong><small>More content on screen</small></span></button>
+                </div>
+            </section>
+
+            <section class="appearance-control-card appearance-accessibility-card" aria-labelledby="appearanceAccessibilityHeading">
+                <div class="appearance-control-head">
+                    <span class="appearance-control-icon"><i class="fa-solid fa-universal-access"></i></span>
+                    <div>
+                        <h3 id="appearanceAccessibilityHeading">Accessibility</h3>
+                        <p>Reduce interface movement for a calmer experience.</p>
+                    </div>
+                </div>
+                <button type="button" class="appearance-motion-toggle" id="appearanceMotionBtn" aria-pressed="false" onclick="toggleDeanReducedMotion()">
+                    <span class="appearance-motion-copy"><strong>Reduce animations</strong><small>Minimize transitions and motion effects</small></span>
+                    <span class="appearance-switch-track" aria-hidden="true"><span class="appearance-switch-thumb"></span></span>
+                </button>
+                <div class="appearance-accessibility-note"><i class="fa-solid fa-shield-heart"></i> Your settings stay in this browser and do not change other users' views.</div>
+            </section>
         </div>
     </div>
 
-    <div class="section">
-        <h2><i class="fa-solid fa-id-badge"></i> Profile Photo</h2>
+    <div class="section ac-card ac-c2">
+        <div class="ac-head">
+            <span class="ac-icon"><i class="fa-solid fa-id-badge"></i></span>
+            <div>
+                <h2>Profile Photo</h2>
+                <p class="ac-sub">Update the photo shown in your sidebar and profile.</p>
+            </div>
+        </div>
         <div class="profile-card">
             <img class="profile-photo-lg" src="<?= htmlspecialchars($photoUrl) ?>" alt="Dean profile photo" onerror="this.src='<?= htmlspecialchars(UPLOAD_URL . 'pbi_logo') ?>'">
-            <div>
-                <form method="post" enctype="multipart/form-data">
+            <div class="photo-form-wrap">
+                <form method="post" enctype="multipart/form-data" style="display:flex;flex-direction:column;gap:10px;">
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                     <input type="hidden" name="action" value="change_photo">
                     <input type="file" name="photo" accept="image/jpeg,image/png,image/webp" required>
-                    <div style="margin-top:12px"><button class="btn-primary" type="submit"><i class="fa-solid fa-upload"></i> Upload New Photo</button></div>
+                    <button class="btn-primary" type="submit" style="width:fit-content;"><i class="fa-solid fa-upload"></i> Upload New Photo</button>
                 </form>
                 <div class="photo-help">JPG, PNG, or WEBP only. Maximum file size: 5MB.</div>
             </div>
         </div>
     </div>
 
-    <div class="section">
-        <h2><i class="fa-solid fa-user-pen"></i> Profile Details</h2>
+    <div class="section ac-card ac-c3">
+        <div class="ac-head">
+            <span class="ac-icon"><i class="fa-solid fa-user-pen"></i></span>
+            <div>
+                <h2>Profile Details</h2>
+                <p class="ac-sub">Update your name, username and designation.</p>
+            </div>
+        </div>
         <form method="post">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
             <input type="hidden" name="action" value="update_profile">
             <div class="form-grid">
                 <div class="form-group"><label>Full Name</label><input type="text" name="full_name" maxlength="150" value="<?= htmlspecialchars($me['full_name'] ?? '') ?>" required></div>
-                <div class="form-group"><label>Email</label><input type="email" name="email" maxlength="150" value="<?= htmlspecialchars($me['email'] ?? '') ?>" required></div>
                 <div class="form-group"><label>Username</label><input type="text" name="username" maxlength="50" value="<?= htmlspecialchars($me['username'] ?? '') ?>" required autocomplete="username"></div>
                 <div class="form-group"><label>Designation</label><input type="text" name="designation" maxlength="100" value="<?= htmlspecialchars($me['designation'] ?? '') ?>"></div>
             </div>
@@ -378,9 +438,14 @@ html.dark-theme main.main.dean-internal-scroll::-webkit-scrollbar-thumb:hover {
         </form>
     </div>
 
-    <div class="section">
-        <h2><i class="fa-solid fa-lock"></i> Change Password</h2>
-        <div class="password-note">Your new password must be at least 8 characters and different from your current password.</div>
+    <div class="section ac-card ac-c4">
+        <div class="ac-head">
+            <span class="ac-icon"><i class="fa-solid fa-lock"></i></span>
+            <div>
+                <h2>Change Password</h2>
+                <p class="ac-sub">Your new password must be at least 8 characters and different from your current password.</p>
+            </div>
+        </div>
         <form method="post" autocomplete="off">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
             <input type="hidden" name="action" value="change_password">
@@ -393,17 +458,196 @@ html.dark-theme main.main.dean-internal-scroll::-webkit-scrollbar-thumb:hover {
             <button class="btn-primary" type="submit"><i class="fa-solid fa-key"></i> Update Password</button>
         </form>
     </div>
-
-    <div class="section">
-        <h2><i class="fa-solid fa-circle-info"></i> Account Information</h2>
-        <div class="info-grid">
-            <div class="info-item"><span>Role</span><strong>Dean</strong></div>
-            <div class="info-item"><span>Academic Scope</span><strong>Higher Education</strong></div>
-            <div class="info-item"><span>Account Status</span><strong>Approved</strong></div>
-        </div>
-    </div>
 </main>
+<script>
+/* Dean appearance controls — same options as the Principal settings page. */
+(function(){
+  var KEY_THEME='dean_theme_pref', KEY_DENSITY='dean_density', KEY_MOTION='dean_reduce_motion';
+  var root=document.documentElement, mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
+  function get(k,d){try{var v=localStorage.getItem(k);return v===null?d:v;}catch(e){return d;}}
+  function set(k,v){try{localStorage.setItem(k,v);}catch(e){}}
+
+  function currentPref(){
+    var p=get(KEY_THEME,null);
+    if(p==='light'||p==='dark'||p==='system')return p;
+    return root.classList.contains('dark-theme')?'dark':'light';
+  }
+  function applyResolved(mode){
+    // Prefer the portal's own switcher (defined in the shared sidebar/header) when present.
+    if(typeof window.setAppearance==='function'){ try{ window.setAppearance(mode); }catch(e){} }
+    root.classList.toggle('dark-theme',mode==='dark');
+  }
+  function paintTheme(pref){
+    document.querySelectorAll('[data-theme-choice]').forEach(function(b){
+      var on=b.getAttribute('data-theme-choice')===pref;
+      b.setAttribute('aria-pressed',on?'true':'false'); b.classList.toggle('active',on);
+    });
+    var out=document.getElementById('appearanceCurrentMode');
+    if(out){ var eff=root.classList.contains('dark-theme')?'Dark':'Light';
+      out.textContent=pref==='system'?'System ('+eff+')':eff; }
+  }
+  window.setDeanAppearance=function(pref){
+    set(KEY_THEME,pref);
+    applyResolved(pref==='system'?(mq&&mq.matches?'dark':'light'):pref);
+    paintTheme(pref);
+  };
+  if(mq){ var onChange=function(){ if(currentPref()==='system'){ applyResolved(mq.matches?'dark':'light'); paintTheme('system'); } };
+    if(mq.addEventListener)mq.addEventListener('change',onChange); else if(mq.addListener)mq.addListener(onChange); }
+
+  function paintDensity(d){
+    document.querySelectorAll('[data-density-choice]').forEach(function(b){
+      b.setAttribute('aria-pressed',b.getAttribute('data-density-choice')===d?'true':'false');
+    });
+  }
+  window.setDeanDensity=function(d){
+    root.classList.toggle('dean-density-compact',d==='compact');
+    set(KEY_DENSITY,d); paintDensity(d);
+  };
+
+  function paintMotion(on){
+    var b=document.getElementById('appearanceMotionBtn'); if(b)b.setAttribute('aria-pressed',on?'true':'false');
+  }
+  window.toggleDeanReducedMotion=function(){
+    var on=!root.classList.contains('dean-reduce-motion');
+    root.classList.toggle('dean-reduce-motion',on);
+    set(KEY_MOTION,on?'1':'0'); paintMotion(on);
+  };
+
+  document.addEventListener('DOMContentLoaded',function(){
+    var pref=currentPref();
+    if(pref==='system')applyResolved(mq&&mq.matches?'dark':'light');
+    paintTheme(pref);
+    paintDensity(get(KEY_DENSITY,'comfortable')==='compact'?'compact':'comfortable');
+    paintMotion(get(KEY_MOTION,'0')==='1');
+  });
+})();
+</script>
 </body>
 <link rel="stylesheet" href="includes/dean_light_theme.css?v=dashboard-ui-20261009" id="dean-light-theme-final"/>
+
+<style id="ac-faculty-style">
+/* ── Account Settings — same card language as the Faculty portal ──
+   Coloured top bar, icon tile, title + description. Surface/text colours are left to the
+   existing theme so light and dark mode keep working; only structure + accents change. */
+main.main{--ac:#7C5FD9;}
+main.main .ac-c1{--ac-c:var(--ac);}
+main.main .ac-c2,main.main .ac-c5{--ac-c:#10B981;}
+main.main .ac-c3{--ac-c:#D88900;}
+main.main .ac-c4{--ac-c:#3B82F6;}
+main.main .ac-card{position:relative !important;overflow:hidden !important;border-radius:15px !important;padding:22px 24px 24px !important;margin-bottom:20px !important;}
+main.main .ac-card::before{content:'';position:absolute;left:0;right:0;top:0;height:3px;background:var(--ac-c);}
+main.main .ac-head{display:flex;align-items:flex-start;gap:14px;margin-bottom:18px;}
+main.main .ac-icon{width:42px;height:42px;flex:0 0 42px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;font-size:17px;background:color-mix(in srgb,var(--ac-c) 14%,transparent) !important;color:var(--ac-c) !important;}
+main.main .ac-icon i{font-size:17px;color:var(--ac-c) !important;}
+main.main .ac-head h2{display:block !important;margin:0 0 4px !important;font-family:'Rajdhani',sans-serif !important;font-size:21px !important;font-weight:800 !important;line-height:1.15 !important;letter-spacing:0 !important;}
+main.main .ac-head .ac-sub{margin:0 !important;font-size:13px !important;line-height:1.5 !important;color:inherit !important;opacity:.72;}
+main.main .ac-head.appearance-heading-row{justify-content:flex-start !important;}
+main.main .ac-head.appearance-heading-row .appearance-device-badge{margin-left:auto;}
+@media(max-width:600px){main.main .ac-card{padding:18px 18px 20px !important;}}
+</style>
+<style id="dean-principal-ui-match">
+/* ================================================================
+   Dean settings — matched to the Principal settings interface:
+   white viewport + inset #F8FAFC workspace, Dean sidebar and violet
+   accents, white cards with a coloured top bar, and the three-card
+   Appearance panel (Theme / Spacing / Accessibility).
+   ================================================================ */
+html:not(.dark-theme){background:#FFFFFF !important;color-scheme:light !important;}
+html:not(.dark-theme) body{background:#FFFFFF !important;background-image:none !important;color:#172033 !important;}
+
+/* Inset workspace canvas */
+html:not(.dark-theme) main.main{
+  position:relative !important;flex:1 1 auto !important;width:auto !important;max-width:none !important;
+  margin:20px 20px 0 20px !important;padding:24px 34px 34px !important;
+  background:#F8FAFC !important;color:#172033 !important;
+  border-radius:16px 16px 0 0 !important;box-shadow:none !important;
+}
+html:not(.dark-theme) main.main::before{display:none !important;content:none !important;}
+html:not(.dark-theme) main.main > .page-header{background:transparent !important;border:0 !important;box-shadow:none !important;padding:0 !important;margin:0 0 22px !important;}
+html:not(.dark-theme) .page-title{color:#0F172A !important;}
+
+/* White cards */
+html:not(.dark-theme) main.main .section{
+  background:#FFFFFF !important;color:#172033 !important;border-color:#D9E4EF !important;
+  box-shadow:0 1px 5px rgba(15,23,42,.035) !important;
+}
+html:not(.dark-theme) main.main .ac-head h2{color:#0F172A !important;}
+html:not(.dark-theme) main.main .ac-head .ac-sub,
+html:not(.dark-theme) .photo-help,
+html:not(.dark-theme) .form-group label{color:#64748B !important;}
+
+/* Inputs + buttons */
+html:not(.dark-theme) .form-group input{background:#FFFFFF !important;color:#172033 !important;border-color:#CBD5E1 !important;}
+html:not(.dark-theme) .form-group input:disabled{background:#F1F5F9 !important;}
+.form-group input:focus{border-color:#7C5FD9 !important;box-shadow:0 0 0 3px rgba(124,95,217,.12) !important;}
+.btn-primary{background:#7C5FD9 !important;color:#fff !important;box-shadow:0 4px 14px rgba(124,95,217,.25) !important;}
+.btn-primary:hover{background:#9C85F0 !important;color:#fff !important;}
+.profile-photo-lg{border-color:#7C5FD9 !important;box-shadow:0 0 22px rgba(124,95,217,.22) !important;}
+html:not(.dark-theme) .info-item{background:#F8FAFC !important;border-color:#E2E8F0 !important;}
+html:not(.dark-theme) .info-item span{color:#64748B !important;}
+html:not(.dark-theme) .info-item strong{color:#0F172A !important;}
+html:not(.dark-theme) .alert.success{background:rgba(16,185,129,.10);color:#047857;border-color:rgba(16,185,129,.25);}
+html:not(.dark-theme) .alert.error{background:rgba(240,84,84,.10);color:#b91c1c;border-color:rgba(240,84,84,.25);}
+
+/* ── Appearance panel ─────────────────────────────────────────── */
+main.main{--ap-card:#FFFFFF;--ap-soft:#F8FAFC;--ap-line:#E2E8F0;--ap-text:#0F172A;--ap-muted:#64748B;--ap-accent:#7C5FD9;--ap-accent-bg:rgba(124,95,217,.10);}
+html.dark-theme main.main{--ap-card:rgba(10,25,47,.55);--ap-soft:rgba(10,25,47,.45);--ap-line:rgba(255,255,255,.10);--ap-text:#E0E6F0;--ap-muted:#A0B3C6;--ap-accent-bg:rgba(124,95,217,.16);}
+
+.appearance-device-badge{margin-left:auto;display:inline-flex;align-items:center;gap:7px;align-self:flex-start;padding:6px 12px;border-radius:999px;font-size:11.5px;font-weight:600;white-space:nowrap;background:var(--ap-accent-bg);color:#6B4FCB;border:1px solid rgba(124,95,217,.28);}
+html.dark-theme .appearance-device-badge{color:#9C85F0;}
+.appearance-feature-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;}
+.appearance-theme-card{grid-column:1 / -1;}
+.appearance-control-card{background:var(--ap-soft);border:1px solid var(--ap-line);border-radius:14px;padding:18px;}
+.appearance-control-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:14px;}
+.appearance-control-icon{width:34px;height:34px;flex:0 0 34px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;background:var(--ap-accent-bg);color:var(--ap-accent);font-size:14px;}
+.appearance-control-head h3{font-size:15px;font-weight:700;color:var(--ap-text);margin:0 0 2px;}
+.appearance-control-head p{font-size:12.5px;color:var(--ap-muted);margin:0;line-height:1.45;}
+
+.appearance-theme-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
+.appearance-choice{position:relative;display:flex;align-items:center;gap:12px;padding:14px;text-align:left;border-radius:12px;border:1.5px solid var(--ap-line);background:var(--ap-card);color:var(--ap-text);cursor:pointer;font-family:inherit;transition:border-color .2s,background .2s,box-shadow .2s;}
+.appearance-choice:hover{border-color:var(--ap-accent);}
+.appearance-choice-icon{width:36px;height:36px;flex:0 0 36px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;background:var(--ap-soft);color:var(--ap-muted);font-size:15px;}
+.appearance-choice-copy strong,.appearance-density-choice strong,.appearance-motion-copy strong{display:block;font-size:13.5px;font-weight:700;color:var(--ap-text);}
+.appearance-choice-copy small,.appearance-density-choice small,.appearance-motion-copy small{display:block;font-size:11.5px;color:var(--ap-muted);margin-top:1px;}
+.appearance-choice-check{margin-left:auto;width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;background:var(--ap-accent);color:#fff;opacity:0;transform:scale(.6);transition:.2s;}
+.appearance-choice[aria-pressed="true"]{border-color:var(--ap-accent);background:var(--ap-accent-bg);box-shadow:0 0 0 3px rgba(124,95,217,.12);}
+.appearance-choice[aria-pressed="true"] .appearance-choice-icon{background:var(--ap-accent);color:#fff;}
+.appearance-choice[aria-pressed="true"] .appearance-choice-check{opacity:1;transform:scale(1);}
+.appearance-inline-status{margin-top:14px;font-size:12.5px;color:var(--ap-muted);display:flex;align-items:center;gap:7px;}
+.appearance-inline-status i{color:var(--ap-accent);}
+.appearance-inline-status strong{color:var(--ap-text);}
+
+.appearance-density-options{display:grid;gap:10px;}
+.appearance-density-choice{display:flex;align-items:center;gap:12px;padding:12px 14px;text-align:left;border-radius:12px;border:1.5px solid var(--ap-line);background:var(--ap-card);color:var(--ap-muted);cursor:pointer;font-family:inherit;transition:.2s;}
+.appearance-density-choice:hover{border-color:var(--ap-accent);}
+.appearance-density-choice > i{font-size:15px;width:20px;text-align:center;}
+.appearance-density-choice[aria-pressed="true"]{border-color:var(--ap-accent);background:var(--ap-accent-bg);}
+.appearance-density-choice[aria-pressed="true"] > i{color:var(--ap-accent);}
+
+.appearance-motion-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 14px;text-align:left;border-radius:12px;border:1.5px solid var(--ap-line);background:var(--ap-card);cursor:pointer;font-family:inherit;transition:.2s;}
+.appearance-motion-toggle:hover{border-color:var(--ap-accent);}
+.appearance-switch-track{width:44px;height:24px;flex:0 0 44px;border-radius:999px;background:#CBD5E1;position:relative;transition:background .2s;}
+.appearance-switch-thumb{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .2s;}
+.appearance-motion-toggle[aria-pressed="true"]{border-color:var(--ap-accent);background:var(--ap-accent-bg);}
+.appearance-motion-toggle[aria-pressed="true"] .appearance-switch-track{background:var(--ap-accent);}
+.appearance-motion-toggle[aria-pressed="true"] .appearance-switch-thumb{transform:translateX(20px);}
+.appearance-accessibility-note{margin-top:12px;font-size:11.5px;color:var(--ap-muted);display:flex;gap:7px;align-items:flex-start;line-height:1.5;}
+.appearance-accessibility-note i{color:var(--ap-accent);margin-top:2px;}
+
+/* Density + reduced motion */
+html.dean-density-compact main.main{padding-top:18px !important;padding-bottom:24px !important;}
+html.dean-density-compact main.main .ac-card{padding:16px 18px 18px !important;margin-bottom:14px !important;}
+html.dean-density-compact main.main .ac-head{margin-bottom:12px;}
+html.dean-density-compact .form-grid{gap:12px 16px;margin-bottom:14px;}
+html.dean-reduce-motion *,html.dean-reduce-motion *::before,html.dean-reduce-motion *::after{transition:none !important;animation:none !important;scroll-behavior:auto !important;}
+
+@media (max-width:900px){.appearance-theme-options{grid-template-columns:1fr;}}
+@media (max-width:768px){
+  html:not(.dark-theme) main.main{margin:12px 12px 0 12px !important;padding:20px 18px 28px !important;border-radius:12px 12px 0 0 !important;}
+  .appearance-feature-grid{grid-template-columns:1fr;}
+  .appearance-device-badge{display:none;}
+}
+@media print{html:not(.dark-theme) main.main{margin:0 !important;background:#fff !important;}}
+</style>
 </html>
 <?php $mysqli->close(); ?>

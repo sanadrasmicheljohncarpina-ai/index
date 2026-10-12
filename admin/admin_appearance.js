@@ -27,6 +27,34 @@
     return pref;
   }
 
+  /* Highlight the currently active Density and Theme option buttons.
+     Matches buttons by data attribute or label text, so it works with the
+     existing settings.php markup and re-syncs after every click. */
+  function syncSelected() {
+    if (!document.body) return;
+    var a = read();
+    var density = a.density === 'comfortable' ? 'comfortable' : 'compact';
+    var theme = (a.theme === 'dark' || a.theme === 'system') ? a.theme : 'light';
+    var els = document.querySelectorAll('button, [role="button"]');
+    Array.prototype.forEach.call(els, function (b) {
+      var cands = [
+        (b.textContent || '').trim().toLowerCase(),
+        (b.getAttribute('data-density') || '').toLowerCase(),
+        (b.getAttribute('data-theme-value') || '').toLowerCase(),
+        (b.getAttribute('data-value') || '').toLowerCase()
+      ];
+      var on = null;
+      for (var i = 0; i < cands.length && on === null; i++) {
+        var k = cands[i];
+        if (k === 'compact' || k === 'comfortable') on = (k === density);
+        else if (k === 'light' || k === 'dark' || k === 'system') on = (k === theme);
+      }
+      if (on === null) return;
+      b.classList.toggle('pbi-selected', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+
   function apply() {
     var a = read();
     var html = document.documentElement;
@@ -37,6 +65,7 @@
     html.classList.toggle('reduce-motion', a.motion);
     html.setAttribute('data-theme', resolveTheme(a.theme));
     html.style.setProperty('--accent', a.accent);
+    try { syncSelected(); } catch (e) {}
   }
 
   try {
@@ -53,7 +82,13 @@
     if (e.key === KEYS.density || e.key === KEYS.motion || e.key === KEYS.accent || e.key === KEYS.theme) apply();
   });
 
-  window.PBIAppearance = { KEYS: KEYS, DEFAULTS: DEFAULTS, read: read, resolveTheme: resolveTheme, apply: apply };
+  document.addEventListener('DOMContentLoaded', syncSelected);
+  document.addEventListener('click', function () {
+    setTimeout(syncSelected, 0);
+    setTimeout(syncSelected, 150);
+  });
+
+  window.PBIAppearance = { syncSelected: syncSelected, KEYS: KEYS, DEFAULTS: DEFAULTS, read: read, resolveTheme: resolveTheme, apply: apply };
 })();
 
 

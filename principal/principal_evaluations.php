@@ -49,8 +49,8 @@ if (empty($_SESSION['csrf_token'])) {
 }
 
 $validTabs = ['faculty', 'staff', 'executive_assistant'];
-$tab = $_GET['tab'] ?? 'faculty';
-if (!in_array($tab, $validTabs, true)) $tab = 'faculty';
+$tab = $_GET['tab'] ?? '';
+if (!in_array($tab, $validTabs, true)) $tab = '';   // '' = default view (no group selected)
 
 $catMeta = [
     'faculty'             => ['label' => 'Faculty',             'icon' => 'fa-users',     'cls' => 'faculty', 'noun' => 'faculty'],
@@ -477,6 +477,9 @@ html_head_open('PBI — Evaluate Others');
 .de-flash{display:flex;align-items:center;gap:10px;padding:12px 16px;margin-bottom:18px;border-radius:12px;font-size:13px;font-weight:600;}
 .de-flash.success{background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.35);color:#0f9d6e;}
 .de-flash.error{background:rgba(240,84,84,.1);border:1px solid rgba(240,84,84,.35);color:#d64545;}
+.de-choose-title{display:flex;align-items:center;gap:10px;margin:0 0 16px;font-family:'Rajdhani',sans-serif;font-size:24px;font-weight:700;line-height:1.1;color:#0f172a;}
+.de-choose-title i{font-size:18px;color:#d97706;}
+@media(max-width:600px){.de-choose-title{font-size:21px;margin-bottom:12px;}.de-choose-title i{font-size:16px;}}
 .de-section-label{font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--de-muted);margin:6px 0 12px;}
 
 .de-cats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:22px;}
@@ -997,7 +1000,7 @@ main.main::before {
     <div class="alert error"><i class="fa-solid fa-hourglass-half"></i> Waiting for <?= BASIC_ED_LABEL ?> evaluation period</div>
     <?php endif; ?>
 
-    <div class="de-section-label"></div>
+    <div class="de-choose-title"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i><span>Choose category</span></div>
     <div class="de-cats" role="tablist">
         <?php foreach ($validTabs as $t):
             $list = $rosterByTab[$t];
@@ -1128,11 +1131,13 @@ main.main::before {
         panels.forEach(p => p.classList.toggle('active', p.dataset.tab === tab));
         if (push && window.history && history.replaceState) {
             const u = new URL(window.location.href);
-            u.searchParams.set('tab', tab); u.searchParams.delete('open'); u.searchParams.delete('view');
+            if (tab) u.searchParams.set('tab', tab); else u.searchParams.delete('tab');
+            u.searchParams.delete('open'); u.searchParams.delete('view');
             history.replaceState(null, '', u.toString());
         }
     }
-    cats.forEach(c => c.addEventListener('click', () => showTab(c.dataset.tab, true)));
+    // Clicking the already-selected group a second time returns to the default view.
+    cats.forEach(c => c.addEventListener('click', () => showTab(c.classList.contains('active') ? '' : c.dataset.tab, true)));
 
     /* ── department filter (per panel) ── */
     panels.forEach(panel => {
@@ -1621,4 +1626,4 @@ main.main > .page-header{
 }
 </style>
 
-<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20261009.3" id="principal-dark-repairs"/>
+<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20261011.4" id="principal-dark-repairs"/>

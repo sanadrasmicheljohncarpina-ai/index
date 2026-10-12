@@ -18,7 +18,7 @@
 // questionnaire_answers row per question.
 session_set_cookie_params([
     'lifetime' => 0, 'path' => '/', 'domain' => '',
-    'secure' => false, 'httponly' => true, 'samesite' => 'Lax',
+    'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'), 'httponly' => true, 'samesite' => 'Lax',
 ]);
 session_start();
 require_once 'db.php';
@@ -39,17 +39,28 @@ if (!isset($_SESSION['user_id']) ||
 ss_sync_from_database($mysqli);
 
 $ea_id = (int)$_SESSION['user_id'];
+if (empty($_SESSION['ea_csrf'])) { $_SESSION['ea_csrf'] = bin2hex(random_bytes(32)); }
+$csrf = $_SESSION['ea_csrf'];
 
+// Schema upgrades for older installations: run only when something is missing
+// (ideally move to a one-time migration script).
 try {
-    $mysqli->query("ALTER TABLE evaluation_tracker MODIFY eval_type VARCHAR(30) NOT NULL DEFAULT 'student'");
-} catch (Throwable $ignore) {}
-foreach ([
-    "ALTER TABLE evaluation_tracker ADD COLUMN evaluator_id INT UNSIGNED NULL",
-    "ALTER TABLE evaluation_tracker ADD COLUMN target_user_id INT UNSIGNED NULL",
-    "ALTER TABLE evaluation_tracker ADD COLUMN period_id INT UNSIGNED NULL",
-    "ALTER TABLE evaluation_tracker ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'submitted'",
-] as $ddl) {
-    try { $mysqli->query($ddl); } catch (Throwable $ignore) {}
+    $col = $mysqli->query("SHOW COLUMNS FROM evaluation_tracker LIKE 'eval_type'")->fetch_assoc();
+    if ($col && stripos((string) $col['Type'], 'varchar') === false) {
+        $mysqli->query("ALTER TABLE evaluation_tracker MODIFY eval_type VARCHAR(30) NOT NULL DEFAULT 'student'");
+    }
+    foreach ([
+        'evaluator_id'   => "ADD COLUMN evaluator_id INT UNSIGNED NULL",
+        'target_user_id' => "ADD COLUMN target_user_id INT UNSIGNED NULL",
+        'period_id'      => "ADD COLUMN period_id INT UNSIGNED NULL",
+        'status'         => "ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'submitted'",
+    ] as $name => $clause) {
+        if (!$mysqli->query("SHOW COLUMNS FROM evaluation_tracker LIKE '$name'")->num_rows) {
+            $mysqli->query("ALTER TABLE evaluation_tracker $clause");
+        }
+    }
+} catch (Throwable $e) {
+    error_log('ea_evaluate schema check failed: ' . $e->getMessage());
 }
 
 function e($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
@@ -124,7 +135,7 @@ $qStmt->close();
 
 // ── ALREADY SUBMITTED THIS PERIOD? ────────────────────────────────────
 $existingTracker = null;
-if ($period_id) {
+{
     $chk = $mysqli->prepare("
         SELECT id, remarks, submitted_at
         FROM evaluation_tracker
@@ -174,7 +185,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$existingTracker) {
     // Re-check question availability and submission rules only.
     $is_open = true;
 
-    if (!$questions) {
+    if (!hash_equals($csrf, (string) ($_POST['csrf'] ?? ''))) {
+        $errors[] = 'Your session expired. Please reload the form and try again.';
+    } elseif (!$questions) {
         $errors[] = 'No EA questions have been assigned to this person yet.';
     } else {
         $ratings = $_POST['rating'] ?? [];
@@ -186,10 +199,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$existingTracker) {
         if (!$valid) {
             $errors[] = 'Please answer every question before submitting.';
         } else {
-            $comment = trim($_POST['comment'] ?? '');
+            $comment = mb_substr(trim((string) ($_POST['comment'] ?? '')), 0, 2000);
             $submittedAt = ss_now()->format('Y-m-d H:i:s');
             $mysqli->begin_transaction();
             try {
+                // Re-check inside the transaction so a double click or two tabs
+                // cannot create duplicate submissions for the same period.
+                $dup = $mysqli->prepare("SELECT id FROM evaluation_tracker WHERE evaluator_id=? AND target_user_id=? AND period_id=? AND eval_type='ea' AND status='submitted' LIMIT 1 FOR UPDATE");
+                $dup->bind_param('iii', $ea_id, $targetId, $period_id);
+                $dup->execute();
+                $already = $dup->get_result()->fetch_assoc();
+                $dup->close();
+                if ($already) {
+                    $mysqli->rollback();
+                    $mysqli->close();
+                    header('Location: ea_evaluation.php?type=' . urlencode($type) . '&submitted=1');
+                    exit;
+                }
                 $ins = $mysqli->prepare("
                     INSERT INTO evaluation_tracker
                     (evaluator_id, target_user_id, remarks, eval_type, period_id, status, submitted_at)
@@ -430,6 +456,7 @@ $closeAttr = $embed ? ' onclick="parent.closeEvalModal();return false;"' : '';
 
 <?php else: ?>
     <form method="post" id="evalForm" novalidate>
+      <input type="hidden" name="csrf" value="<?= e($csrf) ?>">
       <div class="modal-body" id="modalBody">
         <div class="eval-validation" id="evalValidation" role="alert" aria-live="assertive" <?= $errors ? '' : 'hidden' ?>>
           <?php if ($errors): ?><i class="fa-solid fa-circle-exclamation"></i><div><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div><?php endif; ?>
@@ -465,7 +492,7 @@ $closeAttr = $embed ? ' onclick="parent.closeEvalModal();return false;"' : '';
         <?php endforeach; ?>
         <div class="comment-box">
           <div class="comment-label"><i class="fa-solid fa-comment-dots"></i> Comments, Suggestions &amp; Areas for Improvement</div>
-          <textarea name="comment" class="comment-textarea" rows="4"
+          <textarea name="comment" class="comment-textarea" rows="4" maxlength="2000"
             placeholder="Share your thoughts, suggestions, or concerns about this person's performance...."><?= e($_POST['comment'] ?? '') ?></textarea>
         </div>
       </div>

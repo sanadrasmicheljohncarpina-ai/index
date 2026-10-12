@@ -482,20 +482,14 @@ html[data-theme="dark"] .et-tab.active{color:#fff}
 </style>
 <link rel="stylesheet" href="admin_appearance.css">
 <script src="admin_appearance.js"></script>
+<link rel="stylesheet" href="admin_unified_ui.css?v=<?= (int)@filemtime(__DIR__ . '/admin_unified_ui.css') ?>">
 <script src="eval_status_poll.js" data-watch="submissions" defer></script>
 
 <div class="et-wrap">
     <div class="et-head">
         <div>
             <div class="et-title"><span class="et-title-icon"><?= $tab==='students' ? '🎓' : ($tab==='faculty' ? '👩‍🏫' : '🏛') ?></span>Evaluation Tracker</div>
-            <div class="et-sub"><?php
-                if ($tab==='students') echo 'Progress of students evaluating their required faculty/staff this period.';
-                elseif ($tab==='faculty') echo 'Progress of faculty and teaching staff evaluating their required peers, staff and Dean/Principal this period.';
-                elseif ($tab==='dean') echo 'Progress of the Dean evaluating College faculty, non-teaching staff and the Executive Assistant this period.';
-                else echo 'Progress of the Principal evaluating High School faculty, non-teaching staff and the Executive Assistant this period.';
-            ?></div>
         </div>
-        <div class="et-updated"><button type="button" class="et-refresh" id="etRefresh" title="Refresh now" aria-label="Refresh now">⟳</button> Last updated: <time id="etUpdatedAt"><?=htmlspecialchars(date('M j, Y g:i A'))?></time></div>
     </div>
 
     <nav class="et-tabs" aria-label="Evaluation tracker tabs">

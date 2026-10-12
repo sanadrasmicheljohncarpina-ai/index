@@ -12,22 +12,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'update_profile') {
         $newName  = trim($_POST['full_name'] ?? '');
-        $newEmail = trim($_POST['email'] ?? '');
 
         if ($newName === '') $errors[] = "Full name can't be empty.";
-        if ($newEmail === '' || !filter_var($newEmail, FILTER_VALIDATE_EMAIL)) $errors[] = "Please enter a valid email address.";
 
         if (empty($errors)) {
             try {
-                $stmt = $mysqli->prepare("UPDATE users SET full_name=?, email=? WHERE id=?");
-                $stmt->bind_param("ssi", $newName, $newEmail, $_SESSION['user_id']);
+                $stmt = $mysqli->prepare("UPDATE users SET full_name=? WHERE id=?");
+                $stmt->bind_param("si", $newName, $_SESSION['user_id']);
                 $stmt->execute();
                 $stmt->close();
                 $me['full_name'] = $newName;
-                $me['email'] = $newEmail;
                 $success = "Profile updated.";
             } catch (mysqli_sql_exception $e) {
-                $errors[] = "That email address may already be in use.";
+                $errors[] = "Unable to update your profile right now. Please try again.";
             }
         }
     }
@@ -248,29 +245,93 @@ main.main::before {
     <div class="page-header">
         <div>
             <div class="page-title">Settings</div>
-            <div class="page-sub">Manage your profile and login credentials</div>
         </div>
     </div>
 
     <?php if ($success): ?><div class="alert success"><i class="fa-solid fa-circle-check"></i> <?= htmlspecialchars($success) ?></div><?php endif; ?>
     <?php foreach ($errors as $err): ?><div class="alert error"><i class="fa-solid fa-circle-exclamation"></i> <?= htmlspecialchars($err) ?></div><?php endforeach; ?>
 
-    <div class="section" id="principal-appearance-settings">
-        <h2><i class="fa-solid fa-palette"></i> Appearance</h2>
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;">
+    <div class="section appearance-settings-section ac-card ac-c1" id="principal-appearance-settings">
+        <div class="appearance-heading-row ac-head">
+            <span class="ac-icon"><i class="fa-solid fa-palette"></i></span>
             <div>
-                <div style="font-weight:700;font-size:14px;color:var(--light);">Theme</div>
-                <div style="font-size:12px;color:var(--muted);margin-top:4px;">Choose the portal appearance for this device.</div>
+                <h2>Appearance</h2>
+                <p class="appearance-subtitle ac-sub">Choose your theme, content spacing, and motion preferences.</p>
             </div>
-            <div class="appearance-choice-row">
-                <button type="button" class="appearance-choice" id="appearanceLightBtn" onclick="setPrincipalAppearance('light')"><i class="fa-solid fa-sun"></i> Light</button>
-                <button type="button" class="appearance-choice" id="appearanceDarkBtn" onclick="setPrincipalAppearance('dark')"><i class="fa-solid fa-moon"></i> Dark</button>
-            </div>
+            <span class="appearance-device-badge"><i class="fa-solid fa-laptop"></i> Saved on this device</span>
         </div>
+
+        <div class="appearance-feature-grid">
+            <section class="appearance-control-card appearance-theme-card" aria-labelledby="appearanceThemeHeading">
+                <div class="appearance-control-head">
+                    <span class="appearance-control-icon"><i class="fa-solid fa-circle-half-stroke"></i></span>
+                    <div>
+                        <h3 id="appearanceThemeHeading">Theme mode</h3>
+                        <p>Choose a look that suits your environment.</p>
+                    </div>
+                </div>
+                <div class="appearance-theme-options" role="group" aria-label="Theme mode">
+                    <button type="button" class="appearance-choice" id="appearanceLightBtn" data-theme-choice="light" aria-pressed="false" onclick="setPrincipalAppearance('light')">
+                        <span class="appearance-choice-icon"><i class="fa-solid fa-sun"></i></span>
+                        <span class="appearance-choice-copy"><strong>Light</strong><small>Bright and clean</small></span>
+                        <span class="appearance-choice-check"><i class="fa-solid fa-check"></i></span>
+                    </button>
+                    <button type="button" class="appearance-choice" id="appearanceDarkBtn" data-theme-choice="dark" aria-pressed="false" onclick="setPrincipalAppearance('dark')">
+                        <span class="appearance-choice-icon"><i class="fa-solid fa-moon"></i></span>
+                        <span class="appearance-choice-copy"><strong>Dark</strong><small>Low-light friendly</small></span>
+                        <span class="appearance-choice-check"><i class="fa-solid fa-check"></i></span>
+                    </button>
+                    <button type="button" class="appearance-choice" id="appearanceSystemBtn" data-theme-choice="system" aria-pressed="false" onclick="setPrincipalAppearance('system')">
+                        <span class="appearance-choice-icon"><i class="fa-solid fa-desktop"></i></span>
+                        <span class="appearance-choice-copy"><strong>System</strong><small>Follow device setting</small></span>
+                        <span class="appearance-choice-check"><i class="fa-solid fa-check"></i></span>
+                    </button>
+                </div>
+                <div class="appearance-inline-status"><i class="fa-solid fa-circle-info"></i> Current mode: <strong id="appearanceCurrentMode">Light</strong></div>
+            </section>
+
+
+
+            <section class="appearance-control-card" aria-labelledby="appearanceLayoutHeading">
+                <div class="appearance-control-head">
+                    <span class="appearance-control-icon"><i class="fa-solid fa-sliders"></i></span>
+                    <div>
+                        <h3 id="appearanceLayoutHeading">Interface spacing</h3>
+                        <p>Choose how much space appears around tables and content.</p>
+                    </div>
+                </div>
+                <div class="appearance-density-options" role="group" aria-label="Interface spacing">
+                    <button type="button" class="appearance-density-choice" data-density-choice="comfortable" aria-pressed="false" onclick="setPrincipalDensity('comfortable')"><i class="fa-solid fa-expand"></i><span><strong>Comfortable</strong><small>More breathing room</small></span></button>
+                    <button type="button" class="appearance-density-choice" data-density-choice="compact" aria-pressed="false" onclick="setPrincipalDensity('compact')"><i class="fa-solid fa-compress"></i><span><strong>Compact</strong><small>More content on screen</small></span></button>
+                </div>
+            </section>
+
+            <section class="appearance-control-card appearance-accessibility-card" aria-labelledby="appearanceAccessibilityHeading">
+                <div class="appearance-control-head">
+                    <span class="appearance-control-icon"><i class="fa-solid fa-universal-access"></i></span>
+                    <div>
+                        <h3 id="appearanceAccessibilityHeading">Accessibility</h3>
+                        <p>Reduce interface movement for a calmer experience.</p>
+                    </div>
+                </div>
+                <button type="button" class="appearance-motion-toggle" id="appearanceMotionBtn" aria-pressed="false" onclick="togglePrincipalReducedMotion()">
+                    <span class="appearance-motion-copy"><strong>Reduce animations</strong><small>Minimize transitions and motion effects</small></span>
+                    <span class="appearance-switch-track" aria-hidden="true"><span class="appearance-switch-thumb"></span></span>
+                </button>
+                <div class="appearance-accessibility-note"><i class="fa-solid fa-shield-heart"></i> Your settings stay in this browser and do not change other users' views.</div>
+            </section>
+        </div>
+
     </div>
 
-    <div class="section">
-        <h2><i class="fa-solid fa-id-badge"></i> Profile Photo</h2>
+    <div class="section ac-card ac-c2">
+        <div class="ac-head">
+            <span class="ac-icon"><i class="fa-solid fa-id-badge"></i></span>
+            <div>
+                <h2>Profile Photo</h2>
+                <p class="ac-sub">Update the photo shown in your sidebar and profile.</p>
+            </div>
+        </div>
         <div class="profile-card">
             <img class="profile-photo-lg" src="<?= htmlspecialchars($photo_src) ?>" alt="">
             <form method="post" enctype="multipart/form-data" style="display:flex;flex-direction:column;gap:10px;">
@@ -281,18 +342,20 @@ main.main::before {
         </div>
     </div>
 
-    <div class="section">
-        <h2><i class="fa-solid fa-user-pen"></i> Profile Details</h2>
+    <div class="section ac-card ac-c3">
+        <div class="ac-head">
+            <span class="ac-icon"><i class="fa-solid fa-user-pen"></i></span>
+            <div>
+                <h2>Profile Details</h2>
+                <p class="ac-sub">Update your display name. Username and designation can't be changed here.</p>
+            </div>
+        </div>
         <form method="post">
             <input type="hidden" name="action" value="update_profile">
             <div class="form-grid">
                 <div class="form-group">
                     <label>Full Name</label>
                     <input type="text" name="full_name" value="<?= htmlspecialchars($me['full_name'] ?? '') ?>" required>
-                </div>
-                <div class="form-group">
-                    <label>Email</label>
-                    <input type="email" name="email" value="<?= htmlspecialchars($me['email'] ?? '') ?>" required>
                 </div>
                 <div class="form-group">
                     <label>Username</label>
@@ -307,8 +370,14 @@ main.main::before {
         </form>
     </div>
 
-    <div class="section">
-        <h2><i class="fa-solid fa-lock"></i> Change Password</h2>
+    <div class="section ac-card ac-c4">
+        <div class="ac-head">
+            <span class="ac-icon"><i class="fa-solid fa-lock"></i></span>
+            <div>
+                <h2>Change Password</h2>
+                <p class="ac-sub">Use at least 8 characters for your new password.</p>
+            </div>
+        </div>
         <form method="post">
             <input type="hidden" name="action" value="change_password">
             <div class="form-grid">
@@ -874,4 +943,24 @@ main.main > .page-header{
 }
 </style>
 
-<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20261009.3" id="principal-dark-repairs"/>
+<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20261011.4" id="principal-dark-repairs"/>
+<style id="ac-faculty-style">
+/* ── Account Settings — same card language as the Faculty portal ──
+   Coloured top bar, icon tile, title + description. Surface/text colours are left to the
+   existing theme so light and dark mode keep working; only structure + accents change. */
+main.main{--ac:#D97706;}
+main.main .ac-c1{--ac-c:var(--ac);}
+main.main .ac-c2,main.main .ac-c5{--ac-c:#10B981;}
+main.main .ac-c3{--ac-c:#D88900;}
+main.main .ac-c4{--ac-c:#3B82F6;}
+main.main .ac-card{position:relative !important;overflow:hidden !important;border-radius:15px !important;padding:22px 24px 24px !important;margin-bottom:20px !important;}
+main.main .ac-card::before{content:'';position:absolute;left:0;right:0;top:0;height:3px;background:var(--ac-c);}
+main.main .ac-head{display:flex;align-items:flex-start;gap:14px;margin-bottom:18px;}
+main.main .ac-icon{width:42px;height:42px;flex:0 0 42px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;font-size:17px;background:color-mix(in srgb,var(--ac-c) 14%,transparent) !important;color:var(--ac-c) !important;}
+main.main .ac-icon i{font-size:17px;color:var(--ac-c) !important;}
+main.main .ac-head h2{display:block !important;margin:0 0 4px !important;font-family:'Rajdhani',sans-serif !important;font-size:21px !important;font-weight:800 !important;line-height:1.15 !important;letter-spacing:0 !important;}
+main.main .ac-head .ac-sub{margin:0 !important;font-size:13px !important;line-height:1.5 !important;color:inherit !important;opacity:.72;}
+main.main .ac-head.appearance-heading-row{justify-content:flex-start !important;}
+main.main .ac-head.appearance-heading-row .appearance-device-badge{margin-left:auto;}
+@media(max-width:600px){main.main .ac-card{padding:18px 18px 20px !important;}}
+</style>

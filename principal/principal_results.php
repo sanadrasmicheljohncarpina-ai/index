@@ -2,6 +2,13 @@
 require_once 'principal_common.php';
 
 $principalId=(int)$_SESSION['user_id'];
+
+// Placeholder comments such as "N/A" or "none" count as no written comment.
+function pr_clean_comment($v){
+ $t=trim((string)$v);
+ if($t===''||preg_match('/^(n\/?a|none|nil|no comments?|no feedback|not applicable|[\s.\-–—]+)$/iu',$t)) return '';
+ return $t;
+}
 $history=[];$overallAvg=null;$responseCount=0;
 
 // Feedback is separated per evaluation term. A term is listed when it is the active period,
@@ -95,7 +102,7 @@ foreach($itemsByTerm as $pid=>&$list){
    'id'=>$id,'pid'=>(int)$pid,'_key'=>$it['key'],'_source'=>$it['source'],'label'=>'Evaluation #'.$n,
    'score'=>$it['score_count']>0?round($it['score_sum']/$it['score_count'],2):null,
    'score_sum'=>$it['score_sum'],'score_count'=>$it['score_count'],
-   'comment'=>$it['comment'],'submitted_at'=>$when,'period_label'=>$pl,
+   'comment'=>pr_clean_comment($it['comment']),'comment_ok'=>pr_clean_comment($it['comment'])!=='','idx'=>$n,'submitted_at'=>$when,'period_label'=>$pl,
    'ts'=>$it['submitted_at']?strtotime($it['submitted_at']):0,
   ];
   $n++;
@@ -146,6 +153,75 @@ $totalSum=0.0;$totalCount=0;
 foreach($history as $h){$totalSum+=$h['score_sum'];$totalCount+=$h['score_count'];}
 $responseCount=count($history);
 $overallAvg=$totalCount>0?round($totalSum/$totalCount,2):null;
+
+// ── SUMMARY STATS FOR THE OVERVIEW CARDS (aggregates only, no evaluator identity) ──
+$fmt=function($v){return rtrim(rtrim(number_format((float)$v,2),'0'),'.');};
+$scoredCount=0;$commentCount=0;$liveIds=[];$keptIds=[];
+foreach($history as $h){
+ if($h['score']!==null) $scoredCount++;
+ if(!empty($h['comment_ok'])) $commentCount++;
+ if($h['_source']==='kept') $keptIds[]=(int)$h['_key']; else $liveIds[]=(int)$h['_key'];
+}
+$catAgg=[];
+if($liveIds){
+ $inLive=implode(',',array_map('intval',$liveIds));
+ foreach(safe_rows($mysqli,"
+  SELECT COALESCE(uq.category, eq.category, 'General') AS category, SUM(qa.answer_score) AS s, COUNT(qa.answer_score) AS c
+  FROM questionnaire_answers qa
+  LEFT JOIN user_questions uq ON qa.question_source='user' AND uq.id=qa.user_question_id
+  LEFT JOIN evaluation_questions eq ON qa.question_source='evaluation' AND eq.id=qa.question_id
+  WHERE qa.tracker_id IN ($inLive)
+  GROUP BY COALESCE(uq.category, eq.category, 'General')
+ ") as $r){
+  $cat=trim((string)$r['category'])!==''?trim((string)$r['category']):'General';
+  if(!isset($catAgg[$cat])) $catAgg[$cat]=[0.0,0];
+  $catAgg[$cat][0]+=(float)$r['s'];$catAgg[$cat][1]+=(int)$r['c'];
+ }
+}
+if($keptIds){
+ $inKept=implode(',',array_map('intval',$keptIds));
+ foreach(safe_rows($mysqli,"SELECT answers_json FROM feedback_received_keep WHERE target_user_id=? AND id IN ($inKept)",'i',[$principalId]) as $r){
+  $list=json_decode((string)$r['answers_json'],true);
+  if(!is_array($list)) continue;
+  foreach($list as $row){
+   if(!isset($row['score'])) continue;
+   $cat=!empty($row['category'])?(string)$row['category']:'General';
+   if(!isset($catAgg[$cat])) $catAgg[$cat]=[0.0,0];
+   $catAgg[$cat][0]+=(float)$row['score'];$catAgg[$cat][1]+=1;
+  }
+ }
+}
+$catStats=[];
+foreach($catAgg as $name=>$v){ if($v[1]>0) $catStats[]=['name'=>(string)$name,'avg'=>round($v[0]/$v[1],2)]; }
+usort($catStats,function($a,$b){return $b['avg']<=>$a['avg'];});
+$topCat=$catStats[0]??null;
+$lowCat=count($catStats)>1?$catStats[count($catStats)-1]:null;
+
+// Change versus the previous term (only when one whole term is selected).
+$trendText='';$trendClass='';$prevTermLabel='';
+if($showData&&$selValue!=='all'&&!$selEntry&&$overallAvg!==null){
+ $termKeys=array_keys($terms);
+ $pos=array_search($selPeriod,$termKeys,true);
+ if($pos!==false&&isset($termKeys[$pos+1])){
+  $prevId=(int)$termKeys[$pos+1];$pSum=0.0;$pCnt=0;
+  foreach($entriesByTerm[$prevId]??[] as $pe){$pSum+=$pe['score_sum'];$pCnt+=$pe['score_count'];}
+  if($pCnt>0){
+   $d=round($overallAvg-($pSum/$pCnt),2);
+   $prevTermLabel=$terms[$prevId]['label'];
+   if($d>0){$trendClass='up';$trendText='▲ +'.number_format($d,2);}
+   elseif($d<0){$trendClass='down';$trendText='▼ -'.number_format(abs($d),2);}
+   else{$trendClass='flat';$trendText='No change';}
+  }
+ }
+}
+function er_score_class($score){
+ if($score===null) return 'none';
+ if($score>=4) return 'high';
+ if($score>=3) return 'mid';
+ return 'low';
+}
+$displayList=array_reverse($history);   // newest first by default
+$starsOn=$overallAvg!==null?(int)round($overallAvg):0;
 
 html_head_open("PBI — Evaluation Received");
 ?>
@@ -541,51 +617,117 @@ main.main::before {
 
 <main class="main principal-feature-page">
  <div id="principalFeatureWorkspace" class="principal-feature-shell">
- <div class="principal-feature-header-row">
-  <section class="principal-feature-heading" aria-labelledby="principal-evaluation-received-title">
-   <div class="principal-feature-eyebrow"><i class="fa-solid fa-chart-line"></i> Evaluation Results</div>
-   <h1 id="principal-evaluation-received-title">Evaluation Received</h1>
-  </section>
- <?php if($termGroups): ?><form method="get" class="term-picker principal-feature-term-picker"><label for="termSelect">Evaluation Term</label><span class="sel-wrap"><select id="termSelect" name="view" onchange="this.form.submit()"><?php if(count($termGroups)>1): ?><option value="all"<?= $selValue==='all'?' selected':'' ?>>All Evaluations</option><?php endif; ?><?php foreach($termGroups as $g): ?><option class="term-opt" value="<?= htmlspecialchars($g['value']) ?>"<?= $g['value']===$selValue?' selected':'' ?>><?= htmlspecialchars($g['label']) ?></option><?php foreach($g['opts'] as $o): ?><option class="eval-opt" value="<?= htmlspecialchars($o['value']) ?>"<?= $o['value']===$selValue?' selected':'' ?>>&nbsp;&nbsp;&nbsp;&nbsp;<?= htmlspecialchars($o['text']) ?></option><?php endforeach; ?><?php endforeach; ?></select><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></span></form><?php endif; ?>
- </div>
- <div class="top-grid">
-  <div class="stat-card"><i class="fa-solid fa-star"></i><div class="num"><?= $overallAvg!==null?number_format($overallAvg,2):'—' ?></div><div class="label">Overall Average · <?= htmlspecialchars($avgScope) ?></div></div>
-  <div class="stat-card"><i class="fa-solid fa-comments"></i><div class="num"><?= $responseCount ?></div><div class="label">Evaluations Received · <?= htmlspecialchars($avgScope) ?></div></div>
-  <div class="stat-card"><i class="fa-solid fa-user-secret"></i><div class="num">Anonymous</div><div class="label">Evaluator Privacy</div></div>
- </div>
  <?php if(!$showData): ?><p class="empty-note">No evaluation term is available yet.</p><?php else: ?>
- <div class="section">
-  <h2><i class="fa-solid fa-comment-dots"></i> Evaluation History — Anonymous Responses</h2>
-  <?php if(!$history): ?><p class="empty-note">No responses were submitted for this selection.</p><?php else: foreach($history as $h): ?>
-   <div class="response-card">
-    <div class="response-head"><span class="response-label"><i class="fa-solid fa-user-secret"></i> Anonymous — <?= htmlspecialchars($h['label']) ?></span><?php if($h['score']!==null): ?><span class="response-score"><?= htmlspecialchars((string)$h['score']) ?></span><?php endif; ?></div>
-    <?php if($h['comment']!==''): ?><p class="response-comment">&ldquo;<?= htmlspecialchars($h['comment']) ?>&rdquo;</p><?php else: ?><p class="empty-note">No written comment.</p><?php endif; ?>
+ <div class="er-stats">
+  <div class="stat-card">
+   <div class="er-stat-icon"><i class="fa-solid fa-star"></i></div>
+   <div class="er-stat-body">
+    <div class="num"><?= $overallAvg!==null?htmlspecialchars($fmt($overallAvg)):'—' ?><?php if($overallAvg!==null): ?><span class="er-num-unit">/ 5</span><?php endif; ?></div>
+    <div class="label">Overall Average · <?= htmlspecialchars($avgScope) ?></div>
+    <?php if($overallAvg!==null): ?>
+    <div class="er-stat-sub">
+     <span class="er-stars" aria-hidden="true"><?php for($i=1;$i<=5;$i++): ?><span class="<?= $i<=$starsOn?'on':'' ?>">★</span><?php endfor; ?></span>
+     <?php if($trendText!==''): ?><span class="er-trend <?= htmlspecialchars($trendClass) ?>"><?= htmlspecialchars($trendText) ?></span> vs <?= htmlspecialchars($prevTermLabel) ?><?php endif; ?>
+    </div>
+    <?php endif; ?>
    </div>
-  <?php endforeach; endif; ?>
- </div>
- <div class="section">
-  <h2><i class="fa-solid fa-clock-rotate-left"></i> Evaluations Received</h2>
-  <button type="button" class="view-evals-btn" onclick="togglePrincipalEvals()"><i class="fa-solid fa-eye"></i> View Evaluations Received <i class="fa-solid fa-chevron-down" id="principalEvalsCaret"></i></button>
-  <div id="principalEvalsList" style="display:none;margin-top:14px;">
-  <?php if(!$history): ?><div class="empty-note">No evaluations received for this selection.</div><?php else: foreach($history as $r): ?>
-   <div class="received-item" onclick="openPrincipalEvalDetails(<?= (int)$r['_key'] ?>,'<?= $r['_source']==='kept'?'kept':'live' ?>')">
-    <div><div class="received-anon"><i class="fa-solid fa-eye-slash"></i> Anonymous Evaluator</div><div class="received-meta"><?= htmlspecialchars($r['submitted_at']) ?><?= $r['period_label']?' · '.htmlspecialchars($r['period_label']):'' ?></div></div>
-    <div class="received-right"><span class="received-score"><?= $r['score']!==null?htmlspecialchars((string)$r['score']).' / 5':'—' ?></span><button type="button" class="details-btn" onclick="event.stopPropagation();openPrincipalEvalDetails(<?= (int)$r['_key'] ?>,'<?= $r['_source']==='kept'?'kept':'live' ?>')">View Details <i class="fa-solid fa-chevron-right"></i></button></div>
-   </div>
-  <?php endforeach; endif; ?>
   </div>
+  <div class="stat-card">
+   <div class="er-stat-icon"><i class="fa-solid fa-comments"></i></div>
+   <div class="er-stat-body">
+    <div class="num"><?= (int)$responseCount ?></div>
+    <div class="label">Evaluations Received · <?= htmlspecialchars($avgScope) ?></div>
+    <?php if($responseCount>0): ?><div class="er-stat-sub"><?= (int)$scoredCount ?> scored · <?= (int)$commentCount ?> with comments</div><?php endif; ?>
+   </div>
+  </div>
+  <?php if($topCat): ?>
+  <div class="stat-card">
+   <div class="er-stat-icon"><i class="fa-solid fa-arrow-trend-up"></i></div>
+   <div class="er-stat-body">
+    <div class="num"><?= htmlspecialchars($fmt($topCat['avg'])) ?><span class="er-num-unit">/ 5</span></div>
+    <div class="label">Highest-Rated Area</div>
+    <div class="er-stat-sub"><?= htmlspecialchars($topCat['name']) ?></div>
+   </div>
+  </div>
+  <?php endif; ?>
+  <?php if($lowCat): ?>
+  <div class="stat-card">
+   <div class="er-stat-icon"><i class="fa-solid fa-arrow-trend-down"></i></div>
+   <div class="er-stat-body">
+    <div class="num"><?= htmlspecialchars($fmt($lowCat['avg'])) ?><span class="er-num-unit">/ 5</span></div>
+    <div class="label">Lowest-Rated Area</div>
+    <div class="er-stat-sub"><?= htmlspecialchars($lowCat['name']) ?></div>
+   </div>
+  </div>
+  <?php endif; ?>
+ </div>
+
+ <?php if($catStats): ?>
+ <div class="section">
+  <div class="er-head">
+   <h2><i class="fa-solid fa-chart-simple"></i> Performance by Category</h2>
+   <span class="er-shown">Average score out of 5</span>
+  </div>
+  <?php foreach($catStats as $c): $pct=max(0,min(100,round(($c['avg']/5)*100))); ?>
+  <div class="er-cat">
+   <div class="er-cat-name"><?= htmlspecialchars($c['name']) ?></div>
+   <div class="er-cat-track"><div class="er-cat-fill <?= er_score_class($c['avg']) ?>" style="width:<?= $pct ?>%"></div></div>
+   <div class="er-cat-score"><?= number_format($c['avg'],2) ?></div>
+  </div>
+  <?php endforeach; ?>
+ </div>
+ <?php endif; ?>
+
+ <div class="section">
+  <div class="er-head">
+   <h2><i class="fa-solid fa-clock-rotate-left"></i> Evaluations Received <span class="er-count"><?= (int)$responseCount ?></span></h2>
+ <?php if($termGroups): ?><form method="get" class="term-picker principal-feature-term-picker"><label for="termSelect">Evaluation Term</label><span class="sel-wrap"><select id="termSelect" name="view" onchange="this.form.submit()"><?php if(count($termGroups)>1): ?><option value="all"<?= $selValue==='all'?' selected':'' ?>>All Evaluations</option><?php endif; ?><?php foreach($termGroups as $g): ?><option class="term-opt" value="<?= htmlspecialchars($g['value']) ?>"<?= $g['value']===$selValue?' selected':'' ?>><?= htmlspecialchars($g['label']) ?></option><?php foreach($g['opts'] as $o): ?><option class="eval-opt" value="<?= htmlspecialchars($o['value']) ?>"<?= $o['value']===$selValue?' selected':'' ?>>&nbsp;&nbsp;&nbsp;&nbsp;<?= htmlspecialchars($o['text']) ?></option><?php endforeach; ?><?php endforeach; ?></select><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></span></form><?php endif; ?>
+  </div>
+  <?php if(!$history): ?><p class="empty-note">No evaluations received for this selection.</p><?php else: ?>
+  <div class="er-toolbar">
+   <div class="er-controls">
+    <select id="erSort" class="er-select" onchange="erApply()" aria-label="Sort evaluations"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="high">Highest score</option><option value="low">Lowest score</option></select>
+    <label class="er-chip"><input type="checkbox" id="erOnlyComments" onchange="erApply()"> With comments only</label>
+   </div>
+   <span class="er-shown" id="erShown">Showing <?= (int)$responseCount ?> of <?= (int)$responseCount ?></span>
+  </div>
+  <div id="erList">
+  <?php foreach($displayList as $h):
+   $src=$h['_source']==='kept'?'kept':'live';
+   $cls=er_score_class($h['score']);
+   $open='openPrincipalEvalDetails('.(int)$h['_key'].",'".$src."')";
+  ?>
+   <div class="er-item" role="button" tabindex="0" data-ts="<?= (int)$h['ts'] ?>" data-idx="<?= (int)$h['idx'] ?>" data-score="<?= $h['score']!==null?htmlspecialchars((string)$h['score']):'-1' ?>" data-comment="<?= !empty($h['comment_ok'])?'1':'0' ?>" onclick="<?= $open ?>" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();<?= $open ?>}">
+    <div class="er-main">
+     <div class="er-eyebrow"><i class="fa-solid fa-user-secret"></i> Anonymous — <?= htmlspecialchars($h['label']) ?></div>
+     <div class="er-meta"><?= htmlspecialchars($h['submitted_at']) ?><?= $h['period_label']?' · '.htmlspecialchars($h['period_label']):'' ?></div>
+     <?php if(!empty($h['comment_ok'])): ?><p class="er-comment">&ldquo;<?= htmlspecialchars($h['comment']) ?>&rdquo;</p><?php else: ?><p class="er-comment none">No written comment</p><?php endif; ?>
+    </div>
+    <div class="er-side">
+     <?php if($h['score']!==null): ?><span class="er-badge <?= $cls ?>"><?= htmlspecialchars($fmt($h['score'])) ?><small> / 5</small></span><?php else: ?><span class="er-badge none">No score</span><?php endif; ?>
+     <button type="button" class="details-btn" onclick="event.stopPropagation();<?= $open ?>">View Details <i class="fa-solid fa-chevron-right"></i></button>
+    </div>
+   </div>
+  <?php endforeach; ?>
+  </div>
+  <p class="empty-note" id="erNoMatch" style="display:none;">No evaluations match this filter.</p>
+  <?php endif; ?>
  </div>
  <?php endif; ?>
  </div>
 </main>
 <div class="eval-modal-overlay" id="principalEvalModal"><div class="eval-modal"><div class="eval-modal-header"><div class="eval-modal-title"><i class="fa-solid fa-star"></i>Evaluation Details</div><button class="eval-modal-close" onclick="closePrincipalEvalDetails()"><i class="fa-solid fa-xmark"></i></button></div><div class="eval-modal-body" id="principalEvalBody"><div class="loading-eval">Loading evaluation…</div></div></div></div>
 <script>
-function togglePrincipalEvals(){const l=document.getElementById('principalEvalsList'),c=document.getElementById('principalEvalsCaret');const o=l.style.display!=='none';l.style.display=o?'none':'block';c.style.transform=o?'':'rotate(180deg)';}
+function erApply(){const list=document.getElementById('erList');if(!list)return;const items=[].slice.call(list.querySelectorAll('.er-item'));const mode=document.getElementById('erSort').value;const only=document.getElementById('erOnlyComments').checked;const n=(el,k)=>parseFloat(el.dataset[k])||0;const lowKey=el=>{const v=parseFloat(el.dataset.score);return v<0?Infinity:v;};
+items.sort((a,b)=>{if(mode==='oldest')return n(a,'ts')-n(b,'ts')||n(a,'idx')-n(b,'idx');if(mode==='high')return parseFloat(b.dataset.score)-parseFloat(a.dataset.score)||n(b,'ts')-n(a,'ts');if(mode==='low'){const x=lowKey(a),y=lowKey(b);return x===y?n(b,'ts')-n(a,'ts'):(x<y?-1:1);}return n(b,'ts')-n(a,'ts')||n(b,'idx')-n(a,'idx');});
+let shown=0;items.forEach(el=>{const ok=!only||el.dataset.comment==='1';el.style.display=ok?'':'none';if(ok)shown++;list.appendChild(el);});
+document.getElementById('erShown').textContent='Showing '+shown+' of '+items.length;document.getElementById('erNoMatch').style.display=shown?'none':'block';}
 function e(v){if(v===null||v===undefined)return '';const d=document.createElement('div');d.textContent=v;return d.innerHTML;}
 function sh(s){let h='';for(let i=1;i<=5;i++)h+=`<i class="fa-solid fa-star star ${i<=s?'filled':''}"></i>`;return h;}
 function openPrincipalEvalDetails(id,src){const m=document.getElementById('principalEvalModal'),b=document.getElementById('principalEvalBody');b.innerHTML='<div class="loading-eval"><i class="fa-solid fa-spinner fa-spin"></i> Loading evaluation…</div>';m.classList.add('open');document.body.style.overflow='hidden';fetch('get_my_evaluation_details.php?'+(src==='kept'?'kept_id=':'tracker_id=')+encodeURIComponent(id)).then(r=>r.json()).then(d=>{if(!d.ok){b.innerHTML='<div class="loading-eval"><i class="fa-solid fa-triangle-exclamation"></i>'+e(d.error||'Unable to load this evaluation.')+'</div>';return;}let h=`<div class="info-grid"><div><div class="info-label">Evaluator</div><div class="info-value"><i class="fa-solid fa-eye-slash"></i> Anonymous Evaluator</div></div><div><div class="info-label">Period</div><div class="info-value">${e(d.period_label||'—')}</div></div><div><div class="info-label">Submitted</div><div class="info-value">${e(d.submitted_at||'—')}</div></div><div><div class="info-label">Overall Score</div><div class="info-value score-big">${Number(d.overall_score||0).toFixed(2)} / 5</div></div></div>`;if(d.categories?.length){h+='<h3 class="modal-section-title">Performance by Category</h3>';d.categories.forEach(c=>{h+=`<div class="cat-row-modal"><div class="cat-name-modal">${e(c.category)}</div><div class="cat-bar"><div style="width:${Math.round((c.avg/5)*100)}%"></div></div><div class="cat-score-modal">${Number(c.avg).toFixed(2)}</div></div>`})}if(d.questions?.length){h+='<h3 class="modal-section-title">Question-by-Question Results</h3>';d.questions.forEach((q,i)=>{h+=`<div class="q-result"><div class="q-no">Question ${i+1}</div><div class="q-text">${e(q.question_text)}</div><div class="q-score">${sh(q.score)} <span>Score: ${q.score} / 5</span></div></div>`})}h+='<h3 class="modal-section-title">Comments / Feedback</h3>';h+=d.comment?`<div class="comment-modal">“${e(d.comment)}”</div>`:'<div class="comment-modal empty">No written feedback was provided.</div>';b.innerHTML=h;}).catch(()=>{b.innerHTML='<div class="loading-eval"><i class="fa-solid fa-triangle-exclamation"></i>Something went wrong loading this evaluation.</div>';});}
 function closePrincipalEvalDetails(){document.getElementById('principalEvalModal').classList.remove('open');document.body.style.overflow='';}
 document.getElementById('principalEvalModal').addEventListener('click',function(ev){if(ev.target===this)closePrincipalEvalDetails();});
+document.addEventListener('keydown',function(ev){if(ev.key==='Escape')closePrincipalEvalDetails();});
 </script>
 <style id="principal-white-theme-final">
 :root{
@@ -899,4 +1041,87 @@ main.main > .page-header{
 }
 </style>
 
-<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20261009.3" id="principal-dark-repairs"/>
+<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20261011.5" id="principal-dark-repairs"/>
+
+<style id="er-view">
+/* ── Evaluation Received — refreshed layout (amber theme) ── */
+.er-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin-bottom:20px;}
+.er-stats .stat-card{display:flex !important;align-items:flex-start;gap:14px;padding:16px 18px !important;}
+.er-stat-icon{flex:0 0 40px;width:40px;height:40px;border-radius:12px;background:rgba(217,154,43,.14);display:flex;align-items:center;justify-content:center;}
+.er-stats .stat-card .er-stat-icon i{margin:0 !important;font-size:17px;display:inline-block;}
+.er-stat-body{min-width:0;}
+.er-stats .stat-card .num{font-size:28px;line-height:1.1;}
+.er-num-unit{font-size:14px;font-weight:600;color:#64748b;margin-left:4px;}
+.er-stat-sub{font-size:12px;color:#64748b;margin-top:6px;line-height:1.5;overflow-wrap:anywhere;}
+.er-stars{letter-spacing:2px;font-size:14px;margin-right:6px;}
+.er-stars span{color:#D5DDE6;}
+.er-stars span.on{color:#F5B301;}
+.er-trend{font-weight:700;}
+.er-trend.up{color:#059669;}
+.er-trend.down{color:#DC2626;}
+.er-trend.flat{color:#64748b;}
+
+.er-head{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:14px;}
+.er-head h2{margin-bottom:0 !important;}
+.er-count{font:700 12px 'DM Sans',sans-serif;background:rgba(217,154,43,.15);color:#9A6A12;padding:2px 10px;border-radius:12px;margin-left:4px;}
+.er-head .term-picker{margin:0 !important;}
+.er-shown{font-size:12px;color:#64748b;}
+
+.er-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 0 14px;border-top:1px solid #E2E8F0;}
+.er-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.er-select{padding:7px 12px;border-radius:9px;border:1px solid #CBD5E1;background:#fff;color:#172033;font:500 13px 'DM Sans',sans-serif;cursor:pointer;}
+.er-select:focus{outline:3px solid rgba(217,154,43,.28);outline-offset:1px;border-color:#D99A2B;}
+.er-chip{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:9px;border:1px solid #CBD5E1;font:500 13px 'DM Sans',sans-serif;color:#172033;cursor:pointer;user-select:none;}
+.er-chip input{accent-color:#D99A2B;}
+
+.er-item{display:flex;justify-content:space-between;align-items:center;gap:18px;background:#F5F7FB;border:1px solid #E2E8F0;border-radius:12px;padding:14px 18px;margin-bottom:10px;cursor:pointer;transition:border-color .15s,box-shadow .15s;}
+.er-item:last-child{margin-bottom:0;}
+.er-item:hover,.er-item:focus-visible{border-color:#D99A2B;box-shadow:0 2px 12px rgba(217,154,43,.18);outline:none;}
+.er-main{min-width:0;flex:1;}
+.er-eyebrow{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#64748b;display:flex;align-items:center;gap:6px;}
+.er-meta{font-size:12px;color:#64748b;margin-top:3px;}
+.er-comment{margin:8px 0 0;font-size:13.5px;line-height:1.55;font-style:italic;color:#172033;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.er-comment.none{font-style:normal;color:#64748b;}
+.er-side{display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex-shrink:0;}
+.er-badge{font-size:13px;font-weight:800;padding:4px 12px;border-radius:18px;border:1px solid transparent;white-space:nowrap;}
+.er-badge small{font-size:11px;font-weight:600;opacity:.75;}
+.er-badge.high{background:rgba(16,185,129,.12);color:#047857;border-color:rgba(16,185,129,.3);}
+.er-badge.mid{background:rgba(245,158,11,.14);color:#B45309;border-color:rgba(245,158,11,.35);}
+.er-badge.low{background:rgba(239,68,68,.12);color:#B91C1C;border-color:rgba(239,68,68,.32);}
+.er-badge.none{background:rgba(100,116,139,.12);color:#64748b;border-color:rgba(100,116,139,.25);font-weight:700;font-size:12px;}
+
+.er-cat{display:grid;grid-template-columns:minmax(150px,230px) 1fr 84px;align-items:center;gap:16px;padding:10px 0;}
+.er-cat-name{font-size:13.5px;font-weight:600;color:#172033;line-height:1.35;}
+.er-cat-tag{display:inline-block;margin-left:6px;font:700 10px 'DM Sans',sans-serif;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:10px;vertical-align:middle;}
+.er-cat-tag.highest{background:rgba(16,185,129,.12);color:#047857;}
+.er-cat-tag.lowest{background:rgba(245,158,11,.14);color:#B45309;}
+.er-cat-track{height:10px;background:#E8EDF4;border-radius:8px;overflow:hidden;}
+.er-cat-fill{height:100%;border-radius:8px;}
+.er-cat-fill.high{background:linear-gradient(90deg,#059669,#34D399);}
+.er-cat-fill.mid{background:linear-gradient(90deg,#D97706,#FBBF24);}
+.er-cat-fill.low{background:linear-gradient(90deg,#DC2626,#F87171);}
+.er-cat-score{text-align:right;font-size:15px;font-weight:800;color:#172033;white-space:nowrap;}
+.er-cat-score small{font-size:11px;font-weight:600;color:#64748b;}
+
+/* Evaluation Details popup — cover the whole page (sidebar + header) */
+html .eval-modal-overlay{z-index:100000 !important;background:rgba(3,10,22,.55) !important;-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);}
+
+@media(max-width:640px){
+  .er-item{flex-direction:column;align-items:flex-start;gap:12px;}
+  .er-side{flex-direction:row;align-items:center;justify-content:space-between;width:100%;}
+  .er-cat{grid-template-columns:1fr 70px;}.er-cat-name{grid-column:1/-1;}.er-cat-track{grid-column:1;}
+}
+
+/* ── Match the Dean / EA pages: same card sizing and text colors ── */
+#principalFeatureWorkspace .er-stats{gap:14px !important;margin:0 0 20px !important;}
+#principalFeatureWorkspace .er-stats .stat-card{display:flex !important;align-items:flex-start !important;gap:14px !important;padding:16px 18px !important;min-height:0 !important;}
+#principalFeatureWorkspace .er-stat-icon{width:40px !important;height:40px !important;flex:0 0 40px !important;border-radius:12px !important;}
+#principalFeatureWorkspace .er-stat-icon i{font-size:17px !important;margin:0 !important;}
+#principalFeatureWorkspace .stat-card .num{font-size:28px !important;line-height:1.1 !important;font-weight:700 !important;color:#172033 !important;}
+#principalFeatureWorkspace .stat-card .label{font-size:12.5px !important;font-weight:400 !important;color:#64748b !important;margin-top:4px !important;}
+#principalFeatureWorkspace .section{padding:24px !important;margin:0 0 20px !important;}
+#principalFeatureWorkspace .section h2{font-size:19px !important;color:#0f172a !important;margin:0 0 16px !important;}
+#principalFeatureWorkspace .section .er-head h2{margin:0 !important;}
+#principalFeatureWorkspace .section h2 i{color:#d99a2b !important;}
+#principalFeatureWorkspace .er-head{margin-bottom:14px !important;}
+</style>

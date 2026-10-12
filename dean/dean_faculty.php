@@ -251,7 +251,7 @@ table.data tr.hidden-row{display:none;}
 <?php
 $active = 'faculty';
 $sidebarScope = 'College Division';
-include __DIR__ . '/includes/dean_sidebar.php';
+include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_header_dark.php')) include __DIR__ . '/dean_header_dark.php';
 ?>
 
 <main class="main">

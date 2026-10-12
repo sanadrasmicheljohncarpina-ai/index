@@ -14,6 +14,20 @@ $deanHeaderTitles = [
     'dean_staff.php'              => 'Staff Directory',
 ];
 $deanHeaderTitle = $deanHeaderTitles[$deanHeaderScript] ?? 'Dean Workspace';
+$deanHeaderIcons = [
+    'dean_dashboard.php'          => 'fa-gauge',
+    'dean_evaluation.php'         => 'fa-clipboard-check',
+    'dean_evaluate.php'           => 'fa-clipboard-check',
+    'dean_evaluation_tracker.php' => 'fa-satellite-dish',
+    'dean_evaluations.php'        => 'fa-satellite-dish',
+    'dean_results.php'            => 'fa-star-half-stroke',
+    'dean_reports.php'            => 'fa-chart-line',
+    'dean_account_settings.php'   => 'fa-gear',
+    'dean_faculty.php'            => 'fa-users',
+    'dean_staff.php'              => 'fa-user-tie',
+];
+$deanHeaderIcon = $deanHeaderIcons[$deanHeaderScript] ?? 'fa-gauge';
+
 $deanHeaderSettings = (isset($GLOBALS['settings']) && is_array($GLOBALS['settings']))
     ? $GLOBALS['settings']
     : ((isset($settings) && is_array($settings)) ? $settings : []);
@@ -198,6 +212,8 @@ if ($deanHeaderPeriod === '') $deanHeaderPeriod = 'Current Academic Period';
     overflow-wrap:anywhere;
 }
 .dean-header-notif-list li > i { margin-top:2px; color:#D97706; flex:0 0 auto; }
+.dean-header-notif-list li.notif-link { cursor:pointer; transition:background-color .15s ease, border-color .15s ease; }
+.dean-header-notif-list li.notif-link:hover, .dean-header-notif-list li.notif-link:focus-visible { background:#EEF4FF; border-color:#BFDBFE; outline:none; }
 .dean-header-notif-list li.notif-evaluation > i { color:#2563EB; }
 .dean-header-notif-empty { color:#64748B !important; font-style:italic; }
 /* The light-theme stylesheet gives main.main its own important padding.
@@ -234,9 +250,25 @@ html body main.main { padding-top:74px !important; }
     .dean-header-period { max-width:calc(100vw - 92px); }
     .dean-header-notif-dropdown { right:-2px; }
 }
+
+/* ---- Dean accent (purple, matches the Dean sidebar / --portal-accent) ---- */
+.dean-portal-topbar { --dean-accent:#7C5FD9; --dean-accent-h:#5F45B8; --dean-accent-bg:rgba(124,95,217,.10); --dean-accent-line:rgba(124,95,217,.30); }
+html.dark-theme .dean-portal-topbar { --dean-accent:#9C85F0; --dean-accent-h:#C4B5FD; --dean-accent-bg:rgba(156,133,240,.16); --dean-accent-line:rgba(156,133,240,.38); }
+.dean-header-title-wrap { display:flex; align-items:center; gap:11px; min-width:0; }
+.dean-header-title-wrap .dean-header-page-title { min-width:0; }
+.dean-header-page-icon { flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; color:var(--dean-accent); font-size:22px; line-height:1; }
+.dean-header-page-icon i { color:var(--dean-accent); }
+.dean-portal-topbar { border-bottom-color:var(--dean-accent-line); }
+.dean-portal-topbar .dean-header-period { background:var(--dean-accent-bg); border-color:var(--dean-accent-line); color:var(--dean-accent-h); }
+html.dark-theme .dean-portal-topbar .dean-header-period { color:var(--dean-accent-h); }
+.dean-header-notif-list li.notif-evaluation > i { color:var(--dean-accent); }
+@media (max-width:768px) { .dean-header-page-icon { font-size:20px; } }
 </style>
 <header class="dean-portal-topbar" aria-label="Dean workspace header">
-    <div class="dean-header-page-title"><?= htmlspecialchars($deanHeaderTitle, ENT_QUOTES, 'UTF-8') ?></div>
+    <div class="dean-header-title-wrap">
+        <span class="dean-header-page-icon" aria-hidden="true"><i class="fa-solid <?= htmlspecialchars($deanHeaderIcon, ENT_QUOTES, 'UTF-8') ?>"></i></span>
+        <div class="dean-header-page-title"><?= htmlspecialchars($deanHeaderTitle, ENT_QUOTES, 'UTF-8') ?></div>
+    </div>
     <div class="dean-header-actions">
         <div class="dean-header-period" title="Current academic year and term">
             <i class="fa-solid fa-calendar-check" aria-hidden="true"></i>
@@ -289,8 +321,14 @@ html body main.main { padding-top:74px !important; }
             key: String(item.key || ('notice:' + text.trim())),
             text: text,
             type: String(item.type || 'notice'),
-            created_at: item.created_at || null
+            created_at: item.created_at || null,
+            url: safeUrl(item.url)
         };
+    }
+    // Only same-site portal pages are clickable (e.g. dean_reports.php?...).
+    function safeUrl(u) {
+        u = typeof u === 'string' ? u.trim() : '';
+        return /^[A-Za-z0-9_.\-]+\.php(\?[^\s]*)?$/.test(u) ? u : null;
     }
     function merge(incoming) {
         const map = new Map();
@@ -334,6 +372,17 @@ html body main.main { padding-top:74px !important; }
                 icon.setAttribute('aria-hidden', 'true');
                 li.appendChild(icon);
                 li.appendChild(document.createTextNode(item.text));
+                const target = safeUrl(item.url);
+                if (target) {
+                    li.classList.add('notif-link');
+                    li.setAttribute('role', 'link');
+                    li.tabIndex = 0;
+                    li.title = 'Open';
+                    li.addEventListener('click', function () { window.location.href = target; });
+                    li.addEventListener('keydown', function (e) {
+                        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); window.location.href = target; }
+                    });
+                }
                 list.appendChild(li);
             });
         }

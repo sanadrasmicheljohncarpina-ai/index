@@ -14,6 +14,20 @@ $deanHeaderTitles = [
     'dean_staff.php'              => 'Staff Directory',
 ];
 $deanHeaderTitle = $deanHeaderTitles[$deanHeaderScript] ?? 'Dean Workspace';
+$deanHeaderIcons = [
+    'dean_dashboard.php'          => 'fa-gauge',
+    'dean_evaluation.php'         => 'fa-clipboard-check',
+    'dean_evaluate.php'           => 'fa-clipboard-check',
+    'dean_evaluation_tracker.php' => 'fa-satellite-dish',
+    'dean_evaluations.php'        => 'fa-satellite-dish',
+    'dean_results.php'            => 'fa-star-half-stroke',
+    'dean_reports.php'            => 'fa-chart-line',
+    'dean_account_settings.php'   => 'fa-gear',
+    'dean_faculty.php'            => 'fa-users',
+    'dean_staff.php'              => 'fa-user-tie',
+];
+$deanHeaderIcon = $deanHeaderIcons[$deanHeaderScript] ?? 'fa-gauge';
+
 $deanHeaderSettings = (isset($GLOBALS['settings']) && is_array($GLOBALS['settings']))
     ? $GLOBALS['settings']
     : ((isset($settings) && is_array($settings)) ? $settings : []);
@@ -282,9 +296,76 @@ html body main.main { padding-top:74px !important; }
     .dean-header-period { max-width:calc(100vw - 92px); }
     .dean-header-notif-dropdown { right:-2px; }
 }
+
+/* ── Dark mode ────────────────────────────────────────────────────────────
+   The appearance toggle puts a `dark-theme` class on <html>. These rules use the
+   same palette as the rest of the Dean workspace (page #0A192F, card #172A45,
+   text #E0E6F0, muted #A0B3C6, accent #9C85F0 / #C4B5FD). */
+html.dark-theme .dean-portal-topbar {
+    background:#0F1F3D !important;
+    color:#E0E6F0 !important;
+    border-bottom-color:rgba(255,255,255,.08) !important;
+    box-shadow:0 2px 14px rgba(0,0,0,.35) !important;
+}
+html.dark-theme .dean-header-page-title { color:#E0E6F0 !important; }
+html.dark-theme .dean-header-period {
+    background:rgba(156,133,240,.16) !important;
+    border-color:rgba(156,133,240,.38) !important;
+    color:#C4B5FD !important;
+}
+html.dark-theme .dean-header-bell {
+    background:#172A45 !important;
+    border-color:rgba(255,255,255,.12) !important;
+    color:#FBBF24 !important;
+}
+html.dark-theme .dean-header-bell:hover {
+    background:#1D3350 !important;
+    border-color:rgba(251,191,36,.45) !important;
+}
+html.dark-theme .dean-header-notif-badge { border-color:#0F1F3D !important; }
+html.dark-theme .dean-header-notif-dropdown {
+    background:#172A45 !important;
+    border-color:rgba(255,255,255,.12) !important;
+    color:#E0E6F0 !important;
+    box-shadow:0 18px 48px rgba(0,0,0,.55) !important;
+}
+html.dark-theme .dean-header-notif-heading {
+    border-bottom-color:rgba(255,255,255,.08) !important;
+    color:#A0B3C6 !important;
+}
+html.dark-theme .dean-header-live-dot.stale { background:#64748B !important; }
+html.dark-theme .dean-header-notif-list li {
+    background:#0F1F3D !important;
+    border-color:rgba(255,255,255,.08) !important;
+    color:#CBD5E1 !important;
+}
+html.dark-theme .dean-header-notif-list li > i { color:#FBBF24 !important; }
+html.dark-theme .dean-header-notif-list li.notif-evaluation > i { color:#60A5FA !important; }
+html.dark-theme .dean-header-notif-list li.notif-link:hover,
+html.dark-theme .dean-header-notif-list li.notif-link:focus-visible {
+    background:#1D3350 !important;
+    border-color:rgba(96,165,250,.45) !important;
+}
+html.dark-theme .dean-header-notif-empty { color:#A0B3C6 !important; }
+
+/* ---- Dean accent (purple, matches the Dean sidebar / --portal-accent) ---- */
+.dean-portal-topbar { --dean-accent:#7C5FD9; --dean-accent-h:#5F45B8; --dean-accent-bg:rgba(124,95,217,.10); --dean-accent-line:rgba(124,95,217,.30); }
+html.dark-theme .dean-portal-topbar { --dean-accent:#9C85F0; --dean-accent-h:#C4B5FD; --dean-accent-bg:rgba(156,133,240,.16); --dean-accent-line:rgba(156,133,240,.38); }
+.dean-header-title-wrap { display:flex; align-items:center; gap:11px; min-width:0; }
+.dean-header-title-wrap .dean-header-page-title { min-width:0; }
+.dean-header-page-icon { flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; color:var(--dean-accent); font-size:22px; line-height:1; }
+.dean-header-page-icon i { color:var(--dean-accent); }
+.dean-portal-topbar { border-bottom-color:var(--dean-accent-line); }
+.dean-portal-topbar .dean-header-period { background:var(--dean-accent-bg); border-color:var(--dean-accent-line); color:var(--dean-accent-h); }
+html.dark-theme .dean-portal-topbar .dean-header-period { color:var(--dean-accent-h); }
+.dean-header-notif-list li.notif-evaluation > i { color:var(--dean-accent); }
+@media (max-width:768px) { .dean-header-page-icon { font-size:20px; } }
 </style>
 <header class="dean-portal-topbar" aria-label="Dean workspace header">
-    <div class="dean-header-page-title"><?= htmlspecialchars($deanHeaderTitle, ENT_QUOTES, 'UTF-8') ?></div>
+    <div class="dean-header-title-wrap">
+        <span class="dean-header-page-icon" aria-hidden="true"><i class="fa-solid <?= htmlspecialchars($deanHeaderIcon, ENT_QUOTES, 'UTF-8') ?>"></i></span>
+        <div class="dean-header-page-title"><?= htmlspecialchars($deanHeaderTitle, ENT_QUOTES, 'UTF-8') ?></div>
+    </div>
     <div class="dean-header-actions">
         <div class="dean-header-period" title="Current academic year and term">
             <i class="fa-solid fa-calendar-check" aria-hidden="true"></i>

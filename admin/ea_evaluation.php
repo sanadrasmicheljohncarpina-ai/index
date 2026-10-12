@@ -6,7 +6,7 @@
 // Eligibility and completion logic remain server-side and unchanged.
 session_set_cookie_params([
     'lifetime' => 0, 'path' => '/', 'domain' => '',
-    'secure' => false, 'httponly' => true, 'samesite' => 'Lax',
+    'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'), 'httponly' => true, 'samesite' => 'Lax',
 ]);
 session_start();
 require_once 'db.php';
@@ -23,18 +23,26 @@ if (!isset($_SESSION['user_id']) ||
 ss_sync_from_database($mysqli);
 $ea_id = (int) $_SESSION['user_id'];
 
-// Keep this page safe on older installations that may still use a legacy ENUM.
+// Schema upgrades for older installations. Each change runs only when it is
+// actually missing, instead of issuing ALTER TABLE on every page load.
+// (Ideally move these into a one-time migration script.)
 try {
-    $mysqli->query("ALTER TABLE evaluation_tracker MODIFY eval_type VARCHAR(30) NOT NULL DEFAULT 'student'");
-} catch (Throwable $ignore) {}
-
-foreach ([
-    "ALTER TABLE evaluation_tracker ADD COLUMN evaluator_id INT UNSIGNED NULL",
-    "ALTER TABLE evaluation_tracker ADD COLUMN target_user_id INT UNSIGNED NULL",
-    "ALTER TABLE evaluation_tracker ADD COLUMN period_id INT UNSIGNED NULL",
-    "ALTER TABLE evaluation_tracker ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'submitted'",
-] as $ddl) {
-    try { $mysqli->query($ddl); } catch (Throwable $ignore) {}
+    $col = $mysqli->query("SHOW COLUMNS FROM evaluation_tracker LIKE 'eval_type'")->fetch_assoc();
+    if ($col && stripos((string) $col['Type'], 'varchar') === false) {
+        $mysqli->query("ALTER TABLE evaluation_tracker MODIFY eval_type VARCHAR(30) NOT NULL DEFAULT 'student'");
+    }
+    foreach ([
+        'evaluator_id'   => "ADD COLUMN evaluator_id INT UNSIGNED NULL",
+        'target_user_id' => "ADD COLUMN target_user_id INT UNSIGNED NULL",
+        'period_id'      => "ADD COLUMN period_id INT UNSIGNED NULL",
+        'status'         => "ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'submitted'",
+    ] as $name => $clause) {
+        if (!$mysqli->query("SHOW COLUMNS FROM evaluation_tracker LIKE '$name'")->num_rows) {
+            $mysqli->query("ALTER TABLE evaluation_tracker $clause");
+        }
+    }
+} catch (Throwable $e) {
+    error_log('ea_evaluation schema check failed: ' . $e->getMessage());
 }
 
 $period = $mysqli->query("
@@ -109,7 +117,7 @@ if (!array_key_exists($selectedType, $categories)) {
 
 // Completion state is scoped to EA evaluations for the active period.
 $done = [];
-if ($period_id) {
+{
     $doneStmt = $mysqli->prepare("
         SELECT target_user_id
         FROM evaluation_tracker
@@ -125,17 +133,6 @@ if ($period_id) {
     $doneStmt->close();
 }
 
-$total = 0;
-$completed = 0;
-foreach ($categories as $group) {
-    foreach ($group as $person) {
-        $total++;
-        if (isset($done[(int) $person['id']])) {
-            $completed++;
-        }
-    }
-}
-$pending = max(0, $total - $completed);
 $justSubmitted = isset($_GET['submitted']);
 $mysqli->close();
 
@@ -167,7 +164,7 @@ function personPhoto(?string $photo): string {
   --ea-panel-deep:#eef4fb;
   --ea-line:var(--panel-border,#dce8f5);
   --ea-text:var(--text,#10243f);
-  --ea-muted:var(--muted,#66809c);
+  --ea-muted:var(--muted,#587089);
   --ea-muted-2:#7e93ab;
   --ea-card:#ffffff;
   --ea-card-border:#d7e3ef;
@@ -233,10 +230,7 @@ a{color:inherit}
   box-shadow:var(--ea-shadow);
 }
 .panel-title{display:flex;align-items:center;gap:11px;margin:0 0 14px;font-family:'Rajdhani',sans-serif;font-size:26px;font-weight:700;letter-spacing:.1px;color:var(--ea-text)}
-.panel-title i{color:var(--blue);font-size:18px}
-.panel-copy{margin:0 0 20px;color:var(--ea-info);font-size:13.5px;line-height:1.6}
-.step-title{display:flex;align-items:center;gap:8px;margin:0 0 10px;color:var(--ea-muted);font-size:11.5px;font-weight:800;letter-spacing:.7px;text-transform:uppercase}
-.step-title i{color:var(--ea-muted);font-size:12px}
+.panel-title i{color:var(--ux-header-icon,#D97706)!important;font-size:22px}  /* matches the dashboard header icon */
 
 .group-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
 .group-card{
@@ -254,7 +248,9 @@ a{color:inherit}
   transition:transform .16s ease,border-color .16s ease,background .16s ease,box-shadow .16s ease;
   overflow:hidden;
 }
-.group-card::after{content:'';position:absolute;inset:auto 0 0;height:3px;background:transparent;transition:background .16s ease}
+.group-card::after{content:'';position:absolute;inset:auto 0 0;height:3px;background:transparent;opacity:0;transition:opacity .16s ease}
+.group-card:hover::after,.group-card.selected::after{opacity:1}
+.group-card:focus-visible,.btn-action:focus-visible{outline:2px solid #2F6EE2;outline-offset:2px}
 .group-card:hover{transform:translateY(-2px);background:var(--ea-card-hover);border-color:#8fb5e2;box-shadow:var(--ea-shadow-hover)}
 .group-card.selected{background:var(--ea-card-selected);border-color:#9fc5f5;box-shadow:0 8px 20px rgba(30,82,144,.10)}
 .group-icon{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:25px;margin-bottom:15px}
@@ -270,22 +266,10 @@ a{color:inherit}
 .group-card.selected.group-dean{border-color:var(--gold-border)}
 .group-card.selected.group-staff{border-color:var(--green-border)}
 
-.info-note{
-  display:flex;
-  align-items:flex-start;
-  gap:8px;
-  margin-top:18px;
-  color:var(--ea-info);
-  font-size:12px;
-  line-height:1.5;
-}
-.info-note i{color:var(--ea-info);margin-top:1px;flex-shrink:0}
 
 .alert{display:flex;align-items:center;gap:9px;margin:14px 0 0;padding:11px 13px;border-radius:9px;font-size:12.5px}
 .alert-success{color:#087f5b;background:rgba(16,185,129,.10);border:1px solid rgba(52,211,153,.24)}
-.alert-info{color:#245b9d;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.20)}
 html[data-theme="dark"] .alert-success{color:#A7F3D0;background:rgba(16,185,129,.11);border-color:rgba(52,211,153,.22)}
-html[data-theme="dark"] .alert-info{color:#A8C7EF;background:rgba(59,130,246,.10);border-color:rgba(59,130,246,.22)}
 
 /* Step 2 appears only after a group is selected. */
 .roster-panel{
@@ -296,12 +280,11 @@ html[data-theme="dark"] .alert-info{color:#A8C7EF;background:rgba(59,130,246,.10
   overflow:hidden;
   box-shadow:var(--ea-shadow);
 }
-.roster-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 22px;border-bottom:1px solid var(--ea-line);background:var(--ea-panel-soft)}
+.roster-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px 16px;padding:18px 22px;border-bottom:1px solid var(--ea-line);background:var(--ea-panel-soft)}
 .roster-heading{display:flex;align-items:center;gap:11px}
 .roster-heading .roster-icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--ea-icon-neutral);color:#2F6EE2;font-size:15px}
 .roster-heading h2{margin:0;font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;color:var(--ea-text)}
 .roster-heading p{margin:2px 0 0;color:var(--ea-muted-2);font-size:11.5px}
-.roster-step{color:var(--ea-muted);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;white-space:nowrap}
 .person-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:18px;background:var(--ea-panel)}
 .person-card{
   display:flex;align-items:center;gap:13px;
@@ -313,26 +296,30 @@ html[data-theme="dark"] .alert-info{color:#A8C7EF;background:rgba(59,130,246,.10
 .person-photo{width:44px;height:44px;border-radius:50%;object-fit:cover;background:var(--ea-photo-bg);border:1px solid var(--ea-photo-border);display:flex;align-items:center;justify-content:center;color:var(--ea-muted);flex-shrink:0;overflow:hidden}
 .person-photo img{width:100%;height:100%;object-fit:cover;display:block}
 .person-info{min-width:0;flex:1}
-.person-name{font-size:13.5px;font-weight:800;color:var(--ea-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.person-meta{margin-top:3px;color:var(--ea-muted);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.status-pill{display:inline-flex;align-items:center;gap:5px;margin-top:7px;padding:4px 9px;border-radius:999px;font-size:10px;font-weight:800}
+.person-name{font-size:14.5px;font-weight:800;color:var(--ea-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.person-meta{margin-top:3px;color:var(--ea-muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.status-pill{display:inline-flex;align-items:center;gap:5px;margin-top:7px;padding:4px 10px;border-radius:999px;font-size:11.5px;font-weight:800}
 .status-pill.done{background:rgba(52,211,153,.12);color:#11805f;border:1px solid rgba(52,211,153,.18)}
 .status-pill.pending{background:rgba(245,158,11,.12);color:#a66000;border:1px solid rgba(245,158,11,.18)}
 html[data-theme="dark"] .status-pill.done{color:#6EE7B7}
 html[data-theme="dark"] .status-pill.pending{color:#F8C465}
 .person-action{flex-shrink:0}
-.btn-action{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 13px;border-radius:8px;text-decoration:none;font-size:11.5px;font-weight:800;border:1px solid transparent}
+.btn-action{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 14px;border-radius:8px;text-decoration:none;font-size:12.5px;font-weight:800;border:1px solid transparent}
 .btn-action.evaluate{background:#2563EB;color:#fff;border-color:#3B82F6}
 .btn-action.evaluate:hover{background:#1D4ED8}
 .btn-action.view{background:transparent;color:var(--ea-muted);border-color:#9fb4ca}
 .btn-action.view:hover{background:var(--ea-card-hover);color:var(--ea-text)}
 html[data-theme="dark"] .btn-action.view{color:#B1C1D4;border-color:#34506F}
 html[data-theme="dark"] .btn-action.view:hover{background:#172E4C;color:#fff}
+.roster-panel{scroll-margin-top:12px}
+.roster-stats{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px;color:var(--ea-muted);font-size:12.5px}
+.roster-stats strong{color:var(--ea-text)}
+.roster-stats .period{display:inline-flex;align-items:center;gap:6px}
+.alert-warn{color:#8a5300;background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.30)}
+html[data-theme="dark"] .alert-warn{color:#F8C465;background:rgba(245,158,11,.10);border-color:rgba(245,158,11,.28)}
 .roster-empty{text-align:center;padding:44px 20px;color:var(--ea-muted-2);font-size:12.5px}
 .roster-empty i{display:block;margin-bottom:10px;font-size:26px;opacity:.45}
 
-.compact-summary{display:flex;align-items:center;gap:18px;padding:13px 18px;border-top:1px solid var(--ea-line);background:var(--ea-panel-soft);color:var(--ea-muted);font-size:11.5px}
-.compact-summary strong{color:var(--ea-text)}
 
 /* Keep the light palette readable even though the shared dark-surface observer
    adds classes only while dark mode is active. */
@@ -355,7 +342,6 @@ html[data-theme="dark"] .btn-action.view{background:transparent}
   .panel-title{font-size:23px}
   .group-card{min-height:150px}
   .roster-head{align-items:flex-start;flex-direction:column}
-  .roster-step{margin-left:49px}
   .person-card{align-items:flex-start;flex-wrap:wrap}
   .person-action{width:100%}
   .person-action .btn-action{width:100%}
@@ -368,12 +354,16 @@ html[data-theme="dark"] .btn-action.view{background:transparent}
 .eval-frame-wrap iframe{width:100%;height:100%;border:0;background:transparent;border-radius:18px;color-scheme:normal}
 @media(max-width:700px){.eval-overlay{padding:10px}}
 </style>
+<link rel="stylesheet" href="admin_unified_ui.css?v=<?= (int)@filemtime(__DIR__ . '/admin_unified_ui.css') ?>">
+<script>
+/* Match the title icon to the dashboard header icon colour (falls back to #D97706). */
+(function(){try{var i=parent.document.getElementById('pbiAdminTopbarIcon');if(i){document.documentElement.style.setProperty('--ux-header-icon',parent.getComputedStyle(i).color);}}catch(e){}})();
+</script>
 </head>
 <body class="feature-compact">
 <main class="wrap">
   <section class="evaluation-panel">
-    <h1 class="panel-title"><i class="fa-solid fa-clipboard-check"></i> Evaluation</h1>
-    <div class="step-title"><i class="fa-solid fa-bolt"></i> Step 1: Select Evaluation Group</div>
+    <h1 class="panel-title"><i class="fa-solid fa-clipboard-check"></i> Choose category</h1>
 
     <div class="group-grid">
       <?php foreach ($categories as $type => $people):
@@ -381,7 +371,7 @@ html[data-theme="dark"] .btn-action.view{background:transparent}
           $isSelected = $selectedType === $type;
           $count = count($people);
       ?>
-        <a class="group-card <?= e($meta['class']) ?> <?= $isSelected ? 'selected' : '' ?>" href="?type=<?= urlencode($type) ?>" aria-label="Select <?= e($type) ?>">
+        <a class="group-card <?= e($meta['class']) ?> <?= $isSelected ? 'selected' : '' ?>" href="<?= $isSelected ? '?' : '?type=' . urlencode($type) . '#roster' ?>" aria-label="<?= $isSelected ? 'Deselect' : 'Select' ?> <?= e($type) ?>"<?= $isSelected ? ' aria-current="true"' : '' ?>>
           <div class="group-icon"><i class="fa-solid <?= e($meta['icon']) ?>"></i></div>
           <h3><?= e($type) ?></h3>
           <div class="group-count"><?= $count ?> <?= $count === 1 ? 'member' : 'members' ?></div>
@@ -389,6 +379,10 @@ html[data-theme="dark"] .btn-action.view{background:transparent}
       <?php endforeach; ?>
     </div>
 
+
+    <?php if (!$is_open): ?>
+      <div class="alert alert-warn" role="status"><i class="fa-solid fa-circle-info"></i> No evaluation period is active. EA evaluations stay available, but anything submitted now is not tied to a period.</div>
+    <?php endif; ?>
 
     <?php if ($justSubmitted): ?>
       <div class="alert alert-success"><i class="fa-solid fa-circle-check"></i> Evaluation submitted successfully.</div>
@@ -403,13 +397,17 @@ html[data-theme="dark"] .btn-action.view{background:transparent}
           if (isset($done[(int) $person['id']])) $groupCompleted++;
       }
   ?>
-    <section class="roster-panel">
+    <section class="roster-panel" id="roster">
       <div class="roster-head">
         <div class="roster-heading">
           <div class="roster-icon"><i class="fa-solid <?= e($selectedMeta['icon']) ?>"></i></div>
-          <div>
-            <h2><?= e($selectedType) ?></h2>
-          </div>
+          <h2><?= e($selectedType) ?></h2>
+        </div>
+        <div class="roster-stats">
+          <span><strong><?= count($people) ?></strong> <?= count($people) === 1 ? 'member' : 'members' ?></span>
+          <span><strong><?= $groupCompleted ?></strong> completed</span>
+          <span><strong><?= max(0, count($people) - $groupCompleted) ?></strong> pending</span>
+          <?php if ($periodName !== ''): ?><span class="period"><i class="fa-regular fa-calendar"></i> <?= e($periodName) ?></span><?php endif; ?>
         </div>
       </div>
 
@@ -426,14 +424,15 @@ html[data-theme="dark"] .btn-action.view{background:transparent}
           ?>
             <article class="person-card">
               <?php if (!empty($person['photo'])): ?>
-                <div class="person-photo"><img src="<?= personPhoto($person['photo']) ?>" alt=""></div>
+                <div class="person-photo"><img src="<?= personPhoto($person['photo']) ?>" alt="" loading="lazy" onerror="this.parentNode.innerHTML='<i class=&quot;fa-solid fa-user&quot;></i>'"></div>
               <?php else: ?>
                 <div class="person-photo"><i class="fa-solid fa-user"></i></div>
               <?php endif; ?>
 
               <div class="person-info">
                 <div class="person-name" title="<?= e($person['full_name']) ?>"><?= e($person['full_name']) ?></div>
-                <div class="person-meta"><?= e($person['designation'] ?: $selectedType) ?></div>
+                <?php $designation = $person['designation'] ?: $selectedType; ?>
+                <div class="person-meta" title="<?= e($designation) ?>"><?= e($designation) ?></div>
                 <span class="status-pill <?= $isDone ? 'done' : 'pending' ?>">
                   <i class="fa-solid <?= $isDone ? 'fa-check' : 'fa-hourglass-half' ?>"></i>
                   <?= $isDone ? 'Completed' : 'Pending' ?>
@@ -448,12 +447,6 @@ html[data-theme="dark"] .btn-action.view{background:transparent}
               </div>
             </article>
           <?php endforeach; ?>
-        </div>
-        <div class="compact-summary">
-          <span><strong><?= count($people) ?></strong> <?= count($people) === 1 ? 'member' : 'members' ?></span>
-          <span><strong><?= $groupCompleted ?></strong> completed</span>
-          <span><strong><?= max(0, count($people) - $groupCompleted) ?></strong> pending</span>
-          <?php if ($periodName !== ''): ?><span style="margin-left:auto"><i class="fa-regular fa-calendar"></i> <?= e($periodName) ?></span><?php endif; ?>
         </div>
       <?php endif; ?>
     </section>

@@ -12,6 +12,7 @@ session_set_cookie_params([
 session_start();
 require_once 'db.php';
 require_once dirname(__DIR__) . '/shared/notification_message.php';
+require_once __DIR__ . '/notification_links.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -55,6 +56,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_notifications_re
     }
 }
 
+// Mark a single notification as read (used when a notification is clicked).
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_notification_id'])) {
+    $csrf = (string)($_POST['csrf_token'] ?? '');
+    if (empty($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $csrf)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Invalid CSRF token']);
+        exit;
+    }
+
+    $nid = (int)$_POST['mark_notification_id'];
+    if ($nid > 0) {
+        $stmt = $mysqli->prepare('UPDATE notifications SET is_read=1 WHERE id=? AND user_id=?');
+        if ($stmt) {
+            $stmt->bind_param('ii', $nid, $user_id);
+            $stmt->execute();
+            $stmt->close();
+        }
+    }
+}
+
 $notifications = [];
 $unread_count = 0;
 $stmt = $mysqli->prepare('SELECT id, type, message, extra_data, is_read, created_at FROM notifications WHERE user_id=?' . $muted_sql . ' ORDER BY created_at DESC, id DESC LIMIT 15');
@@ -69,6 +90,7 @@ if ($stmt) {
             $row['message'] = notification_message_for_view($row, $user_id);
             unset($row['extra_data']);
             $row['created_at_label'] = date('M d, Y g:i A', strtotime($row['created_at']));
+            $row['link'] = notif_link_for((string)$row['type'], (string)($_SESSION['role'] ?? ''));
             $notifications[] = $row;
             if (!$row['is_read']) $unread_count++;
         }

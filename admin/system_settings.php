@@ -608,8 +608,9 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
 
 <link rel="stylesheet" href="admin_appearance.css">
 <script src="admin_appearance.js"></script>
+<link rel="stylesheet" href="admin_unified_ui.css?v=<?= (int)@filemtime(__DIR__ . '/admin_unified_ui.css') ?>">
 </head>
-<body class="feature-compact">
+<body class="feature-compact ux-nested">
 <div class="shell">
 
   <?php if ($saveMsg): ?><div class="maint-banner show" style="margin-bottom:14px"><strong><?=ss_h($saveMsg)?></strong></div><?php endif; ?>
@@ -621,7 +622,7 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
   <div class="stat-row">
     <div class="stat-card">
       <div class="stat-label">Academic Period</div>
-      <div class="stat-value small" id="statAcademic"><?=ss_h($sys['acad_year'] ?: '')?> · <?=ss_h(ss_structure_labels()[$sys['acad_structure']] ?? 'College')?></div>
+      <div class="stat-value small" id="statAcademic"><?=ss_h($sys['acad_year'] ?: '')?> · <?=ss_h(in_array($sys['acad_structure'], ['jhs','shs'], true) ? 'Basic Education' : 'Higher Education')?></div>
       <div class="stat-note" id="statTerm"><?=ss_h($sys['acad_term'] ?? '1st Semester')?></div>
     </div>
     <div class="stat-card">
@@ -653,9 +654,8 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
       <div class="field-row">
         <label class="field-label" for="academicStructure">Academic Structure</label>
         <div class="select-wrap"><select id="academicStructure">
-          <option value="college" <?=($sys['acad_structure']==='college'?'selected':'')?>>College / University</option>
-          <option value="jhs" <?=($sys['acad_structure']==='jhs'?'selected':'')?>>Junior High School</option>
-          <option value="shs" <?=($sys['acad_structure']==='shs'?'selected':'')?>>Senior High School</option>
+          <option value="college" <?=($sys['acad_structure']==='college'?'selected':'')?>>Higher Education</option>
+          <option value="jhs" <?=(in_array($sys['acad_structure'], ['jhs','shs'], true)?'selected':'')?>>Basic Education</option>
         </select></div>
       </div>
       <div class="field-row">
@@ -778,9 +778,9 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
     shs: ['School Year']
   };
   const STRUCTURE_LABEL = {
-    college: 'College / University',
-    jhs: 'Junior High School',
-    shs: 'Senior High School'
+    college: 'Higher Education',
+    jhs: 'Basic Education',
+    shs: 'Basic Education'
   };
 
   const RULES = [

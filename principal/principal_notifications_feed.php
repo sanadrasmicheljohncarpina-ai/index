@@ -205,34 +205,117 @@ function principal_build_notifications(mysqli $mysqli, int $userId, ?array $sett
         ];
     }
 
-    // Keep recent submitted evaluation events visible in the Principal bell,
-    // matching the Dean feed while limiting staff/faculty targets to this
-    // Principal's Basic Education scope. Include this Principal's own received
-    // evaluations so their personal results are surfaced as well.
+    // Recent submitted evaluation events for the Principal bell.
+    //
+    // The Principal only receives submissions from JHS/SHS people:
+    //   * Student Evaluation -> the evaluator must be an active JHS/SHS student
+    //   * Peer-to-Peer       -> the evaluator AND the person evaluated must be
+    //                           JHS/SHS teaching personnel
+    // The person being evaluated must also be inside the Principal Reports
+    // scope (JHS/SHS Faculty/Teaching Staff, or non-teaching Staff for student
+    // evaluations), which is what lets each notice link straight to that
+    // person's report. Evaluations whose target is the Principal themself are
+    // intentionally NOT announced here. These rules mirror principal_reports.php.
     if ($hasPeriod) {
         try {
-            $recent = $mysqli->query("SELECT et.id, et.eval_type, et.submitted_at,
-                    target.full_name AS target_name
+            $hsLevels = "'Grade 7','Grade 8','Grade 9','Grade 10','Grade 11','Grade 12','Grade 7 - JHS','Grade 8 - JHS','Grade 9 - JHS','Grade 10 - JHS','Grade 11 - SHS','Grade 12 - SHS'";
+            $hsScope = static function (string $a) use ($hsLevels): string {
+                return "(
+                    EXISTS (SELECT 1 FROM user_year_levels {$a}_y1 WHERE {$a}_y1.user_id={$a}.id AND {$a}_y1.year_level IN ($hsLevels))
+                    OR EXISTS (SELECT 1 FROM teaching_assignments {$a}_t1 WHERE {$a}_t1.user_id={$a}.id AND {$a}_t1.year_level IN ($hsLevels))
+                    OR TRIM(COALESCE({$a}.year_level,'')) IN ($hsLevels)
+                    OR LOWER(TRIM(COALESCE({$a}.year_level,''))) IN ('jhs','shs','junior high school','senior high school')
+                    OR LOWER(TRIM(COALESCE({$a}.education_level,''))) IN ('junior_high','senior_high','jhs','shs')
+                )";
+            };
+            $anyTeaching = "(
+                EXISTS (SELECT 1 FROM user_year_levels tg_y WHERE tg_y.user_id=target.id)
+                OR EXISTS (SELECT 1 FROM teaching_assignments tg_t WHERE tg_t.user_id=target.id)
+                OR TRIM(COALESCE(target.year_level,'')) <> ''
+                OR LOWER(TRIM(COALESCE(target.education_level,''))) IN ('junior_high','senior_high','jhs','shs')
+            )";
+            // Only notify about evaluations received by in-scope personnel.
+            // Direct submissions whose target is the Principal (or another
+            // school-head account) must never appear in this notification list.
+            $targetScope = "(
+                (target.role IN ('teacher','faculty') AND " . $hsScope('target') . ")
+                OR (target.role='staff' AND (" . $hsScope('target') . " OR NOT $anyTeaching))
+            ) AND target.id <> " . (int)$userId . " AND target.role NOT IN ('principal','dean')";
+            $hsStudents = "SELECT id FROM users
+                WHERE role='student' AND is_active=1
+                  AND COALESCE(education_level,'') <> 'higher_ed'
+                  AND (education_level IN ('junior_high','senior_high','basic_education','basic_ed','jhs','shs')
+                       OR year_level IN ($hsLevels))";
+            $hsTeachers = "SELECT ht.id FROM users ht
+                WHERE ht.role IN ('teacher','faculty','staff') AND " . $hsScope('ht');
+            // Evaluator side: tolerant JHS/SHS matching, same as principal_reports.php.
+            require_once __DIR__ . '/principal_hs_scope.php';
+            $hsPeerEvaluators = "SELECT pe.id FROM users pe
+                WHERE pe.role IN ('teacher','faculty','staff') AND " . principal_hs_scope_sql('pe');
+
+            // These two columns are added by the Reports page on older installs.
+            // Detect them here so the bell can still report new submissions before
+            // anyone has opened Reports & Analytics (a missing column previously
+            // caused the entire event query to fail silently).
+            $hasEvalContext = false;
+            $contextCol = @$mysqli->query("SHOW COLUMNS FROM evaluation_tracker LIKE 'evaluation_context'");
+            if ($contextCol) { $hasEvalContext = $contextCol->num_rows > 0; $contextCol->free(); }
+            $hasPeerGroup = false;
+            $peerCol = @$mysqli->query("SHOW COLUMNS FROM evaluation_tracker LIKE 'peer_group'");
+            if ($peerCol) { $hasPeerGroup = $peerCol->num_rows > 0; $peerCol->free(); }
+
+            $studentContextFilter = $hasEvalContext
+                ? "AND COALESCE(et.evaluation_context,'teacher') IN ('teacher','staff')"
+                : '';
+            $directPrincipalContextFilter = $hasEvalContext
+                ? "AND COALESCE(et.evaluation_context,'') <> 'school_head'"
+                : '';
+            $peerTypeFilter = "et.eval_type IN ('peer','faculty_peer','staff_peer')";
+            if ($hasPeerGroup) {
+                $peerTypeFilter = "($peerTypeFilter OR LOWER(TRIM(COALESCE(et.peer_group,''))) IN ('faculty','teacher','staff','teaching staff'))";
+            }
+
+            $recentSql = "SELECT et.id, et.eval_type, et.submitted_at, et.target_user_id,
+                    target.full_name AS target_name,
+                    (target.role='staff'
+                     AND NOT EXISTS (SELECT 1 FROM user_year_levels sl_y WHERE sl_y.user_id=target.id)
+                     AND NOT EXISTS (SELECT 1 FROM teaching_assignments sl_t WHERE sl_t.user_id=target.id)) AS staff_lane
                 FROM evaluation_tracker et
                 JOIN users target ON target.id=et.target_user_id
                 WHERE et.period_id={$period_id_int}
                   AND et.submitted_at IS NOT NULL
+                  AND et.status IN ('submitted','approved')
                   AND target.is_active=1
                   AND target.account_status='approved'
-                  AND ((target.role IN ('teacher','staff') AND target.academic_level IN ($scopeAcademicIn))
-                       OR (target.role='principal' AND target.id=" . (int)$userId . "))
-                  AND et.eval_type IN ('student','peer','faculty_peer','staff_peer')
+                  AND ($targetScope)
+                  $directPrincipalContextFilter
+                  AND (
+                        (et.eval_type='student'
+                         $studentContextFilter
+                         AND et.evaluator_id IN ($hsStudents))
+                     OR (($peerTypeFilter)
+                         AND et.evaluator_id IN ($hsPeerEvaluators)
+                         AND (et.target_user_id IN ($hsTeachers)
+                              OR (target.role='staff'
+                                  AND NOT EXISTS (SELECT 1 FROM user_year_levels pl_y WHERE pl_y.user_id=target.id)
+                                  AND NOT EXISTS (SELECT 1 FROM teaching_assignments pl_t WHERE pl_t.user_id=target.id))))
+                  )
                 ORDER BY et.submitted_at DESC, et.id DESC
-                LIMIT 12");
+                LIMIT 40";
+            $recent = $mysqli->query($recentSql);
             if ($recent) {
                 while ($event = $recent->fetch_assoc()) {
-                    $kind = in_array($event['eval_type'] ?? '', ['peer','faculty_peer','staff_peer'], true)
-                        ? 'Peer-to-Peer' : 'Student';
+                    $isPeer = ($event['eval_type'] ?? '') !== 'student';
+                    $kind   = $isPeer ? 'Peer-to-Peer' : 'Student';
                     $out[] = [
                         'id' => 'evaluation-' . (int)$event['id'],
                         'text' => "New {$kind} evaluation received for " . ($event['target_name'] ?? 'personnel') . '.',
                         'level' => 'good',
                         'created_at' => $event['submitted_at'] ?? null,
+                        // Opens that person's evaluator list in Reports & Analytics.
+                        'url' => 'principal_reports.php?view=students&target_id=' . (int)$event['target_user_id']
+                               . '&group=' . ($isPeer ? (!empty($event['staff_lane']) ? 'Staff' : 'Faculty') : 'All')
+                               . '&eval_type=' . ($isPeer ? 'peer' : 'student'),
                     ];
                 }
                 $recent->free();

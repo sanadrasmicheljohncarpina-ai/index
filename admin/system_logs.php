@@ -89,6 +89,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
 
 <link rel="stylesheet" href="admin_appearance.css">
 <script src="admin_appearance.js"></script>
+<link rel="stylesheet" href="admin_unified_ui.css?v=<?= (int)@filemtime(__DIR__ . '/admin_unified_ui.css') ?>">
 </head>
 <body class="feature-compact">
 <main class="wrap">

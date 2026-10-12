@@ -77,8 +77,8 @@ $period_id_int   = (int)($settings['period_id'] ?? 0);
 $evalOpen        = !empty($settings['school_head_is_open']);
 
 $validTabs = ['faculty', 'staff', 'executive_assistant'];
-$tab = $_GET['tab'] ?? 'faculty';
-if (!in_array($tab, $validTabs, true)) $tab = 'faculty';
+$tab = $_GET['tab'] ?? '';
+if (!in_array($tab, $validTabs, true)) $tab = '';   // '' = default view (no group selected)
 
 $catMeta = [
     'faculty'             => ['label' => 'Faculty',             'icon' => 'fa-users',     'cls' => 'faculty', 'noun' => 'faculty'],
@@ -504,7 +504,7 @@ $completionPct = $totalAssigned > 0 ? (int)round($totalCompleted / $totalAssigne
 
 if (($_GET['export'] ?? '') === 'csv') {
     $deptFilter = trim($_GET['dept'] ?? 'all');
-    $exportRows = $rosterByTab[$tab];
+    $exportRows = $rosterByTab[$tab] ?? [];
     if ($deptFilter !== 'all' && $deptFilter !== '') {
         $exportRows = array_values(array_filter($exportRows, fn($r) => (string)($r['department'] ?? '') === $deptFilter));
     }
@@ -586,6 +586,9 @@ body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,
 .de-flash{display:flex;align-items:center;gap:10px;padding:12px 16px;margin-bottom:18px;border-radius:12px;font-size:13px;font-weight:600;}
 .de-flash.success{background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.35);color:#0f9d6e;}
 .de-flash.error{background:rgba(240,84,84,.1);border:1px solid rgba(240,84,84,.35);color:#d64545;}
+.de-choose-title{display:flex;align-items:center;gap:10px;margin:0 0 16px;font-family:'Rajdhani',sans-serif;font-size:24px;font-weight:700;line-height:1.1;color:#0f172a;}
+.de-choose-title i{font-size:18px;color:#7C5FD9;}
+@media(max-width:600px){.de-choose-title{font-size:21px;margin-bottom:12px;}.de-choose-title i{font-size:16px;}}
 .de-section-label{font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin:6px 0 12px;}
 
 .de-cats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:22px;}
@@ -870,7 +873,7 @@ html.dark-theme main.main.dean-internal-scroll::-webkit-scrollbar-thumb:hover {
 <?php
 $active = 'evaluation';
 $sidebarScope = HIGHER_ED_LABEL . ' Division';
-include __DIR__ . '/includes/dean_sidebar.php';
+include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_header_dark.php')) include __DIR__ . '/dean_header_dark.php';
 ?>
 
 <main class="main dean-internal-scroll">
@@ -891,7 +894,7 @@ include __DIR__ . '/includes/dean_sidebar.php';
     </div>
     <?php else: ?>
 
-    <div class="de-section-label"></div>
+    <div class="de-choose-title"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i><span>Choose category</span></div>
     <div class="de-cats" role="tablist">
         <?php foreach ($validTabs as $t):
             $list = $rosterByTab[$t];
@@ -1021,11 +1024,13 @@ include __DIR__ . '/includes/dean_sidebar.php';
         panels.forEach(p => p.classList.toggle('active', p.dataset.tab === tab));
         if (push && window.history && history.replaceState) {
             const u = new URL(window.location.href);
-            u.searchParams.set('tab', tab); u.searchParams.delete('open'); u.searchParams.delete('view');
+            if (tab) u.searchParams.set('tab', tab); else u.searchParams.delete('tab');
+            u.searchParams.delete('open'); u.searchParams.delete('view');
             history.replaceState(null, '', u.toString());
         }
     }
-    cats.forEach(c => c.addEventListener('click', () => showTab(c.dataset.tab, true)));
+    // Clicking the already-selected group a second time returns to the default view.
+    cats.forEach(c => c.addEventListener('click', () => showTab(c.classList.contains('active') ? '' : c.dataset.tab, true)));
 
     /* ── department filter (per panel) ── */
     panels.forEach(panel => {

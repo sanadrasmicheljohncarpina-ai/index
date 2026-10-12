@@ -937,265 +937,1130 @@ main.main .subtle-head {
 }
 
 
-/* =======================================================================
-   Unified Faculty-style sidebar for Dean
-   Mirrors the Faculty workspace shell while preserving Dean-specific
-   navigation/content.  This layer intentionally comes last so the
-   portal-sidebar markup is styled consistently on every Dean page.
-   ======================================================================= */
+/* =========================================================================
+   DEAN DARK THEME
+   Same toggle pattern as the Faculty portal: includes/dean_sidebar.php's
+   appearance script adds/removes a `dark-theme` class on <html> and
+   remembers the choice in localStorage. Every selector below is prefixed
+   with `html.dark-theme` so it's more specific than the plain selectors
+   above (and the later, hardcoded "workspace shell" block further up) and
+   wins regardless of stylesheet order.
+   ========================================================================= */
+html.dark-theme {
+  --page-l: #0A192F !important;
+  --card-l: #172A45 !important;
+  --line-l: rgba(255,255,255,.08) !important;
+  --line-strong-l: rgba(255,255,255,.18) !important;
+  --text-l: #E0E6F0 !important;
+  --muted-l: #A0B3C6 !important;
+  --input-l: #0F1F3D !important;
+  --shadow-l: 0 4px 20px rgba(0,0,0,.4) !important;
+
+  --dark: #0A192F !important;
+  --mid: #172A45 !important;
+  --inner: #0F1F3D !important;
+  --light: #E0E6F0 !important;
+  --muted: #A0B3C6 !important;
+  --border: rgba(255,255,255,.08) !important;
+  --page-bg: #0A192F !important;
+  --card-bg: #172A45 !important;
+  --card-border: rgba(255,255,255,.08) !important;
+  --portal-accent-bg: rgba(156,133,240,.16) !important;
+  --portal-accent: #9C85F0 !important;
+  --portal-accent-h: #C4B5FD !important;
+
+  background: #0A192F !important;
+  color-scheme: dark !important;
+}
+
+html.dark-theme body {
+  background: #0A192F !important;
+  background-image: none !important;
+  background-color: #0A192F !important;
+  color: #E0E6F0 !important;
+}
+
+html.dark-theme .main,
+html.dark-theme .content,
+html.dark-theme .page-content,
+html.dark-theme main {
+  background: transparent !important;
+  color: #E0E6F0 !important;
+}
+
+/* Core surfaces */
+html.dark-theme .section,
+html.dark-theme .stat-card,
+html.dark-theme .filter-bar,
+html.dark-theme .table-wrap,
+html.dark-theme .eval-table-wrap,
+html.dark-theme .person-card,
+html.dark-theme .q-block,
+html.dark-theme .comment-block,
+html.dark-theme .profile-card,
+html.dark-theme .tracker-card,
+html.dark-theme .structure-note,
+html.dark-theme .info-banner,
+html.dark-theme .eval-tabs,
+html.dark-theme .eval-switcher,
+html.dark-theme .eval-banner,
+html.dark-theme .sheet-header,
+html.dark-theme .scale-bar,
+html.dark-theme .avg-summary,
+html.dark-theme .comment-section,
+html.dark-theme .response-card,
+html.dark-theme .received-item,
+html.dark-theme .sum-card,
+html.dark-theme .standing-panel,
+html.dark-theme .person-row,
+html.dark-theme .eval-card,
+html.dark-theme .top-bar,
+html.dark-theme .content-panel,
+html.dark-theme .create-panel,
+html.dark-theme .period-card,
+html.dark-theme .history-card,
+html.dark-theme .gl-card,
+html.dark-theme .amber-card,
+html.dark-theme .green-card,
+html.dark-theme .red-card,
+html.dark-theme .no-archived,
+html.dark-theme .target-card,
+html.dark-theme .no-evaluated,
+html.dark-theme .cat-section,
+html.dark-theme .people-list,
+html.dark-theme .evaluator-grid,
+html.dark-theme .no-eval,
+html.dark-theme .no-data,
+html.dark-theme .shell .section {
+  background: var(--card-l) !important;
+  color: var(--text-l) !important;
+  border-color: var(--line-l) !important;
+  box-shadow: var(--shadow-l) !important;
+}
+
+html.dark-theme .notif-list li,
+html.dark-theme .countdown-box,
+html.dark-theme .bar-wrap,
+html.dark-theme .progress-track,
+html.dark-theme .comment-text,
+html.dark-theme .info-item,
+html.dark-theme .rating-badge,
+html.dark-theme .avg-bar-bg,
+html.dark-theme .eval-bar-bg,
+html.dark-theme .score-bar-bg,
+html.dark-theme .cat-bar,
+html.dark-theme .page-btn,
+html.dark-theme .filter-toggle,
+html.dark-theme .filter-menu,
+html.dark-theme .pagination,
+html.dark-theme .filter-menu-actions,
+html.dark-theme .mini-list li,
+html.dark-theme .q-table thead tr,
+html.dark-theme .eval-table thead tr,
+html.dark-theme thead tr {
+  background: var(--input-l) !important;
+  color: var(--text-l) !important;
+}
+
+html.dark-theme .sheet-header,
+html.dark-theme .eval-banner,
+html.dark-theme .eval-card,
+html.dark-theme .target-card,
+html.dark-theme .top-bar,
+html.dark-theme .history-card,
+html.dark-theme .no-archived,
+html.dark-theme .standing-panel,
+html.dark-theme .sum-card,
+html.dark-theme .person-row,
+html.dark-theme .comment-section,
+html.dark-theme .avg-summary,
+html.dark-theme .content-panel {
+  background: #172A45 !important;
+  color: var(--text-l) !important;
+}
+
+html.dark-theme .sheet-avatar-ph,
+html.dark-theme .target-avatar-ph,
+html.dark-theme .person-photo-ph,
+html.dark-theme .standing-photo-ph {
+  background: #0F1F3D !important;
+  border-color: var(--line-l) !important;
+  color: var(--muted-l) !important;
+}
+
+/* Typography / data text */
+html.dark-theme .page-title,
+html.dark-theme .page-header .page-title,
+html.dark-theme .page-header h1,
+html.dark-theme .page-header h2,
+html.dark-theme .section h2,
+html.dark-theme .section-title,
+html.dark-theme .tracker-heading,
+html.dark-theme .eval-modal-title,
+html.dark-theme .sheet-name,
+html.dark-theme .target-name,
+html.dark-theme .person-name,
+html.dark-theme .standing-name,
+html.dark-theme .sum-value,
+html.dark-theme .period-field-value,
+html.dark-theme .info-value,
+html.dark-theme .num,
+html.dark-theme .score-big,
+html.dark-theme .score-big .val,
+html.dark-theme .summary-score,
+html.dark-theme .received-score,
+html.dark-theme td,
+html.dark-theme .q-table td,
+html.dark-theme .eval-table td,
+html.dark-theme .rating-cell,
+html.dark-theme .q-text,
+html.dark-theme .q-table .q-text,
+html.dark-theme .eval-qtext {
+  color: var(--text-l) !important;
+}
+
+html.dark-theme .page-sub,
+html.dark-theme .muted,
+html.dark-theme .empty-note,
+html.dark-theme .no-results,
+html.dark-theme .filter-hint,
+html.dark-theme .count-note,
+html.dark-theme .person-meta,
+html.dark-theme .eval-by-date,
+html.dark-theme .eval-by-label,
+html.dark-theme .sum-label,
+html.dark-theme .sum-sub,
+html.dark-theme .standing-desig,
+html.dark-theme .pstat-lbl,
+html.dark-theme .description,
+html.dark-theme .helper,
+html.dark-theme .subtitle,
+html.dark-theme .small,
+html.dark-theme small,
+html.dark-theme .filter-field label,
+html.dark-theme .toolbar .count-note,
+html.dark-theme .period-field-label,
+html.dark-theme .info-label,
+html.dark-theme .no-comment,
+html.dark-theme .loading-eval,
+html.dark-theme .avg-bar-label,
+html.dark-theme .avg-out-of,
+html.dark-theme .received-meta {
+  color: var(--muted-l) !important;
+}
+
+html.dark-theme .eval-score-lbl {
+  color: var(--muted-l);
+}
+
+html.dark-theme label,
+html.dark-theme th,
+html.dark-theme .table-header,
+html.dark-theme .q-table th,
+html.dark-theme .eval-table th {
+  color: #A0B3C6 !important;
+}
+
+/* Tables / lists */
+html.dark-theme table.data,
+html.dark-theme table.data td,
+html.dark-theme table.data th,
+html.dark-theme .eval-table,
+html.dark-theme .eval-table td,
+html.dark-theme .eval-table th,
+html.dark-theme .q-table,
+html.dark-theme .q-table td,
+html.dark-theme .q-table th {
+  color: var(--text-l) !important;
+}
+
+html.dark-theme table.data th,
+html.dark-theme .q-table th,
+html.dark-theme .eval-table th {
+  border-color: var(--line-l) !important;
+  color: #A0B3C6 !important;
+  background: #0F1F3D !important;
+}
+
+html.dark-theme table.data td,
+html.dark-theme .q-table td,
+html.dark-theme .eval-table td {
+  border-color: var(--line-l) !important;
+}
+
+html.dark-theme table.data tbody tr:hover td,
+html.dark-theme .q-table tbody tr:hover td,
+html.dark-theme .eval-table tbody tr:hover td {
+  background: #1D3350 !important;
+}
+
+/* Forms / filters */
+html.dark-theme input,
+html.dark-theme select,
+html.dark-theme textarea,
+html.dark-theme .filter-field select,
+html.dark-theme .toolbar input[type="text"],
+html.dark-theme .toolbar select,
+html.dark-theme .search-wrap input,
+html.dark-theme .form-group input,
+html.dark-theme .comment-block textarea {
+  background: #0F1F3D !important;
+  color: var(--text-l) !important;
+  border-color: var(--line-strong-l) !important;
+}
+
+html.dark-theme input::placeholder,
+html.dark-theme textarea::placeholder {
+  color: #6B84A0 !important;
+}
+
+html.dark-theme input:focus,
+html.dark-theme select:focus,
+html.dark-theme textarea:focus {
+  border-color: #9C85F0 !important;
+  box-shadow: 0 0 0 3px rgba(156,133,240,.2) !important;
+}
+
+/* Tabs / segmented navigation */
+html.dark-theme .eval-tabs,
+html.dark-theme .eval-switcher,
+html.dark-theme .group-tabs,
+html.dark-theme .faculty-subtabs,
+html.dark-theme .desig-subtabs,
+html.dark-theme .status-tabs,
+html.dark-theme .tabs,
+html.dark-theme .level-tabs {
+  background: #172A45 !important;
+  border-color: var(--line-l) !important;
+  box-shadow: none !important;
+}
+
+html.dark-theme .eval-tab,
+html.dark-theme .tab,
+html.dark-theme .level-tab,
+html.dark-theme .status-tab,
+html.dark-theme .group-tab,
+html.dark-theme .faculty-subtab,
+html.dark-theme .desig-subtab {
+  color: var(--muted-l) !important;
+  background: transparent !important;
+}
+
+html.dark-theme .eval-tab:hover,
+html.dark-theme .tab:hover,
+html.dark-theme .level-tab:hover,
+html.dark-theme .status-tab:hover,
+html.dark-theme .group-tab:hover,
+html.dark-theme .faculty-subtab:hover,
+html.dark-theme .desig-subtab:hover {
+  background: #1D3350 !important;
+  color: var(--text-l) !important;
+}
+
+html.dark-theme .eval-tabs .active,
+html.dark-theme .eval-tab.active,
+html.dark-theme .group-tab.active,
+html.dark-theme .faculty-subtab.active,
+html.dark-theme .desig-subtab.active,
+html.dark-theme .status-tab.active,
+html.dark-theme .group-tab.active-all,
+html.dark-theme .group-tab.active-teacher,
+html.dark-theme .group-tab.active-staff {
+  background: rgba(156,133,240,.16) !important;
+  border-color: rgba(156,133,240,.35) !important;
+  color: #C4B5FD !important;
+}
+
+html.dark-theme .tab-badge,
+html.dark-theme .tab-count,
+html.dark-theme .eval-tab .badge {
+  background: #0F1F3D !important;
+  color: #A0B3C6 !important;
+}
+
+/* Accents, status pills and score bars */
+html.dark-theme .stat-card i,
+html.dark-theme .section h2 i,
+html.dark-theme .page-header i,
+html.dark-theme .info-banner i,
+html.dark-theme .structure-note i,
+html.dark-theme .eval-qno,
+html.dark-theme .fa-circle-info {
+  color: #9C85F0 !important;
+}
+
+html.dark-theme .period-badge {
+  background: rgba(156,133,240,.16) !important;
+  border-color: rgba(156,133,240,.35) !important;
+  color: #C4B5FD !important;
+}
+
+html.dark-theme .period-badge.closed,
+html.dark-theme .closed {
+  background: rgba(240,84,84,.16) !important;
+  border-color: rgba(240,84,84,.35) !important;
+  color: #FCA5A5 !important;
+}
+
+html.dark-theme .period-badge.amber,
+html.dark-theme .amber {
+  background: rgba(217,119,6,.18) !important;
+  border-color: rgba(217,119,6,.35) !important;
+  color: #FBBF24 !important;
+}
+
+html.dark-theme .pill.good,
+html.dark-theme .good {
+  background: rgba(16,185,129,.16) !important;
+  color: #4ADE80 !important;
+  border-color: rgba(16,185,129,.35) !important;
+}
+
+html.dark-theme .pill.warn,
+html.dark-theme .warn {
+  background: rgba(156,133,240,.16) !important;
+  color: #C4B5FD !important;
+  border-color: rgba(156,133,240,.35) !important;
+}
+
+html.dark-theme .status-pill,
+html.dark-theme .role-pill,
+html.dark-theme .yl-pill,
+html.dark-theme .desig-pill {
+  border-color: var(--line-l) !important;
+}
+
+html.dark-theme .yl-pill {
+  background: rgba(96,165,250,.16) !important;
+  color: #93C5FD !important;
+}
+
+html.dark-theme .role-pill {
+  background: #0F1F3D !important;
+  color: #A0B3C6 !important;
+}
+
+html.dark-theme .desig-pill {
+  background: #0F1F3D !important;
+  color: #A0B3C6 !important;
+}
+
+html.dark-theme .bar-wrap,
+html.dark-theme .score-bar-bg,
+html.dark-theme .eval-bar-bg,
+html.dark-theme .avg-bar-bg,
+html.dark-theme .cat-bar {
+  background: rgba(255,255,255,.08) !important;
+}
+
+html.dark-theme .bar-fill,
+html.dark-theme .eval-bar-fill,
+html.dark-theme .avg-bar-fill,
+html.dark-theme .score-bar-fill {
+  background: linear-gradient(90deg,#7C5FD9,#9C85F0) !important;
+}
+
+html.dark-theme .score-big,
+html.dark-theme .avg-score-big,
+html.dark-theme .avg-score-label,
+html.dark-theme .score-top,
+html.dark-theme .standing-score,
+html.dark-theme .pstat-val {
+  color: #4ADE80;
+}
+
+html.dark-theme .standing-title.low,
+html.dark-theme .score-low {
+  color: #FCA5A5 !important;
+}
+
+/* Evaluation form rating controls */
+html.dark-theme .rating-opt label,
+html.dark-theme .eval-rating-cell label {
+  background: #0F1F3D !important;
+  color: #A0B3C6 !important;
+  border-color: var(--line-strong-l) !important;
+}
+
+html.dark-theme .rating-opt label:hover,
+html.dark-theme .eval-rating-cell label:hover {
+  border-color: #9C85F0 !important;
+  background: rgba(156,133,240,.12) !important;
+}
+
+html.dark-theme .rating-opt input:checked + label,
+html.dark-theme .eval-rating-cell input:checked + label {
+  background: #7C5FD9 !important;
+  border-color: #7C5FD9 !important;
+  color: #FFFFFF !important;
+}
+
+html.dark-theme .eval-category-heading,
+html.dark-theme .cat-title,
+html.dark-theme .comment-title,
+html.dark-theme .eval-banner-title {
+  color: #C4B5FD !important;
+}
+
+/* Buttons */
+html.dark-theme .btn-primary,
+html.dark-theme .btn-submit,
+html.dark-theme .btn-eval,
+html.dark-theme .btn-apply,
+html.dark-theme .btn-solid,
+html.dark-theme .filter-apply,
+html.dark-theme .btn-print {
+  background: #7C5FD9 !important;
+  color: #FFFFFF !important;
+  border-color: #7C5FD9 !important;
+}
+
+html.dark-theme .btn-secondary,
+html.dark-theme .btn-view,
+html.dark-theme .btn-cancel,
+html.dark-theme .btn-icon,
+html.dark-theme .page-btn,
+html.dark-theme .filter-clear,
+html.dark-theme .back-btn,
+html.dark-theme .btn-archived-link,
+html.dark-theme .btn-archive,
+html.dark-theme .btn-restore,
+html.dark-theme .btn-action,
+html.dark-theme .action-btn {
+  background: #0F1F3D !important;
+  color: var(--text-l) !important;
+  border-color: var(--line-strong-l) !important;
+}
+
+html.dark-theme .btn-secondary:hover,
+html.dark-theme .btn-view:hover,
+html.dark-theme .btn-cancel:hover,
+html.dark-theme .btn-icon:hover,
+html.dark-theme .page-btn:hover,
+html.dark-theme .filter-clear:hover,
+html.dark-theme .back-btn:hover,
+html.dark-theme .btn-archived-link:hover,
+html.dark-theme .btn-archive:hover,
+html.dark-theme .btn-restore:hover,
+html.dark-theme .btn-action:hover,
+html.dark-theme .action-btn:hover {
+  background: rgba(156,133,240,.12) !important;
+  color: #C4B5FD !important;
+  border-color: rgba(156,133,240,.35) !important;
+}
+
+/* Alerts / notes */
+html.dark-theme .alert,
+html.dark-theme .alert-error,
+html.dark-theme .error {
+  background: rgba(240,84,84,.14) !important;
+  border-color: rgba(240,84,84,.35) !important;
+  color: #FCA5A5 !important;
+}
+
+html.dark-theme .alert-success,
+html.dark-theme .success {
+  background: rgba(16,185,129,.14) !important;
+  border-color: rgba(16,185,129,.35) !important;
+  color: #4ADE80 !important;
+}
+
+html.dark-theme .alert-info,
+html.dark-theme .stub-note,
+html.dark-theme .info-banner {
+  background: rgba(156,133,240,.12) !important;
+  border-color: rgba(156,133,240,.3) !important;
+}
+
+/* Results / received-evaluation details */
+html.dark-theme .response-card,
+html.dark-theme .received-item,
+html.dark-theme .q-result,
+html.dark-theme .comment-modal,
+html.dark-theme .info-grid > div {
+  background: #172A45 !important;
+  border-color: var(--line-l) !important;
+  color: var(--text-l) !important;
+}
+
+html.dark-theme .response-label,
+html.dark-theme .response-head,
+html.dark-theme .info-label,
+html.dark-theme .q-no {
+  color: var(--muted-l) !important;
+}
+
+html.dark-theme .response-comment,
+html.dark-theme .comment-modal,
+html.dark-theme .q-text,
+html.dark-theme .info-value,
+html.dark-theme .cat-name,
+html.dark-theme .cat-name-modal,
+html.dark-theme .q-score,
+html.dark-theme .q-score span {
+  color: var(--text-l) !important;
+}
+
+html.dark-theme .response-score,
+html.dark-theme .received-score {
+  background: rgba(16,185,129,.16) !important;
+  border-color: rgba(16,185,129,.35) !important;
+  color: #4ADE80 !important;
+}
+
+html.dark-theme .view-evals-btn {
+  background: rgba(156,133,240,.14) !important;
+  border-color: rgba(156,133,240,.35) !important;
+  color: #C4B5FD !important;
+}
+
+html.dark-theme .details-btn {
+  background: rgba(45,212,191,.14) !important;
+  border-color: rgba(45,212,191,.35) !important;
+  color: #5EEAD4 !important;
+}
+
+html.dark-theme .eval-modal-overlay {
+  background: rgba(0,0,0,.6) !important;
+}
+
+html.dark-theme .eval-modal {
+  background: #172A45 !important;
+  border-color: var(--line-l) !important;
+  box-shadow: 0 24px 80px rgba(0,0,0,.5) !important;
+}
+
+html.dark-theme .eval-modal-header {
+  border-bottom-color: var(--line-l) !important;
+}
+
+html.dark-theme .eval-modal-title,
+html.dark-theme .modal-section-title {
+  color: var(--text-l) !important;
+}
+
+html.dark-theme .rating-num,
+html.dark-theme .rating-lbl,
+html.dark-theme .eval-score,
+html.dark-theme .eval-score-lbl,
+html.dark-theme .avg-score-big,
+html.dark-theme .avg-score-label,
+html.dark-theme .pstat-val {
+  color: var(--text-l);
+}
+
+/* Notification dropdown */
+html.dark-theme .notif-dropdown,
+html.dark-theme .notif-dropdown-header {
+  background: #172A45 !important;
+  color: var(--text-l) !important;
+  border-color: var(--line-l) !important;
+}
+html.dark-theme .notif-dropdown-header { border-bottom-color: var(--line-l) !important; }
+html.dark-theme .notif-list li { border-color: transparent !important; }
+html.dark-theme .notif-list li i { color: #C4B5FD !important; }
+
+/* Account settings specific content */
+html.dark-theme .form-group input:disabled {
+  background: #0F1F3D !important;
+  color: #7C93AC !important;
+}
+html.dark-theme .info-item {
+  background: rgba(255,255,255,.03) !important;
+  border-color: var(--line-l) !important;
+}
+
+/* Scrollbar */
+html.dark-theme ::-webkit-scrollbar-track { background: #0F1F3D !important; }
+html.dark-theme ::-webkit-scrollbar-thumb { background: #2A4468 !important; border: 2px solid #0F1F3D !important; }
+
+@media(max-width:768px){
+  html.dark-theme body { background: #0A192F !important; }
+}
+
+/* -------------------------------------------------------------------------
+   Dean workspace shell — dark counterpart to the hardcoded white block
+   further up this file. Same selector list, so it wins the same way.
+   ------------------------------------------------------------------------- */
+html.dark-theme .main,
+html.dark-theme main.main {
+  background: #0F1F3D !important;
+  color: #E0E6F0 !important;
+  border-color: rgba(255,255,255,.08) !important;
+}
+
+html.dark-theme .main > .page-header,
+html.dark-theme main.main > .page-header {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+html.dark-theme .main .section,
+html.dark-theme .main .stat-card,
+html.dark-theme .main .filter-bar,
+html.dark-theme .main .table-wrap,
+html.dark-theme .main .eval-table-wrap,
+html.dark-theme .main .person-card,
+html.dark-theme .main .q-block,
+html.dark-theme .main .comment-block,
+html.dark-theme .main .profile-card,
+html.dark-theme .main .tracker-card,
+html.dark-theme .main .structure-note,
+html.dark-theme .main .info-banner,
+html.dark-theme .main .eval-tabs,
+html.dark-theme .main .eval-switcher,
+html.dark-theme .main .eval-banner,
+html.dark-theme .main .sheet-header,
+html.dark-theme .main .scale-bar,
+html.dark-theme .main .avg-summary,
+html.dark-theme .main .comment-section,
+html.dark-theme .main .response-card,
+html.dark-theme .main .received-item,
+html.dark-theme .main .sum-card,
+html.dark-theme .main .standing-panel,
+html.dark-theme .main .person-row,
+html.dark-theme .main .eval-card,
+html.dark-theme .main .top-bar,
+html.dark-theme .main .content-panel,
+html.dark-theme .main .create-panel,
+html.dark-theme .main .period-card,
+html.dark-theme .main .history-card,
+html.dark-theme .main .gl-card,
+html.dark-theme .main .amber-card,
+html.dark-theme .main .green-card,
+html.dark-theme .main .red-card,
+html.dark-theme .main .no-archived,
+html.dark-theme .main .target-card,
+html.dark-theme .main .no-evaluated,
+html.dark-theme .main .cat-section,
+html.dark-theme .main .people-list,
+html.dark-theme .main .evaluator-grid,
+html.dark-theme .main .no-eval,
+html.dark-theme .main .no-data,
+html.dark-theme .main .shell .section,
+html.dark-theme .main .feature-card,
+html.dark-theme main.main .section,
+html.dark-theme main.main .stat-card,
+html.dark-theme main.main .filter-bar,
+html.dark-theme main.main .table-wrap,
+html.dark-theme main.main .eval-table-wrap,
+html.dark-theme main.main .person-card,
+html.dark-theme main.main .q-block,
+html.dark-theme main.main .comment-block,
+html.dark-theme main.main .profile-card,
+html.dark-theme main.main .tracker-card,
+html.dark-theme main.main .structure-note,
+html.dark-theme main.main .info-banner,
+html.dark-theme main.main .eval-tabs,
+html.dark-theme main.main .eval-switcher,
+html.dark-theme main.main .eval-banner,
+html.dark-theme main.main .sheet-header,
+html.dark-theme main.main .scale-bar,
+html.dark-theme main.main .avg-summary,
+html.dark-theme main.main .comment-section,
+html.dark-theme main.main .response-card,
+html.dark-theme main.main .received-item,
+html.dark-theme main.main .sum-card,
+html.dark-theme main.main .standing-panel,
+html.dark-theme main.main .person-row,
+html.dark-theme main.main .eval-card,
+html.dark-theme main.main .top-bar,
+html.dark-theme main.main .content-panel,
+html.dark-theme main.main .create-panel,
+html.dark-theme main.main .period-card,
+html.dark-theme main.main .history-card,
+html.dark-theme main.main .gl-card,
+html.dark-theme main.main .amber-card,
+html.dark-theme main.main .green-card,
+html.dark-theme main.main .red-card,
+html.dark-theme main.main .no-archived,
+html.dark-theme main.main .target-card,
+html.dark-theme main.main .no-evaluated,
+html.dark-theme main.main .cat-section,
+html.dark-theme main.main .people-list,
+html.dark-theme main.main .evaluator-grid,
+html.dark-theme main.main .no-eval,
+html.dark-theme main.main .no-data,
+html.dark-theme main.main .shell .section,
+html.dark-theme main.main .feature-card {
+  background: #172A45 !important;
+  color: #E0E6F0 !important;
+  border-color: rgba(255,255,255,.08) !important;
+  box-shadow: 0 1px 5px rgba(0,0,0,.25) !important;
+}
+
+html.dark-theme .main table thead th,
+html.dark-theme .main .table-head,
+html.dark-theme .main .table-header,
+html.dark-theme .main .thead,
+html.dark-theme .main .subtle-head,
+html.dark-theme main.main table thead th,
+html.dark-theme main.main .table-head,
+html.dark-theme main.main .table-header,
+html.dark-theme main.main .thead,
+html.dark-theme main.main .subtle-head {
+  background: #0F1F3D !important;
+  color: #A0B3C6 !important;
+  border-color: rgba(255,255,255,.08) !important;
+}
+
+
+/* -------------------------------------------------------------------------
+   Unified compact Faculty-style sidebar shared by every Dean page.
+   This lives here (rather than only on dean_dashboard.php) so navigation
+   remains identical when switching between dashboard, evaluation, tracker,
+   results, reports, and account settings.
+   ------------------------------------------------------------------------- */
 :root {
-  --sidebar-w:248px;
-  --role-accent:#2563EB;
-  --role-accent-light:#60A5FA;
+  --sidebar-w: 248px;
+  --role-accent: #2563EB;
+  --role-accent-light: #60A5FA;
 }
+
 .sidebar {
-  width:var(--sidebar-w) !important;
-  flex:0 0 var(--sidebar-w) !important;
-  background:#0A192F !important;
-  background-image:none !important;
-  border-right:1px solid #172A45 !important;
-  box-shadow:6px 0 20px rgba(0,0,0,.16) !important;
-  opacity:1 !important;
-  backdrop-filter:none !important;
-  -webkit-backdrop-filter:none !important;
-  padding:0 !important;
-  min-height:100vh !important;
-  display:flex !important;
-  flex-direction:column !important;
-  overflow:hidden !important;
+  width: var(--sidebar-w) !important;
+  min-width: var(--sidebar-w) !important;
+  flex: 0 0 var(--sidebar-w) !important;
+  min-height: 100vh !important;
+  height: 100vh !important;
+  background: #0A192F !important;
+  background-image: none !important;
+  border-right: 1px solid #172A45 !important;
+  box-shadow: 6px 0 20px rgba(0,0,0,.16) !important;
+  padding: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  opacity: 1 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
+
 .sidebar-brand.portal-brand {
-  min-height:68px !important;
-  padding:14px 17px !important;
-  margin:0 !important;
-  border-bottom:1px solid rgba(255,255,255,.08) !important;
-  display:flex !important;
-  align-items:center !important;
-  gap:11px !important;
-  cursor:default !important;
-  background:transparent !important;
+  min-height: 68px !important;
+  padding: 14px 17px !important;
+  border-bottom: 1px solid rgba(255,255,255,.08) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 11px !important;
+  flex: 0 0 68px !important;
 }
+
 .portal-brand-logo {
-  width:38px !important;
-  height:38px !important;
-  flex:0 0 38px !important;
-  border-radius:11px !important;
-  display:flex !important;
-  align-items:center !important;
-  justify-content:center !important;
-  overflow:hidden !important;
-  background:#0F1F3D !important;
-  border:1px solid #2563EB !important;
-  box-shadow:0 0 14px rgba(37,99,235,.18) !important;
+  width: 38px !important;
+  height: 38px !important;
+  min-width: 38px !important;
+  min-height: 38px !important;
+  flex: 0 0 38px !important;
+  border-radius: 11px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  overflow: hidden !important;
+  background: #0F1F3D !important;
+  border: 1px solid #2563EB !important;
+  box-shadow: 0 0 14px rgba(37,99,235,.18) !important;
 }
+
 .portal-brand-logo img {
-  width:100% !important;
-  height:100% !important;
-  object-fit:cover !important;
-  display:block !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: cover !important;
+  display: block !important;
 }
+
 .portal-brand-copy {
-  min-width:0 !important;
-  display:flex !important;
-  flex-direction:column !important;
-  line-height:1.2 !important;
+  min-width: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  line-height: 1.2 !important;
 }
+
 .portal-brand-copy strong {
-  font-family:'Rajdhani','DM Sans',sans-serif !important;
-  font-size:15px !important;
-  font-weight:700 !important;
-  color:#F8FAFC !important;
-  letter-spacing:.25px !important;
-  white-space:nowrap !important;
+  font-family: 'Rajdhani', sans-serif !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  color: #F8FAFC !important;
+  letter-spacing: .25px !important;
 }
+
 .portal-brand-copy span {
-  margin-top:3px !important;
-  font-size:10px !important;
-  color:#8FA6BF !important;
-  font-weight:600 !important;
-  letter-spacing:.15px !important;
-  white-space:nowrap !important;
+  margin-top: 3px !important;
+  font-size: 10px !important;
+  color: #8FA6BF !important;
+  font-weight: 600 !important;
+  letter-spacing: .15px !important;
+  white-space: nowrap !important;
 }
+
 .portal-sidebar-profile {
-  padding:18px 16px 17px !important;
-  margin:0 !important;
-  text-align:center !important;
-  border-bottom:1px solid rgba(255,255,255,.08) !important;
-  background:transparent !important;
+  padding: 18px 16px 17px !important;
+  margin: 0 !important;
+  text-align: center !important;
+  border-bottom: 1px solid rgba(255,255,255,.08) !important;
+  flex: 0 0 auto !important;
 }
+
 .portal-profile-avatar-wrap {
-  margin:0 auto 11px !important;
-  display:flex !important;
-  justify-content:center !important;
+  margin: 0 auto 11px !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
 }
+
 .portal-profile-avatar {
-  width:64px !important;
-  height:64px !important;
-  max-width:64px !important;
-  max-height:64px !important;
-  border-radius:50% !important;
-  object-fit:cover !important;
-  border:2px solid #2563EB !important;
-  background:#0F1F3D !important;
-  box-shadow:0 0 15px rgba(37,99,235,.18) !important;
-  display:block !important;
-  flex:none !important;
+  width: 64px !important;
+  height: 64px !important;
+  min-width: 64px !important;
+  min-height: 64px !important;
+  max-width: 64px !important;
+  max-height: 64px !important;
+  border-radius: 50% !important;
+  object-fit: cover !important;
+  border: 2px solid #2563EB !important;
+  background: #0F1F3D !important;
+  box-shadow: 0 0 15px rgba(37,99,235,.18) !important;
+  display: block !important;
 }
+
+.portal-profile-fallback {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: #60A5FA !important;
+  font-size: 17px !important;
+  font-weight: 700 !important;
+  font-family: 'Rajdhani', sans-serif !important;
+  line-height: 1 !important;
+}
+
 .portal-profile-name {
-  color:#F8FAFC !important;
-  font-size:13px !important;
-  line-height:1.35 !important;
-  font-weight:700 !important;
-  word-break:break-word !important;
+  color: #F8FAFC !important;
+  font-size: 13px !important;
+  line-height: 1.35 !important;
+  font-weight: 700 !important;
+  word-break: break-word !important;
 }
+
 .portal-profile-role {
-  margin-top:3px !important;
-  color:#8FA6BF !important;
-  font-size:10px !important;
-  text-transform:uppercase !important;
-  letter-spacing:.7px !important;
-  font-weight:700 !important;
-  line-height:1.35 !important;
+  margin-top: 3px !important;
+  color: #8FA6BF !important;
+  font-size: 10px !important;
+  text-transform: uppercase !important;
+  letter-spacing: .7px !important;
+  font-weight: 700 !important;
+  line-height: 1.35 !important;
 }
+
 .portal-profile-scope {
-  margin-top:4px !important;
-  color:#8FA6BF !important;
-  font-size:10px !important;
-  line-height:1.35 !important;
-  font-weight:600 !important;
+  margin-top: 4px !important;
+  color: #8FA6BF !important;
+  font-size: 10px !important;
+  line-height: 1.35 !important;
+  font-weight: 600 !important;
 }
+
 .portal-sidebar-nav {
-  flex:1 1 auto !important;
-  min-height:0 !important;
-  padding:16px 10px !important;
-  margin:0 !important;
-  overflow-y:auto !important;
-  display:flex !important;
-  flex-direction:column !important;
-  gap:0 !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  padding: 16px 10px !important;
+  margin: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0 !important;
 }
+
 .portal-sidebar-nav .nav-section-label {
-  padding:0 8px !important;
-  margin:0 0 7px !important;
-  font-size:9.5px !important;
-  font-weight:800 !important;
-  letter-spacing:1.25px !important;
-  text-align:left !important;
-  color:#8FA6BF !important;
-  text-shadow:none !important;
-  line-height:1.3 !important;
+  padding: 0 8px !important;
+  margin: 0 0 7px !important;
+  font-size: 9.5px !important;
+  font-weight: 800 !important;
+  letter-spacing: 1.25px !important;
+  text-align: left !important;
+  color: #8FA6BF !important;
+  line-height: 1.3 !important;
+  text-transform: none !important;
+  text-shadow: none !important;
 }
+
 .portal-sidebar-nav .nav-section-label.sidebar-section-secondary {
-  margin-top:17px !important;
+  margin-top: 17px !important;
 }
+
 .portal-sidebar-nav .nav-link {
-  min-height:40px !important;
-  width:auto !important;
-  margin:2px 2px !important;
-  padding:9px 11px !important;
-  border:0 !important;
-  border-left:0 !important;
-  border-radius:8px !important;
-  gap:10px !important;
-  color:#CBD8E8 !important;
-  background:transparent !important;
-  font-size:13px !important;
-  font-weight:500 !important;
-  line-height:1.2 !important;
-  text-decoration:none !important;
-  display:flex !important;
-  align-items:center !important;
-  box-shadow:none !important;
-  transform:none !important;
+  min-height: 40px !important;
+  margin: 2px 2px !important;
+  padding: 9px 11px !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  gap: 10px !important;
+  color: #CBD8E8 !important;
+  background: transparent !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  line-height: 1.2 !important;
+  text-decoration: none !important;
+  display: flex !important;
+  align-items: center !important;
+  transition: background .18s ease, color .18s ease !important;
 }
+
 .portal-sidebar-nav .nav-link i {
-  width:18px !important;
-  min-width:18px !important;
-  font-size:14px !important;
-  color:#8FA6BF !important;
-  text-align:center !important;
-  flex:0 0 18px !important;
+  width: 18px !important;
+  min-width: 18px !important;
+  flex: 0 0 18px !important;
+  font-size: 14px !important;
+  color: #8FA6BF !important;
+  text-align: center !important;
 }
+
 .portal-sidebar-nav .nav-link:hover {
-  background:rgba(255,255,255,.07) !important;
-  color:#FFFFFF !important;
+  background: rgba(255,255,255,.07) !important;
+  color: #FFFFFF !important;
 }
+
 .portal-sidebar-nav .nav-link:hover i {
-  color:#60A5FA !important;
+  color: #60A5FA !important;
 }
+
 .portal-sidebar-nav .nav-link.active {
-  background:linear-gradient(90deg,rgba(37,99,235,.18),rgba(255,255,255,.025)) !important;
-  color:#FFFFFF !important;
-  font-weight:700 !important;
-  border:0 !important;
-  box-shadow:inset 3px 0 0 #60A5FA !important;
+  background: linear-gradient(90deg, rgba(37,99,235,.18), rgba(255,255,255,.025)) !important;
+  color: #FFFFFF !important;
+  font-weight: 700 !important;
+  box-shadow: inset 3px 0 0 #60A5FA !important;
 }
+
 .portal-sidebar-nav .nav-link.active i {
-  color:#60A5FA !important;
+  color: #60A5FA !important;
 }
+
 .sidebar-footer {
-  flex:0 0 auto !important;
-  padding:13px 14px 15px !important;
-  margin:0 !important;
-  border-top:1px solid rgba(255,255,255,.08) !important;
-  background:transparent !important;
+  flex: 0 0 auto !important;
+  padding: 13px 14px 15px !important;
+  margin: 0 !important;
+  border-top: 1px solid rgba(255,255,255,.08) !important;
+  background: transparent !important;
 }
+
 .btn-logout-side {
-  width:100% !important;
-  min-height:40px !important;
-  display:flex !important;
-  align-items:center !important;
-  gap:10px !important;
-  padding:9px 11px !important;
-  border-radius:8px !important;
-  color:#FCA5A5 !important;
-  text-decoration:none !important;
-  font-size:13px !important;
-  font-weight:600 !important;
-  border:1px solid rgba(248,113,113,.28) !important;
-  background:rgba(248,113,113,.08) !important;
-  box-sizing:border-box !important;
+  width: 100% !important;
+  min-height: 40px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 9px 11px !important;
+  border: 1px solid rgba(248,113,113,.35) !important;
+  border-radius: 8px !important;
+  background: rgba(30,36,54,.72) !important;
+  color: #FF9B9B !important;
+  text-decoration: none !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  transition: background .18s ease, color .18s ease, border-color .18s ease !important;
+  box-sizing: border-box !important;
 }
-.btn-logout-side i {
-  width:18px !important;
-  min-width:18px !important;
-  text-align:center !important;
-  flex:0 0 18px !important;
-  color:#FF8E8E !important;
-}
+
 .btn-logout-side:hover {
-  background:rgba(248,113,113,.15) !important;
-  color:#FFFFFF !important;
-}
-.btn-logout-side:hover i {
-  color:#FF9B9B !important;
-}
-@media(max-width:900px) {
-  .sidebar {
-    width:248px !important;
-    flex-basis:248px !important;
-    transform:translateX(-100%) !important;
-    transition:transform .22s ease !important;
-  }
-  .sidebar.open { transform:translateX(0) !important; box-shadow:12px 0 34px rgba(0,0,0,.45) !important; }
-}
-@media(max-width:820px) {
-  .sidebar {
-    position:relative !important;
-    width:100% !important;
-    flex-basis:auto !important;
-    height:auto !important;
-    min-height:auto !important;
-    transform:none !important;
-  }
-}
-@media(max-width:520px) {
-  .portal-sidebar-nav { padding-left:9px !important; padding-right:9px !important; }
+  background: rgba(127,29,29,.28) !important;
+  color: #FFFFFF !important;
+  border-color: rgba(248,113,113,.6) !important;
 }
 
-.portal-profile-fallback{display:flex !important;align-items:center !important;justify-content:center !important;color:#60A5FA !important;font-family:'Rajdhani',sans-serif !important;font-size:17px !important;font-weight:700 !important;}
+.btn-logout-side i {
+  width: 18px !important;
+  min-width: 18px !important;
+  text-align: center !important;
+}
 
-/* Dashboard-matched Dean feature-page finish; see includes/dean_light_theme.css. */
+@media (max-width: 768px) {
+  .sidebar {
+    width: var(--sidebar-w) !important;
+    min-width: var(--sidebar-w) !important;
+    flex: 0 0 var(--sidebar-w) !important;
+    min-height: 100vh !important;
+    height: 100vh !important;
+  }
+}
+
+/* Printing always stays on a white page regardless of the active theme. */
+@media print {
+  html.dark-theme,
+  html.dark-theme body {
+    background: #FFFFFF !important;
+    color: #000000 !important;
+  }
+  html.dark-theme .main,
+  html.dark-theme main.main {
+    background: #FFFFFF !important;
+    color: #000000 !important;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   DARK THEME FINAL OVERRIDE
+   The shared light-theme stylesheet is intentionally loaded last on some
+   Dean pages. When the portal is in dark mode, keep the entire report canvas
+   dark instead of leaving a light strip/background around the report sheet.
+   ------------------------------------------------------------------------- */
+@media screen {
+  html.dark-theme,
+  html.dark-theme body {
+    background:#0A192F !important;
+    background-color:#0A192F !important;
+    background-image:none !important;
+    color:#E0E6F0 !important;
+    color-scheme:dark !important;
+  }
+
+  html.dark-theme .main,
+  html.dark-theme main.main,
+  html.dark-theme .content,
+  html.dark-theme .page-content {
+    background:#0F1F3D !important;
+    background-color:#0F1F3D !important;
+    color:#E0E6F0 !important;
+  }
+
+  /* Direct evaluation/detail sheet: no white canvas around the header. */
+  html.dark-theme .individual-sheet {
+    background:#172A45 !important;
+    color:#E0E6F0 !important;
+    border-color:rgba(255,255,255,.08) !important;
+  }
+
+  html.dark-theme .individual-sheet .sheet-header,
+  html.dark-theme .individual-sheet .scale-bar,
+  html.dark-theme .individual-sheet .cat-section,
+  html.dark-theme .individual-sheet .comment-section,
+  html.dark-theme .individual-sheet .avg-summary {
+    background:#172A45 !important;
+    color:#E0E6F0 !important;
+    border-color:rgba(255,255,255,.08) !important;
+  }
+}
+
+@media print {
+  html.dark-theme,
+  html.dark-theme body,
+  html.dark-theme .main,
+  html.dark-theme main.main {
+    background:#fff !important;
+    background-color:#fff !important;
+    color:#000 !important;
+  }
+}
+
+/* =========================================================================
+   DASHBOARD-MATCHED DEAN FEATURE PAGES
+   Shared finish for Evaluate Others, Tracker, Results, Reports and Settings.
+   Keeps each page's existing content/logic while matching the dashboard's
+   inset rounded canvas, Rajdhani headings, white cards and soft shadows.
+   ========================================================================= */
 @media screen {
   html:not(.dark-theme) body {
     font-family: 'DM Sans', Inter, Arial, sans-serif !important;
@@ -1203,6 +2068,7 @@ main.main .subtle-head {
     background-image: none !important;
     color: #12263A !important;
   }
+
   html:not(.dark-theme) body main.main {
     margin: 20px 20px 0 20px !important;
     padding-left: 28px !important;
@@ -1215,26 +2081,58 @@ main.main .subtle-head {
     border-radius: 22px !important;
     box-shadow: 0 10px 28px rgba(19, 38, 63, .045) !important;
   }
+
   html:not(.dark-theme) main.main > .page-header {
-    display: flex !important; align-items: flex-start !important; justify-content: space-between !important;
-    gap: 16px 22px !important; flex-wrap: wrap !important; margin: 2px 2px 24px !important;
-    padding: 0 !important; background: transparent !important; border: 0 !important; box-shadow: none !important;
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: space-between !important;
+    gap: 16px 22px !important;
+    flex-wrap: wrap !important;
+    margin: 2px 2px 24px !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
   }
+
   html:not(.dark-theme) main.main .page-title,
   html:not(.dark-theme) main.main .page-header .page-title,
   html:not(.dark-theme) main.main .page-header h1 {
-    color: #10243E !important; font-family: 'Rajdhani', 'DM Sans', Arial, sans-serif !important;
-    font-size: 28px !important; font-weight: 800 !important; line-height: 1.08 !important; letter-spacing: .2px !important;
+    color: #10243E !important;
+    font-family: 'Rajdhani', 'DM Sans', Arial, sans-serif !important;
+    font-size: 28px !important;
+    font-weight: 800 !important;
+    line-height: 1.08 !important;
+    letter-spacing: .2px !important;
   }
-  html:not(.dark-theme) main.main .page-sub { margin-top: 7px !important; color: #5C7187 !important; font-size: 13px !important; line-height: 1.5 !important; }
+
+  html:not(.dark-theme) main.main .page-sub {
+    margin-top: 7px !important;
+    color: #5C7187 !important;
+    font-family: 'DM Sans', Inter, Arial, sans-serif !important;
+    font-size: 13px !important;
+    line-height: 1.5 !important;
+  }
+
   html:not(.dark-theme) main.main .section h2,
   html:not(.dark-theme) main.main .section-title,
   html:not(.dark-theme) main.main .tracker-heading h2,
   html:not(.dark-theme) main.main .eval-modal-title,
   html:not(.dark-theme) main.main .sheet-name {
-    color: #13263F !important; font-family: 'Rajdhani', 'DM Sans', Arial, sans-serif !important;
-    font-size: 20px !important; font-weight: 800 !important; letter-spacing: .1px !important;
+    color: #13263F !important;
+    font-family: 'Rajdhani', 'DM Sans', Arial, sans-serif !important;
+    font-size: 20px !important;
+    font-weight: 800 !important;
+    letter-spacing: .1px !important;
   }
+
+  html:not(.dark-theme) main.main .section h2 i,
+  html:not(.dark-theme) main.main .section-title i,
+  html:not(.dark-theme) main.main .page-header i {
+    color: #2563EB !important;
+  }
+
+  /* Dashboard-like white cards with even radii and a gentle raised surface. */
   html:not(.dark-theme) main.main .section,
   html:not(.dark-theme) main.main .stat-card,
   html:not(.dark-theme) main.main .filter-bar,
@@ -1274,46 +2172,123 @@ main.main .subtle-head {
   html:not(.dark-theme) main.main .people-list,
   html:not(.dark-theme) main.main .evaluator-grid,
   html:not(.dark-theme) main.main .feature-card {
-    background-color: #FFFFFF !important; color: #12263A !important; border-color: #DCE7F1 !important;
-    border-radius: 15px !important; box-shadow: 0 5px 18px rgba(30, 64, 92, .065) !important;
+    background-color: #FFFFFF !important;
+    color: #12263A !important;
+    border-color: #DCE7F1 !important;
+    border-radius: 15px !important;
+    box-shadow: 0 5px 18px rgba(30, 64, 92, .065) !important;
   }
-  html:not(.dark-theme) main.main .stat-card { position: relative !important; overflow: hidden !important; padding: 21px 22px !important; border-top: 3px solid #2563EB !important; }
+
+  html:not(.dark-theme) main.main .stat-card {
+    position: relative !important;
+    overflow: hidden !important;
+    padding: 21px 22px !important;
+    border-top: 3px solid #2563EB !important;
+  }
   html:not(.dark-theme) main.main .card-grid > .stat-card:nth-child(2),
-  html:not(.dark-theme) main.main .card-grid > a:nth-child(2) .stat-card { border-top-color: #10B981 !important; }
+  html:not(.dark-theme) main.main .card-grid > a:nth-child(2) .stat-card {
+    border-top-color: #10B981 !important;
+  }
   html:not(.dark-theme) main.main .card-grid > .stat-card:nth-child(3),
-  html:not(.dark-theme) main.main .card-grid > a:nth-child(3) .stat-card { border-top-color: #F59E0B !important; }
+  html:not(.dark-theme) main.main .card-grid > a:nth-child(3) .stat-card {
+    border-top-color: #F59E0B !important;
+  }
   html:not(.dark-theme) main.main .card-grid > .stat-card:nth-child(4),
-  html:not(.dark-theme) main.main .card-grid > a:nth-child(4) .stat-card { border-top-color: #3B82F6 !important; }
-  html:not(.dark-theme) main.main .stat-card i { color: #2563EB !important; font-size: 20px !important; }
-  html:not(.dark-theme) main.main .stat-card .num { color: #12263A !important; font-size: 27px !important; font-weight: 800 !important; }
-  html:not(.dark-theme) main.main .stat-card .label { color: #5E7388 !important; font-size: 12px !important; line-height: 1.45 !important; }
+  html:not(.dark-theme) main.main .card-grid > a:nth-child(4) .stat-card {
+    border-top-color: #3B82F6 !important;
+  }
+  html:not(.dark-theme) main.main .stat-card i {
+    color: #2563EB !important;
+    font-size: 20px !important;
+  }
+  html:not(.dark-theme) main.main .stat-card .num {
+    color: #12263A !important;
+    font-size: 27px !important;
+    font-weight: 800 !important;
+  }
+  html:not(.dark-theme) main.main .stat-card .label {
+    color: #5E7388 !important;
+    font-size: 12px !important;
+    line-height: 1.45 !important;
+  }
+
+  /* Soft blue table headers and clean separators, as on the dashboard cards. */
   html:not(.dark-theme) main.main table thead th,
   html:not(.dark-theme) main.main .table-head,
   html:not(.dark-theme) main.main .table-header,
   html:not(.dark-theme) main.main .thead,
-  html:not(.dark-theme) main.main .subtle-head { background: #F4F8FF !important; color: #4B6580 !important; border-color: #D9E4EF !important; }
+  html:not(.dark-theme) main.main .subtle-head {
+    background: #F4F8FF !important;
+    color: #4B6580 !important;
+    border-color: #D9E4EF !important;
+  }
+
   html:not(.dark-theme) main.main input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
   html:not(.dark-theme) main.main select,
-  html:not(.dark-theme) main.main textarea { border-color: #D5E0EC !important; border-radius: 10px !important; background-color: #F8FAFC !important; color: #12263A !important; font-family: 'DM Sans', Inter, Arial, sans-serif !important; }
-  html:not(.dark-theme) main.main .period-badge { padding: 7px 13px !important; border-radius: 999px !important; background: #EAF1FF !important; border: 1px solid #CADBFF !important; color: #2458DA !important; font-weight: 700 !important; }
+  html:not(.dark-theme) main.main textarea {
+    border-color: #D5E0EC !important;
+    border-radius: 10px !important;
+    background-color: #F8FAFC !important;
+    color: #12263A !important;
+    font-family: 'DM Sans', Inter, Arial, sans-serif !important;
+  }
+
+  html:not(.dark-theme) main.main .period-badge {
+    padding: 7px 13px !important;
+    border-radius: 999px !important;
+    background: #EAF1FF !important;
+    border: 1px solid #CADBFF !important;
+    color: #2458DA !important;
+    font-weight: 700 !important;
+  }
   html:not(.dark-theme) main.main .period-badge.closed,
-  html:not(.dark-theme) main.main .period-badge.bad { background: #FFF1F1 !important; border-color: #F3B0B0 !important; color: #B42318 !important; }
+  html:not(.dark-theme) main.main .period-badge.bad {
+    background: #FFF1F1 !important;
+    border-color: #F3B0B0 !important;
+    color: #B42318 !important;
+  }
   html:not(.dark-theme) main.main .period-badge.open,
-  html:not(.dark-theme) main.main .period-badge.good { background: #E8FFF1 !important; border-color: #91E7B2 !important; color: #168447 !important; }
+  html:not(.dark-theme) main.main .period-badge.good {
+    background: #E8FFF1 !important;
+    border-color: #91E7B2 !important;
+    color: #168447 !important;
+  }
+
   html:not(.dark-theme) main.main .empty-note,
+  html:not(.dark-theme) main.main .page-sub,
   html:not(.dark-theme) main.main .muted,
   html:not(.dark-theme) main.main .helper,
-  html:not(.dark-theme) main.main .description { color: #6D8194 !important; }
+  html:not(.dark-theme) main.main .description {
+    color: #6D8194 !important;
+  }
 }
+
 @media screen and (max-width: 900px) {
-  html:not(.dark-theme) body main.main { padding-left: 18px !important; padding-right: 18px !important; padding-bottom: 30px !important; border-radius: 16px !important; }
+  html:not(.dark-theme) body main.main {
+    padding-left: 18px !important;
+    padding-right: 18px !important;
+    padding-bottom: 30px !important;
+    border-radius: 16px !important;
+  }
   html:not(.dark-theme) main.main .page-title,
   html:not(.dark-theme) main.main .page-header .page-title,
-  html:not(.dark-theme) main.main .page-header h1 { font-size: 25px !important; }
+  html:not(.dark-theme) main.main .page-header h1 {
+    font-size: 25px !important;
+  }
 }
+
 @media screen and (max-width: 768px) {
-  html:not(.dark-theme) body main.main { margin: 12px 12px 0 12px !important; padding-left: 16px !important; padding-right: 16px !important; padding-bottom: 28px !important; min-height: calc(100vh - 12px) !important; border-radius: 14px !important; }
-  html:not(.dark-theme) main.main > .page-header { margin-bottom: 20px !important; }
+  html:not(.dark-theme) body main.main {
+    margin: 12px 12px 0 12px !important;
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+    padding-bottom: 28px !important;
+    min-height: calc(100vh - 12px) !important;
+    border-radius: 14px !important;
+  }
+  html:not(.dark-theme) main.main > .page-header {
+    margin-bottom: 20px !important;
+  }
 }
 
 
@@ -1616,3 +2591,56 @@ main.main .subtle-head {
     }
   }
 }
+
+/* =========================================================================
+   Dean portal header (top bar) — dark mode
+   The appearance toggle adds `dark-theme` to <html>. The header's own inline
+   styles are light-only, so restyle it here with extra-specific selectors.
+   ========================================================================= */
+html.dark-theme body header.dean-portal-topbar,
+html.dark-theme body .dean-portal-topbar {
+  background: #0F1F3D !important;
+  background-color: #0F1F3D !important;
+  color: #E0E6F0 !important;
+  border-bottom: 1px solid rgba(255,255,255,.08) !important;
+  box-shadow: 0 2px 14px rgba(0,0,0,.35) !important;
+}
+html.dark-theme body .dean-portal-topbar .dean-header-page-title { color: #E0E6F0 !important; }
+html.dark-theme body .dean-portal-topbar .dean-header-period {
+  background: rgba(156,133,240,.16) !important;
+  border-color: rgba(156,133,240,.38) !important;
+  color: #C4B5FD !important;
+}
+html.dark-theme body .dean-portal-topbar .dean-header-bell {
+  background: #172A45 !important;
+  border-color: rgba(255,255,255,.12) !important;
+  color: #FBBF24 !important;
+}
+html.dark-theme body .dean-portal-topbar .dean-header-bell:hover {
+  background: #1D3350 !important;
+  border-color: rgba(251,191,36,.45) !important;
+}
+html.dark-theme body .dean-portal-topbar .dean-header-notif-badge { border-color: #0F1F3D !important; }
+html.dark-theme body .dean-portal-topbar .dean-header-notif-dropdown {
+  background: #172A45 !important;
+  border-color: rgba(255,255,255,.12) !important;
+  color: #E0E6F0 !important;
+  box-shadow: 0 18px 48px rgba(0,0,0,.55) !important;
+}
+html.dark-theme body .dean-portal-topbar .dean-header-notif-heading {
+  border-bottom-color: rgba(255,255,255,.08) !important;
+  color: #A0B3C6 !important;
+}
+html.dark-theme body .dean-portal-topbar .dean-header-notif-list li {
+  background: #0F1F3D !important;
+  border-color: rgba(255,255,255,.08) !important;
+  color: #CBD5E1 !important;
+}
+html.dark-theme body .dean-portal-topbar .dean-header-notif-list li > i { color: #FBBF24 !important; }
+html.dark-theme body .dean-portal-topbar .dean-header-notif-list li.notif-evaluation > i { color: #60A5FA !important; }
+html.dark-theme body .dean-portal-topbar .dean-header-notif-list li.notif-link:hover,
+html.dark-theme body .dean-portal-topbar .dean-header-notif-list li.notif-link:focus-visible {
+  background: #1D3350 !important;
+  border-color: rgba(96,165,250,.45) !important;
+}
+html.dark-theme body .dean-portal-topbar .dean-header-notif-empty { color: #A0B3C6 !important; }

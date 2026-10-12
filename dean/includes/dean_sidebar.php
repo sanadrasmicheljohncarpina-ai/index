@@ -142,7 +142,7 @@ $navItems = [
         }
         #sidebar .portal-sidebar-nav{max-height:42vh !important;}
     }
-    #deanLogoutModal{position:fixed;inset:0;z-index:100000;display:none;align-items:center;justify-content:center;background:rgba(3,10,22,.65);backdrop-filter:blur(3px);}
+    #deanLogoutModal{position:fixed;top:0;left:0;right:0;bottom:0;width:100vw;height:100vh;z-index:2147483000;display:none;align-items:center;justify-content:center;background:rgba(3,10,22,.65);backdrop-filter:blur(3px);}
     #deanLogoutModal.open{display:flex;}
     #deanLogoutModal .dlm-box{width:min(380px,90vw);background:#172A45;color:#E0E6F0;border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.55);font-family:inherit;}
     #deanLogoutModal .dlm-title{font-size:18px;font-weight:700;color:#fff;margin:0 0 6px;}
@@ -157,7 +157,7 @@ $navItems = [
     <div id="deanLogoutModal" role="dialog" aria-modal="true" aria-labelledby="dlmTitle">
         <div class="dlm-box">
             <h3 class="dlm-title" id="dlmTitle">Log out</h3>
-            <p class="dlm-text">Log out of your dean session?</p>
+            <p class="dlm-text">Are you sure you want to logout?</p>
             <div class="dlm-actions">
                 <button type="button" class="dlm-cancel" id="dlmCancel">Cancel</button>
                 <button type="button" class="dlm-ok" id="dlmOk">Log Out</button>
@@ -167,9 +167,19 @@ $navItems = [
     <script>
     // Custom logout confirmation (replaces the browser's native confirm(), which
     // always shows a "localhost says" header that cannot be removed).
+    // The modal is declared inside <aside class="sidebar">, which is position:sticky with
+    // z-index:1000 -- that creates a stacking context, so the overlay could never rise
+    // above the page header. Re-parent it to <body> so it dims the whole screen.
+    function deanMountLogoutModal() {
+        var m = document.getElementById('deanLogoutModal');
+        if (m && m.parentNode !== document.body) document.body.appendChild(m);
+        return m;
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', deanMountLogoutModal);
+    else deanMountLogoutModal();
     function deanLogoutPrompt(e) {
         if (e) e.preventDefault();
-        var m = document.getElementById('deanLogoutModal');
+        var m = deanMountLogoutModal();
         var link = document.querySelector('.btn-logout-side');
         var href = link ? link.getAttribute('href') : 'dean_logout.php';
         if (!m) { window.location.href = href; return false; }

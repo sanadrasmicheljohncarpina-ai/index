@@ -43,6 +43,13 @@ function safe_rows(mysqli $mysqli, string $sql, string $types = '', array $param
     }
 }
 
+// Placeholder comments such as "N/A" or "none" count as no written comment.
+function ea_clean_comment($v): string {
+    $t = trim((string)$v);
+    if ($t === '' || preg_match('/^(n\/?a|none|nil|no comments?|no feedback|not applicable|[\s.\-–—]+)$/iu', $t)) return '';
+    return $t;
+}
+
 // Resolve the currently signed-in EA. The role check above makes this the EA
 // whose own results should be displayed, rather than another person's records.
 $ea = $mysqli->prepare("SELECT id, full_name, designation, photo FROM users WHERE id=? LIMIT 1");
@@ -145,6 +152,8 @@ if (isset($_GET['details'])) {
         ];
     }
 
+    $remarks = ea_clean_comment($remarks);
+
     echo json_encode([
         'evaluator'     => 'Anonymous Evaluator',
         'period'        => $periodLabel,
@@ -206,8 +215,9 @@ if ($termIds) {
     foreach ($terms as $pid => &$t) {
         $t['current']  = ($hasPeriod && $pid === $period_id_int);
         $t['archived'] = isset($keptTerms[$pid]);
+        // period_label may already contain the school year — don't prepend it twice.
         $t['label']    = ($t['school_year'] !== '' && $t['period_label'] !== '')
-            ? $t['school_year'] . ' — ' . $t['period_label']
+            ? (stripos($t['period_label'], $t['school_year']) !== false ? $t['period_label'] : $t['school_year'] . ' — ' . $t['period_label'])
             : ($t['period_label'] !== '' ? $t['period_label'] : ($t['school_year'] !== '' ? $t['school_year'] : 'Period #' . $pid));
     }
     unset($t);
@@ -267,12 +277,16 @@ $history = []; $totalSum = 0.0; $totalCount = 0; $n = 1;
 foreach ($items as $it) {
     $totalSum   += $it['score_sum'];
     $totalCount += $it['score_count'];
+    $cleanComment = ea_clean_comment($it['comment']);
     $history[] = [
         'id'                 => $it['key'],
+        'ts'                 => $it['submitted_at'] ? (int)strtotime($it['submitted_at']) : 0,
+        'idx'                => $n,
+        'comment_ok'         => $cleanComment !== '',
         'source'             => $it['source'],
         'label'              => 'Evaluation #' . $n,
         'score'              => $it['score_count'] > 0 ? round($it['score_sum'] / $it['score_count'], 2) : null,
-        'comment'            => $it['comment'],
+        'comment'            => $cleanComment,
         'submitted_at_label' => $it['submitted_at'] ? date('M j, Y g:i A', strtotime($it['submitted_at'])) : 'Unknown date',
         'period_label'       => (!empty($it['school_year']) && !empty($it['semester'])) ? ($it['school_year'] . ' · ' . $it['semester']) : ($it['period_label'] ?: $it['semester']),
     ];
@@ -280,6 +294,93 @@ foreach ($items as $it) {
 }
 $responseCount = count($history);
 $overallAvg    = $totalCount > 0 ? round($totalSum / $totalCount, 2) : null;
+
+// ── SUMMARY STATS FOR THE OVERVIEW CARDS ────────────────────────────
+// Aggregates only — nothing here touches evaluator identity.
+$fmt = static function ($v) { return rtrim(rtrim(number_format((float)$v, 2), '0'), '.'); };
+$scoredCount = 0; $commentCount = 0;
+foreach ($history as $h) {
+    if ($h['score'] !== null) $scoredCount++;
+    if ($h['comment_ok']) $commentCount++;
+}
+
+// Category averages across every response shown.
+$catAgg = []; $liveIds = []; $keptIds = [];
+foreach ($history as $h) {
+    if ($h['source'] === 'kept') { $keptIds[] = (int)$h['id']; } else { $liveIds[] = (int)$h['id']; }
+}
+if ($liveIds) {
+    $inLive = implode(',', array_map('intval', $liveIds));
+    $catRows = safe_rows($mysqli, "
+        SELECT COALESCE(eq.category, uq.category, 'General') AS category, SUM(qa.answer_score) AS s, COUNT(qa.answer_score) AS c
+        FROM questionnaire_answers qa
+        LEFT JOIN evaluation_questions eq ON qa.question_source='evaluation' AND eq.id=qa.question_id
+        LEFT JOIN user_questions uq ON qa.question_source='user' AND uq.id=COALESCE(qa.user_question_id, qa.question_id)
+        WHERE qa.tracker_id IN ($inLive)
+        GROUP BY COALESCE(eq.category, uq.category, 'General')
+    ");
+    foreach ($catRows as $r) {
+        $cat = trim((string)$r['category']) !== '' ? trim((string)$r['category']) : 'General';
+        if (!isset($catAgg[$cat])) $catAgg[$cat] = [0.0, 0];
+        $catAgg[$cat][0] += (float)$r['s'];
+        $catAgg[$cat][1] += (int)$r['c'];
+    }
+}
+if ($keptIds) {
+    $inKept = implode(',', array_map('intval', $keptIds));
+    $keptAns = safe_rows($mysqli, "SELECT answers_json FROM feedback_received_keep WHERE target_user_id=? AND id IN ($inKept)", 'i', [$ea_id]);
+    foreach ($keptAns as $r) {
+        $list = json_decode((string)$r['answers_json'], true);
+        if (!is_array($list)) continue;
+        foreach ($list as $row) {
+            if (!isset($row['score'])) continue;
+            $cat = !empty($row['category']) ? (string)$row['category'] : 'General';
+            if (!isset($catAgg[$cat])) $catAgg[$cat] = [0.0, 0];
+            $catAgg[$cat][0] += (float)$row['score'];
+            $catAgg[$cat][1] += 1;
+        }
+    }
+}
+$catStats = [];
+foreach ($catAgg as $name => $v) {
+    if ($v[1] > 0) $catStats[] = ['name' => (string)$name, 'avg' => round($v[0] / $v[1], 2)];
+}
+usort($catStats, function ($a, $b) { return $b['avg'] <=> $a['avg']; });
+$topCat = $catStats[0] ?? null;
+$lowCat = count($catStats) > 1 ? $catStats[count($catStats) - 1] : null;
+
+// Change versus the previous term (only when a single term is selected).
+$trendText = ''; $trendClass = ''; $prevTermLabel = '';
+if (!$allPeriodsSelected && $selPeriod > 0 && $overallAvg !== null) {
+    $termKeys = array_keys($terms);
+    $pos = array_search($selPeriod, $termKeys, true);
+    if ($pos !== false && isset($termKeys[$pos + 1])) {
+        $prevId = (int)$termKeys[$pos + 1];
+        $pSum = 0.0; $pCnt = 0;
+        $pl = safe_rows($mysqli, "SELECT SUM(qa.answer_score) AS s, COUNT(qa.answer_score) AS c
+            FROM questionnaire_answers qa INNER JOIN evaluation_tracker et ON et.id = qa.tracker_id
+            WHERE " . EA_RECEIVED_WHERE . " AND et.period_id=?", 'iii', [$ea_id, $ea_id, $prevId]);
+        if ($pl) { $pSum += (float)$pl[0]['s']; $pCnt += (int)$pl[0]['c']; }
+        $pk = safe_rows($mysqli, "SELECT SUM(score_sum) AS s, SUM(score_count) AS c FROM feedback_received_keep WHERE target_user_id=? AND period_id=?", 'ii', [$ea_id, $prevId]);
+        if ($pk) { $pSum += (float)$pk[0]['s']; $pCnt += (int)$pk[0]['c']; }
+        if ($pCnt > 0) {
+            $d = round($overallAvg - ($pSum / $pCnt), 2);
+            $prevTermLabel = $terms[$prevId]['label'];
+            if ($d > 0)      { $trendClass = 'up';   $trendText = '▲ +' . number_format($d, 2); }
+            elseif ($d < 0)  { $trendClass = 'down'; $trendText = '▼ -' . number_format(abs($d), 2); }
+            else             { $trendClass = 'flat'; $trendText = 'No change'; }
+        }
+    }
+}
+
+function er_score_class($score) {
+    if ($score === null) return 'none';
+    if ($score >= 4) return 'high';
+    if ($score >= 3) return 'mid';
+    return 'low';
+}
+$displayList = array_reverse($history);   // newest first by default
+$starsOn = $overallAvg !== null ? (int)round($overallAvg) : 0;
 ?>
 <!doctype html>
 <html lang="en">
@@ -413,6 +514,89 @@ html[data-theme="dark"] .category-name{color:#B9C6DA !important;}
 html[data-theme="dark"] .bar{background:#233A5B !important;}
 html[data-theme="dark"] .q-text{color:#EAEFF5 !important;}
 html[data-theme="dark"] .comments .text{color:#C7D2E3 !important;}
+
+/* ── Evaluation Received — refreshed layout ── */
+.er-stats{grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin-bottom:20px}
+.er-stats .stat-card{display:flex;align-items:flex-start;gap:14px;padding:16px 18px}
+.er-stat-icon{flex:0 0 40px;width:40px;height:40px;border-radius:12px;background:rgba(37,99,235,.10);display:flex;align-items:center;justify-content:center}
+.er-stats .stat-card .er-stat-icon i{margin:0;font-size:17px;display:inline-block}
+.er-stat-body{min-width:0}
+.er-stats .stat-card .num{font-size:28px;line-height:1.1}
+.er-num-unit{font-size:14px;font-weight:600;color:var(--muted);margin-left:4px}
+.er-stat-sub{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.5;overflow-wrap:anywhere}
+.er-stars{letter-spacing:2px;font-size:14px;margin-right:6px}
+.er-stars span{color:#D5DDE6}
+.er-stars span.on{color:#F5B301}
+.er-trend{font-weight:700}
+.er-trend.up{color:#059669}
+.er-trend.down{color:#DC2626}
+.er-trend.flat{color:var(--muted)}
+
+.er-head{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+.er-head h2{margin-bottom:0}
+.er-count{font:700 12px Inter,Segoe UI,Arial,sans-serif;background:rgba(37,99,235,.10);color:#1D4ED8;padding:2px 10px;border-radius:12px;margin-left:4px}
+.er-head .term-picker{flex-direction:row;align-items:center;gap:10px;min-width:0}
+.er-head .term-picker select{width:auto;min-width:270px}
+
+.er-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 0 14px;border-top:1px solid var(--border-soft)}
+.er-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.er-select{padding:7px 12px;border-radius:9px;border:1px solid var(--border);background:var(--card);color:var(--text);font:600 13px Inter,Segoe UI,Arial,sans-serif;cursor:pointer}
+.er-select:focus{outline:3px solid rgba(37,99,235,.22);outline-offset:1px;border-color:var(--blue)}
+.er-chip{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:9px;border:1px solid var(--border);font:600 13px Inter,Segoe UI,Arial,sans-serif;color:var(--text);cursor:pointer;user-select:none}
+.er-chip input{accent-color:var(--blue)}
+.er-shown{font-size:12px;color:var(--muted)}
+
+.er-item{display:flex;justify-content:space-between;align-items:center;gap:18px;background:var(--page);border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:10px;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.er-item:last-child{margin-bottom:0}
+.er-item:hover,.er-item:focus-visible{border-color:var(--accent);box-shadow:0 2px 12px rgba(217,145,33,.18);outline:none}
+.er-main{min-width:0;flex:1}
+.er-eyebrow{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:6px}
+.er-meta{font-size:12px;color:var(--muted);margin-top:3px}
+.er-comment{margin:8px 0 0;font-size:13.5px;line-height:1.55;font-style:italic;color:var(--text);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.er-comment.none{font-style:normal;color:var(--muted)}
+.er-side{display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex-shrink:0}
+.er-badge{font-size:13px;font-weight:800;padding:4px 12px;border-radius:18px;border:1px solid transparent;white-space:nowrap}
+.er-badge small{font-size:11px;font-weight:600;opacity:.75}
+.er-badge.high{background:rgba(16,185,129,.12);color:#047857;border-color:rgba(16,185,129,.3)}
+.er-badge.mid{background:rgba(245,158,11,.14);color:#B45309;border-color:rgba(245,158,11,.35)}
+.er-badge.low{background:rgba(239,68,68,.12);color:#B91C1C;border-color:rgba(239,68,68,.32)}
+.er-badge.none{background:rgba(100,123,150,.12);color:var(--muted);border-color:rgba(100,123,150,.25);font-weight:700;font-size:12px}
+
+/* Performance by Category */
+.er-cat{display:grid;grid-template-columns:minmax(150px,230px) 1fr 84px;align-items:center;gap:16px;padding:10px 0}
+.er-cat-name{font-size:13.5px;font-weight:600;color:var(--text);line-height:1.35}
+.er-cat-tag{display:inline-block;margin-left:6px;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:10px;vertical-align:middle}
+.er-cat-tag.highest{background:rgba(16,185,129,.12);color:#047857}
+.er-cat-tag.lowest{background:rgba(245,158,11,.14);color:#B45309}
+.er-cat-track{height:10px;background:#E8EEF5;border-radius:8px;overflow:hidden}
+.er-cat-fill{height:100%;border-radius:8px}
+.er-cat-fill.high{background:linear-gradient(90deg,#059669,#34D399)}
+.er-cat-fill.mid{background:linear-gradient(90deg,#D97706,#FBBF24)}
+.er-cat-fill.low{background:linear-gradient(90deg,#DC2626,#F87171)}
+.er-cat-score{text-align:right;font-size:15px;font-weight:800;color:var(--text);white-space:nowrap}
+.er-cat-score small{font-size:11px;font-weight:600;color:var(--muted)}
+
+/* dark theme */
+html[data-theme="dark"] .er-stat-icon{background:rgba(96,165,250,.14)}
+html[data-theme="dark"] .er-stars span{color:#334867}
+html[data-theme="dark"] .er-stars span.on{color:#FBBF24}
+html[data-theme="dark"] .er-trend.up{color:#34D399}
+html[data-theme="dark"] .er-trend.down{color:#F87171}
+html[data-theme="dark"] .er-count{background:rgba(96,165,250,.16);color:#93C5FD}
+html[data-theme="dark"] .er-select{background:var(--card) !important;color:var(--text) !important}
+html[data-theme="dark"] .er-badge.high,html[data-theme="dark"] .er-cat-tag.highest{color:#6EE7B7}
+html[data-theme="dark"] .er-badge.mid,html[data-theme="dark"] .er-cat-tag.lowest{color:#FCD34D}
+html[data-theme="dark"] .er-badge.low{color:#FCA5A5}
+html[data-theme="dark"] .er-cat-track{background:#233A5B}
+
+@media(max-width:640px){
+  .er-item{flex-direction:column;align-items:flex-start;gap:12px}
+  .er-side{flex-direction:row;align-items:center;justify-content:space-between;width:100%}
+  .er-head .term-picker{flex-direction:column;align-items:stretch;width:100%}
+  .er-head .term-picker select{width:100%;min-width:0}
+  .er-cat{grid-template-columns:1fr 70px}.er-cat-name{grid-column:1/-1}.er-cat-track{grid-column:1}
+}
+
 </style>
 <link rel="stylesheet" href="admin_appearance.css">
 <script src="admin_appearance.js"></script>
@@ -458,6 +642,7 @@ html[data-theme="dark"] .comments .text{color:#C7D2E3 !important;}
   });
 })();
 </script>
+<link rel="stylesheet" href="admin_unified_ui.css?v=<?= (int)@filemtime(__DIR__ . '/admin_unified_ui.css') ?>">
 </head>
 <body>
 <div class="wrap">
@@ -465,92 +650,143 @@ html[data-theme="dark"] .comments .text{color:#C7D2E3 !important;}
         <div>
             <h1>Evaluation Received</h1>
         </div>
-        <?php if ($terms): ?>
-        <form method="get" class="term-picker">
-            <label for="termSelect"><i class="fa-solid fa-calendar-days"></i> Evaluation Term</label>
-            <select id="termSelect" name="period" onchange="this.form.submit()">
-                <option value="all"<?= $allPeriodsSelected ? ' selected' : '' ?>>All Evaluation Terms — Past &amp; Current</option>
-                <?php foreach ($terms as $t): ?>
-                <option value="<?= (int)$t['id'] ?>"<?= !$allPeriodsSelected && (int)$t['id'] === $selPeriod ? ' selected' : '' ?>><?= $escape($t['label']) ?><?= $t['current'] ? ' (Current)' : ($t['archived'] ? ' (Archived)' : '') ?></option>
-                <?php endforeach; ?>
-            </select>
-        </form>
+    </div>
+
+    <div class="card-grid er-stats">
+        <div class="stat-card">
+            <div class="er-stat-icon"><i class="fa-solid fa-star"></i></div>
+            <div class="er-stat-body">
+                <div class="num"><?= $overallAvg !== null ? $escape($fmt($overallAvg)) : '—' ?><?php if ($overallAvg !== null): ?><span class="er-num-unit">/ 5</span><?php endif; ?></div>
+                <div class="label">Overall Average</div>
+                <?php if ($overallAvg !== null): ?>
+                <div class="er-stat-sub">
+                    <span class="er-stars" aria-hidden="true"><?php for ($i = 1; $i <= 5; $i++): ?><span class="<?= $i <= $starsOn ? 'on' : '' ?>">★</span><?php endfor; ?></span>
+                    <?php if ($trendText !== ''): ?>
+                        <span class="er-trend <?= $escape($trendClass) ?>"><?= $escape($trendText) ?></span> vs <?= $escape($prevTermLabel) ?>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="er-stat-icon"><i class="fa-solid fa-comments"></i></div>
+            <div class="er-stat-body">
+                <div class="num"><?= (int)$responseCount ?></div>
+                <div class="label">Responses Received</div>
+                <?php if ($responseCount > 0): ?><div class="er-stat-sub"><?= (int)$scoredCount ?> scored · <?= (int)$commentCount ?> with comments</div><?php endif; ?>
+            </div>
+        </div>
+        <?php if ($topCat): ?>
+        <div class="stat-card">
+            <div class="er-stat-icon"><i class="fa-solid fa-arrow-trend-up"></i></div>
+            <div class="er-stat-body">
+                <div class="num"><?= $escape($fmt($topCat['avg'])) ?><span class="er-num-unit">/ 5</span></div>
+                <div class="label">Highest-Rated Area</div>
+                <div class="er-stat-sub"><?= $escape($topCat['name']) ?></div>
+            </div>
+        </div>
+        <?php endif; ?>
+        <?php if ($lowCat): ?>
+        <div class="stat-card">
+            <div class="er-stat-icon"><i class="fa-solid fa-arrow-trend-down"></i></div>
+            <div class="er-stat-body">
+                <div class="num"><?= $escape($fmt($lowCat['avg'])) ?><span class="er-num-unit">/ 5</span></div>
+                <div class="label">Lowest-Rated Area</div>
+                <div class="er-stat-sub"><?= $escape($lowCat['name']) ?></div>
+            </div>
+        </div>
         <?php endif; ?>
     </div>
 
-
-    <div class="card-grid">
-        <div class="stat-card"><i class="fa-solid fa-star"></i><div class="num"><?= $overallAvg !== null ? $escape(rtrim(rtrim(number_format($overallAvg, 2), '0'), '.')) : '—' ?></div><div class="label">Overall Average</div></div>
-        <div class="stat-card"><i class="fa-solid fa-comments"></i><div class="num"><?= $responseCount ?></div><div class="label">Responses Received</div></div>
+    <?php if ($catStats): ?>
+    <div class="panel">
+        <div class="er-head">
+            <h2><i class="fa-solid fa-chart-simple"></i> Performance by Category</h2>
+            <span class="er-shown">Average score out of 5</span>
+        </div>
+        <?php foreach ($catStats as $ci => $c):
+            $pct = max(0, min(100, round(($c['avg'] / 5) * 100)));
+            $tag = ($ci === 0 && count($catStats) > 1) ? 'Highest' : (($ci === count($catStats) - 1 && count($catStats) > 1) ? 'Lowest' : '');
+        ?>
+        <div class="er-cat">
+            <div class="er-cat-name"><?= $escape($c['name']) ?><?php if ($tag): ?> <span class="er-cat-tag <?= strtolower($tag) ?>"><?= $tag ?></span><?php endif; ?></div>
+            <div class="er-cat-track"><div class="er-cat-fill <?= er_score_class($c['avg']) ?>" style="width:<?= $pct ?>%"></div></div>
+            <div class="er-cat-score"><?= number_format($c['avg'], 2) ?><small> / 5</small></div>
+        </div>
+        <?php endforeach; ?>
     </div>
+    <?php endif; ?>
 
     <div class="panel">
-        <h2><i class="fa-solid fa-comment-dots"></i> Evaluation History — Anonymous Responses</h2>
+        <div class="er-head">
+            <h2><i class="fa-solid fa-clock-rotate-left"></i> Evaluations Received <span class="er-count"><?= (int)$responseCount ?></span></h2>
+            <?php if ($terms): ?>
+            <form method="get" class="term-picker">
+                <label for="termSelect"><i class="fa-solid fa-calendar-days"></i> Evaluation Term</label>
+                <select id="termSelect" name="period" onchange="this.form.submit()">
+                    <option value="all"<?= $allPeriodsSelected ? ' selected' : '' ?>>All Evaluation Terms — Past &amp; Current</option>
+                    <?php foreach ($terms as $t): ?>
+                    <option value="<?= (int)$t['id'] ?>"<?= !$allPeriodsSelected && (int)$t['id'] === $selPeriod ? ' selected' : '' ?>><?= $escape($t['label']) ?><?= $t['current'] ? ' (Current)' : ($t['archived'] ? ' (Archived)' : '') ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </form>
+            <?php endif; ?>
+        </div>
+
         <?php if (!$history): ?>
             <p class="empty-note"><?= $allPeriodsSelected ? 'No responses were submitted across any evaluation term.' : 'No responses were submitted for this term.' ?></p>
         <?php else: ?>
-            <?php foreach ($history as $h): ?>
-            <div class="response-card">
-                <div class="response-head">
-                    <span class="response-label"><i class="fa-solid fa-user-secret"></i> Anonymous — <?= $escape($h['label']) ?></span>
-                    <?php if ($h['score'] !== null): ?><span class="response-score"><?= $escape(rtrim(rtrim(number_format($h['score'], 2), '0'), '.')) ?></span><?php endif; ?>
+            <div class="er-toolbar">
+                <div class="er-controls">
+                    <select id="erSort" class="er-select" onchange="erApply()" aria-label="Sort evaluations">
+                        <option value="newest">Newest first</option>
+                        <option value="oldest">Oldest first</option>
+                        <option value="high">Highest score</option>
+                        <option value="low">Lowest score</option>
+                    </select>
+                    <label class="er-chip"><input type="checkbox" id="erOnlyComments" onchange="erApply()"> With comments only</label>
                 </div>
-                <?php if ($h['comment'] !== ''): ?>
-                    <p class="response-comment">&ldquo;<?= $escape($h['comment']) ?>&rdquo;</p>
-                <?php else: ?>
-                    <p class="empty-note">No written comment.</p>
-                <?php endif; ?>
+                <span class="er-shown" id="erShown">Showing <?= (int)$responseCount ?> of <?= (int)$responseCount ?></span>
             </div>
-            <?php endforeach; ?>
-        <?php endif; ?>
-    </div>
 
-    <div class="panel">
-        <h2><i class="fa-solid fa-clock-rotate-left"></i> Evaluations Received</h2>
-        <button type="button" class="view-evals-btn" id="viewEvalsBtn" onclick="toggleEvals()">
-            <i class="fa-solid fa-eye"></i> View Evaluations Received
-            <i class="fa-solid fa-chevron-down caret"></i>
-        </button>
-        <div id="evalsList" style="display:none;margin-top:14px">
-            <?php if (!$history): ?>
-                <p class="empty-note">No evaluations have been received yet.</p>
-            <?php else: ?>
-                <div class="results">
-                <?php foreach ($history as $h): ?>
-                    <div class="result-card" onclick="openDetails(<?= (int)$h['id'] ?>,'<?= $h['source'] === 'kept' ? 'kept' : 'live' ?>')">
-                        <div class="result-main">
-                            <div class="anonymous"><i class="fa-solid fa-eye-slash" style="color:var(--muted);margin-right:6px"></i>Anonymous Evaluator</div>
-                            <div class="meta">
-                                <span><?= $escape($h['submitted_at_label']) ?></span>
-                                <?php if (!empty($h['period_label'])): ?><span class="dot">·</span><span><?= $escape($h['period_label']) ?></span><?php endif; ?>
-                            </div>
-                        </div>
-                        <div class="right">
-                            <div class="score-pill"><?= $h['score'] !== null ? $escape(number_format($h['score'], 2)) . ' / 5' : '—' ?></div>
-                            <button type="button" class="view-btn" onclick="event.stopPropagation();openDetails(<?= (int)$h['id'] ?>,'<?= $h['source'] === 'kept' ? 'kept' : 'live' ?>')">View Details</button>
-                        </div>
+            <div id="erList">
+            <?php foreach ($displayList as $h):
+                $src  = $h['source'] === 'kept' ? 'kept' : 'live';
+                $cls  = er_score_class($h['score']);
+                $open = 'openDetails(' . (int)$h['id'] . ",'" . $src . "')";
+            ?>
+                <div class="er-item" role="button" tabindex="0"
+                     data-ts="<?= (int)$h['ts'] ?>" data-idx="<?= (int)$h['idx'] ?>"
+                     data-score="<?= $h['score'] !== null ? $escape($h['score']) : '-1' ?>"
+                     data-comment="<?= $h['comment_ok'] ? '1' : '0' ?>"
+                     onclick="<?= $open ?>"
+                     onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();<?= $open ?>}">
+                    <div class="er-main">
+                        <div class="er-eyebrow"><i class="fa-solid fa-user-secret"></i> Anonymous — <?= $escape($h['label']) ?></div>
+                        <div class="er-meta"><?= $escape($h['submitted_at_label']) ?><?= !empty($h['period_label']) ? ' · ' . $escape($h['period_label']) : '' ?></div>
+                        <?php if ($h['comment_ok']): ?>
+                            <p class="er-comment">&ldquo;<?= $escape($h['comment']) ?>&rdquo;</p>
+                        <?php else: ?>
+                            <p class="er-comment none">No written comment</p>
+                        <?php endif; ?>
                     </div>
-                <?php endforeach; ?>
+                    <div class="er-side">
+                        <?php if ($h['score'] !== null): ?>
+                            <span class="er-badge <?= $cls ?>"><?= $escape($fmt($h['score'])) ?><small> / 5</small></span>
+                        <?php else: ?>
+                            <span class="er-badge none">No score</span>
+                        <?php endif; ?>
+                        <button type="button" class="view-btn" onclick="event.stopPropagation();<?= $open ?>">View Details <i class="fa-solid fa-chevron-right" style="font-size:10px;margin-left:4px"></i></button>
+                    </div>
                 </div>
-            <?php endif; ?>
-        </div>
-    </div>
-</div>
-
-<div class="modal-backdrop" id="detailBackdrop" onclick="backdropClose(event)">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
-        <div class="modal-head">
-            <div class="modal-title" id="detailTitle">Evaluation Details</div>
-            <button type="button" class="close" onclick="closeDetails()" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
-        </div>
-        <div id="detailContent" class="loading">Loading evaluation details…</div>
+            <?php endforeach; ?>
+            </div>
+            <p class="empty-note" id="erNoMatch" style="display:none;">No evaluations match this filter.</p>
+        <?php endif; ?>
     </div>
 </div>
 
 <script>
-const backdrop = document.getElementById('detailBackdrop');
-const detailContent = document.getElementById('detailContent');
-
 function esc(value){
     return String(value ?? '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
 }
@@ -558,73 +794,168 @@ function scoreWidth(score){
     if(score === null || score === undefined || Number.isNaN(Number(score))) return 0;
     return Math.max(0, Math.min(100, (Number(score) / 5) * 100));
 }
-function scoreText(score){
-    return score === null || score === undefined ? '—' : `${Number(score).toFixed(2)}`;
+function erApply(){
+    const list=document.getElementById('erList'); if(!list) return;
+    const items=[].slice.call(list.querySelectorAll('.er-item'));
+    const mode=document.getElementById('erSort').value;
+    const only=document.getElementById('erOnlyComments').checked;
+    const n=(el,k)=>parseFloat(el.dataset[k])||0;
+    const lowKey=el=>{const v=parseFloat(el.dataset.score);return v<0?Infinity:v;};
+    items.sort((a,b)=>{
+        if(mode==='oldest') return n(a,'ts')-n(b,'ts')||n(a,'idx')-n(b,'idx');
+        if(mode==='high') return parseFloat(b.dataset.score)-parseFloat(a.dataset.score)||n(b,'ts')-n(a,'ts');
+        if(mode==='low'){const x=lowKey(a),y=lowKey(b);return x===y?n(b,'ts')-n(a,'ts'):(x<y?-1:1);}
+        return n(b,'ts')-n(a,'ts')||n(b,'idx')-n(a,'idx');
+    });
+    let shown=0;
+    items.forEach(el=>{const ok=!only||el.dataset.comment==='1';el.style.display=ok?'':'none';if(ok)shown++;list.appendChild(el);});
+    document.getElementById('erShown').textContent='Showing '+shown+' of '+items.length;
+    document.getElementById('erNoMatch').style.display=shown?'none':'block';
 }
-function toggleEvals(){
-    const l=document.getElementById('evalsList'),b=document.getElementById('viewEvalsBtn');
-    const open=l.style.display!=='none';
-    l.style.display=open?'none':'block';
-    b.classList.toggle('open',!open);
-}
-function openDetails(id,src){
-    backdrop.classList.add('open');
-    document.body.style.overflow='hidden';
-    detailContent.className='loading';
-    detailContent.textContent='Loading evaluation details…';
 
-    fetch(`ea_results.php?details=${encodeURIComponent(id)}${src==='kept'?'&src=kept':''}`, {credentials:'same-origin'})
+/* ── Evaluation Details popup ─────────────────────────────────────────
+   This page usually runs inside an iframe in the admin shell. A modal drawn
+   inside the iframe can only dim the iframe's own area, so the popup is built
+   in the parent document (same origin) and covers the whole screen —
+   sidebar and header included. Falls back to this document when standalone. */
+const PEV_HOST = (function(){
+    try {
+        if (window.parent && window.parent !== window && window.parent.document && window.parent.document.body) return window.parent;
+    } catch (e) {}
+    return window;
+})();
+let pevLocked = null;
+
+function pevEnsureStyle(){
+    const d = PEV_HOST.document;
+    if (d.getElementById('pev-style')) return;
+    const st = d.createElement('style');
+    st.id = 'pev-style';
+    st.textContent = `
+.pev-backdrop{--c-card:#fff;--c-border:#D7E3EF;--c-soft:#E8EEF5;--c-text:#0B1F3A;--c-muted:#647B96;--c-label:#70849C;--c-accent:#D99121;--c-track:#E8EEF5;--c-cat:#344B63;--c-q:#162A43;--c-q2:#526A82;--c-body:#354C63;
+  position:fixed;inset:0;z-index:2147483000;display:none;align-items:center;justify-content:center;padding:24px;
+  background:rgba(3,10,22,.55);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);
+  font-family:Inter,'Segoe UI',Arial,sans-serif;color:var(--c-text);line-height:1.4}
+html[data-theme="dark"] .pev-backdrop{--c-card:#172A45;--c-border:#24395A;--c-soft:#1E314F;--c-text:#E7ECF3;--c-muted:#93A5BE;--c-label:#93A5BE;--c-track:#233A5B;--c-cat:#B9C6DA;--c-q:#EAEFF5;--c-q2:#93A5BE;--c-body:#C7D2E3;background:rgba(0,0,0,.65)}
+.pev-backdrop,.pev-backdrop *{box-sizing:border-box}
+.pev-backdrop.open{display:flex}
+.pev-modal{width:min(840px,100%);max-height:min(88vh,900px);overflow:auto;background:var(--c-card);border-radius:18px;box-shadow:0 24px 70px rgba(15,23,42,.35)}
+.pev-head{padding:22px 26px 18px;border-bottom:1px solid var(--c-soft);display:flex;align-items:center;justify-content:space-between;gap:16px}
+.pev-title{font-size:24px;font-weight:800;letter-spacing:-.02em;margin:0}
+.pev-close{width:34px;height:34px;border-radius:50%;border:1px solid var(--c-border);background:var(--c-card);color:var(--c-muted);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+.pev-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:24px 26px 4px}
+.pev-box{border:1px solid var(--c-border);border-radius:12px;padding:13px 16px;background:var(--c-card);box-shadow:0 4px 12px rgba(30,82,144,.05)}
+.pev-label{font-size:10px;text-transform:uppercase;letter-spacing:.65px;color:var(--c-label);margin-bottom:5px}
+.pev-value{font-size:14px;font-weight:800;color:var(--c-text)}
+.pev-value.score{color:var(--c-accent)}
+.pev-section{padding:18px 26px 0}
+.pev-section-title{font-size:15px;font-weight:800;margin:0 0 12px}
+.pev-cat{display:grid;grid-template-columns:170px 1fr 50px;align-items:center;gap:14px;margin:9px 0}
+.pev-cat-name{font-size:12.5px;font-weight:700;color:var(--c-cat)}
+.pev-bar{height:9px;background:var(--c-track);border-radius:999px;overflow:hidden}
+.pev-bar>span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#C17D19,#F3BA54)}
+.pev-cat-score{font-size:12px;font-weight:800;color:var(--c-accent);text-align:right}
+.pev-answers{display:flex;flex-direction:column;gap:10px}
+.pev-answer{border:1px solid var(--c-border);border-radius:12px;padding:14px 16px;background:var(--c-card)}
+.pev-qlabel{font-size:10px;text-transform:uppercase;letter-spacing:.65px;color:var(--c-label);margin-bottom:6px}
+.pev-qtext{font-size:13.5px;font-weight:700;line-height:1.35;color:var(--c-q)}
+.pev-qscore{margin-top:9px;font-size:12px;font-weight:800;color:var(--c-q2)}
+.pev-comments{margin:18px 26px 26px;border:1px solid var(--c-border);border-radius:12px;padding:15px 16px;background:var(--c-card)}
+.pev-comments .pev-label{font-size:15px;font-weight:800;margin-bottom:10px;text-transform:none;letter-spacing:0;color:var(--c-text)}
+.pev-text{font-size:13px;color:var(--c-body);line-height:1.55;white-space:pre-wrap}
+.pev-none{font-style:italic;color:var(--c-muted)}
+.pev-loading{text-align:center;padding:50px 20px;color:var(--c-muted);font-size:13.5px}
+@media(max-width:760px){.pev-grid{grid-template-columns:1fr}.pev-cat{grid-template-columns:1fr 1fr 48px;gap:10px}.pev-cat-name{grid-column:1/-1}}`;
+    d.head.appendChild(st);
+}
+
+function closeDetails(){
+    const d = PEV_HOST.document;
+    const bd = d.getElementById('pev-backdrop');
+    if (bd) bd.remove();
+    if (pevLocked){
+        d.body.style.overflow = pevLocked.host;
+        document.body.style.overflow = pevLocked.self;
+        pevLocked = null;
+    }
+}
+
+function openDetails(id, src){
+    const d = PEV_HOST.document;
+    pevEnsureStyle();
+    closeDetails();
+
+    const bd = d.createElement('div');
+    bd.id = 'pev-backdrop';
+    bd.className = 'pev-backdrop open';
+    bd.innerHTML = `
+        <div class="pev-modal" role="dialog" aria-modal="true" aria-labelledby="pev-title">
+            <div class="pev-head">
+                <h2 class="pev-title" id="pev-title">Evaluation Details</h2>
+                <button type="button" class="pev-close" aria-label="Close">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 2l10 10M12 2L2 12"/></svg>
+                </button>
+            </div>
+            <div class="pev-content pev-loading">Loading evaluation details…</div>
+        </div>`;
+    d.body.appendChild(bd);
+    bd.addEventListener('click', e => { if (e.target === bd) closeDetails(); });
+    bd.querySelector('.pev-close').addEventListener('click', closeDetails);
+
+    pevLocked = { host: d.body.style.overflow, self: document.body.style.overflow };
+    d.body.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+
+    const content = bd.querySelector('.pev-content');
+    fetch(`ea_results.php?details=${encodeURIComponent(id)}${src === 'kept' ? '&src=kept' : ''}`, {credentials:'same-origin'})
         .then(r => r.ok ? r.json() : Promise.reject(new Error('Unable to load this evaluation.')))
         .then(data => {
-            if(data.error) throw new Error(data.error);
-            const overall = data.overall_score !== null ? `${Number(data.overall_score).toFixed(2)} / 5` : '—';
+            if (data.error) throw new Error(data.error);
+            const overall = data.overall_score !== null && data.overall_score !== undefined ? `${Number(data.overall_score).toFixed(2)} / 5` : '—';
             const categories = (data.categories || []).map(row => `
-                <div class="category-row">
-                    <div class="category-name">${esc(row.category)}</div>
-                    <div class="bar"><span style="width:${scoreWidth(row.score)}%"></span></div>
-                    <div class="category-score">${row.score !== null ? Number(row.score).toFixed(2) : '—'}</div>
+                <div class="pev-cat">
+                    <div class="pev-cat-name">${esc(row.category)}</div>
+                    <div class="pev-bar"><span style="width:${scoreWidth(row.score)}%"></span></div>
+                    <div class="pev-cat-score">${row.score !== null && row.score !== undefined ? Number(row.score).toFixed(2) : '—'}</div>
                 </div>`).join('');
             const answers = (data.answers || []).map((row, index) => `
-                <div class="answer">
-                    <div class="q-label">Question ${index + 1}</div>
-                    <div class="q-text">${esc(row.question)}</div>
-                    <div class="q-score">Score: ${row.score !== null ? Number(row.score).toFixed(0) : '—'} / 5</div>
+                <div class="pev-answer">
+                    <div class="pev-qlabel">Question ${index + 1}</div>
+                    <div class="pev-qtext">${esc(row.question)}</div>
+                    <div class="pev-qscore">Score: ${row.score !== null && row.score !== undefined ? Number(row.score).toFixed(0) : '—'} / 5</div>
                 </div>`).join('');
 
-            detailContent.className='';
-            detailContent.innerHTML = `
-                <div class="detail-grid">
-                    <div class="detail-box"><div class="detail-label">Evaluator</div><div class="detail-value">Anonymous Evaluator</div></div>
-                    <div class="detail-box"><div class="detail-label">Period</div><div class="detail-value">${esc(data.period)}</div></div>
-                    <div class="detail-box"><div class="detail-label">Submitted</div><div class="detail-value">${esc(data.submitted)}</div></div>
-                    <div class="detail-box"><div class="detail-label">Overall Score</div><div class="detail-value score">${overall}</div></div>
+            content.className = 'pev-content';
+            content.innerHTML = `
+                <div class="pev-grid">
+                    <div class="pev-box"><div class="pev-label">Evaluator</div><div class="pev-value">Anonymous Evaluator</div></div>
+                    <div class="pev-box"><div class="pev-label">Period</div><div class="pev-value">${esc(data.period)}</div></div>
+                    <div class="pev-box"><div class="pev-label">Submitted</div><div class="pev-value">${esc(data.submitted)}</div></div>
+                    <div class="pev-box"><div class="pev-label">Overall Score</div><div class="pev-value score">${overall}</div></div>
                 </div>
-                <div class="section">
-                    <div class="section-title">Performance by Category</div>
-                    ${categories || '<div style="font-size:13px;color:#647B96">No category data available.</div>'}
+                <div class="pev-section">
+                    <div class="pev-section-title">Performance by Category</div>
+                    ${categories || '<div class="pev-text pev-none" style="font-style:normal">No category data available.</div>'}
                 </div>
-                <div class="section">
-                    <div class="section-title">Question-by-Question Results</div>
-                    <div class="answers">${answers || '<div style="font-size:13px;color:#647B96">No question responses available.</div>'}</div>
+                <div class="pev-section">
+                    <div class="pev-section-title">Question-by-Question Results</div>
+                    <div class="pev-answers">${answers || '<div class="pev-text pev-none" style="font-style:normal">No question responses available.</div>'}</div>
                 </div>
-                <div class="comments">
-                    <div class="label">Comments / Feedback</div>
-                    <div class="text">${esc(data.remarks || '“N/A”')}</div>
+                <div class="pev-comments">
+                    <div class="pev-label">Comments / Feedback</div>
+                    <div class="pev-text">${data.remarks ? esc(data.remarks) : '<span class="pev-none">No written feedback was provided.</span>'}</div>
                 </div>`;
         })
         .catch(err => {
-            detailContent.className='loading';
-            detailContent.innerHTML = `<div style="color:#B42318">${esc(err.message || 'Unable to load this evaluation.')}</div>`;
+            content.className = 'pev-content pev-loading';
+            content.innerHTML = `<span style="color:#B42318">${esc(err.message || 'Unable to load this evaluation.')}</span>`;
         });
 }
-function closeDetails(){
-    backdrop.classList.remove('open');
-    document.body.style.overflow='';
-}
-function backdropClose(event){
-    if(event.target === backdrop) closeDetails();
-}
-document.addEventListener('keydown', e => { if(e.key === 'Escape') closeDetails(); });
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetails(); });
+if (PEV_HOST !== window) PEV_HOST.document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetails(); });
+// If this iframe navigates away, don't leave the popup behind in the parent page.
+window.addEventListener('pagehide', closeDetails);
 </script>
 </body>
 </html>

@@ -197,14 +197,16 @@ if (!function_exists('principal_theme_assets')) {
 <script>
 (function(){
     try {
-        if (localStorage.getItem('pbi_theme') === 'dark') {
+        var saved = localStorage.getItem('pbi_theme');
+        var systemDark = saved === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (saved === 'dark' || systemDark) {
             document.documentElement.classList.add('principal-theme-dark-pending');
         }
     } catch (e) {}
 })();
 </script>
-<link rel="stylesheet" href="includes/principal_theme.css?v=20261009.1"/>
-<script defer src="includes/principal_theme.js?v=20261009.1"></script>
+<link rel="stylesheet" href="includes/principal_theme.css?v=20261011.5"/>
+<script defer src="includes/principal_theme.js?v=20261011.5"></script>
         <?php
     }
 }
