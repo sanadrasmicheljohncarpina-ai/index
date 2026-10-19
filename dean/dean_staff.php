@@ -147,7 +147,7 @@ $mysqli->close();
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,.82)),url('../background.png') center center / cover no-repeat fixed;background-color:var(--dark);font-family:'DM Sans',sans-serif;color:var(--light);display:flex;}
 
-.sidebar{width:250px;flex-shrink:0;background:rgba(23,42,69,.9);border-right:1px solid rgba(255,255,255,.08);min-height:100vh;padding:28px 20px;display:flex;flex-direction:column;}
+.sidebar{width:250px;flex-shrink:0;background:#0F1F33;border-right:1px solid #060E18;min-height:100vh;padding:28px 20px;display:flex;flex-direction:column;}
 .sb-profile{text-align:center;margin-bottom:26px;}
 .sb-photo{width:72px;height:72px;border-radius:50%;object-fit:cover;border:2.5px solid var(--violet);box-shadow:0 0 18px rgba(124,95,217,.4);margin:0 auto 10px;display:block;}
 .sb-name{font-weight:700;font-size:15px;color:#fff;}
@@ -205,13 +205,14 @@ table.data tr.hidden-row{display:none;}
 
 @media(max-width:768px){body{flex-direction:column;}.sidebar{width:100%;min-height:auto;}}
 </style>
+<link rel="stylesheet" href="includes/dean_light_theme.css?v=dashboard-ui-20261009"/>
 </head>
 <body>
 
 <?php
 $active = 'staff';
 $sidebarScope = 'College Division';
-include __DIR__ . '/includes/dean_sidebar.php';
+include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_header_dark.php')) include __DIR__ . '/dean_header_dark.php';
 ?>
 
 <main class="main">
@@ -368,4 +369,5 @@ document.querySelectorAll('#staffTable th[data-key]').forEach(th => {
 applyFilters();
 </script>
 </body>
+<link rel="stylesheet" href="includes/dean_light_theme.css?v=dashboard-ui-20261009" id="dean-light-theme-final"/>
 </html>

@@ -10,6 +10,10 @@ session_set_cookie_params([
 ]);
 session_start();
 require_once 'db.php';
+require_once dirname(__DIR__) . '/shared/system_settings_service.php';
+
+// Apply the schedule before reading evaluation_periods.is_active.
+ss_sync_from_database($mysqli);
 require_once '../shared/EvaluationContextService.php';
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
@@ -17,7 +21,7 @@ mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', ['admin','superadmin'])) {
     header("Location: admin_login.php"); exit;
 }
-echo "<div style='padding:40px;font-family:sans-serif;color:#0F172A;background:#F8FAFC;min-height:100vh;'>Teaching Assignment management is being rebuilt. Contact the system administrator for manual assignment changes in the meantime.</div>";
+echo "<div style='padding:40px;font-family:sans-serif;color:#0B1F3A;background:#F8FAFC;min-height:100vh;'>Teaching Assignment management is being rebuilt. Contact the system administrator for manual assignment changes in the meantime.</div>";
 exit;
 
 $student_id   = $_SESSION['user_id'];
@@ -27,8 +31,8 @@ $student_name = $_SESSION['full_name'];
 // Mirrors admin/questionnaire.php's 3-bucket model exactly:
 //   - Faculty     -> shared pool in `evaluation_questions`
 //   - Staff       -> PER-PERSON questions in `user_questions`
-//   - Multi-Role  -> shared pool in `evaluation_questions`
-$system_categories = ['Faculty', 'Staff', 'Multi-Role'];
+//
+$system_categories = ['Faculty', 'Staff'];
 
 $token_to_target = [
     'Teacher'         => 'Faculty',
@@ -92,11 +96,7 @@ function resolveUserTarget($designation, $role, $token_to_target, $keyword_to_ta
 // resolve to 2+ distinct buckets (Faculty AND Staff). Identical to
 // admin/questionnaire.php's isMultiRole().
 function isMultiRoleUser($designation, $token_to_target, $keyword_to_target, $role = 'teacher') {
-    return ec_has_additional_role([
-        'designation' => $designation,
-        'role' => $role,
-        'secondary_role' => ''
-    ]);
+    return false;
 }
 
 // ── ACTIVE EVALUATION PERIOD ──────────────────────────────────
@@ -188,7 +188,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_evaluation']))
 // person's resolved bucket:
 //   - Staff bucket      -> user_questions (per-person, keyed by user_id)
 //   - Faculty bucket     -> evaluation_questions (shared pool, target_type='Faculty')
-//   - Multi-Role (extra) -> evaluation_questions (shared pool, target_type='Multi-Role'),
+//
 //                           merged in addition to the primary bucket's questions
 if (isset($_GET['get_questions'])) {
     header('Content-Type: application/json');
@@ -204,7 +204,7 @@ if (isset($_GET['get_questions'])) {
         $designation = $userRow['designation'] ?? '';
         $role        = $userRow['role'] ?? 'teacher';
         $primary     = resolveUserTarget($designation, $role, $token_to_target, $keyword_to_target);
-        $is_mr       = isMultiRoleUser($designation, $token_to_target, $keyword_to_target, $role);
+        $is_mr       = false;
 
         $questions = [];
 
@@ -241,7 +241,7 @@ if (isset($_GET['get_questions'])) {
             $mrq = $mysqli->prepare(
                 "SELECT id, question_text, category
                  FROM evaluation_questions
-                 WHERE target_type = 'Multi-Role' AND eval_type = 'student'
+                 WHERE 1=0
                  ORDER BY category, id"
             );
             $mrq->execute();
@@ -357,9 +357,6 @@ foreach ($all_users as $u) {
     $target = resolveUserTarget($designation, $role, $token_to_target, $keyword_to_target);
     if (isset($grouped[$target])) $grouped[$target][] = $u;
 
-    if (isMultiRoleUser($designation, $token_to_target, $keyword_to_target, $role)) {
-        $grouped['Multi-Role'][] = $u;
-    }
 }
 
 // Remove empty groups so students only see categories with people in them
@@ -401,12 +398,10 @@ $hres->close();
 $group_icons = [
     'Faculty'    => 'fa-chalkboard-user',
     'Staff'      => 'fa-briefcase',
-    'Multi-Role' => 'fa-layer-group',
 ];
 $group_colors = [
     'Faculty'    => '#00E5FF',
     'Staff'      => '#10b981',
-    'Multi-Role' => '#F59E0B',
 ];
 
 // total_evaluatees / progress counts are based on the flat, de-duplicated
@@ -427,10 +422,10 @@ $pct              = $total_evaluatees > 0 ? round(($total_done / $total_evaluate
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <style>
 :root{
-    --dark:#F8FAFC;--mid:#FFFFFF;--inner:#F1F5F9;
-    --gold:#D97706;--gold-h:#F59E0B;
-    --light:#0F172A;--muted:#475569;
-    --border:rgba(15,23,42,.12);--radius:10px;
+    --dark:#F8FAFC;--mid:#FFFFFF;--inner:#F4F8FF;
+    --gold:#C77A08;--gold-h:#D69612;
+    --light:#0B1F3A;--muted:#67819E;
+    --border:rgba(30,82,144,.13);--radius:10px;
     --sidebar-w:230px;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -447,7 +442,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 /* Profile dropdown */
 .nav-profile{position:relative;}
 .profile-trigger{display:flex;align-items:center;gap:10px;cursor:pointer;padding:6px 10px;border-radius:var(--radius);transition:background .2s;}
-.profile-trigger:hover{background:rgba(255,255,255,.06);}
+.profile-trigger:hover{background:rgba(37,99,235,.06);}
 .profile-avatar{width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid var(--gold);flex-shrink:0;}
 .profile-avatar-ph{width:36px;height:36px;border-radius:50%;background:var(--inner);border:2px solid var(--gold);display:flex;align-items:center;justify-content:center;color:var(--gold);font-size:15px;flex-shrink:0;}
 .profile-name{font-size:13px;font-weight:600;color:var(--light);max-width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -462,11 +457,11 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .profile-dd-role{font-size:11px;color:var(--muted);text-transform:capitalize;}
 .profile-dd-body{padding:10px;}
 .profile-dd-btn{width:100%;padding:10px 12px;border-radius:8px;border:none;background:none;color:var(--light);font-size:13px;font-family:'DM Sans',sans-serif;cursor:pointer;display:flex;align-items:center;gap:10px;transition:background .18s;text-align:left;}
-.profile-dd-btn:hover{background:rgba(255,255,255,.06);}
+.profile-dd-btn:hover{background:rgba(37,99,235,.06);}
 .profile-dd-btn i{width:16px;text-align:center;color:var(--muted);}
 .profile-dd-divider{height:1px;background:var(--border);margin:6px 0;}
-.profile-dd-btn.logout{color:#f87171;}
-.profile-dd-btn.logout i{color:#f87171;}
+.profile-dd-btn.logout{color:#E6788A;}
+.profile-dd-btn.logout i{color:#E6788A;}
 
 /* ── PHOTO MODAL ── */
 .photo-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:300;display:none;align-items:center;justify-content:center;padding:20px;}
@@ -494,7 +489,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .side-section-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.3px;color:var(--muted);padding:0 20px;margin-bottom:8px;}
 .side-nav-item{display:flex;align-items:center;gap:12px;padding:11px 20px;color:var(--light);font-size:13.5px;font-weight:600;cursor:pointer;border-left:3px solid transparent;transition:all .18s;}
 .side-nav-item i{width:18px;text-align:center;color:var(--muted);font-size:15px;transition:color .18s;}
-.side-nav-item:hover{background:rgba(255,255,255,.05);}
+.side-nav-item:hover{background:rgba(37,99,235,.05);}
 .side-nav-item.active{background:rgba(217,119,6,.12);border-left-color:var(--gold);color:#fff;}
 .side-nav-item.active i{color:var(--gold-h);}
 .side-nav-badge{margin-left:auto;background:rgba(217,119,6,.2);color:var(--gold-h);font-size:10px;font-weight:700;border-radius:20px;padding:2px 8px;}
@@ -517,8 +512,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .stat-num{font-family:'Rajdhani',sans-serif;font-size:26px;font-weight:700;color:#fff;line-height:1;}
 .stat-lbl{font-size:12px;color:var(--muted);margin-top:6px;}
 .period-pill{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;border-radius:20px;padding:4px 12px;margin-bottom:20px;}
-.period-pill.open{background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);color:#4ade80;}
-.period-pill.closed{background:rgba(240,84,84,.1);border:1px solid rgba(240,84,84,.3);color:#fca5a5;}
+.period-pill.open{background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);color:#32B98A;}
+.period-pill.closed{background:rgba(240,84,84,.1);border:1px solid rgba(240,84,84,.3);color:#E78D9C;}
 .dash-cta{background:var(--mid);border:1px solid var(--border);border-radius:14px;padding:26px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;}
 .dash-cta-icon{width:52px;height:52px;border-radius:12px;background:rgba(217,119,6,.15);display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--gold-h);flex-shrink:0;}
 .dash-cta-text{flex:1;min-width:180px;}
@@ -530,24 +525,24 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .progress-wrap{background:var(--mid);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;margin-bottom:28px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
 .progress-label{font-size:13px;color:var(--muted);white-space:nowrap;}
 .progress-label span{color:var(--gold-h);font-weight:700;}
-.progress-bar-bg{flex:1;min-width:120px;height:8px;background:rgba(15,23,42,.12);border-radius:20px;overflow:hidden;}
+.progress-bar-bg{flex:1;min-width:120px;height:8px;background:rgba(30,82,144,.13);border-radius:20px;overflow:hidden;}
 .progress-bar-fill{height:100%;background:linear-gradient(90deg,var(--gold),var(--gold-h));border-radius:20px;transition:width .4s ease;}
 .progress-pct{font-size:12px;font-weight:700;color:var(--gold-h);white-space:nowrap;}
 .alert{border-radius:8px;padding:12px 16px;font-size:13px;margin-bottom:20px;display:flex;align-items:center;gap:8px;}
-.alert-success{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);color:#86efac;}
-.alert-error{background:rgba(240,84,84,.1);border:1px solid rgba(240,84,84,.3);color:#fca5a5;}
+.alert-success{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);color:#6BCFA9;}
+.alert-error{background:rgba(240,84,84,.1);border:1px solid rgba(240,84,84,.3);color:#E78D9C;}
 .section-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:14px;}
 
 /* ── CATEGORY CARDS ── */
 .category-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:16px;margin-bottom:10px;}
 .cat-btn{background:var(--mid);border:1px solid var(--border);border-radius:14px;padding:24px 18px 20px;text-align:center;cursor:pointer;transition:all .22s;position:relative;user-select:none;}
-.cat-btn:hover{transform:translateY(-3px);box-shadow:0 6px 20px rgba(15,23,42,.10);}
-.cat-btn.active{transform:translateY(-3px);box-shadow:0 6px 20px rgba(15,23,42,.10);}
+.cat-btn:hover{transform:translateY(-3px);box-shadow:0 6px 20px rgba(30,82,144,.11);}
+.cat-btn.active{transform:translateY(-3px);box-shadow:0 6px 20px rgba(30,82,144,.11);}
 .cat-btn.all-done{opacity:.55;}
 .cat-icon{font-size:32px;margin-bottom:11px;}
 .cat-name{font-family:'Rajdhani',sans-serif;font-size:18px;font-weight:700;color:#fff;margin-bottom:3px;}
 .cat-meta{font-size:12px;color:var(--muted);}
-.cat-done-pill{margin-top:9px;display:inline-block;background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);color:#4ade80;border-radius:20px;font-size:10px;font-weight:700;padding:2px 9px;}
+.cat-done-pill{margin-top:9px;display:inline-block;background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);color:#32B98A;border-radius:20px;font-size:10px;font-weight:700;padding:2px 9px;}
 .cat-active-arrow{position:absolute;bottom:-10px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-top:10px solid var(--gold);display:none;filter:drop-shadow(0 2px 4px rgba(0,0,0,.4));}
 .cat-btn.active .cat-active-arrow{display:block;}
 
@@ -570,7 +565,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .person-avatar-ph{width:64px;height:64px;border-radius:50%;background:var(--mid);border:2px solid var(--border);margin:0 auto 10px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:22px;}
 .person-name{font-size:13px;font-weight:600;color:#fff;margin-bottom:3px;line-height:1.3;}
 .person-desig{font-size:11px;color:var(--muted);margin-bottom:2px;}
-.done-badge{position:absolute;top:9px;right:9px;background:rgba(34,197,94,.2);border:1px solid rgba(34,197,94,.4);color:#4ade80;border-radius:20px;font-size:10px;font-weight:700;padding:2px 8px;}
+.done-badge{position:absolute;top:9px;right:9px;background:rgba(34,197,94,.2);border:1px solid rgba(34,197,94,.4);color:#32B98A;border-radius:20px;font-size:10px;font-weight:700;padding:2px 8px;}
 .eval-btn{margin-top:11px;width:100%;padding:8px;background:var(--gold);border:none;border-radius:7px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;transition:background .2s;}
 .eval-btn:hover{background:var(--gold-h);}
 .eval-btn:disabled{background:var(--inner);color:var(--muted);cursor:not-allowed;}
@@ -614,7 +609,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .q-text{font-size:14px;color:var(--light);margin-bottom:12px;line-height:1.5;display:flex;gap:6px;align-items:flex-start;}
 .q-num-badge{color:var(--gold-h);font-weight:700;font-size:14px;flex-shrink:0;min-width:22px;}
 .rating-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
-.r-btn{flex:1;min-width:66px;padding:8px 4px;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:7px;color:var(--muted);font-size:13px;font-weight:700;cursor:pointer;transition:all .18s;text-align:center;}
+.r-btn{flex:1;min-width:66px;padding:8px 4px;background:rgba(37,99,235,.05);border:1px solid var(--border);border-radius:7px;color:var(--muted);font-size:13px;font-weight:700;cursor:pointer;transition:all .18s;text-align:center;}
 .r-btn:hover{border-color:var(--gold);color:var(--gold-h);}
 .r-btn.selected{background:var(--gold);border-color:var(--gold);color:#fff;}
 .r-val{font-size:10px;display:block;margin-top:2px;font-weight:400;}
@@ -631,7 +626,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 .btn-submit{flex:1;padding:13px;background:var(--gold);border:none;border-radius:var(--radius);color:#fff;font-size:15px;font-weight:700;cursor:pointer;transition:background .2s;}
 .btn-submit:hover{background:var(--gold-h);}
 .btn-cancel-modal{padding:13px 22px;background:var(--inner);border:1px solid var(--border);border-radius:var(--radius);color:var(--light);font-size:14px;font-weight:600;cursor:pointer;transition:background .2s;}
-.btn-cancel-modal:hover{background:rgba(255,255,255,.06);}
+.btn-cancel-modal:hover{background:rgba(37,99,235,.06);}
 .loading-qs{text-align:center;padding:40px;color:var(--muted);}
 .loading-qs i{font-size:28px;animation:spin 1s linear infinite;display:block;margin-bottom:10px;}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -655,45 +650,45 @@ body{font-family:'DM Sans',sans-serif;background:var(--dark);color:var(--light);
 
 /* Admin Module light design system — matches the dashboard */
 :root{
-  --page-bg:#FFFFFF; --card-bg:#FFFFFF; --card-border:#E2E8F0;
-  --inner:#F4F7FB; --text-dark:#172033; --text-dim:#475569;
-  --light:#172033; --muted:#475569; --dark:#FFFFFF; --mid:#FFFFFF;
-  --border:#E2E8F0; --accent:#3B82F6; --blue:#3B82F6;
-  --gold:#D97706; --gold-h:#F59E0B; --teal:#0D9488; --violet:#7C3AED;
-  --danger:#DC2626; --success:#059669; --radius:12px;
-  --card-shadow:0 2px 4px rgba(15,23,42,.05),0 6px 16px rgba(15,23,42,.06);
+  --page-bg:#FFFFFF; --card-bg:#FFFFFF; --card-border:#D8E5F4;
+  --inner:#F7FAFF; --text-dark:#0B1F3A; --text-dim:#67819E;
+  --light:#0B1F3A; --muted:#67819E; --dark:#FFFFFF; --mid:#FFFFFF;
+  --border:#D8E5F4; --accent:#2563EB; --blue:#2563EB;
+  --gold:#C77A08; --gold-h:#D69612; --teal:#0E7490; --violet:#4968C8;
+  --danger:#D6455D; --success:#0F9F6E; --radius:12px;
+  --card-shadow:0 2px 4px rgba(30,82,144,.06),0 6px 16px rgba(30,82,144,.08);
 }
-html{background:#fff;color-scheme:light;}
-body{background:#fff !important;color:#172033 !important;}
+html{background:#FFFFFF;color-scheme:light;}
+body{background:#FFFFFF !important;color:#0B1F3A !important;}
 a{color:inherit;}
-.page-header h1,.page-title,.et-title,.section-title{color:#172033 !important;}
-.page-header p,.page-sub,.et-sub,.et-updated,.muted,.hint{color:#475569 !important;}
-input,select,textarea{background:#fff !important;color:#172033 !important;border-color:#CBD5E1 !important;}
+.page-header h1,.page-title,.et-title,.section-title{color:#0B1F3A !important;}
+.page-header p,.page-sub,.et-sub,.et-updated,.muted,.hint{color:#67819E !important;}
+input,select,textarea{background:#fff !important;color:#0B1F3A !important;border-color:#B9CDE5 !important;}
 button{font-family:inherit;}
 .table-wrap,.content-panel,.create-panel,.period-card,.stat-card,.sector-card,.person-row,
 .sum-card,.standing-panel,.eval-card,.eval-banner,.info-banner,.section,.shell .section,
 .history-card,.gl-card,.amber-card,.green-card,.red-card{
-  background:#fff !important;border-color:#E2E8F0 !important;box-shadow:0 2px 4px rgba(15,23,42,.04),0 6px 16px rgba(15,23,42,.05) !important;
+  background:#fff !important;border-color:#D8E5F4 !important;box-shadow:0 2px 4px rgba(30,82,144,.05),0 6px 16px rgba(30,82,144,.06) !important;
 }
 .sector-tabs,.eval-switcher,.tabs,.level-tabs,.status-tabs{
-  background:#fff !important;border-color:#E2E8F0 !important;box-shadow:0 2px 4px rgba(15,23,42,.04) !important;
+  background:#fff !important;border-color:#D8E5F4 !important;box-shadow:0 2px 4px rgba(30,82,144,.05) !important;
 }
-.sector-tab,.eval-tab,.tab,.level-tab,.status-tab{color:#475569 !important;}
-.sector-tab:hover,.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover{color:#172033 !important;background:#F4F7FB !important;}
+.sector-tab,.eval-tab,.tab,.level-tab,.status-tab{color:#67819E !important;}
+.sector-tab:hover,.eval-tab:hover,.tab:hover,.level-tab:hover,.status-tab:hover{color:#0B1F3A !important;background:#F7FAFF !important;}
 thead tr{background:#F8FAFC !important;}
 tbody tr:hover{background:#F8FAFC !important;}
-.btn-cancel,.btn-icon,.btn-back{background:#fff !important;color:#172033 !important;border-color:#CBD5E1 !important;}
-.empty-state,.empty-cta{color:#475569 !important;}
+.btn-cancel,.btn-icon,.btn-back{background:#fff !important;color:#0B1F3A !important;border-color:#B9CDE5 !important;}
+.empty-state,.empty-cta{color:#67819E !important;}
 ::-webkit-scrollbar-track{background:#fff;}
-::-webkit-scrollbar-thumb{background:#CBD5E1;border:2px solid #fff;}
+::-webkit-scrollbar-thumb{background:#B9CDE5;border:2px solid #fff;}
 
-body{background:#fff !important;color:#172033 !important;}
-.topnav{background:#fff !important;border-bottom:1px solid #E2E8F0 !important;box-shadow:0 2px 8px rgba(15,23,42,.05);}
-.nav-logo,.profile-avatar,.profile-dd-avatar{border-color:#7C3AED !important;}
-.profile-name,.profile-dd-name,.profile-dd-btn{color:#172033 !important;}
-.profile-dd-role,.profile-caret,.profile-dd-btn i{color:#475569 !important;}
-.profile-dropdown{background:#fff !important;border-color:#E2E8F0 !important;box-shadow:0 12px 40px rgba(15,23,42,.12) !important;}
-.profile-dd-btn:hover{background:#F4F7FB !important;}
+body{background:#FFFFFF !important;color:#0B1F3A !important;}
+.topnav{background:#fff !important;border-bottom:1px solid #D8E5F4 !important;box-shadow:0 2px 8px rgba(30,82,144,.06);}
+.nav-logo,.profile-avatar,.profile-dd-avatar{border-color:#4968C8 !important;}
+.profile-name,.profile-dd-name,.profile-dd-btn{color:#0B1F3A !important;}
+.profile-dd-role,.profile-caret,.profile-dd-btn i{color:#67819E !important;}
+.profile-dropdown{background:#fff !important;border-color:#D8E5F4 !important;box-shadow:0 12px 40px rgba(30,82,144,.13) !important;}
+.profile-dd-btn:hover{background:#F7FAFF !important;}
 .app-shell{background:#fff !important;}
 .gl-card,.history-card{background:#fff !important;}
 
@@ -701,30 +696,97 @@ body{background:#fff !important;color:#172033 !important;}
 /* ── SHARP LIGHT ADMIN UI ── */
 html { background:#F8FAFC; }
 body {
-  color:#0F172A !important;
+  color:#0B1F3A !important;
   background:#F8FAFC !important;
   -webkit-font-smoothing:antialiased;
   text-rendering:optimizeLegibility;
 }
-h1,h2,h3,h4,h5,h6 { color:#0F172A; letter-spacing:-.01em; }
-p, .subtitle, .description, .helper, .muted, small { color:#475569; }
-label, th { color:#334155; font-weight:600; }
-td { color:#0F172A; }
+h1,h2,h3,h4,h5,h6 { color:#0B1F3A; letter-spacing:-.01em; }
+p, .subtitle, .description, .helper, .muted, small { color:#67819E; }
+label, th { color:#294765; font-weight:600; }
+td { color:#0B1F3A; }
 input, select, textarea {
-  color:#0F172A;
+  color:#0B1F3A;
   background:#FFFFFF;
-  border-color:#CBD5E1;
+  border-color:#B9CDE5;
 }
-input::placeholder, textarea::placeholder { color:#94A3B8; }
+input::placeholder, textarea::placeholder { color:#91A6BE; }
 .card, .panel, .section, .table-card, .content-card {
-  border-color:#CBD5E1;
-  box-shadow:0 4px 14px rgba(15,23,42,.07);
+  border-color:#B9CDE5;
+  box-shadow:0 4px 14px rgba(30,82,144,.09);
 }
 button, .btn { font-weight:700; }
 a { color:inherit; }
 </style>
+    <link rel="stylesheet" href="admin_ui_theme.css">
+    <link rel="stylesheet" href="admin_compact_ui.css">
+<style id="pbi-feature-scrollbar">
+
+/* PBI FEATURE SCROLLBAR — consistent with the compact page scrollbar */
+html, body {
+  scrollbar-width: thin !important;
+  scrollbar-color: #888 transparent !important;
+}
+html::-webkit-scrollbar, body::-webkit-scrollbar,
+.feature-compact ::-webkit-scrollbar {
+  width: 10px !important;
+  height: 10px !important;
+}
+html::-webkit-scrollbar-track, body::-webkit-scrollbar-track,
+.feature-compact ::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb,
+.feature-compact ::-webkit-scrollbar-thumb {
+  background: #888 !important;
+  border-radius: 999px !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
+}
+html::-webkit-scrollbar-thumb:hover, body::-webkit-scrollbar-thumb:hover,
+.feature-compact ::-webkit-scrollbar-thumb:hover {
+  background: #777 !important;
+  background-clip: padding-box !important;
+}
+html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
+.feature-compact ::-webkit-scrollbar-button {
+  display: block !important;
+  width: 10px !important;
+  height: 10px !important;
+  background-color: transparent !important;
+}
+/* Small native-looking arrow hints on classic scrollbars */
+html::-webkit-scrollbar-button:single-button:vertical:decrement,
+body::-webkit-scrollbar-button:single-button:vertical:decrement,
+.feature-compact ::-webkit-scrollbar-button:single-button:vertical:decrement {
+  background:
+    linear-gradient(135deg, transparent 50%, #777 50%) 3px 5px/5px 5px no-repeat !important;
+}
+html::-webkit-scrollbar-button:single-button:vertical:increment,
+body::-webkit-scrollbar-button:single-button:vertical:increment,
+.feature-compact ::-webkit-scrollbar-button:single-button:vertical:increment {
+  background:
+    linear-gradient(315deg, transparent 50%, #777 50%) 3px 0/5px 5px no-repeat !important;
+}
+html::-webkit-scrollbar-button:single-button:horizontal:decrement,
+body::-webkit-scrollbar-button:single-button:horizontal:decrement,
+.feature-compact ::-webkit-scrollbar-button:single-button:horizontal:decrement {
+  background:
+    linear-gradient(45deg, transparent 50%, #777 50%) 5px 3px/5px 5px no-repeat !important;
+}
+html::-webkit-scrollbar-button:single-button:horizontal:increment,
+body::-webkit-scrollbar-button:single-button:horizontal:increment,
+.feature-compact ::-webkit-scrollbar-button:single-button:horizontal:increment {
+  background:
+    linear-gradient(225deg, transparent 50%, #777 50%) 0 3px/5px 5px no-repeat !important;
+}
+
+</style>
+
+<link rel="stylesheet" href="admin_appearance.css">
+<script src="admin_appearance.js"></script>
 </head>
-<body>
+<body class="feature-compact">
 
 <nav class="topnav">
     <div class="nav-brand">
@@ -891,13 +953,14 @@ a { color:inherit; }
                     $done_ct  = count(array_filter($persons, fn($p) => in_array($p['id'], $done_ids)));
                     $all_done = ($done_ct === $total);
                     $icon     = $group_icons[$group_name] ?? 'fa-user';
-                    $color    = $group_colors[$group_name] ?? '#D97706';
+                    $color    = $group_colors[$group_name] ?? '#C77A08';
+                    $display_group_name = $group_name;
                 ?>
                 <div class="cat-btn <?= $all_done ? 'all-done' : '' ?>"
                      id="catbtn_<?= $slug ?>" onclick="togglePanel('<?= $slug ?>')"
                      style="border-color:<?= $color ?>33;">
                     <div class="cat-icon" style="color:<?= $color ?>;"><i class="fa-solid <?= $icon ?>"></i></div>
-                    <div class="cat-name"><?= htmlspecialchars($group_name) ?></div>
+                    <div class="cat-name"><?= htmlspecialchars($display_group_name) ?></div>
                     <div class="cat-meta"><?= $total ?> member<?= $total !== 1 ? 's' : '' ?></div>
                     <?php if ($done_ct > 0): ?>
                     <div class="cat-done-pill"><i class="fa-solid fa-check"></i> <?= $done_ct ?>/<?= $total ?> done</div>
@@ -910,12 +973,13 @@ a { color:inherit; }
             <?php foreach ($grouped as $group_name => $persons):
                 $slug  = strtolower(str_replace([' ','-'], '_', $group_name));
                 $icon  = $group_icons[$group_name] ?? 'fa-user';
-                $color = $group_colors[$group_name] ?? '#D97706';
+                $color = $group_colors[$group_name] ?? '#C77A08';
+                $display_group_name = $group_name;
             ?>
             <div class="members-panel" id="panel_<?= $slug ?>" style="border-color:<?= $color ?>44;">
                 <div class="panel-header">
                     <i class="fa-solid <?= $icon ?> panel-header-icon" style="color:<?= $color ?>;"></i>
-                    <span class="panel-header-title"><?= htmlspecialchars($group_name) ?></span>
+                    <span class="panel-header-title"><?= htmlspecialchars($display_group_name) ?></span>
                     <span class="panel-header-count">&mdash; <?= count($persons) ?> member<?= count($persons) !== 1 ? 's' : '' ?></span>
                     <button class="panel-close-btn" onclick="closePanel('<?= $slug ?>')">
                         <i class="fa-solid fa-xmark"></i>
@@ -928,7 +992,7 @@ a { color:inherit; }
                         $eval_args = json_encode([
                             'id'    => $p['id'],
                             'name'  => $p['full_name'],
-                            'desig' => $p['designation'] ?: ($p['role'] === 'teacher' ? 'Teacher' : 'Personnel'),
+                            'desig' => $p['designation'] ?: ($p['role'] === 'teacher' ? 'Faculty' : 'Personnel'),
                             'photo' => $p['photo'] ? '../image/' . $p['photo'] : '',
                         ]);
                     ?>
@@ -1183,7 +1247,7 @@ function loadQuestions(id) {
             if (!data.success) {
                 document.getElementById('modalBody').innerHTML =
                     `<div class="empty"><i class="fa-solid fa-triangle-exclamation"></i>
-                     <p style="color:#fca5a5;margin-top:10px;font-size:13px">${data.error}</p></div>`;
+                     <p style="color:#E78D9C;margin-top:10px;font-size:13px">${data.error}</p></div>`;
                 return;
             }
             const questions = data.questions;
@@ -1236,7 +1300,7 @@ function loadQuestions(id) {
         .catch(err => {
             document.getElementById('modalBody').innerHTML =
                 `<div class="empty"><i class="fa-solid fa-triangle-exclamation"></i>
-                 <p style="color:#fca5a5;margin-top:10px;font-size:13px">
+                 <p style="color:#E78D9C;margin-top:10px;font-size:13px">
                     Failed to load questions.<br><small>${err.message}</small></p></div>`;
         });
 }

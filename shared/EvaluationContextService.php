@@ -27,6 +27,53 @@ function ec_has_staff_function(array $user): bool {
     return $role === 'staff' || $secondary === 'staff';
 }
 
+/**
+ * Canonical "non-teaching" check: true only when the person has NO row in
+ * teaching_assignments and NO row in user_year_levels. This is the DB-truth
+ * predicate admin/questionnaire.php and ea_evaluation.php use to decide who
+ * lands in the Non-Teaching Staff bucket — a leadership/office title alone
+ * (e.g. Personnel/Department Head) does not disqualify someone from being
+ * "non-teaching" if they have no actual teaching assignment or year-level
+ * scope on record.
+ */
+function ec_is_non_teaching_staff(mysqli $mysqli, int $userId): bool {
+    $stmt = $mysqli->prepare(
+        "SELECT
+            (SELECT COUNT(*) FROM teaching_assignments WHERE user_id = ?) AS ta_count,
+            (SELECT COUNT(*) FROM user_year_levels WHERE user_id = ?) AS uyl_count"
+    );
+    $stmt->bind_param("ii", $userId, $userId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    return (int)($row['ta_count'] ?? 0) === 0 && (int)($row['uyl_count'] ?? 0) === 0;
+}
+
+/**
+ * Resolves a user to the peer-evaluation group ('teacher' | 'staff' | null)
+ * using the same canonical rule everywhere: a designation like "Coordinator"
+ * or "Department Head" never flips someone into Faculty — that's a separate
+ * Multi-Role context (see ec_has_additional_role()) and doesn't affect this.
+ *
+ *   - 'teacher' if ec_has_teacher_function() is true
+ *   - 'staff'   only if ec_has_staff_function() is true AND
+ *               ec_is_non_teaching_staff() is true
+ *   - null      otherwise (e.g. a Staff account that actually teaches but
+ *               isn't marked secondary_role='teacher' — falls out of both
+ *               tabs, matching the admin panel's own edge case rather than
+ *               inventing new behavior)
+ *
+ * $user must include 'id', 'role', and 'secondary_role'.
+ */
+function ec_resolve_peer_group(array $user, mysqli $mysqli): ?string {
+    if (ec_has_teacher_function($user)) return 'teacher';
+    if (ec_has_staff_function($user) && ec_is_non_teaching_staff($mysqli, (int)($user['id'] ?? 0))) {
+        return 'staff';
+    }
+    return null;
+}
+
 function ec_has_additional_role(array $user): bool {
     $secondary = strtolower(trim((string)($user['secondary_role'] ?? '')));
     if ($secondary !== '' && !in_array($secondary, ['teacher','staff'], true)) {

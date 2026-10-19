@@ -37,9 +37,9 @@ if ($q) {
             // Automated / backend-triggered event
             $actor = 'System Automator';
             $icon  = 'fa-robot';
-            $color = '#4ade80';
+            $color = '#32B98A';
         } elseif ($role === 'teacher') {
-            $actor = $extra['full_name'] ?? 'Teacher';
+            $actor = $extra['full_name'] ?? 'Faculty';
             $icon  = 'fa-chalkboard-user';
             $color = '#0d9488';
         } elseif ($role === 'staff') {

@@ -5,7 +5,7 @@
  * Mirrors the EA Reports & Analytics evaluation separation:
  *   Student Evaluation  -> Teacher/Staff contexts only
  *   Multi-Role          -> Multi-Role context only
- *   Peer-to-Peer        -> peer submissions only
+ *   Peer-to-Peer        -> peer submissions (legacy `peer`, `faculty_peer`, or `staff_peer`)
  *
  * PERIOD BEHAVIOR:
  *   As in the EA Reports & Analytics page, stored submitted/approved results
@@ -35,7 +35,7 @@ if (!function_exists('ea_reports_context_sql')) {
             )";
         }
         if ($mode === 'peer') {
-            return "$alias.eval_type='peer'";
+            return "$alias.eval_type IN ('peer','faculty_peer','staff_peer')";
         }
         return "$alias.eval_type='student'
             AND COALESCE($alias.evaluation_context,'teacher') IN ('teacher','staff')";

@@ -1,708 +1,1168 @@
 <?php
 // principal_evaluation_tracker.php
-// Redesigned to match dean_evaluation_tracker.php's actual design system
-// and functional pattern (same underlying evaluation_tracker /
-// evaluation_reminders schema, same filter-bar/stat-card/sortable-table/
-// bulk-reminder UX) — kept in the Principal's amber theme instead of the
-// Dean's violet, and scoped to Basic Ed (Grade 7-12) instead of College.
 //
-// Differences from the Dean version, on purpose:
-//   - Grade Level (7-12, capped to this Principal's own JHS/SHS scope)
-//     replaces Year Level as the single scope filter — no separate
-//     School Level dropdown, matching Dean's one-filter-per-dimension
-//     pattern instead of the two-dropdown layout from the earlier draft.
-//   - No "ID Number" column — same reason as Dean's version: student
-//     accounts don't collect one at registration, so it's not faked.
-//   - Reminders write to evaluation_reminders(recipient_id, period_id,
-//     created_at) — the SAME shared table/columns dean_send_reminder.php
-//     uses (confirmed from its SELECT), not the different schema this
-//     page used in a previous draft.
-//   - This page still calls out to a companion `principal_send_reminder.php`
-//     for the actual send, mirroring dean_send_reminder.php's contract
-//     (POST JSON {student_ids, csrf_token} -> {success, sent[], skipped[]}
-//     / GET ?student_id= fallback). That companion file is NOT included
-//     here yet — see the note at the bottom of this response.
+// Principal Evaluation Tracker — same layout as the Dean's tracker
+// (Students / Teachers tabs, per-grade summary cards, grade pills, status
+// filter, search and an expandable progress table), but the data
+// is strictly limited to Basic Education:
+//
+//   Students tab  -> active JHS/SHS students (Grade 7-12) and the Student
+//                    Evaluation targets each of them is expected to finish.
+//   Teachers tab  -> active JHS/SHS Faculty / Teaching Staff and the
+//                    peer evaluations each of them is expected to finish.
+//
+// College students, College-only teachers, Dean, Executive Assistant and
+// the Principal's own account never appear as a tracked row. The Principal's
+// scope (junior_high / senior_high / both) is honoured through $scopeGrades.
 
 require_once 'principal_common.php';
 
-$user_id = $_SESSION['user_id'];
+$principalId = (int)$_SESSION['user_id'];
 
-const REMINDER_COOLDOWN_HOURS = 24; // must match principal_send_reminder.php
+$settings      = $schoolHeadSettings;
+$period_id_int = (int)($settings['period_id'] ?? 0);
+$hasPeriod     = $period_id_int > 0;
+$evalOpen      = !empty($settings['school_head_is_open']);
 
-@$mysqli->query("
-    CREATE TABLE IF NOT EXISTS evaluation_reminders (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        recipient_id INT NOT NULL,
-        period_id INT NOT NULL,
-        sender_id INT NULL,
-        created_at DATETIME NOT NULL,
-        KEY idx_recipient_period (recipient_id, period_id)
-    )
-");
+// ── INPUT ───────────────────────────────────────────────────────────
+$tabParam    = $_GET['tab'] ?? 'students';
+$tab         = (is_string($tabParam) && in_array($tabParam, ['students', 'teachers', 'staff'], true)) ? $tabParam : 'students';
+$search      = trim((string)($_GET['search'] ?? ''));
+$gradeFilter = trim((string)($_GET['grade'] ?? ''));
+$status      = trim((string)($_GET['status'] ?? ''));
+$page        = max(1, (int)($_GET['page'] ?? 1));
+$perPage     = 10;
 
-// ── FILTER + SORT + PAGE INPUT (GET) ──────────────────────────────────
-$search = trim($_GET['search'] ?? '');
-$gradeFilter = trim($_GET['grade'] ?? '');
-if ($gradeFilter !== '' && !in_array($gradeFilter, $scopeGrades, true)) $gradeFilter = '';
-$status = trim($_GET['status'] ?? '');
-if (!in_array($status, ['', 'submitted', 'pending'], true)) $status = '';
+if (!in_array($gradeFilter, $scopeGrades, true)) $gradeFilter = '';
+if (!in_array($status, ['', 'not_started', 'in_progress', 'completed'], true)) $status = '';
 
-// Level filter (Junior High / Senior High) — only meaningful for a
-// Principal whose own scope covers both ($myLevel === 'both'); a
-// JHS-only or SHS-only Principal already has $scopeAcademicLevels
-// pinned to a single level, so this stays empty/no-op for them.
-$levelFilter = trim($_GET['level'] ?? '');
-if (!in_array($levelFilter, ['', 'junior_high', 'senior_high'], true)) $levelFilter = '';
-if ($myLevel !== 'both') $levelFilter = '';
+// Column sorting (server-side so it works across pages)
+$sort = trim((string)($_GET['sort'] ?? ''));
+$dir  = (($_GET['dir'] ?? '') === 'desc') ? 'desc' : 'asc';
+if (!in_array($sort, ['name', 'level', 'required', 'completed', 'status', 'progress'], true)) $sort = '';
 
-$sortableColumns = ['name' => 'full_name', 'grade' => 'year_level'];
-$sort = $_GET['sort'] ?? 'name';
-if (!in_array($sort, array_merge(array_keys($sortableColumns), ['status']), true)) $sort = 'name';
-$dir = (strtolower($_GET['dir'] ?? 'asc') === 'desc') ? 'desc' : 'asc';
+$isAjax = (($_GET['ajax'] ?? '') === '1');
 
-$page = max(1, (int)($_GET['page'] ?? 1));
-$perPage = 15;
+// ── HELPERS ─────────────────────────────────────────────────────────
+function ptk_h($v): string {
+    return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
+}
 
-$gradeOptions = [];
-foreach ($scopeGrades as $g) $gradeOptions[$g] = "Grade {$g}";
+function ptk_has_column(mysqli $mysqli, string $table, string $column): bool {
+    try {
+        $r = @$mysqli->query("SHOW COLUMNS FROM `" . $mysqli->real_escape_string($table) . "` LIKE '" . $mysqli->real_escape_string($column) . "'");
+        if (!$r) return false;
+        $ok = $r->num_rows > 0;
+        $r->free();
+        return $ok;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
 
-$students = []; $pageStudents = [];
-$studentsAssigned = 0; $studentsSubmitted = 0; $pendingStudents = 0; $remainingStudents = 0;
-$completionPct = 0; $submittedPct = 0; $pendingPct = 0; $totalPages = 1;
-$juniorHighCount = 0; $seniorHighCount = 0;
+function ptr_user_levels(mysqli $mysqli, int $userId): array {
+    $rows = safe_rows($mysqli,
+        "SELECT year_level FROM user_year_levels WHERE user_id=? ORDER BY year_level ASC",
+        'i', [$userId]
+    );
+    $out = [];
+    foreach ($rows as $row) {
+        $v = trim((string)($row['year_level'] ?? ''));
+        if ($v !== '') $out[] = $v;
+    }
+    return array_values(array_unique($out));
+}
+
+function ptr_grade(string $value): ?string {
+    $value = trim($value);
+    if (preg_match('/grade[[:space:]_-]*(7|8|9|10|11|12)\b/i', $value, $m)) return $m[1];
+    return null;
+}
+
+function ptr_is_teaching(mysqli $mysqli, array $u): bool {
+    if (($u['role'] ?? '') === 'teacher') return true;
+    if (strtolower((string)($u['secondary_role'] ?? '')) === 'teacher') return true;
+    if (strcasecmp((string)($u['sector'] ?? ''), 'Teacher') === 0) return true;
+
+    $uid = (int)($u['id'] ?? 0);
+    if ($uid <= 0) return false;
+    $rows = safe_rows($mysqli, "
+        SELECT 1 FROM teaching_assignments WHERE user_id=?
+        UNION ALL
+        SELECT 1 FROM user_year_levels WHERE user_id=?
+        LIMIT 1
+    ", 'ii', [$uid, $uid]);
+    return !empty($rows);
+}
+
+function ptr_is_non_teaching_staff(mysqli $mysqli, int $uid): bool {
+    $rows = safe_rows($mysqli, "
+        SELECT NOT EXISTS(SELECT 1 FROM teaching_assignments WHERE user_id=?)
+           AND NOT EXISTS(SELECT 1 FROM user_year_levels WHERE user_id=?) AS ok
+    ", 'ii', [$uid, $uid]);
+    return !empty($rows) && (int)($rows[0]['ok'] ?? 0) === 1;
+}
+
+function ptr_level_bucket(string $grade): string {
+    return in_array($grade, ['7','8','9','10'], true) ? 'junior_high' : 'senior_high';
+}
+
+function ptr_level_label(array $buckets): string {
+    $j = in_array('junior_high', $buckets, true);
+    $s = in_array('senior_high', $buckets, true);
+    if ($j && $s) return 'JHS & SHS';
+    if ($j) return 'Junior High';
+    if ($s) return 'Senior High';
+    return '—';
+}
+
+function ptr_student_level_label(string $rawYear): string {
+    $g = ptr_grade($rawYear);
+    if ($g === null) return 'Basic Education';
+    return in_array($g, ['7','8','9','10'], true) ? 'Junior High' : 'Senior High';
+}
+
+/**
+ * Which Student Evaluation context does a submitted row belong to?
+ * Unchanged rules: the Principal's CURRENT scope is the final authority, so a
+ * stale bucket can never turn a Non-Teaching Staff person into a Faculty row.
+ */
+function ptr_context_for_submission(array $row, int $principalId, array $facultyIds, array $staffIds, array $multiIds, bool $principalRequired): ?string {
+    $tid = (int)$row['target_user_id'];
+    $bucket = strtolower(trim((string)($row['eval_bucket'] ?? '')));
+    $context = strtolower(trim((string)($row['evaluation_context'] ?? '')));
+
+    if ($principalRequired && $tid === $principalId &&
+        ($bucket === 'school head' || $bucket === 'school_head' || $bucket === 'principal' ||
+         $context === 'school_head' || $context === 'principal' || $bucket === '' || $context === '')) {
+        return 'school_head:' . $tid;
+    }
+
+    $explicitMulti = in_array($bucket, ['multi-role','multi_role'], true)
+        || in_array($context, ['multi-role','multi_role'], true)
+        || !empty($row['multi_answer']);
+    if ($explicitMulti && isset($multiIds[$tid])) return 'multi:' . $tid;
+
+    $explicitStaff = in_array($bucket, ['staff','non-teaching staff','non_teaching_staff'], true)
+        || $context === 'staff';
+    $explicitFaculty = in_array($bucket, ['faculty','teacher'], true)
+        || in_array($context, ['faculty','teacher'], true);
+
+    if (isset($staffIds[$tid]) && ($explicitStaff || (!$explicitFaculty && !$explicitMulti))) {
+        return 'staff:' . $tid;
+    }
+    if (isset($facultyIds[$tid]) && ($explicitFaculty || (!$explicitStaff && !$explicitMulti))) {
+        return 'faculty:' . $tid;
+    }
+    return null;
+}
+
+/**
+ * Which peer-evaluation target does a teacher's submission belong to?
+ * Targets are the Principal, other in-scope teachers and Non-Teaching Staff.
+ * A teacher can never complete their own row.
+ */
+function ptk_teacher_context(array $row, array $targetDefs): ?string {
+    $evaluator = (int)$row['evaluator_id'];
+    $tid = (int)$row['target_user_id'];
+    if ($tid === $evaluator) return null;
+    foreach (['principal', 'faculty', 'staff'] as $prefix) {
+        $key = $prefix . ':' . $tid;
+        if (isset($targetDefs[$key])) return $key;
+    }
+    return null;
+}
+
+/** [singular, plural, column header] wording for each tab. */
+function ptk_nouns(string $tab): array {
+    if ($tab === 'teachers') return ['teacher', 'teachers', 'Teacher'];
+    if ($tab === 'staff')    return ['staff member', 'staff', 'Staff'];
+    return ['student', 'students', 'Student'];
+}
+
+function ptk_status(int $completed, int $required, bool $started): array {
+    if ($required > 0 && $completed >= $required) return ['completed', 'Completed'];
+    if ($completed > 0 || $started)               return ['in_progress', 'In Progress'];
+    return ['not_started', 'Not Started'];
+}
+
+function ptk_type_rank(string $type): int {
+    return ['Faculty' => 1, 'Staff' => 2, 'Multi-Role' => 3, 'Principal' => 4, 'Executive Assistant' => 5][$type] ?? 9;
+}
+
+/** Per-row breakdown: every required target and where the person stands. */
+function ptk_build_details(array $defs, array $contexts): array {
+    $out = [];
+    foreach ($defs as $key => $def) {
+        $out[] = [
+            'label' => $def['label'],
+            'type'  => $def['type'],
+            'state' => $contexts[$key]['state'] ?? 'pending',
+        ];
+    }
+    usort($out, function ($a, $b) {
+        $c = ptk_type_rank($a['type']) <=> ptk_type_rank($b['type']);
+        return $c !== 0 ? $c : strnatcasecmp($a['label'], $b['label']);
+    });
+    return $out;
+}
+
+function ptk_grades_text(array $grades): string {
+    if (empty($grades)) return '—';
+    return (count($grades) === 1 ? 'Grade ' : 'Grades ') . implode(', ', $grades);
+}
+
+function ptk_csv_cell($v) {
+    $v = (string)$v;
+    return ($v !== '' && strpos("=+-@\t\r", $v[0]) !== false) ? "'" . $v : $v;
+}
+
+function ptk_url(array $over = []): string {
+    $p = $_GET;
+    unset($p['ajax'], $p['export'], $p['_ts']);
+    $p = array_merge($p, $over);
+    if (!array_key_exists('page', $over)) unset($p['page']);
+    foreach ($p as $k => $v) {
+        if ($v === '' || $v === null) unset($p[$k]);
+    }
+    $qs = http_build_query($p);
+    return 'principal_evaluation_tracker.php' . ($qs !== '' ? '?' . $qs : '');
+}
+
+// ── RENDER FUNCTIONS (shared by the first page load and the live JSON) ─
+function ptk_render_tabs(string $tab, int $studentTotal, int $teacherTotal, int $staffTotal): string {
+    $tabs = [
+        'students' => ['Students', $studentTotal],
+        'teachers' => ['Teachers', $teacherTotal],
+        'staff'    => ['Staff', $staffTotal],
+    ];
+    ob_start();
+    foreach ($tabs as $key => [$label, $count]) {
+        $active = $key === $tab;
+        ?><a class="ptk-tab<?= $active ? ' active' : '' ?>" data-nav href="<?= ptk_h(ptk_url(['tab' => $key])) ?>"<?= $active ? ' aria-current="page"' : '' ?>><?= ptk_h($label) ?></a><?php
+    }
+    return ob_get_clean();
+}
+
+function ptk_render_cards(string $tab, array $cards): string {
+    $icon = $tab === 'teachers' ? 'fa-chalkboard-user' : ($tab === 'staff' ? 'fa-briefcase' : 'fa-graduation-cap');
+    ob_start();
+    foreach ($cards as $c) {
+        ?><div class="ptk-card">
+            <div class="ptk-card-top">
+                <span class="ptk-card-label"><?= ptk_h($c['label']) ?></span>
+                <span class="ptk-card-icon"><i class="fa-solid <?= $icon ?>"></i></span>
+            </div>
+            <div class="ptk-card-num"><?= number_format($c['total']) ?></div>
+            <?php if (isset($c['foot'])): ?><div class="ptk-card-foot"><span><?= ptk_h($c['foot']) ?></span></div><?php else: ?><div class="ptk-card-foot"><b><?= number_format($c['completed']) ?> completed</b><span class="ptk-card-sep">|</span><span><?= number_format($c['pending']) ?> pending</span></div><?php endif; ?>
+        </div><?php
+    }
+    return ob_get_clean();
+}
+
+/** Status chips: counts for the current tab/grade/search, each one a filter. */
+function ptk_render_chips(string $tab, array $counts): string {
+    global $status, $search, $gradeFilter;
+    $chips = [
+        ['', 'Total', '', 'total'],
+        ['completed', 'Completed', 'completed', 'completed'],
+        ['in_progress', 'In progress', 'in_progress', 'in_progress'],
+        ['not_started', 'Not started', 'not_started', 'not_started'],
+    ];
+    $filtersOn = ($status !== '' || $search !== '' || ($tab !== 'staff' && $gradeFilter !== ''));
+    ob_start();
+    foreach ($chips as [$st, $label, $cls, $key]) {
+        $on = ($status === $st);
+        ?><a class="ptk-chip <?= $cls ?><?= $on ? ' active' : '' ?>" data-nav href="<?= ptk_h(ptk_url(['status' => $st])) ?>"<?= $on ? ' aria-current="true"' : '' ?> title="<?= $st === '' ? 'Show everyone' : 'Show only: ' . ptk_h($label) ?>"><b><?= number_format((int)($counts[$key] ?? 0)) ?></b> <?= ptk_h($label) ?></a><?php
+    }
+    if ($filtersOn) {
+        ?><a class="ptk-clear" data-nav href="<?= ptk_h(ptk_url(['status' => '', 'search' => '', 'grade' => '', 'sort' => '', 'dir' => ''])) ?>"><i class="fa-solid fa-xmark"></i> Clear filters</a><?php
+    }
+    return ob_get_clean();
+}
+
+function ptk_render_pills(string $tab, array $scopeGrades, string $gradeFilter): string {
+    if ($tab === 'staff') return '';   // Non-teaching staff have no grade level
+    ob_start();
+    ?><a class="ptk-pill<?= $gradeFilter === '' ? ' active' : '' ?>" data-nav href="<?= ptk_h(ptk_url(['grade' => ''])) ?>">All Levels</a><?php
+    foreach ($scopeGrades as $g) {
+        ?><a class="ptk-pill<?= $gradeFilter === $g ? ' active' : '' ?>" data-nav href="<?= ptk_h(ptk_url(['grade' => $g])) ?>">Grade <?= ptk_h($g) ?></a><?php
+    }
+    return ob_get_clean();
+}
+
+function ptk_render_detail(array $r): string {
+    ob_start();
+    $details = $r['details'] ?? [];
+    if (empty($details)) {
+        ?><p class="ptk-detail-empty">No required evaluation targets are configured for this <?= ptk_h($r['noun']) ?> yet.</p><?php
+        return ob_get_clean();
+    }
+    ?><div class="ptk-detail-head"><strong><?= (int)$r['completed'] ?> of <?= (int)$r['required'] ?> required evaluations completed</strong><span><?= ptk_h(['teacher' => 'Peer evaluations the teacher must submit', 'staff member' => 'Evaluations the staff member must submit'][$r['noun']] ?? 'Targets the student must evaluate') ?></span></div>
+    <ul class="ptk-targets"><?php
+    foreach ($details as $d) {
+        $state = $d['state'];
+        $icon  = $state === 'completed' ? 'fa-circle-check' : ($state === 'in_progress' ? 'fa-circle-half-stroke' : 'fa-circle');
+        $text  = $state === 'completed' ? 'Done' : ($state === 'in_progress' ? 'In progress' : 'Pending');
+        ?><li class="ptk-target <?= ptk_h($state) ?>"><i class="fa-solid <?= $icon ?>"></i><span class="ptk-target-name" title="<?= ptk_h($d['label'] . ' (' . $d['type'] . ')') ?>"><?= ptk_h($d['label']) ?></span><span class="ptk-target-type"><?= ptk_h($d['type']) ?></span><span class="ptk-target-state"><?= $text ?></span></li><?php
+    }
+    ?></ul><?php
+    return ob_get_clean();
+}
+
+function ptk_render_list(array $pageRows, string $tab, bool $hasPeriod, int $total, int $page, int $perPage, int $totalPages): string {
+    [$noun, $plural, $colHead] = ptk_nouns($tab);
+    ob_start();
+    ?><div class="ptk-list-scroll"><div class="ptk-list-inner" role="table" aria-label="<?= ptk_h($colHead) ?> evaluation progress">
+        <div class="ptk-head" role="row">
+            <?php
+            global $sort, $dir, $search, $gradeFilter, $status;
+            $cols = [['name', $colHead], ['level', 'Level'], ['required', 'Required'], ['completed', 'Completed'], ['status', 'Status'], ['progress', 'Progress']];
+            foreach ($cols as [$k, $lbl]):
+                $isOn = ($sort === $k);
+                $next = !$isOn ? ['sort' => $k, 'dir' => 'asc'] : ($dir === 'asc' ? ['sort' => $k, 'dir' => 'desc'] : ['sort' => '', 'dir' => '']);
+                $ico  = !$isOn ? 'fa-sort' : ($dir === 'asc' ? 'fa-sort-up' : 'fa-sort-down');
+            ?>
+            <div role="columnheader" aria-sort="<?= $isOn ? ($dir === 'asc' ? 'ascending' : 'descending') : 'none' ?>"><a class="ptk-sort<?= $isOn ? ' on' : '' ?>" data-nav href="<?= ptk_h(ptk_url($next)) ?>" title="Sort by <?= ptk_h(strtolower($lbl)) ?>"><?= ptk_h($lbl) ?><i class="fa-solid <?= $ico ?>"></i></a></div>
+            <?php endforeach; ?>
+        </div>
+        <?php if (!$hasPeriod): ?>
+            <p class="ptk-empty">No active evaluation period right now.</p>
+        <?php elseif (empty($pageRows)): ?>
+            <p class="ptk-empty">No <?= ptk_h($plural) ?> match the current filters.<?php if ($status !== '' || $search !== '' || ($tab !== 'staff' && $gradeFilter !== '')): ?> <a class="ptk-clear-inline" data-nav href="<?= ptk_h(ptk_url(['status' => '', 'search' => '', 'grade' => '', 'sort' => '', 'dir' => ''])) ?>">Clear filters</a><?php endif; ?></p>
+        <?php else: foreach ($pageRows as $r): ?>
+            <div class="ptk-item" data-key="<?= ptk_h($r['key']) ?>">
+                <div class="ptk-row" role="row" tabindex="0" aria-expanded="false" title="Click to see evaluation details">
+                    <div class="ptk-c-person" role="cell">
+                        <span class="ptk-avatar"><?php if ($r['photo'] !== ''): ?><img src="../image/<?= ptk_h($r['photo']) ?>" alt="" onerror="this.onerror=null;var i=document.createElement('i');i.className='fa-solid fa-user';this.replaceWith(i);"><?php else: ?><i class="fa-solid fa-user"></i><?php endif; ?></span>
+                        <span class="ptk-person-copy"><span class="ptk-name"><?= ptk_h($r['name']) ?></span><span class="ptk-sub"><?= ptk_h($r['sub']) ?></span></span>
+                    </div>
+                    <div role="cell"><span class="ptk-level"><?= ptk_h($r['level_pill']) ?></span></div>
+                    <div class="ptk-num" role="cell"><?= number_format($r['required']) ?></div>
+                    <div class="ptk-num" role="cell"><?= number_format($r['completed']) ?> / <?= number_format($r['required']) ?></div>
+                    <div role="cell"><span class="ptk-status <?= ptk_h($r['status']) ?>"><?= ptk_h($r['status_label']) ?></span></div>
+                    <div class="ptk-c-prog" role="cell">
+                        <span class="ptk-pct"><?= (int)$r['progress'] ?>%</span>
+                        <span class="ptk-bar-wrap">
+                            <span class="ptk-bar"><i style="width:<?= (int)$r['progress'] ?>%"></i></span>
+                            <?php if (!empty($r['last_at'])): ?><span class="ptk-last">Last: <?= ptk_h(date('M j, Y g:i A', strtotime((string)$r['last_at']))) ?></span><?php endif; ?>
+                        </span>
+                        <span class="ptk-chev" aria-hidden="true"><i class="fa-solid fa-chevron-right"></i></span>
+                    </div>
+                </div>
+                <div class="ptk-detail" hidden><?= ptk_render_detail($r) ?></div>
+            </div>
+        <?php endforeach; endif; ?>
+    </div></div>
+    <div class="ptk-foot">
+        <div><?php if ($total > 0): ?>Showing <?= (($page - 1) * $perPage) + 1 ?>–<?= min($total, $page * $perPage) ?> of <?= number_format($total) ?> <?= ptk_h($total === 1 ? $noun : $plural) ?><?php else: ?>No <?= ptk_h($plural) ?> to display<?php endif; ?></div>
+        <div class="ptk-pager"><?php
+        if ($totalPages > 1) {
+            $shown = [];
+            for ($i = 1; $i <= $totalPages; $i++) {
+                if ($i === 1 || $i === $totalPages || abs($i - $page) <= 2) $shown[] = $i;
+            }
+            ?><a class="ptk-page<?= $page <= 1 ? ' disabled' : '' ?>" data-nav aria-label="Previous page" href="<?= ptk_h(ptk_url(['page' => max(1, $page - 1)])) ?>"><i class="fa-solid fa-chevron-left"></i></a><?php
+            $prev = null;
+            foreach ($shown as $i) {
+                if ($prev !== null && $i - $prev > 1) { ?><span class="ptk-ellipsis">…</span><?php }
+                ?><a class="ptk-page<?= $i === $page ? ' active' : '' ?>" data-nav href="<?= ptk_h(ptk_url(['page' => $i])) ?>"><?= $i ?></a><?php
+                $prev = $i;
+            }
+            ?><a class="ptk-page<?= $page >= $totalPages ? ' disabled' : '' ?>" data-nav aria-label="Next page" href="<?= ptk_h(ptk_url(['page' => min($totalPages, $page + 1)])) ?>"><i class="fa-solid fa-chevron-right"></i></a><?php
+        }
+        ?></div>
+    </div><?php
+    return ob_get_clean();
+}
+
+// ── DATA ────────────────────────────────────────────────────────────
+$studentRows   = [];   // every in-scope student, unfiltered
+$teacherRows   = [];   // every in-scope teacher, unfiltered
+$staffRows     = [];   // every non-teaching staff member, unfiltered
+$requiredTotal = 0;    // evaluation targets each student must finish
+$requiredPrincipal = 0;
 
 if ($structureActive) {
-    // Junior/Senior High headline counts — always computed across the
-    // Principal's full scope (ignores grade/level/status filters) so the
-    // "All / Junior High / Senior High" tab badges and the two stat cards
-    // stay stable while the table below is being filtered.
-    // NOTE: students are matched by year_level (e.g. "Grade 7"), NOT by the
-    // academic_level/grade_level columns. Those columns exist (added by the
-    // self-healing schema above) but nothing in the registration or account
-    // management flow ever writes to them — every student row has them as
-    // NULL. year_level is the one field the accounts page actually keeps
-    // current, so that's the single source of truth here too.
-    if ($myLevel === 'both') {
-        $juniorHighCount = (int)(safe_scalar($mysqli, "
-            SELECT COUNT(*) c FROM users
-            WHERE role='student' AND is_active=1 AND account_status='approved'
-              AND year_level IN ('Grade 7','Grade 8','Grade 9','Grade 10')
-        ") ?? 0);
-        $seniorHighCount = (int)(safe_scalar($mysqli, "
-            SELECT COUNT(*) c FROM users
-            WHERE role='student' AND is_active=1 AND account_status='approved'
-              AND year_level IN ('Grade 11','Grade 12')
-        ") ?? 0);
+    // Active, approved Basic-Ed personnel (teachers + staff accounts).
+    $personnel = [];
+    $uRes = $mysqli->query("SELECT id, full_name, designation, photo, role, secondary_role, sector, department
+                            FROM users
+                            WHERE role IN ('teacher','staff')
+                              AND is_active=1
+                              AND account_status='approved'
+                            ORDER BY full_name ASC");
+    if ($uRes) while ($u = $uRes->fetch_assoc()) {
+        $personnel[(int)$u['id']] = $u;
     }
 
-    // Narrow the Principal's full grade scope down by any grade/level filter,
-    // then translate the surviving grade numbers into the canonical
-    // "Grade N" strings that year_level actually stores.
-    $targetGrades = $scopeGrades;
-    if ($levelFilter === 'junior_high') $targetGrades = array_intersect($targetGrades, ['7', '8', '9', '10']);
-    if ($levelFilter === 'senior_high') $targetGrades = array_intersect($targetGrades, ['11', '12']);
-    if ($gradeFilter !== '') $targetGrades = array_intersect($targetGrades, [$gradeFilter]);
-    $targetYearLevels = array_map(fn($g) => "Grade {$g}", array_values($targetGrades));
+    $facultyIds = [];   // Student Evaluation: Faculty context
+    $staffIds   = [];   // Student Evaluation + Teacher peer: Non-Teaching Staff
+    $multiIds   = [];   // Student Evaluation: Multi-Role context
+    $teachers   = [];   // JHS/SHS teacher roster (Teachers tab)
+    $staffRoster = [];  // Non-Teaching Staff roster (Staff tab)
 
-    $yearLevelInList = esc_list($mysqli, $targetYearLevels);
-    $whereSql = "role='student' AND is_active=1 AND account_status='approved'
-        AND year_level IN ($yearLevelInList)";
-    $types = ''; $params = [];
-    if ($search !== '') { $whereSql .= " AND full_name LIKE ?"; $types .= 's'; $params[] = '%' . $search . '%'; }
+    $studentFacultyQuestionCount = (int)(safe_scalar($mysqli,
+        "SELECT COUNT(*) FROM evaluation_questions
+         WHERE target_type='Faculty' AND eval_type='general' AND evaluator_role='shared' AND is_active=1"
+    ) ?? 0);
+    $peerFacultyQuestionCount = (int)(safe_scalar($mysqli,
+        "SELECT COUNT(*) FROM evaluation_questions WHERE target_type='Faculty' AND is_active=1"
+    ) ?? 0);
 
-    $orderSql = ($sort !== 'status') ? ($sortableColumns[$sort] . ' ' . strtoupper($dir)) : 'full_name ASC';
+    foreach ($personnel as $uid => $u) {
+        $levels = ptr_user_levels($mysqli, $uid);
+        $grades = [];
+        $buckets = [];
+        foreach ($levels as $lvl) {
+            $g = ptr_grade($lvl);
+            if ($g === null || !in_array($g, $scopeGrades, true)) continue;
+            $grades[$g] = true;
+            $buckets[ptr_level_bucket($g)] = true;
+        }
 
-    $allRows = safe_rows($mysqli, "
-        SELECT id, full_name, year_level FROM users WHERE $whereSql ORDER BY $orderSql
-    ", $types, $params);
+        $hasTeaching = ptr_is_teaching($mysqli, $u);
+        $isFaculty = $hasTeaching && !empty($grades);          // JHS/SHS teaching scope only
+        $isStaff = ($u['role'] ?? '') === 'staff' && ptr_is_non_teaching_staff($mysqli, $uid);
 
-    // ── SUBMISSION STATUS — one bulk query, same eval_type/status
-    // semantics as Dean's (status IN submitted/approved, not just "any row").
-    $submittedMap = [];
-    $allIds = array_column($allRows, 'id');
-    if ($hasPeriod && !empty($allIds)) {
-        $ph = implode(',', array_fill(0, count($allIds), '?'));
-        $subRows = safe_rows($mysqli, "
-            SELECT evaluator_id, MAX(submitted_at) v FROM evaluation_tracker
-            WHERE eval_type='student' AND status IN ('submitted','approved')
-              AND period_id=? AND evaluator_id IN ($ph)
-            GROUP BY evaluator_id
-        ", 'i' . str_repeat('i', count($allIds)), array_merge([$period_id_int], $allIds));
-        foreach ($subRows as $sr) { $submittedMap[(int)$sr['evaluator_id']] = $sr['v']; }
+        if ($isStaff) {
+            $staffRoster[] = [
+                'id' => $uid, 'name' => (string)$u['full_name'], 'photo' => (string)($u['photo'] ?? ''),
+                'designation' => (string)($u['designation'] ?? ''), 'department' => (string)($u['department'] ?? ''),
+            ];
+        }
+        if ($isFaculty && $studentFacultyQuestionCount > 0) $facultyIds[$uid] = true;
+        if ($isStaff) {
+            $staffHasQuestions = (int)(safe_scalar($mysqli,
+                "SELECT COUNT(*) FROM user_questions WHERE user_id=? AND target_type='Staff' AND eval_type='general'",
+                'i', [$uid]
+            ) ?? 0) > 0;
+            if ($staffHasQuestions) $staffIds[$uid] = true;
+        }
+        if ($isFaculty) {
+            $hasMrQuestions = (int)(safe_scalar($mysqli,
+                "SELECT COUNT(*) FROM user_questions WHERE user_id=? AND target_type IN ('Staff','Dean','Principal','EA') AND eval_type='general'",
+                'i', [$uid]
+            ) ?? 0) > 0;
+            if ($hasMrQuestions) $multiIds[$uid] = true;
+        }
+
+        if ($isFaculty) {
+            // PHP turns numeric array keys into ints; keep grades as strings so
+            // the strict in_array() filters against $scopeGrades match.
+            $gradeList = array_map('strval', array_keys($grades));
+            usort($gradeList, fn($a, $b) => (int)$a <=> (int)$b);
+            $teachers[] = [
+                'id'          => $uid,
+                'name'        => (string)$u['full_name'],
+                'photo'       => (string)($u['photo'] ?? ''),
+                'designation' => (string)($u['designation'] ?? ''),
+                'department'  => (string)($u['department'] ?? ''),
+                'grades'      => $gradeList,
+                'level_label' => ptr_level_label(array_keys($buckets)),
+            ];
+        }
     }
 
-    foreach ($allRows as $s) {
+    // The Principal is a target only when their own question set exists.
+    $principalQuestionCount = (int)(safe_scalar($mysqli,
+        "SELECT COUNT(*) FROM user_questions WHERE user_id=? AND target_type='Principal' AND eval_type='general'",
+        'i', [$principalId]
+    ) ?? 0);
+    $requiredPrincipal = $principalQuestionCount > 0 ? 1 : 0;
+    $principalName = trim((string)($me['full_name'] ?? '')) ?: 'Principal';
+
+    // ── REQUIRED TARGETS ────────────────────────────────────────────
+    // Students: Faculty + Staff + Multi-Role (+ Principal).
+    $studentTargetDefs = [];
+    foreach ($facultyIds as $uid => $_) $studentTargetDefs['faculty:' . $uid]    = ['label' => $personnel[$uid]['full_name'], 'type' => 'Faculty'];
+    foreach ($staffIds   as $uid => $_) $studentTargetDefs['staff:' . $uid]      = ['label' => $personnel[$uid]['full_name'], 'type' => 'Staff'];
+    foreach ($multiIds   as $uid => $_) $studentTargetDefs['multi:' . $uid]      = ['label' => $personnel[$uid]['full_name'], 'type' => 'Multi-Role'];
+    if ($requiredPrincipal > 0)          $studentTargetDefs['school_head:' . $principalId] = ['label' => $principalName, 'type' => 'Principal'];
+    $requiredTotal = count($studentTargetDefs);
+
+    // Teachers: every other JHS/SHS teacher + Non-Teaching Staff (+ Principal).
+    $teacherTargetDefs = [];
+    if ($peerFacultyQuestionCount > 0) {
+        foreach ($teachers as $t) $teacherTargetDefs['faculty:' . $t['id']] = ['label' => $t['name'], 'type' => 'Faculty'];
+    }
+    foreach ($staffIds as $uid => $_) $teacherTargetDefs['staff:' . $uid] = ['label' => $personnel[$uid]['full_name'], 'type' => 'Staff'];
+    if ($requiredPrincipal > 0)       $teacherTargetDefs['principal:' . $principalId] = ['label' => $principalName, 'type' => 'Principal'];
+
+    // ── STUDENT ROSTER: ONLY JHS/SHS, NEVER COLLEGE ─────────────────
+    $rawStudents = safe_rows($mysqli, "
+        SELECT id, full_name, photo, year_level, education_level
+        FROM users
+        WHERE role='student'
+          AND is_active=1
+          AND account_status='approved'
+        ORDER BY full_name ASC
+    ");
+
+    $allowedEdu = [];
+    if (in_array('junior_high', $scopeAcademicLevels, true)) $allowedEdu[] = 'junior_high';
+    if (in_array('senior_high', $scopeAcademicLevels, true)) $allowedEdu[] = 'senior_high';
+
+    $eligibleStudents = [];
+    foreach ($rawStudents as $s) {
         $sid = (int)$s['id'];
-        $hasSubmitted = isset($submittedMap[$sid]);
-        $yl = $s['year_level'] ?? '';
-        $gradeNum = null;
-        if (preg_match('/^Grade\s*(7|8|9|10|11|12)\b/i', $yl, $m)) $gradeNum = $m[1];
-        $academicLevel = in_array($gradeNum, ['7', '8', '9', '10'], true) ? 'junior_high'
-            : (in_array($gradeNum, ['11', '12'], true) ? 'senior_high' : '');
-        $students[] = [
-            'id' => $sid, 'name' => $s['full_name'],
-            'grade' => $yl !== '' ? $yl : '—',
-            'academic_level' => $academicLevel,
-            'status' => $hasSubmitted ? 'submitted' : 'pending',
-            'submitted_at' => $submittedMap[$sid] ?? null,
+        $raw = trim((string)($s['year_level'] ?? ''));
+        $g = ptr_grade($raw);
+        $edu = strtolower(trim((string)($s['education_level'] ?? '')));
+
+        if ($g !== null) {
+            if (!in_array($g, $scopeGrades, true)) continue;      // out of scope (or College text) -> skip
+            $level = ptr_student_level_label($raw);
+        } elseif ($raw === '' && in_array($edu, $allowedEdu, true)) {
+            $level = $edu === 'junior_high' ? 'Junior High' : 'Senior High';
+        } else {
+            continue;                                              // College / unknown -> never tracked
+        }
+        $eligibleStudents[$sid] = [
+            'id' => $sid, 'name' => (string)$s['full_name'], 'photo' => (string)($s['photo'] ?? ''),
+            'grade' => $g, 'level' => $level,
         ];
     }
 
-    if ($sort === 'status') {
-        usort($students, function ($a, $b) use ($dir) {
-            $cmp = strcmp($a['status'], $b['status']);
-            return $dir === 'desc' ? -$cmp : $cmp;
-        });
-    }
-    if ($status !== '') {
-        $students = array_values(array_filter($students, fn($s) => $s['status'] === $status));
-    }
+    // ── STUDENT PROGRESS ────────────────────────────────────────────
+    $studentContextMap = [];
+    if ($hasPeriod && $requiredTotal > 0 && !empty($eligibleStudents)) {
+        $ids = array_keys($eligibleStudents);
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+        $submissionRows = safe_rows($mysqli, "
+            SELECT et.id, et.evaluator_id, et.target_user_id, et.eval_bucket,
+                   et.evaluation_context, et.status, et.submitted_at, et.updated_at,
+                   EXISTS(
+                       SELECT 1
+                       FROM questionnaire_answers qam
+                       JOIN user_questions uqm ON uqm.id=qam.user_question_id
+                       WHERE qam.tracker_id=et.id
+                         AND uqm.eval_type='student'
+                         AND uqm.target_type='Multi-Role'
+                   ) AS multi_answer
+            FROM evaluation_tracker et
+            WHERE et.eval_type='student'
+              AND et.period_id=?
+              AND et.evaluator_id IN ($ph)
+              AND et.status IN ('submitted','approved','in_progress')
+            ORDER BY et.updated_at DESC, et.id DESC
+        ", 'i' . str_repeat('i', count($ids)), array_merge([$period_id_int], $ids));
 
-    $studentsAssigned  = count($students);
-    $studentsSubmitted = count(array_filter($students, fn($s) => $s['status'] === 'submitted'));
-    $pendingStudents   = max(0, $studentsAssigned - $studentsSubmitted);
-    $remainingStudents = $pendingStudents;
-    $completionPct     = $studentsAssigned > 0 ? (int) round($studentsSubmitted / $studentsAssigned * 100) : 0;
-    $submittedPct      = $completionPct;
-    $pendingPct        = $studentsAssigned > 0 ? (100 - $completionPct) : 0;
+        foreach ($submissionRows as $row) {
+            $contextKey = ptr_context_for_submission($row, $principalId, $facultyIds, $staffIds, $multiIds, $requiredPrincipal > 0);
+            if ($contextKey === null) continue;
+            $sid = (int)$row['evaluator_id'];
+            if (!isset($eligibleStudents[$sid])) continue;
 
-    // ── EXPORT (full filtered set, ignores pagination) — before any output.
-    if (($_GET['export'] ?? '') === 'csv') {
-        header('Content-Type: text/csv; charset=utf-8');
-        header('Content-Disposition: attachment; filename="principal_tracker_export_' . date('Ymd_His') . '.csv"');
-        $out = fopen('php://output', 'w');
-        fputcsv($out, ['Student', 'Level', 'Grade Level', 'Status', 'Submitted At']);
-        foreach ($students as $s) {
-            $levelLabel = $s['academic_level'] === 'senior_high' ? 'Senior High' : ($s['academic_level'] === 'junior_high' ? 'Junior High' : '');
-            fputcsv($out, [$s['name'], $levelLabel, $s['grade'], $s['status'], $s['submitted_at'] ?: '']);
+            $isCompleted = in_array($row['status'], ['submitted','approved'], true);
+            $timeValue = $row['submitted_at'] ?: ($row['updated_at'] ?? null);
+
+            if (!isset($studentContextMap[$sid][$contextKey])) {
+                $studentContextMap[$sid][$contextKey] = ['state' => $isCompleted ? 'completed' : 'in_progress', 'at' => $timeValue];
+            } elseif ($isCompleted && $studentContextMap[$sid][$contextKey]['state'] !== 'completed') {
+                $studentContextMap[$sid][$contextKey] = ['state' => 'completed', 'at' => $timeValue];
+            }
         }
-        fclose($out);
-        $mysqli->close();
+    }
+
+    foreach ($eligibleStudents as $sid => $s) {
+        $contexts = $studentContextMap[$sid] ?? [];
+        $completed = 0; $started = false; $latest = null;
+        foreach ($contexts as $c) {
+            if ($c['state'] === 'completed') $completed++;
+            if ($c['state'] === 'in_progress') $started = true;
+            if (!empty($c['at']) && (!$latest || strtotime((string)$c['at']) > strtotime((string)$latest))) $latest = $c['at'];
+        }
+        $completed = min($requiredTotal, $completed);
+        [$state, $label] = ptk_status($completed, $requiredTotal, $started);
+
+        $studentRows[] = [
+            'key' => 's' . $sid, 'id' => $sid, 'noun' => 'student',
+            'name' => $s['name'], 'photo' => $s['photo'],
+            'grades' => $s['grade'] !== null ? [$s['grade']] : [],
+            'level_pill' => $s['grade'] !== null ? 'Grade ' . $s['grade'] : 'Basic Education',
+            'sub' => ($s['grade'] !== null ? 'Grade ' . $s['grade'] . ' · ' : '') . $s['level'],
+            'level_text' => $s['level'],
+            'required' => $requiredTotal, 'completed' => $completed,
+            'progress' => $requiredTotal > 0 ? min(100, (int)round(($completed / $requiredTotal) * 100)) : 0,
+            'status' => $state, 'status_label' => $label, 'last_at' => $latest,
+            'details' => ptk_build_details($studentTargetDefs, $contexts),
+        ];
+    }
+
+    // ── TEACHER PROGRESS (peer evaluations) ─────────────────────────
+    $teacherContextMap = [];
+    if ($hasPeriod && !empty($teachers) && !empty($teacherTargetDefs)) {
+        $tids = array_map(fn($t) => (int)$t['id'], $teachers);
+        $ph = implode(',', array_fill(0, count($tids), '?'));
+        $peerGroupClause = ptk_has_column($mysqli, 'evaluation_tracker', 'peer_group')
+            ? " OR LOWER(TRIM(COALESCE(et.peer_group,''))) IN ('faculty','teacher','staff','teaching staff')"
+            : '';
+        $peerRows = safe_rows($mysqli, "
+            SELECT et.evaluator_id, et.target_user_id, et.status, et.submitted_at, et.updated_at
+            FROM evaluation_tracker et
+            WHERE et.period_id=?
+              AND et.evaluator_id IN ($ph)
+              AND et.status IN ('submitted','approved','in_progress')
+              AND (et.eval_type IN ('peer','faculty_peer','staff_peer')$peerGroupClause)
+            ORDER BY et.updated_at DESC, et.id DESC
+        ", 'i' . str_repeat('i', count($tids)), array_merge([$period_id_int], $tids));
+
+        foreach ($peerRows as $row) {
+            $key = ptk_teacher_context($row, $teacherTargetDefs);
+            if ($key === null) continue;
+            $eid = (int)$row['evaluator_id'];
+            $isCompleted = in_array($row['status'], ['submitted','approved'], true);
+            $timeValue = $row['submitted_at'] ?: ($row['updated_at'] ?? null);
+
+            if (!isset($teacherContextMap[$eid][$key])) {
+                $teacherContextMap[$eid][$key] = ['state' => $isCompleted ? 'completed' : 'in_progress', 'at' => $timeValue];
+            } elseif ($isCompleted && $teacherContextMap[$eid][$key]['state'] !== 'completed') {
+                $teacherContextMap[$eid][$key] = ['state' => 'completed', 'at' => $timeValue];
+            }
+        }
+    }
+
+    foreach ($teachers as $t) {
+        $tid = (int)$t['id'];
+        $defs = $teacherTargetDefs;
+        unset($defs['faculty:' . $tid]);                 // nobody evaluates themselves
+        $required = count($defs);
+        $contexts = $teacherContextMap[$tid] ?? [];
+
+        $completed = 0; $started = false; $latest = null;
+        foreach ($defs as $key => $_) {
+            if (!isset($contexts[$key])) continue;
+            $c = $contexts[$key];
+            if ($c['state'] === 'completed') $completed++;
+            if ($c['state'] === 'in_progress') $started = true;
+            if (!empty($c['at']) && (!$latest || strtotime((string)$c['at']) > strtotime((string)$latest))) $latest = $c['at'];
+        }
+        $completed = min($required, $completed);
+        [$state, $label] = ptk_status($completed, $required, $started);
+
+        $teacherRows[] = [
+            'key' => 't' . $tid, 'id' => $tid, 'noun' => 'teacher',
+            'name' => $t['name'], 'photo' => $t['photo'],
+            'grades' => $t['grades'],
+            'level_pill' => $t['level_label'],
+            'sub' => ptk_grades_text($t['grades']),
+            'level_text' => $t['level_label'],
+            'designation' => $t['designation'], 'department' => $t['department'],
+            'required' => $required, 'completed' => $completed,
+            'progress' => $required > 0 ? min(100, (int)round(($completed / $required) * 100)) : 0,
+            'status' => $state, 'status_label' => $label, 'last_at' => $latest,
+            'details' => ptk_build_details($defs, $contexts),
+        ];
+    }
+
+    // ── STAFF PROGRESS (Non-Teaching Staff -> Executive Assistant) ────
+    // The Executive Assistant is the single active superadmin account, the
+    // same rule the Evaluate Others page uses.
+    $eaRow = safe_rows($mysqli, "SELECT id, full_name FROM users WHERE role='superadmin' AND is_active=1 AND account_status='approved' ORDER BY updated_at DESC, id DESC LIMIT 1");
+    $eaId = !empty($eaRow) ? (int)$eaRow[0]['id'] : 0;
+    $staffTargetDefs = $eaId > 0 ? ['ea:' . $eaId => ['label' => (string)$eaRow[0]['full_name'], 'type' => 'Executive Assistant']] : [];
+
+    $staffContextMap = [];
+    if ($hasPeriod && !empty($staffRoster) && $eaId > 0) {
+        $sids = array_map(fn($t) => (int)$t['id'], $staffRoster);
+        $ph = implode(',', array_fill(0, count($sids), '?'));
+        $staffGroupClause = ptk_has_column($mysqli, 'evaluation_tracker', 'peer_group')
+            ? " OR LOWER(TRIM(COALESCE(et.peer_group,''))) = 'staff evaluation'"
+            : '';
+        $staffSubs = safe_rows($mysqli, "
+            SELECT et.evaluator_id, et.target_user_id, et.status, et.submitted_at, et.updated_at
+            FROM evaluation_tracker et
+            WHERE et.period_id=?
+              AND et.evaluator_id IN ($ph)
+              AND et.target_user_id=?
+              AND et.status IN ('submitted','approved','in_progress')
+              AND (et.eval_type='staff'$staffGroupClause)
+            ORDER BY et.updated_at DESC, et.id DESC
+        ", 'i' . str_repeat('i', count($sids)) . 'i', array_merge([$period_id_int], $sids, [$eaId]));
+
+        foreach ($staffSubs as $row) {
+            $eid = (int)$row['evaluator_id'];
+            $isCompleted = in_array($row['status'], ['submitted','approved'], true);
+            $timeValue = $row['submitted_at'] ?: ($row['updated_at'] ?? null);
+            $key = 'ea:' . $eaId;
+            if (!isset($staffContextMap[$eid][$key])) {
+                $staffContextMap[$eid][$key] = ['state' => $isCompleted ? 'completed' : 'in_progress', 'at' => $timeValue];
+            } elseif ($isCompleted && $staffContextMap[$eid][$key]['state'] !== 'completed') {
+                $staffContextMap[$eid][$key] = ['state' => 'completed', 'at' => $timeValue];
+            }
+        }
+    }
+
+    foreach ($staffRoster as $m) {
+        $mid = (int)$m['id'];
+        $contexts = $staffContextMap[$mid] ?? [];
+        $required = count($staffTargetDefs);
+        $completed = 0; $started = false; $latest = null;
+        foreach ($contexts as $c) {
+            if ($c['state'] === 'completed') $completed++;
+            if ($c['state'] === 'in_progress') $started = true;
+            if (!empty($c['at']) && (!$latest || strtotime((string)$c['at']) > strtotime((string)$latest))) $latest = $c['at'];
+        }
+        $completed = min($required, $completed);
+        [$state, $label] = ptk_status($completed, $required, $started);
+
+        $staffRows[] = [
+            'key' => 'f' . $mid, 'id' => $mid, 'noun' => 'staff member',
+            'name' => $m['name'], 'photo' => $m['photo'],
+            'grades' => [],
+            'level_pill' => 'Non-Teaching',
+            'sub' => $m['designation'] !== '' ? $m['designation'] : ($m['department'] !== '' ? $m['department'] : 'Non-Teaching Staff'),
+            'level_text' => 'Non-Teaching Staff',
+            'designation' => $m['designation'], 'department' => $m['department'],
+            'required' => $required, 'completed' => $completed,
+            'progress' => $required > 0 ? min(100, (int)round(($completed / $required) * 100)) : 0,
+            'status' => $state, 'status_label' => $label, 'last_at' => $latest,
+            'details' => ptk_build_details($staffTargetDefs, $contexts),
+        ];
+    }
+
+    usort($studentRows, fn($a, $b) => strnatcasecmp($a['name'], $b['name']));
+    usort($staffRows, fn($a, $b) => strnatcasecmp($a['name'], $b['name']));
+    usort($teacherRows, fn($a, $b) => strnatcasecmp($a['name'], $b['name']));
+}
+
+// ── ACTIVE TAB: SUMMARY CARDS, FILTERS, PAGING ──────────────────────
+$activeAll = $tab === 'teachers' ? $teacherRows : ($tab === 'staff' ? $staffRows : $studentRows);
+
+$cards = [];
+if ($tab === 'staff') {
+    $stTotal = count($staffRows);
+    $stDone  = count(array_filter($staffRows, fn($r) => $r['status'] === 'completed'));
+    $stProg  = count(array_filter($staffRows, fn($r) => $r['status'] === 'in_progress'));
+    $stNone  = $stTotal - $stDone - $stProg;
+    $pctOf   = fn($n) => ($stTotal > 0 ? (int)round($n / $stTotal * 100) : 0) . '% of staff';
+    $cards = [
+        ['label' => 'Non-Teaching Staff', 'total' => $stTotal, 'completed' => $stDone, 'pending' => $stTotal - $stDone],
+        ['label' => 'Not Started', 'total' => $stNone, 'foot' => $pctOf($stNone)],
+        ['label' => 'In Progress', 'total' => $stProg, 'foot' => $pctOf($stProg)],
+        ['label' => 'Completed',   'total' => $stDone, 'foot' => $pctOf($stDone)],
+    ];
+}
+// When a grade pill is selected, show ONLY that grade's summary card.
+$cardGrades = $tab === 'staff' ? [] : ($gradeFilter !== '' ? [$gradeFilter] : $scopeGrades);
+foreach ($cardGrades as $g) {
+    $inGrade = array_filter($activeAll, fn($r) => in_array($g, $r['grades'], true));
+    $done = count(array_filter($inGrade, fn($r) => $r['status'] === 'completed'));
+    $cards[] = [
+        'label'     => 'Grade ' . $g . ' · ' . (in_array($g, ['7','8','9','10'], true) ? 'JHS' : 'SHS'),
+        'total'     => count($inGrade),
+        'completed' => $done,
+        'pending'   => count($inGrade) - $done,
+    ];
+}
+
+$filtered = $activeAll;
+if ($search !== '') {
+    $needle = mb_strtolower($search);
+    $filtered = array_values(array_filter($filtered, function ($r) use ($needle) {
+        $hay = $r['name'] . ' ' . $r['sub'] . ' ' . $r['level_text'] . ' ' . ($r['designation'] ?? '') . ' ' . ($r['department'] ?? '');
+        return str_contains(mb_strtolower($hay), $needle);
+    }));
+}
+if ($gradeFilter !== '' && $tab !== 'staff') {
+    $filtered = array_values(array_filter($filtered, fn($r) => in_array($gradeFilter, $r['grades'], true)));
+}
+// Chip counts: everything that matches search + grade, regardless of the status filter.
+$statusCounts = ['total' => count($filtered), 'completed' => 0, 'in_progress' => 0, 'not_started' => 0];
+foreach ($filtered as $r) { $statusCounts[$r['status']] = ($statusCounts[$r['status']] ?? 0) + 1; }
+
+if ($status !== '') {
+    $filtered = array_values(array_filter($filtered, fn($r) => $r['status'] === $status));
+}
+if ($sort !== '') {
+    $statusOrder = ['not_started' => 0, 'in_progress' => 1, 'completed' => 2];
+    usort($filtered, function ($a, $b) use ($sort, $dir, $statusOrder) {
+        switch ($sort) {
+            case 'level':
+                $ga = $a['grades'] ? min(array_map('intval', $a['grades'])) : 99;
+                $gb = $b['grades'] ? min(array_map('intval', $b['grades'])) : 99;
+                $c = ($ga <=> $gb) ?: strnatcasecmp($a['level_pill'], $b['level_pill']); break;
+            case 'required':  $c = $a['required'] <=> $b['required']; break;
+            case 'completed': $c = $a['completed'] <=> $b['completed']; break;
+            case 'status':    $c = ($statusOrder[$a['status']] ?? 0) <=> ($statusOrder[$b['status']] ?? 0); break;
+            case 'progress':  $c = $a['progress'] <=> $b['progress']; break;
+            default:          $c = strnatcasecmp($a['name'], $b['name']);
+        }
+        if ($c === 0) $c = strnatcasecmp($a['name'], $b['name']);
+        return $dir === 'desc' ? -$c : $c;
+    });
+}
+
+$totalRows  = count($filtered);
+$totalPages = max(1, (int)ceil($totalRows / $perPage));
+$page       = max(1, min($totalPages, $page));
+
+$pageRows = array_slice($filtered, ($page - 1) * $perPage, $perPage);
+
+// Live JSON used by the page to refresh without a reload.
+if ($isAjax) {
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    if (!$structureActive) {
+        echo json_encode(['ok' => false]);
         exit;
     }
-
-    $totalPages   = max(1, (int)ceil($studentsAssigned / $perPage));
-    $page         = max(1, min($totalPages, $page));
-    $pageStudents = array_slice($students, ($page - 1) * $perPage, $perPage);
-
-    // ── LAST REMINDER SENT (page rows only) ──────────────────────────
-    $lastReminderAt = [];
-    $pageIds = array_column($pageStudents, 'id');
-    if ($hasPeriod && !empty($pageIds)) {
-        $ph = implode(',', array_fill(0, count($pageIds), '?'));
-        $remRows = safe_rows($mysqli, "
-            SELECT recipient_id, MAX(created_at) v FROM evaluation_reminders
-            WHERE period_id=? AND recipient_id IN ($ph)
-            GROUP BY recipient_id
-        ", 'i' . str_repeat('i', count($pageIds)), array_merge([$period_id_int], $pageIds));
-        foreach ($remRows as $rr) { $lastReminderAt[(int)$rr['recipient_id']] = $rr['v']; }
-    }
-    foreach ($pageStudents as &$ps) {
-        $ps['last_reminded_at'] = $lastReminderAt[$ps['id']] ?? null;
-        $ps['reminder_on_cooldown'] = $ps['last_reminded_at']
-            && (time() - strtotime($ps['last_reminded_at'])) / 3600 < REMINDER_COOLDOWN_HOURS;
-    }
-    unset($ps);
+    echo json_encode([
+        'ok'        => true,
+        'tab'       => $tab,
+        'tabs'      => ptk_render_tabs($tab, count($studentRows), count($teacherRows), count($staffRows)),
+        'pills'     => ptk_render_pills($tab, $scopeGrades, $gradeFilter),
+        'chips'     => ptk_render_chips($tab, $statusCounts),
+        'list'      => ptk_render_list($pageRows, $tab, $hasPeriod, $totalRows, $page, $perPage, $totalPages),
+        'checkedAt' => date('c'),
+    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    exit;
 }
 
-$scopeLabel = $gradeFilter !== '' ? "Grade {$gradeFilter}" : ($myLevel === 'both' ? 'Junior High & Senior High' : ($myLevel === 'junior_high' ? 'Junior High School' : 'Senior High School'));
-
-function tracker_qs(array $overrides = []): string {
-    $params = array_merge($_GET, $overrides);
-    if (!isset($overrides['page'])) $params['page'] = 1;
-    return htmlspecialchars('?' . http_build_query($params));
-}
-function tracker_sort_url(string $col, string $curSort, string $curDir): string {
-    $newDir = ($curSort === $col && $curDir === 'asc') ? 'desc' : 'asc';
-    return tracker_qs(['sort' => $col, 'dir' => $newDir]);
-}
-function tracker_sort_icon(string $col, string $curSort, string $curDir): string {
-    if ($curSort !== $col) return 'fa-sort';
-    return $curDir === 'asc' ? 'fa-sort-up' : 'fa-sort-down';
-}
-function tracker_initials(string $name): string {
-    $parts = preg_split('/\s+/', trim($name));
-    $first = $parts[0][0] ?? '';
-    $last  = count($parts) > 1 ? $parts[count($parts) - 1][0] : '';
-    return strtoupper($first . $last);
-}
-function tracker_avatar_color(string $name): string {
-    $palette = ['#d99a2b', '#2563EB', '#10B981', '#EA580C', '#DB2777', '#0891B2', '#7C5FD9'];
-    return $palette[crc32($name) % count($palette)];
-}
-
-$_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-
-$mysqli->close();
+html_head_open('PBI — Principal Evaluation Tracker');
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>PBI — Evaluation Tracker</title>
-<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
-<style>
-:root{--dark:#0A192F;--mid:#172A45;--inner:#0F1F3D;--amber:#d99a2b;--amber-h:#f0b84d;--amber-dark:#b8801f;--light:#E0E6F0;--muted:#A0B3C6;--radius:10px;--shadow:0 8px 32px rgba(0,0,0,0.45);--danger:#f05454;--good:#10B981;}
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,.82)),url('../background.png') center center / cover no-repeat fixed;background-color:var(--dark);font-family:'DM Sans',sans-serif;color:var(--light);display:flex;}
+<style id="principal-tracker-dean-layout">
+/* Principal Evaluation Tracker — Dean-style layout, Principal amber accent.
+   Everything is scoped under #ptk so the global Principal theme layers
+   (light/dark/compact) cannot restyle it by accident. */
+#ptk{
+  --ptk-ink:#12263A;--ptk-muted:#6D8194;--ptk-line:#E1E9F1;--ptk-line-2:#CFDBE7;
+  --ptk-surface:#FFFFFF;--ptk-soft:#F5F8FC;--ptk-hover:#FAFBFD;
+  --ptk-accent:#D99A2B;--ptk-accent-ink:#8F5F00;--ptk-accent-soft:#FFF6E1;--ptk-accent-line:#EFCF86;--ptk-on-accent:#1F1500;
+  --ptk-green:#0F9F6E;--ptk-green-soft:#EAF8F2;
+  --ptk-amber:#A86B05;--ptk-amber-soft:#FFF4DB;
+  --ptk-gray:#617689;--ptk-gray-soft:#EEF3F8;
+  --ptk-track:#E3EAF1;--ptk-shadow:0 2px 10px rgba(20,42,67,.05);
+  color:var(--ptk-ink);font-family:'DM Sans',sans-serif;
+}
+html.principal-theme-dark #ptk{
+  --ptk-ink:#EAF0F7;--ptk-muted:#9FB2C6;--ptk-line:rgba(255,255,255,.09);--ptk-line-2:rgba(255,255,255,.16);
+  --ptk-surface:#172A45;--ptk-soft:#0F1F3D;--ptk-hover:#1B3150;
+  --ptk-accent:#F0B84D;--ptk-accent-ink:#F0B84D;--ptk-accent-soft:rgba(217,154,43,.14);--ptk-accent-line:rgba(240,184,77,.36);--ptk-on-accent:#1F1500;
+  --ptk-green:#6EE7B7;--ptk-green-soft:rgba(16,185,129,.13);
+  --ptk-amber:#F0B84D;--ptk-amber-soft:rgba(217,154,43,.14);
+  --ptk-gray:#A9B7C7;--ptk-gray-soft:#26364A;
+  --ptk-track:rgba(255,255,255,.11);--ptk-shadow:0 4px 18px rgba(0,0,0,.28);
+}
+#ptk,#ptk *,#ptk *::before,#ptk *::after{box-sizing:border-box;}
+#ptk .ptk-sr{position:absolute!important;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
 
-.sidebar{width:250px;flex-shrink:0;background:rgba(23,42,69,.9);border-right:1px solid rgba(255,255,255,.08);min-height:100vh;padding:28px 20px;display:flex;flex-direction:column;}
-.sb-profile{text-align:center;margin-bottom:26px;}
-.sb-photo{width:72px;height:72px;border-radius:50%;object-fit:cover;border:2.5px solid var(--amber);box-shadow:0 0 18px rgba(217,154,43,.4);margin:0 auto 10px;display:block;}
-.sb-name{font-weight:700;font-size:15px;color:#fff;}
-.sb-role{font-size:11px;color:var(--amber-h);text-transform:uppercase;letter-spacing:.6px;margin-top:2px;}
-.sb-scope{font-size:10px;color:var(--muted);margin-top:4px;}
-.sb-nav{display:flex;flex-direction:column;gap:4px;margin-top:10px;}
-.sb-nav a{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:8px;color:var(--muted);text-decoration:none;font-size:14px;font-weight:500;transition:background .2s,color .2s;}
-.sb-nav a:hover,.sb-nav a.active{background:rgba(217,154,43,.15);color:#fff;}
-.sb-nav a i{width:18px;text-align:center;color:var(--amber-h);}
-.sb-logout{margin-top:auto;}
-.sb-logout a{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:8px;color:#fca5a5;text-decoration:none;font-size:14px;font-weight:500;transition:background .2s;}
-.sb-logout a:hover{background:rgba(240,84,84,.12);}
+/* Tabs */
+#ptk .ptk-topline{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:0 0 20px;}
+#ptk .ptk-tabs{display:inline-flex;flex-wrap:wrap;gap:8px;padding:0;background:transparent;border:0;border-radius:0;box-shadow:none;}
+#ptk .ptk-tab{display:inline-flex;align-items:center;gap:7.5px;height:40px;padding:0 18px;border-radius:12px;border:1px solid var(--ptk-line);background:var(--ptk-surface);box-shadow:0 2px 4px rgba(30,82,144,.05);color:var(--ptk-muted)!important;font-size:13px;font-weight:700;text-decoration:none!important;transition:background .15s,border-color .15s,color .15s;}
+#ptk .ptk-tab:hover{color:var(--ptk-ink)!important;background:var(--ptk-soft);border-color:var(--ptk-line-2);}
+#ptk .ptk-tab.active{background:linear-gradient(180deg,#E6AD3E,var(--ptk-accent))!important;border-color:var(--ptk-accent);color:var(--ptk-on-accent)!important;box-shadow:0 3px 8.5px rgba(217,154,43,.30);}
+#ptk .ptk-tab-count{min-width:20.5px;height:18.5px;padding:0 7px;display:inline-flex;align-items:center;justify-content:center;border-radius:849px;background:var(--ptk-accent-soft);color:var(--ptk-accent-ink);font-size:10px;font-weight:800;}
+#ptk .ptk-tab.active .ptk-tab-count{background:rgba(31,21,0,.16);color:var(--ptk-on-accent);}
+#ptk .ptk-live{display:inline-flex;align-items:center;gap:6px;padding:5px 9.5px;border-radius:849px;background:var(--ptk-green-soft);color:var(--ptk-green);font-size:9.5px;font-weight:800;}
+#ptk .ptk-live::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;animation:ptkPulse 2s ease-in-out infinite;}
+#ptk .ptk-live.offline{background:var(--ptk-gray-soft);color:var(--ptk-gray);}
+#ptk .ptk-live.offline::before{animation:none;}
+@keyframes ptkPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.75)}}
 
-.main{flex:1;padding:36px 44px;}
-.page-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px;flex-wrap:wrap;gap:14px;}
-.page-title{font-family:'Rajdhani',sans-serif;font-size:30px;font-weight:700;color:#fff;letter-spacing:1px;}
-.page-sub{font-size:13px;color:var(--muted);margin-top:4px;}
+/* Summary cards (one per Grade in the Principal's scope) */
+#ptk .ptk-cards{display:grid;grid-template-columns:repeat(var(--ptk-n,4),minmax(0,1fr));gap:12px;margin:0 0 17px;}
+#ptk .ptk-card{background:var(--ptk-surface);border:1px solid var(--ptk-line);border-top:3px solid var(--ptk-accent);border-radius:12px;padding:13.5px 15.5px 12px;box-shadow:var(--ptk-shadow);}
+#ptk .ptk-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8.5px;}
+#ptk .ptk-card-label{font-size:9.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--ptk-muted);padding-top:3.5px;}
+#ptk .ptk-card-icon{width:32.5px;height:32.5px;flex:0 0 32.5px;border-radius:8.5px;display:flex;align-items:center;justify-content:center;background:var(--ptk-accent-soft);color:var(--ptk-accent-ink);font-size:13px;}
+#ptk .ptk-card-num{margin:2px 0 10px;font-size:25.5px;line-height:1;font-weight:800;color:var(--ptk-ink);}
+#ptk .ptk-card-foot{display:flex;align-items:center;gap:7.5px;padding-top:9.5px;border-top:1px solid var(--ptk-line);font-size:11px;color:var(--ptk-muted);white-space:nowrap;}
+#ptk .ptk-card-foot b{color:var(--ptk-accent-ink);font-weight:700;}
+#ptk .ptk-card-sep{color:var(--ptk-line-2);}
 
-.period-badge{background:rgba(217,154,43,.14);border:1px solid rgba(217,154,43,.3);color:var(--amber-h);padding:8px 16px;border-radius:20px;font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px;}
-.period-badge.closed{background:rgba(240,84,84,.1);border-color:rgba(240,84,84,.3);color:#fca5a5;}
-.period-badge.amber{background:rgba(217,119,6,.14);border-color:rgba(217,119,6,.3);color:#fbbf24;}
-.period-badge.gray{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.12);color:var(--muted);}
+/* Filters */
+#ptk .ptk-form{margin:0;}
+#ptk .ptk-filters{display:flex;align-items:center;justify-content:space-between;gap:10px 13.5px;flex-wrap:wrap;margin:0 0 13.5px;}
+#ptk .ptk-pills{display:flex;gap:8.5px;flex-wrap:wrap;}
+#ptk .ptk-pill{display:inline-flex;align-items:center;height:37.5px;padding:0 17px;border-radius:10px;border:1px solid var(--ptk-line-2);background:var(--ptk-surface);color:var(--ptk-ink)!important;font-size:12px;font-weight:600;text-decoration:none!important;transition:background .15s,border-color .15s;}
+#ptk .ptk-pill:hover{background:var(--ptk-soft);border-color:var(--ptk-accent-line);}
+#ptk .ptk-pill.active{background:linear-gradient(180deg,#E6AD3E,var(--ptk-accent))!important;border-color:var(--ptk-accent)!important;color:var(--ptk-on-accent)!important;font-weight:800;}
+#ptk .ptk-controls{display:flex;align-items:center;gap:8.5px;flex-wrap:wrap;margin-left:auto;}
+#ptk #ptkStatus{height:37.5px;min-width:119px;padding:0 32.5px 0 13.5px;border-radius:10px;border:1px solid var(--ptk-line-2)!important;background-color:var(--ptk-surface)!important;color:var(--ptk-ink)!important;font:600 12px 'DM Sans',sans-serif;appearance:none;-webkit-appearance:none;cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%236D8194' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")!important;background-repeat:no-repeat!important;background-position:right 12px center!important;}
+#ptk #ptkStatus option{background:var(--ptk-surface);color:var(--ptk-ink);}
+#ptk .ptk-search{position:relative;display:block;width:229.5px;max-width:100%;}
+#ptk .ptk-search i{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--ptk-accent-ink);font-size:12px;pointer-events:none;}
+#ptk #ptkSearch{width:100%;height:37.5px;padding:0 12px 0 34px;border-radius:10px;border:1px solid var(--ptk-line-2)!important;background:var(--ptk-surface)!important;color:var(--ptk-ink)!important;font:500 12px 'DM Sans',sans-serif;outline:none;-webkit-appearance:none;appearance:none;}
+#ptk #ptkSearch::placeholder{color:var(--ptk-muted);opacity:1;}
+#ptk #ptkStatus:focus,#ptk #ptkSearch:focus{border-color:var(--ptk-accent)!important;box-shadow:0 0 0 3px rgba(217,154,43,.18);}
 
-.structure-note{display:flex;align-items:flex-start;gap:14px;padding:18px 20px;background:rgba(217,154,43,.08);border:1px solid rgba(217,154,43,.25);border-radius:12px;margin-bottom:26px;}
-.structure-note i{color:var(--amber-h);font-size:20px;margin-top:2px;}
-.structure-note p{font-size:13px;color:var(--light);line-height:1.6;}
-.structure-note p b{color:#fff;}
+/* Table (CSS grid — avoids the global <table> overrides) */
+#ptk .ptk-list{background:var(--ptk-surface);border:1px solid var(--ptk-line);border-radius:12px;box-shadow:var(--ptk-shadow);overflow:hidden;}
+#ptk .ptk-list-scroll{overflow-x:auto;}
+#ptk .ptk-list-inner{min-width:765px;}
+#ptk .ptk-head,#ptk .ptk-row{display:grid;grid-template-columns:minmax(195.5px,2.5fr) minmax(102px,1.2fr) minmax(68px,.8fr) minmax(85px,1fr) minmax(102px,1.1fr) minmax(187px,2.2fr);align-items:center;column-gap:12px;padding:0 18.5px;}
+#ptk .ptk-head{height:47.5px;background:var(--ptk-soft);border-bottom:1px solid var(--ptk-line);font-size:9.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--ptk-muted);}
+#ptk .ptk-item{border-bottom:1px solid var(--ptk-line);}
+#ptk .ptk-item:last-child{border-bottom:0;}
+#ptk .ptk-row{min-height:75px;cursor:pointer;transition:background .12s;outline:none;}
+#ptk .ptk-row:hover,#ptk .ptk-row:focus-visible{background:var(--ptk-hover);}
+#ptk .ptk-row:focus-visible{box-shadow:inset 3px 0 0 var(--ptk-accent);}
+#ptk .ptk-c-person{display:flex;align-items:center;gap:12px;min-width:0;}
+#ptk .ptk-avatar{width:46px;height:46px;flex:0 0 46px;border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;background:var(--ptk-accent-soft);border:1px solid var(--ptk-accent-line);color:var(--ptk-accent-ink);font-size:16px;}
+#ptk .ptk-avatar img{width:100%;height:100%;object-fit:cover;}
+#ptk .ptk-person-copy{display:flex;flex-direction:column;gap:3px;min-width:0;}
+#ptk .ptk-name{font-size:13px;font-weight:700;color:var(--ptk-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#ptk .ptk-sub{font-size:10.5px;color:var(--ptk-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#ptk .ptk-level{display:inline-flex;align-items:center;justify-content:center;min-height:37.5px;padding:0 15.5px;border-radius:10px;border:1px solid var(--ptk-accent-line);background:var(--ptk-accent-soft);color:var(--ptk-accent-ink);font-size:11px;font-weight:700;white-space:nowrap;}
+#ptk .ptk-num{font-size:13.5px;font-weight:500;color:var(--ptk-ink);}
+#ptk .ptk-status{display:inline-flex;align-items:center;padding:6px 12px;border-radius:849px;font-size:10.5px;font-weight:700;white-space:nowrap;}
+#ptk .ptk-status.not_started{background:var(--ptk-gray-soft);color:var(--ptk-gray);}
+#ptk .ptk-status.in_progress{background:var(--ptk-amber-soft);color:var(--ptk-amber);}
+#ptk .ptk-status.completed{background:var(--ptk-green-soft);color:var(--ptk-green);}
+#ptk .ptk-c-prog{display:flex;align-items:center;gap:10px;min-width:0;}
+#ptk .ptk-pct{width:34px;flex:0 0 34px;font-size:12px;font-weight:600;color:var(--ptk-ink);}
+#ptk .ptk-bar-wrap{flex:1;min-width:93.5px;display:flex;flex-direction:column;gap:5px;}
+#ptk .ptk-bar{display:block;height:6px;border-radius:849px;background:var(--ptk-track);overflow:hidden;}
+#ptk .ptk-bar i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#C98A1C,var(--ptk-accent));transition:width .25s;}
+#ptk .ptk-last{font-size:10px;color:var(--ptk-muted);white-space:nowrap;}
+#ptk .ptk-chev{width:13.5px;flex:0 0 13.5px;text-align:right;color:var(--ptk-muted);font-size:11px;transition:transform .18s;}
+#ptk .ptk-item.open .ptk-chev{transform:rotate(90deg);}
+#ptk .ptk-item.open .ptk-row{background:var(--ptk-hover);}
+#ptk .ptk-empty{margin:0;padding:29px 17px;text-align:center;font-size:12px;color:var(--ptk-muted);}
 
-.filter-bar{background:rgba(23,42,69,.85);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:18px 22px;box-shadow:var(--shadow);margin-bottom:22px;display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;}
-.filter-field{display:flex;flex-direction:column;gap:6px;}
-.filter-field label{font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);}
-.filter-field select, .filter-field input[type=text]{background:rgba(10,25,47,.7);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:var(--light);font-size:13px;font-family:'DM Sans',sans-serif;padding:9px 34px 9px 12px;outline:none;min-width:170px;}
-.filter-field select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23A0B3C6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;}
-.filter-field input[type=text]{padding-right:34px;min-width:200px;}
-.search-icon-wrap{position:relative;}
-.search-icon-wrap i{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;pointer-events:none;}
-.filter-field select:focus, .filter-field input:focus{border-color:var(--amber);}
-.btn-apply{background:var(--amber);border:none;color:#0A192F;font-size:13px;font-weight:700;padding:10px 18px;border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;font-family:'DM Sans',sans-serif;box-shadow:0 4px 14px rgba(217,154,43,.35);transition:background .2s;height:38px;}
-.btn-apply:hover{background:var(--amber-h);}
-.btn-reset{background:transparent;border:1px solid rgba(255,255,255,.16);color:var(--muted);font-size:13px;font-weight:700;padding:10px 16px;border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;font-family:'DM Sans',sans-serif;height:38px;text-decoration:none;transition:all .2s;}
-.btn-reset:hover{color:var(--light);border-color:rgba(255,255,255,.3);}
+/* Expanded per-row breakdown */
+#ptk .ptk-detail{padding:13.5px 18.5px 17px;background:var(--ptk-soft);border-top:1px solid var(--ptk-line);}
+#ptk .ptk-detail[hidden]{display:none;}
+#ptk .ptk-detail-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 0 10px;}
+#ptk .ptk-detail-head strong{font-size:11.5px;color:var(--ptk-ink);}
+#ptk .ptk-detail-head span{font-size:10px;color:var(--ptk-muted);}
+#ptk .ptk-detail-empty{margin:0;font-size:11px;color:var(--ptk-muted);}
+#ptk .ptk-targets{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(229.5px,1fr));gap:7px;}
+#ptk .ptk-target{display:flex;align-items:center;gap:8.5px;padding:7.5px 10px;border-radius:8.5px;background:var(--ptk-surface);border:1px solid var(--ptk-line);font-size:11px;min-width:0;}
+#ptk .ptk-target i{flex:0 0 auto;font-size:12px;}
+#ptk .ptk-target.completed i{color:var(--ptk-green);}
+#ptk .ptk-target.in_progress i{color:var(--ptk-amber);}
+#ptk .ptk-target.pending i{color:var(--ptk-muted);opacity:.55;}
+#ptk .ptk-target-name{flex:1;min-width:0;font-weight:600;color:var(--ptk-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#ptk .ptk-target-type{flex:0 0 auto;padding:2px 7px;border-radius:849px;background:var(--ptk-accent-soft);color:var(--ptk-accent-ink);font-size:9px;font-weight:800;}
+#ptk .ptk-target-state{flex:0 0 auto;font-size:10px;color:var(--ptk-muted);}
 
-.card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:16px;margin-bottom:26px;}
-.stat-card{background:rgba(23,42,69,.85);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:20px;box-shadow:var(--shadow);}
-.stat-card i{color:var(--amber-h);font-size:20px;margin-bottom:10px;}
-.stat-card .num{font-size:28px;font-weight:700;color:#fff;}
-.stat-card .label{font-size:12px;color:var(--muted);margin-top:4px;}
-.stat-card .caption{font-size:11px;color:var(--muted);opacity:.75;margin-top:2px;font-style:italic;}
+/* Footer / pager */
+#ptk .ptk-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 18.5px;border-top:1px solid var(--ptk-line);font-size:11px;color:var(--ptk-muted);}
+#ptk .ptk-pager{display:flex;align-items:center;gap:5px;}
+#ptk .ptk-page{min-width:29px;height:29px;padding:0 8.5px;display:inline-flex;align-items:center;justify-content:center;border-radius:7.5px;border:1px solid var(--ptk-line-2);background:var(--ptk-surface);color:var(--ptk-muted)!important;font-size:11px;font-weight:700;text-decoration:none!important;}
+#ptk .ptk-page:hover{border-color:var(--ptk-accent-line);color:var(--ptk-ink)!important;}
+#ptk .ptk-page.active{background:var(--ptk-accent-soft);border-color:var(--ptk-accent);color:var(--ptk-accent-ink)!important;}
+#ptk .ptk-page.disabled{opacity:.4;pointer-events:none;}
+#ptk .ptk-ellipsis{color:var(--ptk-muted);padding:0 3px;}
 
-.section{background:rgba(23,42,69,.85);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px;box-shadow:var(--shadow);margin-bottom:26px;}
-.section-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px;}
-.section h2{font-family:'Rajdhani',sans-serif;font-size:19px;color:#fff;display:flex;align-items:center;gap:8px;}
-.section h2 i{color:var(--amber-h);font-size:16px;}
-.count-note{font-size:12px;color:var(--muted);}
-.export-btn{background:rgba(217,154,43,.12);border:1px solid rgba(217,154,43,.35);color:var(--amber-h);padding:9px 14px;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:7px;transition:background .2s;}
-.export-btn:hover{background:rgba(217,154,43,.22);}
 
-.stub-note{font-size:11.5px;color:var(--amber-h);background:rgba(217,154,43,.08);border:1px dashed rgba(217,154,43,.35);border-radius:8px;padding:10px 14px;margin-bottom:16px;}
+/* ── Usability additions ── */
+#ptk .ptk-topline{margin:0 0 14px;}
+#ptk .ptk-filters{margin:0 0 12px;}
 
-.level-tabs{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;}
-.level-tabs a{background:rgba(217,154,43,.12);border:1px solid rgba(217,154,43,.35);color:var(--amber-h);padding:9px 18px;border-radius:30px;font-size:12.5px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:7px;transition:background .2s;}
-.level-tabs a:hover{background:rgba(217,154,43,.22);}
-.level-tabs a.active{background:rgba(217,154,43,.32);color:#fff;}
-.level-tabs a span{background:rgba(255,255,255,.15);border-radius:20px;padding:1px 9px;margin-left:2px;font-size:11px;}
+/* Status chips (click to filter) */
+#ptk .ptk-chips{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px;}
+#ptk .ptk-chip{display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 14px;border-radius:849px;border:1px solid var(--ptk-line-2);background:var(--ptk-surface);color:var(--ptk-ink)!important;font-size:12px;font-weight:600;text-decoration:none!important;transition:box-shadow .12s,transform .12s;}
+#ptk .ptk-chip b{font-size:14px;font-weight:800;}
+#ptk .ptk-chip.completed{background:var(--ptk-green-soft);color:var(--ptk-green)!important;}
+#ptk .ptk-chip.in_progress{background:var(--ptk-amber-soft);color:var(--ptk-amber)!important;}
+#ptk .ptk-chip.not_started{background:var(--ptk-gray-soft);color:var(--ptk-gray)!important;}
+#ptk .ptk-chip:hover{box-shadow:0 2px 8px rgba(20,42,67,.14);transform:translateY(-1px);}
+#ptk .ptk-chip:focus-visible,#ptk .ptk-sort:focus-visible{outline:2px solid var(--ptk-accent);outline-offset:2px;}
+#ptk .ptk-chip.active{box-shadow:0 0 0 2px var(--ptk-accent);}
+#ptk .ptk-clear,#ptk .ptk-clear-inline{font-size:12px;font-weight:700;color:var(--ptk-accent-ink)!important;text-decoration:none!important;white-space:nowrap;}
+#ptk .ptk-clear{margin-left:auto;padding:0 4px;}
+#ptk .ptk-clear:hover,#ptk .ptk-clear-inline:hover{text-decoration:underline!important;}
 
-.bulk-banner{display:flex;align-items:flex-start;gap:12px;background:rgba(217,154,43,.1);border:1px solid rgba(217,154,43,.3);border-radius:12px;padding:16px 20px;margin-bottom:16px;}
-.bulk-banner i{color:var(--amber-h);font-size:16px;margin-top:2px;}
-.bulk-banner b{color:#fff;display:block;margin-bottom:2px;font-size:13px;}
-.bulk-banner p{font-size:12.5px;color:var(--muted);}
-.bulk-banner > div{flex:1;}
-.btn-bulk-remind{background:var(--amber);border:none;color:#0A192F;padding:9px 16px;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:7px;white-space:nowrap;transition:background .2s;}
-.btn-bulk-remind:hover:not(:disabled){background:var(--amber-dark);}
-.btn-bulk-remind:disabled{opacity:.4;cursor:not-allowed;}
+/* Sortable column headers */
+#ptk .ptk-sort{display:inline-flex;align-items:center;gap:6px;color:inherit!important;text-decoration:none!important;cursor:pointer;}
+#ptk .ptk-sort i{font-size:10px;opacity:.35;}
+#ptk .ptk-sort:hover{color:var(--ptk-accent-ink)!important;}
+#ptk .ptk-sort.on{color:var(--ptk-accent-ink)!important;}
+#ptk .ptk-sort.on i{opacity:1;}
 
-table.data{width:100%;border-collapse:collapse;font-size:13px;}
-table.data th{text-align:left;color:var(--muted);font-weight:600;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.08);text-transform:uppercase;font-size:11px;letter-spacing:.4px;white-space:nowrap;}
-table.data th a{color:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:6px;}
-table.data th a:hover{color:var(--light);}
-table.data td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.05);vertical-align:middle;}
-table.data tr:last-child td{border-bottom:none;}
-table.data th:first-child, table.data td:first-child{width:36px;}
-.stu-name{display:flex;align-items:center;gap:10px;font-weight:600;color:#fff;}
-.stu-avatar{width:32px;height:32px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;}
-.level-pill{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:rgba(37,99,235,.14);color:#60a5fa;}
-.level-pill.senior{background:rgba(124,95,217,.16);color:#a78bfa;}
-.status-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;}
-.status-pill.submitted{background:rgba(16,185,129,.14);color:var(--good);}
-.status-pill.pending{background:rgba(160,179,198,.14);color:var(--muted);}
-.btn-remind{background:var(--amber);border:none;color:#0A192F;padding:6px 12px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;transition:background .2s;}
-.btn-remind:hover{background:var(--amber-dark);}
-.btn-remind.on-cooldown{background:rgba(160,179,198,.18);color:var(--muted);cursor:default;pointer-events:none;}
-.btn-remind.sending{opacity:.6;pointer-events:none;}
-.remind-meta{font-size:10.5px;color:var(--muted);margin-top:4px;}
-.btn-more{background:transparent;border:none;color:var(--muted);font-size:16px;cursor:default;padding:4px 8px;}
+/* Level pill: compact, not a tall box */
+#ptk .ptk-level{min-height:0;height:auto;padding:5px 13px;border-radius:849px;font-size:11px;}
 
-.reminder-toast{display:flex;align-items:flex-start;gap:10px;background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.35);color:var(--good);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:12.5px;line-height:1.6;}
-.reminder-toast.has-skips{background:rgba(217,119,6,.1);border-color:rgba(217,119,6,.3);color:#fbbf24;}
-.reminder-toast i{margin-top:2px;}
-.reminder-toast b{display:block;color:#fff;margin-bottom:2px;}
+/* Clearer "click to open" chevron + hover */
+#ptk .ptk-chev{width:26px;flex:0 0 26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:var(--ptk-accent-soft);color:var(--ptk-accent-ink);font-size:11px;}
+#ptk .ptk-row:hover .ptk-chev{background:var(--ptk-accent);color:var(--ptk-on-accent);}
 
-.empty-note{color:var(--muted);font-size:13px;font-style:italic;}
+/* Easier-to-read secondary text */
+#ptk .ptk-sub{font-size:11.5px;}
+#ptk .ptk-last{font-size:11px;}
 
-.table-footer{display:flex;justify-content:space-between;align-items:center;padding:16px 4px 4px;font-size:12.5px;color:var(--muted);flex-wrap:wrap;gap:10px;}
-.pagination{display:flex;align-items:center;gap:6px;}
-.page-btn{min-width:30px;height:30px;padding:0 8px;display:flex;align-items:center;justify-content:center;border-radius:7px;background:var(--inner);border:1px solid rgba(255,255,255,.1);color:var(--muted);text-decoration:none;font-size:12.5px;font-weight:600;}
-.page-btn.active{background:var(--amber);color:#0A192F;border-color:var(--amber);}
-.page-btn.disabled{opacity:.35;pointer-events:none;}
-.page-ellipsis{color:var(--muted);padding:0 4px;}
+/* A single grade selected: one card, not stretched across the row. */
+#ptk .ptk-cards[data-n="1"]{grid-template-columns:minmax(0,306px);}
 
-.info-banner{display:flex;align-items:flex-start;gap:12px;background:rgba(37,99,235,.1);border:1px solid rgba(37,99,235,.3);border-radius:12px;padding:16px 20px;margin-top:22px;}
-.info-banner i{color:#60a5fa;font-size:16px;margin-top:2px;}
-.info-banner b{color:#fff;display:block;margin-bottom:2px;}
-.info-banner p{font-size:12.5px;color:var(--muted);}
-.info-banner.closed{background:rgba(240,84,84,.08);border-color:rgba(240,84,84,.25);}
-.info-banner.closed i{color:#fca5a5;}
-
-@media(max-width:768px){body{flex-direction:column;}.sidebar{width:100%;min-height:auto;}.filter-bar{flex-direction:column;align-items:stretch;}}
+/* Six grades (JHS + SHS) only fit in one row on wide screens; otherwise 3 x 2. */
+@media(max-width:1749px){#ptk .ptk-cards[data-n="6"]{grid-template-columns:repeat(3,minmax(0,1fr));}}
+@media(max-width:1000px){#ptk .ptk-cards[data-n="4"]{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:900px){
+  #ptk .ptk-controls{width:100%;margin-left:0;}
+  #ptk .ptk-search{flex:1 1 200px;width:auto;}
+  #ptk .ptk-tab{padding:0 14px;font-size:14px;}
+}
+@media(max-width:560px){
+  #ptk .ptk-cards,#ptk .ptk-cards[data-n="6"]{grid-template-columns:repeat(2,minmax(0,1fr));}
+  #ptk .ptk-pill{padding:0 14px;height:40px;}
+}
+@media print{#ptk .ptk-live,#ptk .ptk-controls,#ptk .ptk-pager{display:none!important;}}
 </style>
-</head>
-<body>
+<?php render_principal_sidebar('tracker', $me, $scopeLabel, $photo_src); ?>
+<main class="main principal-feature-page">
+<div id="principalFeatureWorkspace" class="principal-feature-shell">
+<div id="ptk">
+    <h1 class="ptk-sr">Evaluation Tracker</h1>
 
-<aside class="sidebar">
-    <div class="sb-profile">
-        <img class="sb-photo" src="<?= htmlspecialchars($photo_src) ?>" alt="Profile"/>
-        <div class="sb-name"><?= htmlspecialchars($me['full_name'] ?? 'Principal') ?></div>
-        <div class="sb-role"><?= htmlspecialchars($me['designation'] ?? 'Principal') ?></div>
-        <div class="sb-scope"><?= htmlspecialchars($scopeLabel) ?></div>
-    </div>
-    <nav class="sb-nav">
-        <a href="principal_dashboard.php"><i class="fa-solid fa-gauge"></i> Dashboard</a>
-        <a href="principal_evaluations.php"><i class="fa-solid fa-clipboard-list"></i> Evaluation</a>
-        <a href="principal_evaluation_tracker.php" class="active"><i class="fa-solid fa-satellite-dish"></i> Evaluation Tracker</a>
-        <a href="principal_reports.php"><i class="fa-solid fa-chart-line"></i> Reports</a>
-        <a href="principal_account_settings.php"><i class="fa-solid fa-gear"></i> Account Settings</a>
-    </nav>
-    <div class="sb-logout">
-        <a href="principal_logout.php"><i class="fa-solid fa-right-from-bracket"></i> Log Out</a>
-    </div>
-</aside>
-
-<main class="main">
-    <div class="page-header">
-        <div>
-            <div class="page-title">Evaluation Tracker</div>
-            <div class="page-sub">Monitor <?= BASIC_ED_LABEL ?> student evaluation participation.</div>
-        </div>
-        <?php render_period_badge($settings); ?>
-    </div>
-
-    <?php if (!$structureActive): ?>
+<?php if (!$structureActive): ?>
     <?php render_scope_status($settings, 'tracker'); ?>
-    <?php else: ?>
-
-    <!-- FILTER BAR -->
-    <form class="filter-bar" method="GET" action="principal_evaluation_tracker.php">
-        <div class="filter-field">
-            <label for="search">Search</label>
-            <div class="search-icon-wrap">
-                <input type="text" id="search" name="search" placeholder="Student name..." value="<?= htmlspecialchars($search) ?>"/>
-                <i class="fa-solid fa-magnifying-glass"></i>
+<?php else: ?>
+    <form class="ptk-form" id="ptkFilters" method="get" action="principal_evaluation_tracker.php">
+        <input type="hidden" name="tab" value="<?= ptk_h($tab) ?>">
+        <input type="hidden" name="grade" value="<?= ptk_h($gradeFilter) ?>">
+        <div class="ptk-topline">
+            <nav class="ptk-tabs" id="ptkTabs" aria-label="Tracker sections"><?= ptk_render_tabs($tab, count($studentRows), count($teacherRows), count($staffRows)) ?></nav>
+            <div class="ptk-controls">
+                <input type="hidden" id="ptkStatus" name="status" value="<?= ptk_h($status) ?>">
+                <label class="ptk-search"><i class="fa-solid fa-magnifying-glass"></i><input id="ptkSearch" type="search" name="search" autocomplete="off" placeholder="Search <?= ptk_h(strtolower(ptk_nouns($tab)[0])) ?> by name…" value="<?= ptk_h($search) ?>"></label>
+                <span class="ptk-live" id="ptkLive">Live</span>
+                <noscript><button type="submit">Apply</button></noscript>
             </div>
         </div>
-        <div class="filter-field">
-            <label for="grade">Grade Level</label>
-            <select name="grade" id="grade">
-                <option value="">All Grades</option>
-                <?php foreach ($gradeOptions as $val => $lbl): ?>
-                    <option value="<?= htmlspecialchars($val) ?>" <?= $gradeFilter === $val ? 'selected' : '' ?>><?= htmlspecialchars($lbl) ?></option>
-                <?php endforeach; ?>
-            </select>
+        <div class="ptk-filters">
+            <div class="ptk-pills" id="ptkPills"><?= ptk_render_pills($tab, $scopeGrades, $gradeFilter) ?></div>
         </div>
-        <div class="filter-field">
-            <label for="status">Status</label>
-            <select name="status" id="status">
-                <option value="" <?= $status === '' ? 'selected' : '' ?>>All</option>
-                <option value="pending" <?= $status === 'pending' ? 'selected' : '' ?>>Not Started</option>
-                <option value="submitted" <?= $status === 'submitted' ? 'selected' : '' ?>>Submitted</option>
-            </select>
-        </div>
-        <?php if ($levelFilter !== ''): ?>
-        <input type="hidden" name="level" value="<?= htmlspecialchars($levelFilter) ?>"/>
-        <?php endif; ?>
-        <button type="submit" class="btn-apply"><i class="fa-solid fa-filter"></i> Apply</button>
-        <a href="principal_evaluation_tracker.php" class="btn-reset"><i class="fa-solid fa-rotate-left"></i> Reset</a>
     </form>
 
-    <!-- STAT CARDS -->
-    <div class="card-grid">
-        <?php if ($myLevel === 'both'): ?>
-        <div class="stat-card"><i class="fa-solid fa-child-reaching"></i><div class="num"><?= $juniorHighCount ?></div><div class="label">Junior High Students</div><div class="caption">Grades 7–10</div></div>
-        <div class="stat-card"><i class="fa-solid fa-user-graduate"></i><div class="num"><?= $seniorHighCount ?></div><div class="label">Senior High Students</div><div class="caption">Grades 11–12</div></div>
-        <?php endif; ?>
-        <div class="stat-card"><i class="fa-solid fa-users"></i><div class="num"><?= $studentsAssigned ?></div><div class="label">Students Assigned</div><div class="caption">All filtered students</div></div>
-        <div class="stat-card"><i class="fa-solid fa-circle-check"></i><div class="num"><?= $studentsSubmitted ?></div><div class="label">Students Submitted</div><div class="caption"><?= $submittedPct ?>% of total</div></div>
-        <div class="stat-card"><i class="fa-solid fa-hourglass-half"></i><div class="num"><?= $pendingStudents ?></div><div class="label">Pending Students</div><div class="caption"><?= $pendingPct ?>% of total</div></div>
-        <div class="stat-card"><i class="fa-solid fa-chart-simple"></i><div class="num"><?= $completionPct ?>%</div><div class="label">Completion %</div><div class="caption">Overall completion</div></div>
-    </div>
+    <div class="ptk-chips" id="ptkChips" aria-label="Filter by status"><?= ptk_render_chips($tab, $statusCounts) ?></div>
 
-    <!-- STUDENTS TO BE EVALUATED -->
-    <div class="section">
-        <div class="section-head">
-            <h2><i class="fa-solid fa-user-graduate"></i> Students to be Evaluated</h2>
-            <div style="display:flex;align-items:center;gap:14px;">
-                <span class="count-note"><span id="selCount">0</span> of <?= $studentsAssigned ?> students</span>
-                <a class="export-btn" href="<?= tracker_qs(['export' => 'csv']) ?>"><i class="fa-solid fa-download"></i> Export List</a>
-            </div>
-        </div>
+    <section class="ptk-list" id="ptkList" aria-live="polite"><?= ptk_render_list($pageRows, $tab, $hasPeriod, $totalRows, $page, $perPage, $totalPages) ?></section>
 
-        <?php if ($myLevel === 'both'): ?>
-        <div class="level-tabs">
-            <a href="<?= tracker_qs(['level' => '']) ?>" class="<?= $levelFilter === '' ? 'active' : '' ?>">All <span><?= $juniorHighCount + $seniorHighCount ?></span></a>
-            <a href="<?= tracker_qs(['level' => 'junior_high']) ?>" class="<?= $levelFilter === 'junior_high' ? 'active' : '' ?>">Junior High <span><?= $juniorHighCount ?></span></a>
-            <a href="<?= tracker_qs(['level' => 'senior_high']) ?>" class="<?= $levelFilter === 'senior_high' ? 'active' : '' ?>">Senior High <span><?= $seniorHighCount ?></span></a>
-        </div>
-        <?php endif; ?>
+<?php endif; ?>
+</div>
+</div>
+</main>
 
-        <?php if ($hasPeriod && !empty($pageStudents)): ?>
-        <div class="bulk-banner">
-            <i class="fa-solid fa-circle-info"></i>
-            <div>
-                <b>Students listed below are those who still need to complete the evaluation.</b>
-                <p>You can send reminders or view student details.</p>
-            </div>
-            <button type="button" class="btn-bulk-remind" id="bulkRemindBtn" disabled>
-                <i class="fa-solid fa-paper-plane"></i> Send Bulk Reminder
-            </button>
-        </div>
-        <?php endif; ?>
+<script>
+(function(){
+    const root = document.getElementById('ptk');
+    if (!root || !document.getElementById('ptkList')) return;
 
-        <?php if (!$hasPeriod): ?>
-            <p class="empty-note">No active evaluation period right now.</p>
-        <?php else: ?>
-        <div class="stub-note">
-            <i class="fa-solid fa-circle-info"></i>
-                Reminders are logged in-system and rate-limited to one per student every <?= REMINDER_COOLDOWN_HOURS ?> hours. This app has no email/SMS system yet, so students won't get an outside message — the record just shows here. Selection is scoped to the current page only.
-            </div>
-            <div id="reminderToast" class="reminder-toast" style="display:none;"></div>
-            <?php if (empty($pageStudents)): ?>
-                <p class="empty-note">No students match the current filters.</p>
-            <?php else: ?>
-            <table class="data">
-                <thead>
-                    <tr>
-                        <th><input type="checkbox" id="selectAll" title="Select all pending on this page"/></th>
-                        <th><a href="<?= tracker_sort_url('name', $sort, $dir) ?>">Student <i class="fa-solid <?= tracker_sort_icon('name', $sort, $dir) ?>"></i></a></th>
-                        <?php if ($myLevel === 'both'): ?>
-                        <th>Level</th>
-                        <?php endif; ?>
-                        <th><a href="<?= tracker_sort_url('grade', $sort, $dir) ?>">Grade Level <i class="fa-solid <?= tracker_sort_icon('grade', $sort, $dir) ?>"></i></a></th>
-                        <th><a href="<?= tracker_sort_url('status', $sort, $dir) ?>">Status <i class="fa-solid <?= tracker_sort_icon('status', $sort, $dir) ?>"></i></a></th>
-                        <th>Submitted At</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($pageStudents as $s): ?>
-                    <tr>
-                        <td>
-                            <?php if ($s['status'] !== 'submitted'): ?>
-                            <input type="checkbox" class="rowSelect" value="<?= $s['id'] ?>"/>
-                            <?php endif; ?>
-                        </td>
-                        <td>
-                            <div class="stu-name">
-                                <span class="stu-avatar" style="background:<?= tracker_avatar_color($s['name']) ?>;"><?= htmlspecialchars(tracker_initials($s['name'])) ?></span>
-                                <?= htmlspecialchars($s['name']) ?>
-                            </div>
-                        </td>
-                        <?php if ($myLevel === 'both'): ?>
-                        <td><span class="level-pill<?= $s['academic_level'] === 'senior_high' ? ' senior' : '' ?>"><?= $s['academic_level'] === 'senior_high' ? 'Senior High' : 'Junior High' ?></span></td>
-                        <?php endif; ?>
-                        <td><?= htmlspecialchars($s['grade']) ?></td>
-                        <td>
-                            <?php if ($s['status'] === 'submitted'): ?>
-                                <span class="status-pill submitted"><i class="fa-solid fa-check" style="font-size:9px;"></i> Submitted</span>
-                            <?php else: ?>
-                                <span class="status-pill pending"><i class="fa-solid fa-hourglass-half" style="font-size:9px;"></i> Not Started</span>
-                            <?php endif; ?>
-                        </td>
-                        <td class="empty-note"><?= $s['submitted_at'] ? htmlspecialchars(date('M j, Y g:i A', strtotime($s['submitted_at']))) : '—' ?></td>
-                        <td>
-                            <?php if ($s['status'] !== 'submitted'):
-                                $onCooldown = $s['reminder_on_cooldown'];
-                            ?>
-                            <a class="btn-remind<?= $onCooldown ? ' on-cooldown' : '' ?>"
-                               href="principal_send_reminder.php?student_id=<?= $s['id'] ?>&csrf_token=<?= urlencode($_SESSION['csrf_token']) ?>"
-                               data-student-id="<?= $s['id'] ?>"
-                               data-remind-link
-                               <?= $onCooldown ? 'aria-disabled="true"' : '' ?>>
-                                <i class="fa-solid fa-bell"></i>
-                                <span class="remind-label"><?= $onCooldown ? 'Reminded' : 'Send Reminder' ?></span>
-                            </a>
-                            <div class="remind-meta" data-remind-meta><?= $s['last_reminded_at']
-                                ? 'Last: ' . htmlspecialchars(date('M j, g:i A', strtotime($s['last_reminded_at'])))
-                                : '' ?></div>
-                            <?php endif; ?>
-                            <button class="btn-more" title="More actions — not yet implemented">⋮</button>
-                        </td>
-                    </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-            <div class="table-footer">
-                <div>Showing <?= (($page - 1) * $perPage) + 1 ?> to <?= min($studentsAssigned, $page * $perPage) ?> of <?= $studentsAssigned ?> students</div>
-                <?php if ($totalPages > 1): ?>
-                <div class="pagination">
-                    <a class="page-btn <?= $page <= 1 ? 'disabled' : '' ?>" href="<?= tracker_qs(['page' => max(1, $page - 1)]) ?>"><i class="fa-solid fa-chevron-left"></i></a>
-                    <?php
-                    $shown = [];
-                    for ($i = 1; $i <= $totalPages; $i++) {
-                        if ($i === 1 || $i === $totalPages || abs($i - $page) <= 2) $shown[] = $i;
-                    }
-                    $prev = null;
-                    foreach ($shown as $i):
-                        if ($prev !== null && $i - $prev > 1): ?>
-                            <span class="page-ellipsis">…</span>
-                        <?php endif; ?>
-                        <a class="page-btn <?= $i === $page ? 'active' : '' ?>" href="<?= tracker_qs(['page' => $i]) ?>"><?= $i ?></a>
-                    <?php $prev = $i; endforeach; ?>
-                    <a class="page-btn <?= $page >= $totalPages ? 'disabled' : '' ?>" href="<?= tracker_qs(['page' => min($totalPages, $page + 1)]) ?>"><i class="fa-solid fa-chevron-right"></i></a>
-                </div>
-                <?php endif; ?>
-            </div>
-            <?php endif; ?>
-            <?php endif; ?>
-        </div>
+    const $ = id => document.getElementById(id);
+    const els = {
+        tabs: $('ptkTabs'), pills: $('ptkPills'), chips: $('ptkChips'), list: $('ptkList'),
+        live: $('ptkLive'), search: $('ptkSearch'), status: $('ptkStatus'),
+        form: $('ptkFilters')
+    };
+    const BASE = 'principal_evaluation_tracker.php';
+    const open = new Set();
+    let seq = 0, lastSig = '', timer = null;
 
-        <?php if ($hasPeriod): ?>
-        <div class="info-banner <?= ($settings['is_open_for_submission'] ?? false) ? '' : 'closed' ?>">
-            <i class="fa-solid fa-circle-info"></i>
-            <div>
-                <b>Student evaluation is currently <?= ($settings['is_open_for_submission'] ?? false) ? 'open' : 'closed' ?>.</b>
-                <p><?= ($settings['is_open_for_submission'] ?? false)
-                    ? 'Remind your students to complete their evaluation. Tracking updates automatically when submissions are recorded.'
-                    : 'No new submissions will be recorded until the evaluation window reopens.' ?></p>
-            </div>
-        </div>
-        <?php endif; ?>
+    function setLive(text, off) { els.live.textContent = text; els.live.classList.toggle('offline', !!off); }
 
-        <?php endif; ?>
-    </main>
-    <script>
-    (function(){
-        const CSRF_TOKEN = <?= json_encode($_SESSION['csrf_token']) ?>;
-        const selectAll = document.getElementById('selectAll');
-        const bulkBtn = document.getElementById('bulkRemindBtn');
-        const countEl = document.getElementById('selCount');
-        const toast = document.getElementById('reminderToast');
-        const rowBoxes = () => Array.from(document.querySelectorAll('.rowSelect'));
+    function currentUrl() { return new URL(window.location.href); }
 
-        function refresh(){
-            const boxes = rowBoxes();
-            const checked = boxes.filter(b => b.checked);
-            if (countEl) countEl.textContent = checked.length;
-            if (bulkBtn) bulkBtn.disabled = checked.length === 0;
-            if (selectAll) selectAll.checked = boxes.length > 0 && checked.length === boxes.length;
-        }
-        if (selectAll) {
-            selectAll.addEventListener('change', function(){
-                rowBoxes().forEach(b => { b.checked = selectAll.checked; });
-                refresh();
-            });
-        }
-        rowBoxes().forEach(b => b.addEventListener('change', refresh));
-        refresh();
-
-        function showToast(sent, skipped, errorMsg){
-            if (!toast) return;
-            toast.classList.toggle('has-skips', (skipped && skipped.length > 0) || !!errorMsg);
-            if (errorMsg) {
-                toast.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i><div><b>Couldn't send reminder</b>${escapeHtml(errorMsg)}</div>`;
-            } else {
-                let html = `<i class="fa-solid fa-paper-plane"></i><div><b>${sent.length} reminder${sent.length===1?'':'s'} sent</b>`;
-                if (skipped && skipped.length) {
-                    html += `${skipped.length} skipped: ` + skipped.map(s => `${escapeHtml(s.name || 'Student #' + s.id)} (${escapeHtml(s.reason)})`).join('; ');
-                } else {
-                    html += `Students will show as reminded below.`;
-                }
-                html += `</div>`;
-                toast.innerHTML = html;
-            }
-            toast.style.display = 'flex';
-        }
-        function escapeHtml(str){
-            const d = document.createElement('div');
-            d.textContent = str == null ? '' : String(str);
-            return d.innerHTML;
-        }
-
-        const params = new URLSearchParams(window.location.search);
-        if (params.has('reminder_sent') || params.has('reminder_error')) {
-            showToast(
-                new Array(parseInt(params.get('reminder_sent') || '0', 10)).fill(0),
-                new Array(parseInt(params.get('reminder_skipped') || '0', 10)).fill({id:0,name:null,reason:'skipped'}),
-                params.get('reminder_error')
-            );
+    function syncControls() {
+        const p = currentUrl().searchParams;
+        if (document.activeElement !== els.search) els.search.value = p.get('search') || '';
+        els.status.value = p.get('status') || '';
+        const t = p.get('tab');
+        const tab = (t === 'teachers' || t === 'staff') ? t : 'students';
+        els.search.placeholder = 'Search ' + ({ teachers: 'teacher', staff: 'staff member', students: 'student' })[tab] + ' by name…';
+        els.form.elements['tab'].value = tab;
+        els.form.elements['grade'].value = p.get('grade') || '';
     }
 
-    function markRowReminded(studentId, sentAtLabel){
-        const link = document.querySelector(`[data-remind-link][data-student-id="${studentId}"]`);
-        if (!link) return;
-        link.classList.remove('sending');
-        link.classList.add('on-cooldown');
-        link.setAttribute('aria-disabled', 'true');
-        const label = link.querySelector('.remind-label');
-        if (label) label.textContent = 'Reminded';
-        const row = link.closest('tr');
-        const meta = row ? row.querySelector('[data-remind-meta]') : null;
-        if (meta) meta.textContent = 'Last: ' + sentAtLabel;
-        const box = row ? row.querySelector('.rowSelect') : null;
-        if (box) { box.checked = false; box.disabled = false; }
-    }
-
-    async function sendReminders(studentIds, triggerEl){
-        if (!studentIds.length) return;
-        if (triggerEl) { triggerEl.classList.add('sending'); triggerEl.disabled = true; }
-        try {
-            const res = await fetch('principal_send_reminder.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ student_ids: studentIds, csrf_token: CSRF_TOKEN })
-            });
-            const data = await res.json();
-            if (!data.success) {
-                showToast([], [], data.error || 'Something went wrong.');
-                return;
-            }
-            data.sent.forEach(s => markRowReminded(s.id, s.sent_at));
-            showToast(data.sent, data.skipped, null);
-            refresh();
-        } catch (e) {
-            showToast([], [], 'Network error — please try again.');
-        } finally {
-            if (triggerEl) { triggerEl.classList.remove('sending'); triggerEl.disabled = false; }
-        }
-    }
-
-    document.querySelectorAll('[data-remind-link]').forEach(link => {
-        link.addEventListener('click', function(e){
-            if (link.classList.contains('on-cooldown')) { e.preventDefault(); return; }
-            e.preventDefault();
-            const id = parseInt(link.dataset.studentId, 10);
-            link.classList.add('sending');
-            sendReminders([id], link);
+    function restoreOpen() {
+        els.list.querySelectorAll('.ptk-item').forEach(item => {
+            if (open.has(item.dataset.key)) setOpen(item, true);
         });
+    }
+
+    function setOpen(item, on) {
+        const row = item.querySelector('.ptk-row');
+        const detail = item.querySelector('.ptk-detail');
+        item.classList.toggle('open', on);
+        if (row) row.setAttribute('aria-expanded', on ? 'true' : 'false');
+        if (detail) detail.hidden = !on;
+        if (on) open.add(item.dataset.key); else open.delete(item.dataset.key);
+    }
+
+    async function load(force) {
+        const my = ++seq;
+        try {
+            const u = currentUrl();
+            u.searchParams.set('ajax', '1');
+            u.searchParams.set('_ts', Date.now().toString());
+            u.searchParams.delete('export');
+            const res = await fetch(u.toString(), { credentials: 'same-origin', cache: 'no-store', headers: { 'Accept': 'application/json' } });
+            if (!res.ok) throw new Error('bad status');
+            const d = await res.json();
+            if (my !== seq) return;                 // a newer request superseded this one
+            if (!d.ok) throw new Error('not ok');
+            setLive('Live', false);
+
+            const sig = d.tabs + '|' + d.pills + '|' + d.chips + '|' + d.list;
+            if (!force && (lastSig === '' || sig === lastSig)) { lastSig = sig; return; }
+            lastSig = sig;
+
+            els.tabs.innerHTML = d.tabs;
+            els.pills.innerHTML = d.pills;
+            els.chips.innerHTML = d.chips;
+            els.list.innerHTML = d.list;
+            restoreOpen();
+            syncControls();
+        } catch (e) {
+            if (my === seq) setLive('Offline', true);
+        }
+    }
+
+    function navigate(url, replace) {
+        const u = new URL(url, window.location.href);
+        u.searchParams.delete('ajax'); u.searchParams.delete('_ts'); u.searchParams.delete('export');
+        window.history[replace ? 'replaceState' : 'pushState']({}, '', u.toString());
+        syncControls();
+        load(true);
+    }
+
+    function patch(over) {
+        const u = currentUrl();
+        Object.keys(over).forEach(k => {
+            if (over[k] === '' || over[k] == null) u.searchParams.delete(k); else u.searchParams.set(k, over[k]);
+        });
+        if (!('page' in over)) u.searchParams.delete('page');
+        return u.toString();
+    }
+
+    root.addEventListener('click', e => {
+        const a = e.target.closest('a[data-nav]');
+        if (a && root.contains(a)) {
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+            e.preventDefault();
+            if (!a.classList.contains('disabled')) navigate(a.href, false);
+            return;
+        }
+        const row = e.target.closest('.ptk-row');
+        if (row) { const item = row.closest('.ptk-item'); setOpen(item, !item.classList.contains('open')); }
+    });
+    root.addEventListener('keydown', e => {
+        if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('ptk-row')) {
+            e.preventDefault();
+            const item = e.target.closest('.ptk-item');
+            setOpen(item, !item.classList.contains('open'));
+        }
     });
 
-    if (bulkBtn) {
-        bulkBtn.addEventListener('click', function(){
-            const ids = rowBoxes().filter(b => b.checked).map(b => parseInt(b.value, 10));
-            sendReminders(ids, bulkBtn);
-        });
-    }
+    els.status.addEventListener('change', () => navigate(patch({ status: els.status.value }), false));
+    let st = null;
+    els.search.addEventListener('input', () => {
+        clearTimeout(st);
+        st = setTimeout(() => navigate(patch({ search: els.search.value.trim() }), true), 300);
+    });
+    els.form.addEventListener('submit', e => { e.preventDefault(); clearTimeout(st); navigate(patch({ search: els.search.value.trim() }), true); });
+    window.addEventListener('popstate', () => { syncControls(); load(true); });
+
+    syncControls();
+    load(false);
+    timer = setInterval(() => { if (!document.hidden) load(false); }, 5000);
 })();
 </script>
 </body>
 </html>
+<?php if ($mysqli->ping()) $mysqli->close(); ?>
