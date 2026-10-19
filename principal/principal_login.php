@@ -22,8 +22,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                  FROM users
                  WHERE BINARY username = BINARY ?
                    AND role = 'principal'
-                   AND is_active = 1
-                   AND account_status = 'approved'
                  LIMIT 1"
             );
 
@@ -35,7 +33,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $user = $stmt->get_result()->fetch_assoc();
                 $stmt->close();
 
-                if ($user && password_verify($password, $user['password_hash'])) {
+                // A blocked account is only reported after the correct password is given,
+                // so usernames cannot be probed by anyone who does not know the password.
+                $passwordOk = $user && password_verify($password, $user['password_hash']);
+                $isBlocked  = $passwordOk && (
+                    $user['account_status'] === 'blocked'
+                    || ((int)$user['is_active'] === 0 && $user['account_status'] === 'approved')
+                );
+
+                if ($isBlocked) {
+                    $error = 'This account has been blocked by the Executive Assistant. Please contact the administrator.';
+                } elseif ($passwordOk && (int)$user['is_active'] === 1 && $user['account_status'] === 'approved') {
                     session_regenerate_id(true);
 
                     $_SESSION['user_id']   = (int)$user['id'];
@@ -53,9 +61,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     header('Location: principal_dashboard.php');
                     exit;
+                } else {
+                    $error = 'Incorrect registered username or password, or your principal account is not yet approved.';
                 }
-
-                $error = 'Incorrect registered username or password, or your principal account is not yet approved.';
             }
         }
     }

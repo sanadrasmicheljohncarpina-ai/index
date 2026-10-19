@@ -30,8 +30,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = AUTH_LOCK_MESSAGE;
     } else {
         $stmt = $mysqli->prepare(
-            "SELECT id, full_name, password_hash, role, department, year_level, account_status
-             FROM users WHERE BINARY username = BINARY ? AND role = 'student' AND is_active = 1 LIMIT 1"
+            "SELECT id, full_name, password_hash, role, department, year_level, account_status, is_active
+             FROM users WHERE BINARY username = BINARY ? AND role = 'student' LIMIT 1"
         );
         $stmt->bind_param("s", $username);
         $stmt->execute();
@@ -43,11 +43,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $passwordOk = password_verify($password, $user['password_hash'] ?? DUMMY_HASH);
 
         if ($user && $passwordOk) {
+            // NOTE: the EA's Block action sets account_status='blocked' AND is_active=0, so the lookup
+            // above must NOT filter on is_active -- otherwise a blocked student is never found and
+            // sees the generic "Incorrect username or password" instead of the blocked notice.
+            // These notices are only shown after the password has been verified, so they do not
+            // reveal whether a username exists.
             if ($user['account_status'] !== 'approved') {
-                // Correct password but the account cannot sign in yet. Not counted as a failed attempt.
+                // Correct password but the account cannot sign in. Not counted as a failed attempt.
                 $error = $user['account_status'] === 'pending'
                     ? "Your account is awaiting admin approval. You'll be able to log in once it's approved."
-                    : "Your account has been blocked. Please contact the administrator.";
+                    : "This account has been blocked by the Executive Assistant. Please contact the administrator.";
+            } elseif ((int)$user['is_active'] !== 1) {
+                // Approved but switched off (Account Management active/inactive toggle).
+                $error = "Your account is currently inactive. Please contact the administrator.";
             } else {
                 auth_clear($mysqli, 'login', $ident);
                 auth_record($mysqli, 'login', $ident, true);

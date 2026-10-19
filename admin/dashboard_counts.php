@@ -154,6 +154,18 @@ if (isset($_GET['mark_read'])) {
     $_SESSION['rcl_last_seen'] = time();
 }
 
+/* ── Feed size ───────────────────────────────────────────────────────────── */
+// System Logs page passes ?feed_limit=N (and grows it via "Load more").
+// Default stays 12 so the dashboard/bell behave exactly as before.
+$feedLimit = isset($_GET['feed_limit']) ? (int)$_GET['feed_limit'] : 12;
+$feedLimit = max(12, min($feedLimit, 1000));
+
+// Bell dropdown keeps a long scrollable history instead of only the newest
+// few. Each source query fetches at least this many rows so older
+// notifications don't fall off the list.
+$bellLimit  = 100;
+$queryLimit = max($feedLimit, $bellLimit);
+
 /* ── Counts ──────────────────────────────────────────────────────────────── */
 $counts = [
     'total'    => 0,
@@ -231,7 +243,7 @@ if ($rclExists && $rclExists->num_rows > 0) {
         LEFT JOIN users u ON u.id = rcl.user_id
         LEFT JOIN users actor ON actor.id = rcl.performed_by_id
         ORDER BY rcl.changed_at DESC
-        LIMIT 20
+        LIMIT " . $queryLimit . "
     ");
     if ($q) {
         while ($row = $q->fetch_assoc()) {
@@ -301,7 +313,7 @@ $evSubQ = dashboard_query($mysqli, "
       AND NOT (et.eval_type = 'school_head'
                AND COALESCE(target.role, '') IN ('admin','superadmin','executive_assistant'))" . $levelClause . "
     ORDER BY et.submitted_at DESC
-    LIMIT 10
+    LIMIT " . $queryLimit . "
 ");
 if ($evSubQ) {
     while ($row = $evSubQ->fetch_assoc()) {
@@ -332,7 +344,7 @@ if ($evSubQ) {
 }
 
 /* ── 3. Synthetic from users → bell dropdown only, NOT the audit box ── */
-$q = dashboard_query($mysqli, "SELECT id, full_name, role, account_status, created_at FROM users ORDER BY created_at DESC LIMIT 5");
+$q = dashboard_query($mysqli, "SELECT id, full_name, role, account_status, created_at FROM users ORDER BY created_at DESC LIMIT 20");
 if ($q) {
     while ($row = $q->fetch_assoc()) {
         $ts = strtotime($row['created_at']);
@@ -357,13 +369,14 @@ if ($q) {
 // Sort combined feed by timestamp descending.
 usort($feed, fn($a, $b) => $b['ts'] - $a['ts']);
 
-// Bell dropdown: top 6 of EVERYTHING (role changes, submissions, new registrations).
-$feedShort = array_slice($feed, 0, 6);
+// Bell dropdown: newest $bellLimit of EVERYTHING (role changes, submissions,
+// new registrations). The panel is scrollable, so nothing is cut off at 6.
+$feedShort = array_slice($feed, 0, $bellLimit);
 
 // System Logs box: role changes + evaluation activity; new-user registrations
 // remain in the bell feed and are deliberately left out here.
 $auditFeed = array_values(array_filter($feed, fn($e) => in_array($e['type'], ['role_change', 'audit'])));
-$auditFeed = array_slice($auditFeed, 0, 12);
+$auditFeed = array_slice($auditFeed, 0, $feedLimit);
 
 /* ── Unread role-change count (for badge) ── */
 $unreadRoleChanges = 0;

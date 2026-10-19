@@ -1,29 +1,13 @@
 <?php
 // principal/principal_evaluate.php
-// Evaluates Faculty, non-teaching Staff, and the Executive Assistant.
-// QUESTION SOURCE OF TRUTH:
-//   Faculty -> centralized Questionnaire > Faculty bank
-//   Staff   -> centralized Questionnaire > Staff target set
-//   EA      -> centralized Questionnaire > Executive Assistant (EA) target set
-// The target eligibility rules remain Principal-specific; only the question
-// source has been generalized.
-
-require_once 'principal_common.php';
-require_once dirname(__DIR__) . '/shared/QuestionnaireService.php';
-qn_migrate_legacy_once($mysqli);
-$settings = $schoolHeadSettings;
-$period_id_int = (int)($settings['period_id'] ?? 0);
-$hasPeriod = $period_id_int > 0;
-$evalOpen = !empty($settings['school_head_is_open']);
-
-$evaluator_id = (int)$_SESSION['user_id'];
+// Legacy URL kept so old links/bookmarks keep working. The evaluation form now
+// lives in the rating modal on principal_evaluations.php (including the
+// "Leave without submitting?" guard). All eligibility, period and CSRF checks
+// are enforced there, so nothing is duplicated here.
 $tid = (int)($_GET['tid'] ?? 0);
-$requestedBucket = $_GET['bucket'] ?? null;
-$viewOnly = isset($_GET['view']);
-
-if ($tid <= 0) {
-    header("Location: principal_evaluations.php");
-    exit;
+$qs  = $tid > 0 ? '?open=' . $tid . (isset($_GET['view']) ? '&view=1' : '') : '';
+header('Location: principal_evaluations.php' . $qs);
+exit;
 }
 
 function principal_user_levels(mysqli $mysqli, int $userId): array {
@@ -203,6 +187,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$readOnly) {
 
             $overallRemarks = trim((string)($_POST['overall_remarks'] ?? ''));
             if (empty($errors) && $scoreCount === 0) $errors[] = 'There are no answerable questions in this questionnaire.';
+            if (empty($errors) && $overallRemarks === '') $errors[] = 'Please write a comment before submitting. Comments / suggestions are required.';
 
             if (empty($errors)) {
                 $overallScore = round($scoreSum / $scoreCount, 2);
@@ -761,8 +746,8 @@ main.main::before {
             <?php endforeach; ?>
 
             <div class="eval-q-card">
-                <div class="eval-q-category">Comments / Suggestions</div>
-                <textarea name="overall_remarks" rows="3" class="eval-comment-box" placeholder="Any additional feedback..."><?= htmlspecialchars($_POST['overall_remarks'] ?? '') ?></textarea>
+                <div class="eval-q-category">Comments / Suggestions <span style="color:#ef4444">*</span></div>
+                <textarea name="overall_remarks" rows="3" class="eval-comment-box" required aria-required="true" placeholder="Share your feedback (required)..."><?= htmlspecialchars($_POST['overall_remarks'] ?? '') ?></textarea>
             </div>
 
             <button class="btn-primary eval-submit-btn" id="principalEvalSubmit" type="submit" <?= !$period_id_int ? 'disabled style="opacity:.5;cursor:not-allowed;"' : '' ?>><i class="fa-solid fa-paper-plane"></i> Submit Evaluation</button>

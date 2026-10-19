@@ -345,6 +345,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_evaluation']))
             } elseif ($missing) {
                 $n = count($missing);
                 $submitError = 'Please answer all questions before submitting. You have ' . $n . ' unanswered question' . ($n === 1 ? '' : 's') . ' remaining.';
+            } elseif (trim((string)($_POST['comment'] ?? '')) === '') {
+                $submitError = 'Please write a comment before submitting. Comments, suggestions and areas for improvement are required.';
             } else {
                 $answers = [];
                 $scoreSum = 0;
@@ -502,24 +504,6 @@ $totalCompleted = count(array_filter($allTargets, fn($r) => $r['evaluation_statu
 $pendingEvaluations = max(0, $totalAssigned - $totalCompleted);
 $completionPct = $totalAssigned > 0 ? (int)round($totalCompleted / $totalAssigned * 100) : 0;
 
-if (($_GET['export'] ?? '') === 'csv') {
-    $deptFilter = trim($_GET['dept'] ?? 'all');
-    $exportRows = $rosterByTab[$tab] ?? [];
-    if ($deptFilter !== 'all' && $deptFilter !== '') {
-        $exportRows = array_values(array_filter($exportRows, fn($r) => (string)($r['department'] ?? '') === $deptFilter));
-    }
-    header('Content-Type: text/csv; charset=utf-8');
-    header('Content-Disposition: attachment; filename="dean_' . $tab . '_export_' . date('Ymd_His') . '.csv"');
-    $out = fopen('php://output', 'w');
-    fputcsv($out, ['Full Name', 'Designation', 'Role', 'Questions', 'Evaluation Status', 'Last Evaluation Date']);
-    foreach ($exportRows as $r) {
-        fputcsv($out, [$r['full_name'], $r['designation'] ?? '', $r['role_label'], (int)($r['question_count'] ?? 0), $r['evaluation_status'], $r['last_evaluation_date'] ?? '']);
-    }
-    fclose($out);
-    $mysqli->close();
-    exit;
-}
-
 $openId   = (int)($_GET['open'] ?? 0);
 $openView = isset($_GET['view']);
 $periodLabel = trim(($settings['academic_year'] ?? '') . ' — ' . ($settings['academic_term'] ?? ''), ' —');
@@ -613,8 +597,6 @@ body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,
 .de-panel-title{font-family:'Rajdhani',sans-serif;font-size:17px;font-weight:700;}
 .de-panel-tools{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
 .de-panel-tools select{background:var(--inner);border:1px solid var(--border,rgba(255,255,255,.12));color:var(--light);padding:6px 9px;border-radius:8px;font-size:12px;font-family:inherit;min-width:160px;}
-.de-export{font-size:12px;font-weight:600;color:var(--violet);text-decoration:none;padding:6px 11px;border:1px solid rgba(124,95,217,.35);border-radius:8px;background:rgba(124,95,217,.08);}
-.de-export:hover{background:rgba(124,95,217,.16);}
 
 .de-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:14px 18px;}
 .de-person{display:flex;align-items:center;gap:11px;padding:9px 13px;border:1px solid var(--border,rgba(255,255,255,.1));border-radius:12px;background:var(--inner);}
@@ -640,7 +622,7 @@ body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,
 .de-panel-foot b{color:var(--violet);}
 
 /* modal */
-.de-overlay{position:fixed;inset:0;z-index:10000;background:rgba(15,23,42,.55);-webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px);display:none;align-items:center;justify-content:center;padding:24px;overflow-y:auto;}
+.de-overlay{position:fixed;inset:0;z-index:10000;background:rgba(15,23,42,.55);-webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px);display:none;align-items:center;justify-content:center;padding:10px 20px;overflow-y:auto;}
 .de-overlay.open{display:flex;}
 .de-modal{margin:auto;width:100%;max-width:960px;background:var(--mid);color:var(--light);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.35);display:flex;flex-direction:column;max-height:calc(100vh - 88px);}
 .de-modal-head{display:flex;align-items:center;gap:14px;padding:18px 24px;border-bottom:1px solid var(--border,rgba(255,255,255,.1));}
@@ -686,7 +668,13 @@ body{min-height:100vh;background:linear-gradient(rgba(5,18,36,.72),rgba(5,18,36,
 .de-table tr.unanswered td:first-child{box-shadow:inset 3px 0 0 #ef4444;}
 .de-table tr.unanswered .de-qno{color:#ef4444;}
 .de-comment{margin-top:20px;}
-.de-comment-label{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;}
+.de-comment.has-error{background:#F8FAFF;border:1px solid #F87171;border-radius:14px;padding:16px 20px 14px;box-shadow:0 0 0 3px rgba(239,68,68,.10);}
+.de-comment.has-error .de-comment-label{margin-bottom:10px;}
+.de-overlay .de-comment.has-error textarea{border-color:#EF4444;box-shadow:none;}
+.de-comment-error{margin-top:10px;font-size:13px;font-weight:700;color:#B91C1C;}
+.de-comment-error[hidden]{display:none;}
+.de-comment-label{font-size:13px;font-weight:700;color:var(--muted);margin-bottom:8px;}
+.de-overlay .de-comment-label{color:#5F45B8;}
 .de-comment textarea{width:100%;min-height:96px;resize:vertical;background:var(--inner);color:var(--light);border:1px solid var(--border,rgba(255,255,255,.15));border-radius:10px;padding:12px;font-family:inherit;font-size:13.5px;}
 .de-comment textarea:focus{outline:none;border-color:var(--violet);}
 .de-comment-readonly{font-size:13.5px;line-height:1.55;white-space:pre-wrap;}
@@ -731,7 +719,7 @@ html.dark-theme .de-modal-foot .de-btn-cancel:hover{border-color:#9C85F0;}
 html.dark-theme .de-error{color:#FCA5A5;}
 @media(max-width:768px){.de-overlay{padding:0;align-items:stretch;}.de-modal{max-height:100vh;border-radius:0;}}
 /* ===== Evaluation popup: centered card, blurred backdrop, Dean purple accent ===== */
-.de-overlay .de-modal{max-width:780px;height:min(940px,calc(100vh - 48px));max-height:calc(100vh - 48px);border-radius:22px;border:1px solid #E3EAF3;background:#FFFFFF;color:#12263A;box-shadow:0 30px 80px rgba(15,23,42,.35);}
+.de-overlay .de-modal{max-width:780px;height:96vh;max-height:calc(100vh - 20px);border-radius:22px;border:1px solid #E3EAF3;background:#FFFFFF;color:#12263A;box-shadow:0 30px 80px rgba(15,23,42,.35);}
 .de-overlay .de-modal-head{gap:16px;padding:24px 32px 20px;border-bottom:1px solid #E3EAF3;}
 .de-overlay .de-modal-head img{width:66px;height:66px;border:3px solid #7C5FD9;box-shadow:0 0 0 3px rgba(124,95,217,.14);}
 .de-overlay .de-modal-name{font-size:24px;color:#12263A;line-height:1.15;}
@@ -790,6 +778,26 @@ html.dark-theme .de-overlay .de-comment textarea{background:#0F1F3D;color:#E0E6F
 html.dark-theme .de-overlay .de-modal-foot .de-btn-cancel{background:#0F1F3D;color:#E0E6F0;border-color:rgba(255,255,255,.14);}
 html.dark-theme .de-overlay .de-modal-foot .de-btn-cancel:hover{border-color:#9C85F0;color:#C4B5FD;background:#0F1F3D;}
 html.dark-theme .de-overlay .de-summary .num{color:#C4B5FD;}
+
+/* Leave-without-submitting confirm (dean violet theme, matches the log out dialog style) */
+.de-leave-overlay{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(15,23,42,.55);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
+.de-leave-dlg{width:100%;max-width:420px;background:#FFFFFF;color:#12263A;border:1px solid #E3EAF3;border-radius:18px;box-shadow:0 30px 80px rgba(15,23,42,.30);padding:26px 28px 24px;font-family:'DM Sans',sans-serif}
+.de-leave-dlg h3{margin:0 0 8px;font-size:16px;font-weight:700;color:#12263A}
+.de-leave-dlg p{margin:0 0 22px;font-size:13.5px;line-height:1.55;color:#64788C}
+.de-leave-actions{display:flex;gap:12px}
+.de-leave-actions button{flex:1;padding:12px 16px;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit}
+.de-leave-stay{background:#fff;border:1px solid #D5E0EC;color:#12263A}
+.de-leave-stay:hover{background:#F8FAFC;border-color:#7C5FD9;color:#5F45B8}
+.de-leave-go{background:#7C5FD9;border:1px solid #7C5FD9;color:#fff;box-shadow:0 6px 16px rgba(124,95,217,.30)}
+.de-leave-go:hover{background:#5F45B8;border-color:#5F45B8}
+.de-leave-actions button:focus-visible{outline:3px solid rgba(124,95,217,.35);outline-offset:2px}
+html.dark-theme .de-leave-overlay{background:rgba(3,10,22,.70)}
+html.dark-theme .de-leave-dlg{background:#172A45;color:#E0E6F0;border-color:rgba(255,255,255,.10);box-shadow:0 30px 80px rgba(0,0,0,.6)}
+html.dark-theme .de-leave-dlg h3{color:#F1F5FB}
+html.dark-theme .de-leave-dlg p{color:#A0B3C6}
+html.dark-theme .de-leave-stay{background:#0F1F3D;border-color:rgba(255,255,255,.14);color:#E0E6F0}
+html.dark-theme .de-leave-stay:hover{background:#0F1F3D;border-color:#9C85F0;color:#C4B5FD}
+
 @media(max-width:900px){.de-cats{grid-template-columns:1fr;}.de-grid{grid-template-columns:1fr;}}
 @media(max-width:768px){.de-table th:not(:first-child){width:46px;}.de-rate label{width:30px;height:28px;}}
 </style>
@@ -894,7 +902,7 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
     </div>
     <?php else: ?>
 
-    <div class="de-choose-title"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i><span>Choose category</span></div>
+    <div class="de-choose-title"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i><span>Your Evaluation</span></div>
     <div class="de-cats" role="tablist">
         <?php foreach ($validTabs as $t):
             $list = $rosterByTab[$t];
@@ -929,7 +937,6 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
                     <?php foreach ($depts as $d): ?><option value="<?= htmlspecialchars($d) ?>"><?= htmlspecialchars($d) ?></option><?php endforeach; ?>
                 </select>
                 <?php endif; ?>
-                <a class="de-export" data-base="?export=csv&amp;tab=<?= urlencode($t) ?>" href="?export=csv&amp;tab=<?= urlencode($t) ?>"><i class="fa-solid fa-file-csv"></i> Export CSV</a>
             </div>
         </div>
 
@@ -1011,6 +1018,7 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
     const overlay = $('deOverlay'), form = $('deForm'), body = $('deBody');
     const submitBtn = $('deSubmit'), cancelBtn = $('deCancel');
     let mode = 'evaluate', loaded = false, requestToken = 0;
+    let dirty = false, submitting = false;
 
     function esc(s){
         return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1035,7 +1043,6 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
     /* ── department filter (per panel) ── */
     panels.forEach(panel => {
         const sel = panel.querySelector('.de-dept');
-        const exp = panel.querySelector('.de-export');
         function apply(){
             const d = sel ? sel.value : 'all';
             let total = 0, done = 0;
@@ -1047,7 +1054,6 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
             panel.querySelector('.js-total').textContent = total;
             panel.querySelector('.js-done').textContent = done;
             panel.querySelector('.js-pending').textContent = total - done;
-            if (exp) exp.href = exp.dataset.base.replace(/&amp;/g,'&') + (d === 'all' ? '' : '&dept=' + encodeURIComponent(d));
         }
         if (sel) sel.addEventListener('change', apply);
     });
@@ -1062,7 +1068,7 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
         $('deTarget').value = id;
         $('deTab').value = btn.dataset.tab || 'faculty';
         body.innerHTML = '<div class="de-loading"><i class="fa-solid fa-spinner fa-spin"></i> Loading ' + (mode === 'view' ? 'your evaluation' : 'questions') + '...</div>';
-        loaded = false;
+        loaded = false; dirty = false; submitting = false;
         submitBtn.style.display = mode === 'view' ? 'none' : '';
         submitBtn.disabled = false;
         submitBtn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Submit Evaluation';
@@ -1075,13 +1081,74 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
         requestToken++;
         overlay.classList.remove('open'); overlay.setAttribute('aria-hidden', 'true');
         document.body.style.overflow = '';
-        loaded = false;
+        loaded = false; dirty = false;
     }
     document.querySelectorAll('.de-person-action button[data-id]').forEach(b => b.addEventListener('click', () => openModal(b)));
-    $('deClose').addEventListener('click', closeModal);
-    cancelBtn.addEventListener('click', closeModal);
-    overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
-    document.addEventListener('keydown', e => { if (e.key === 'Escape' && overlay.classList.contains('open')) closeModal(); });
+
+    /* ── Unsaved-evaluation guard (styled dialog) ── */
+    function askLeave(){
+        return new Promise(function(resolve){
+            const ov = document.createElement('div');
+            ov.className = 'de-leave-overlay';
+            ov.id = 'deLeaveOverlay';
+            ov.setAttribute('role', 'alertdialog');
+            ov.setAttribute('aria-modal', 'true');
+            ov.setAttribute('aria-labelledby', 'deLeaveTitle');
+            ov.innerHTML = '<div class="de-leave-dlg">'
+                + '<h3 id="deLeaveTitle">Leave without submitting?</h3>'
+                + '<p>You have an unsubmitted evaluation. If you leave now, your answers will be lost.</p>'
+                + '<div class="de-leave-actions">'
+                + '<button type="button" class="de-leave-stay">Stay</button>'
+                + '<button type="button" class="de-leave-go">Leave</button>'
+                + '</div></div>';
+            function done(v){ document.removeEventListener('keydown', onKey, true); ov.remove(); resolve(v); }
+            function onKey(e){ if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); done(false); } }
+            ov.querySelector('.de-leave-stay').addEventListener('click', function(){ done(false); });
+            ov.querySelector('.de-leave-go').addEventListener('click', function(){ done(true); });
+            document.addEventListener('keydown', onKey, true);
+            document.body.appendChild(ov);
+            ov.querySelector('.de-leave-stay').focus();
+        });
+    }
+
+    // Sidebar / Log Out / any other link: ask first, then continue to where they clicked
+    let navBypass = false;
+    document.addEventListener('click', function(e){
+        if (navBypass || !(overlay.classList.contains('open') && mode === 'evaluate' && loaded && dirty && !submitting)) return;
+        const t = e.target;
+        if (!t || !t.closest || t.closest('#deLeaveOverlay')) return;
+        const a = t.closest('a[href]');
+        if (!a || a.target === '_blank' || e.ctrlKey || e.metaKey || e.shiftKey || e.button > 0) return;
+        const href = a.getAttribute('href') || '';
+        if (href.charAt(0) === '#' || href.indexOf('javascript:') === 0) return;
+        e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+        askLeave().then(function(ok){
+            if (!ok) return;
+            dirty = false;
+            navBypass = true;
+            try { a.click(); } finally { navBypass = false; }
+        });
+    }, true);
+
+    // Refresh / closing the tab / browser back (browser's own plain prompt; can't be restyled)
+    window.addEventListener('beforeunload', function(e){
+        if (overlay.classList.contains('open') && mode === 'evaluate' && loaded && dirty && !submitting) { e.preventDefault(); e.returnValue = ''; }
+    });
+
+    // X button, Cancel, click on the backdrop and Escape all go through the same check
+    function requestClose(){
+        if (mode === 'evaluate' && loaded && dirty && !submitting) {
+            askLeave().then(ok => { if (ok) closeModal(); });
+        } else {
+            closeModal();
+        }
+    }
+    $('deClose').addEventListener('click', requestClose);
+    cancelBtn.addEventListener('click', requestClose);
+    overlay.addEventListener('click', e => { if (e.target === overlay) requestClose(); });
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && overlay.classList.contains('open') && !document.getElementById('deLeaveOverlay')) requestClose();
+    });
 
     function showError(msg){
         body.innerHTML = '<div class="de-error"><i class="fa-solid fa-triangle-exclamation"></i><p style="margin-top:10px">' + esc(msg) + '</p></div>';
@@ -1103,7 +1170,7 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
             qs.forEach(q => { (grouped[q.category || 'General'] = grouped[q.category || 'General'] || []).push(q); });
 
             let html = '<div class="de-validation" id="deValidation" role="alert" aria-live="assertive" hidden></div>';
-            html += '<div class="de-progress"><span>Please rate every question before submitting.</span><span class="de-progress-status" id="deProgress">0 / ' + qs.length + ' answered</span></div>';
+            html += '<div class="de-progress"><span>Please rate every question and write a comment before submitting.</span><span class="de-progress-status" id="deProgress">0 / ' + qs.length + ' answered</span></div>';
             html += '<div class="de-legend">' + [[5,'Always'],[4,'Often'],[3,'Sometimes'],[2,'Rarely'],[1,'Never']]
                 .map(x => '<div class="de-legend-item"><div class="de-legend-dot">' + x[0] + '</div> ' + x[1] + '</div>').join('') + '</div>';
 
@@ -1122,8 +1189,9 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
                 });
                 html += '</tbody></table></div>';
             });
-            html += '<div class="de-comment"><div class="de-comment-label"><i class="fa-solid fa-comment-dots"></i> Comments, Suggestions &amp; Areas for Improvement</div>' +
-                    '<textarea name="comment" rows="4" maxlength="2000" placeholder="Share your thoughts, suggestions, or concerns about this person\'s performance...."></textarea></div>';
+            html += '<div class="de-comment"><div class="de-comment-label"><i class="fa-solid fa-comment-dots"></i> Comments, Suggestions &amp; Areas for Improvement <span style="color:#ef4444">*</span></div>' +
+                    '<textarea name="comment" rows="4" maxlength="2000" required aria-required="true" placeholder="Share your thoughts, suggestions, or concerns about this person\'s performance...."></textarea>' +
+                    '<div class="de-comment-error" id="deCommentError" role="alert" hidden>Required — you can\'t submit this evaluation without a comment.</div></div>';
             body.innerHTML = html;
             loaded = true;
         }).catch(err => { if (token === requestToken) showError('Failed to load questions. ' + (err && err.message ? err.message : '')); });
@@ -1135,6 +1203,12 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
     function isAnswered(name){
         return !!form.querySelector('input[name="' + CSS.escape(name) + '"]:checked');
     }
+    function setCommentError(on){
+        const c = form.querySelector('textarea[name="comment"]'); if (!c) return;
+        const wrap = c.closest('.de-comment'); if (wrap) wrap.classList.toggle('has-error', !!on);
+        const msg = $('deCommentError'); if (msg) msg.hidden = !on;
+        c.setAttribute('aria-invalid', on ? 'true' : 'false');
+    }
     function updateProgress(){
         const status = $('deProgress'); if (!status) return;
         const names = radioNames();
@@ -1142,6 +1216,9 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
         status.textContent = answered + ' / ' + names.length + ' answered';
         status.style.color = answered === names.length && names.length ? '#10b981' : '';
     }
+    form.addEventListener('input',  () => { if (mode === 'evaluate' && loaded) dirty = true; });
+    form.addEventListener('change', () => { if (mode === 'evaluate' && loaded) dirty = true; });
+    form.addEventListener('submit', e => { if (!e.defaultPrevented && mode === 'evaluate' && loaded) submitting = true; });
     form.addEventListener('change', e => {
         if (!e.target.matches('input[type="radio"]')) return;
         const row = e.target.closest('tr'); if (row) row.classList.remove('unanswered');
@@ -1149,22 +1226,31 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
         const box = $('deValidation');
         if (box && radioNames().every(isAnswered)) { box.hidden = true; box.innerHTML = ''; }
     });
+    form.addEventListener('input', e => {
+        if (e.target.matches('textarea[name="comment"]') && e.target.value.trim() !== '') setCommentError(false);
+    });
     form.addEventListener('submit', e => {
         if (mode !== 'evaluate' || !loaded) { e.preventDefault(); return; }
         const missing = radioNames().filter(n => !isAnswered(n));
-        if (missing.length) {
+        const cEl = form.querySelector('textarea[name="comment"]');
+        const noComment = !!cEl && cEl.value.trim() === '';
+        if (missing.length || noComment) {
             e.preventDefault();
             form.querySelectorAll('tr.unanswered').forEach(r => r.classList.remove('unanswered'));
             const rows = missing.map(n => form.querySelector('input[name="' + CSS.escape(n) + '"]').closest('tr'));
             rows.forEach(r => r.classList.add('unanswered'));
             const nums = rows.map(r => r.dataset.number);
+            if (cEl) setCommentError(noComment);
             const box = $('deValidation');
             if (box) {
-                box.hidden = false;
-                box.innerHTML = '<strong>Please answer all questions before submitting.</strong> You have ' + missing.length + ' unanswered question' + (missing.length === 1 ? '' : 's') +
-                    (nums.length <= 8 ? ' (' + nums.join(', ') + ')' : '') + '.';
-                box.scrollIntoView({behavior: 'smooth', block: 'center'});
+                if (missing.length) {
+                    box.hidden = false;
+                    box.innerHTML = '<strong>Please answer all questions before submitting.</strong> You have ' + missing.length + ' unanswered question' + (missing.length === 1 ? '' : 's') +
+                        (nums.length <= 8 ? ' (' + nums.join(', ') + ')' : '') + '.';
+                    box.scrollIntoView({behavior: 'smooth', block: 'center'});
+                } else { box.hidden = true; box.innerHTML = ''; }
             }
+            if (!missing.length && cEl) { cEl.scrollIntoView({behavior: 'smooth', block: 'center'}); cEl.focus({preventScroll: true}); }
             return;
         }
         submitBtn.disabled = true;

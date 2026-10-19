@@ -59,17 +59,18 @@ function trackerRoster(mysqli $db): array {
     if ($q) { while ($r = $q->fetch_assoc()) { $assign[(int)$r['user_id']]['uyl'][] = (string)$r['y']; } $q->free(); }
 
     $staff = [];
-    $q = $db->query("SELECT id, role, secondary_role, assigned_period FROM users
+    $names = []; // uid => display name (used by the expandable target list)
+    $q = $db->query("SELECT id, full_name, role, secondary_role, assigned_period FROM users
                      WHERE role IN ('teacher','staff','faculty') AND is_active=1
                        AND (account_status='approved' OR source='admin_nologin')");
-    if ($q) { while ($u = $q->fetch_assoc()) { $u['id'] = (int)$u['id']; $staff[] = $u; } $q->free(); }
+    if ($q) { while ($u = $q->fetch_assoc()) { $u['id'] = (int)$u['id']; $names[$u['id']] = (string)($u['full_name'] ?? ''); $staff[] = $u; } $q->free(); }
 
     $heads = ['principal' => null, 'dean' => null];
     foreach (array_keys($heads) as $role) {
-        $st = $db->prepare("SELECT id FROM users WHERE role=? AND is_active=1 LIMIT 1");
-        if ($st) { $st->bind_param('s', $role); $st->execute(); $row = $st->get_result()->fetch_assoc(); $st->close(); if ($row) $heads[$role] = (int)$row['id']; }
+        $st = $db->prepare("SELECT id, full_name FROM users WHERE role=? AND is_active=1 LIMIT 1");
+        if ($st) { $st->bind_param('s', $role); $st->execute(); $row = $st->get_result()->fetch_assoc(); $st->close(); if ($row) { $heads[$role] = (int)$row['id']; $names[(int)$row['id']] = (string)($row['full_name'] ?? ''); } }
     }
-    return $roster = ['assign' => $assign, 'staff' => $staff, 'heads' => $heads];
+    return $roster = ['assign' => $assign, 'staff' => $staff, 'heads' => $heads, 'names' => $names];
 }
 
 function trackerRequiredKeys(mysqli $db, array $student, ?string $periodSemester): array {
@@ -110,26 +111,61 @@ function trackerRequiredKeys(mysqli $db, array $student, ?string $periodSemester
     return $keys;
 }
 
-/* [required, done, lastSubmission] for one student, counting only submissions that match a required item. */
+/* [required, done, lastSubmission, states, requiredKeys] for one student, counting only submissions that match a required item.
+   `states` maps each required "userId|context" key to completed / in_progress (absent = pending). */
 function trackerStudentProgress(mysqli $db, array $student, int $periodId, ?string $periodSemester): array {
     $required = trackerRequiredKeys($db, $student, $periodSemester);
-    $done = 0; $last = null;
+    $done = 0; $last = null; $states = [];
     if ($periodId && $required) {
-        $st = $db->prepare("SELECT target_user_id, evaluation_context, MAX(submitted_at)
+        $st = $db->prepare("SELECT target_user_id, evaluation_context, status, MAX(submitted_at)
                             FROM evaluation_tracker
-                            WHERE evaluator_id=? AND period_id=? AND eval_type='student' AND status='submitted'
-                            GROUP BY target_user_id, evaluation_context");
+                            WHERE evaluator_id=? AND period_id=? AND eval_type='student' AND status IN ('submitted','in_progress')
+                            GROUP BY target_user_id, evaluation_context, status");
         if ($st) {
             $sid = (int)$student['id'];
-            $st->bind_param('ii', $sid, $periodId); $st->execute(); $st->bind_result($tid, $ctx, $at);
+            $st->bind_param('ii', $sid, $periodId); $st->execute(); $st->bind_result($tid, $ctx, $stt, $at);
             while ($st->fetch()) {
                 $key = (int)$tid . '|' . ($ctx ?: 'teacher');
-                if (isset($required[$key])) { $done++; if ($last === null || $at > $last) $last = $at; }
+                if (!isset($required[$key])) continue;
+                if ($stt === 'submitted') {
+                    $done++; $states[$key] = 'completed';
+                    if ($last === null || $at > $last) $last = $at;
+                } elseif (($states[$key] ?? '') !== 'completed') {
+                    $states[$key] = 'in_progress';
+                }
             }
             $st->close();
         }
     }
-    return [count($required), $done, $last];
+    return [count($required), $done, $last, $states, $required];
+}
+
+function trackerTypeRank(string $type): int {
+    return ['Faculty' => 1, 'Staff' => 2, 'Dean' => 3, 'Principal' => 4, 'Executive Assistant' => 5][$type] ?? 9;
+}
+
+/** Sort + normalise a list of ['label','type','state'] targets for display. */
+function trackerSortDetails(array $out): array {
+    usort($out, function ($a, $b) {
+        $c = trackerTypeRank($a['type']) <=> trackerTypeRank($b['type']);
+        return $c !== 0 ? $c : strnatcasecmp($a['label'], $b['label']);
+    });
+    return $out;
+}
+
+/** Every evaluation a student must finish, one entry per required "userId|context" key. */
+function trackerStudentDetails(mysqli $db, array $requiredKeys, array $states): array {
+    $roster = trackerRoster($db);
+    $out = [];
+    foreach ($requiredKeys as $key => $_) {
+        [$uid, $ctx] = array_pad(explode('|', (string)$key, 2), 2, 'teacher');
+        $uid = (int)$uid;
+        if ($ctx === 'school_head')  $type = ($uid === (int)($roster['heads']['dean'] ?? 0)) ? 'Dean' : 'Principal';
+        elseif ($ctx === 'staff')    $type = 'Staff';
+        else                         $type = 'Faculty';
+        $out[] = ['label' => $roster['names'][$uid] ?? ('User #' . $uid), 'type' => $type, 'state' => $states[$key] ?? 'pending'];
+    }
+    return trackerSortDetails($out);
 }
 
 /* ───────── Evaluator tabs (Faculty / Dean / Principal) ─────────
@@ -201,45 +237,112 @@ function trackerRequiredTargets(string $tab, array $me, array $people): array {
 
 function trackerEvaluatorRows(mysqli $db, string $tab, int $periodId, array $people): array {
     $rows = [];
+    // id => [display name, type label] for every person who can be a target.
+    $lookup = [];
+    foreach ([['faculty', 'Faculty'], ['staff', 'Staff'], ['dean', 'Dean'], ['principal', 'Principal'], ['ea', 'Executive Assistant']] as [$grp, $lbl]) {
+        foreach ($people[$grp] as $pid => $pp) $lookup[(int)$pid] = [(string)$pp['full_name'], $lbl];
+    }
+    $captions = [
+        'faculty'   => 'Peer evaluations the faculty member must submit',
+        'dean'      => 'Evaluations the Dean must submit',
+        'principal' => 'Evaluations the Principal must submit',
+    ];
     foreach ($people[$tab] as $me) {
         [$targets, $types] = trackerRequiredTargets($tab, $me, $people);
         $required = count($targets);
-        $done = 0; $last = null;
+        $done = 0; $last = null; $started = false; $tstates = [];
         if ($periodId && $required) {
             $in = "'" . implode("','", array_map([$db, 'real_escape_string'], $types)) . "'";
-            $st = $db->prepare("SELECT target_user_id, MAX(submitted_at) FROM evaluation_tracker
-                                WHERE evaluator_id=? AND period_id=? AND status='submitted' AND eval_type IN ($in)
-                                GROUP BY target_user_id");
+            $st = $db->prepare("SELECT target_user_id, status, MAX(submitted_at) FROM evaluation_tracker
+                                WHERE evaluator_id=? AND period_id=? AND status IN ('submitted','in_progress') AND eval_type IN ($in)
+                                GROUP BY target_user_id, status");
             if ($st) {
-                $st->bind_param('ii', $me['id'], $periodId); $st->execute(); $st->bind_result($tid, $at);
+                $st->bind_param('ii', $me['id'], $periodId); $st->execute(); $st->bind_result($tid, $stt, $at);
                 while ($st->fetch()) {
-                    if (isset($targets[(int)$tid])) { $done++; if ($last === null || $at > $last) $last = $at; }
+                    $tid = (int)$tid;
+                    if (!isset($targets[$tid])) continue;
+                    if ($stt === 'submitted') {
+                        $done++; $tstates[$tid] = 'completed';
+                        if ($last === null || $at > $last) $last = $at;
+                    } elseif (($tstates[$tid] ?? '') !== 'completed') {
+                        $tstates[$tid] = 'in_progress'; $started = true;
+                    }
                 }
                 $st->close();
             }
         }
+        $details = [];
+        foreach ($targets as $tid => $_) {
+            [$nm, $ty] = $lookup[(int)$tid] ?? ['User #' . (int)$tid, 'Staff'];
+            $details[] = ['label' => $nm, 'type' => $ty, 'state' => $tstates[(int)$tid] ?? 'pending'];
+        }
         if ($tab === 'dean')           { $scopeKey = 'college'; $scopeLabel = 'College'; }
         elseif ($tab === 'principal')  { $scopeKey = 'hs';      $scopeLabel = 'High School'; }
-        elseif ($me['hs'] && $me['college']) { $scopeKey = 'both';    $scopeLabel = 'High School + College'; }
-        elseif ($me['college'])        { $scopeKey = 'college'; $scopeLabel = 'College'; }
-        elseif ($me['hs'])             { $scopeKey = 'hs';      $scopeLabel = 'High School'; }
+        elseif ($me['hs'] && $me['college']) { $scopeKey = 'both';    $scopeLabel = 'Basic Education + Higher Education'; }
+        elseif ($me['college'])        { $scopeKey = 'college'; $scopeLabel = 'Higher Education'; }
+        elseif ($me['hs'])             { $scopeKey = 'hs';      $scopeLabel = 'Basic Education'; }
         else                           { $scopeKey = 'none';    $scopeLabel = 'No assignment'; }
-        $state = statusFor($done, $required);
+        $state = statusFor($done, $required, $started);
         $rows[] = [
             'id' => $me['id'], 'full_name' => $me['full_name'], 'photo' => $me['photo'],
             'sub' => trim((string)($me['designation'] ?? '')) ?: ucfirst($tab === 'faculty' ? 'Faculty' : $tab),
             'scope_key' => $scopeKey, 'scope_label' => $scopeLabel,
             'required' => $required, 'done' => min($done, $required), 'state' => $state,
             'pct' => $required > 0 ? min(100, (int)round($done / $required * 100)) : 0, 'last' => $last,
+            'caption' => $captions[$tab] ?? 'Evaluations this person must submit',
+            'noun' => $tab === 'faculty' ? 'faculty member' : $tab,
+            'details' => trackerSortDetails($details),
         ];
     }
     return $rows;
 }
 
-function statusFor(int $done, int $required): string {
-    if ($required <= 0 || $done <= 0) return 'not_started';
-    if ($done >= $required) return 'completed';
-    return 'in_progress';
+function statusFor(int $done, int $required, bool $started = false): string {
+    if ($required > 0 && $done >= $required) return 'completed';
+    if ($done > 0 || ($started && $required > 0)) return 'in_progress';
+    return 'not_started';
+}
+
+/* Profile photo URL. users.photo is usually stored relative to the site (e.g. "uploads/profiles/x.jpg"),
+   but this page is served from /admin/, so the raw value points at the wrong folder and the image breaks.
+   Look for the file next to this page, then one and two levels up, and return the matching relative URL. */
+function trackerPhotoUrl(string $photo): string {
+    $p = trim(str_replace('\\', '/', $photo));
+    if ($p === '') return '';
+    if (preg_match('#^(https?:)?//#i', $p) || strpos($p, 'data:') === 0 || $p[0] === '/') return $p;
+    $p = ltrim($p, './');
+    $bases = ['' => __DIR__, '../' => dirname(__DIR__), '../../' => dirname(__DIR__, 2)];
+    foreach ($bases as $prefix => $dir) {
+        if (is_file($dir . '/' . $p)) return $prefix . $p;
+    }
+    return $p;
+}
+
+/* Avatar contents: the photo, or the default person icon when there is no photo / the image fails to load. */
+function trackerAvatar(string $photo): string {
+    $svg = '<svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5Z"/></svg>';
+    $url = trackerPhotoUrl($photo);
+    if ($url === '') return $svg;
+    return '<img src="' . htmlspecialchars($url) . '" alt="" onerror="this.outerHTML=this.getAttribute(\'data-fb\')" data-fb="' . htmlspecialchars($svg) . '">';
+}
+
+/* Expanded panel: every target this person must evaluate and where they stand. */
+function trackerRenderDetail(array $r): string {
+    $details = $r['details'] ?? [];
+    if (!$details) {
+        return '<p class="et-detail-empty">No required evaluation targets are configured for this ' . htmlspecialchars((string)($r['noun'] ?? 'person')) . ' yet.</p>';
+    }
+    $h = '<div class="et-detail-head"><strong>' . (int)$r['done'] . ' of ' . (int)$r['required'] . ' required evaluations completed</strong><span>' . htmlspecialchars((string)($r['caption'] ?? '')) . '</span></div><ul class="et-targets">';
+    foreach ($details as $d) {
+        $st   = $d['state'];
+        $icon = $st === 'completed' ? '&#10003;' : ($st === 'in_progress' ? '&#9680;' : '&#9675;');
+        $txt  = $st === 'completed' ? 'Done' : ($st === 'in_progress' ? 'In progress' : 'Pending');
+        $h .= '<li class="et-target ' . htmlspecialchars($st) . '"><span class="et-target-ico" aria-hidden="true">' . $icon . '</span>'
+            . '<span class="et-target-name" title="' . htmlspecialchars($d['label'] . ' (' . $d['type'] . ')') . '">' . htmlspecialchars($d['label']) . '</span>'
+            . '<span class="et-target-type">' . htmlspecialchars($d['type']) . '</span>'
+            . '<span class="et-target-state">' . $txt . '</span></li>';
+    }
+    return $h . '</ul>';
 }
 
 $ctxCol=$mysqli->query("SHOW COLUMNS FROM evaluation_tracker LIKE 'evaluation_context'");
@@ -279,6 +382,7 @@ $yearAllowed = ($level === 'all') ? array_merge(...array_values($yearLevelsByLev
 $year = $_GET['year'] ?? 'all';
 if ($year !== 'all' && !in_array($year, $yearAllowed, true)) $year = 'all';
 
+$single = null;
 if ($tab === 'students') {
 $levels = [
     'junior_high' => 'Junior High School',
@@ -302,10 +406,12 @@ $students = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
 if ($res) $res->free();
 
 $rows = [];
+$tot = ['total' => 0, 'completed' => 0, 'in_progress' => 0, 'not_started' => 0];
 foreach ($students as $student) {
-    [$required, $done, $last] = trackerStudentProgress($mysqli, $student, $periodId, $periodSemester);
+    [$required, $done, $last, $tStates, $reqKeys] = trackerStudentProgress($mysqli, $student, $periodId, $periodSemester);
 
-    $state = statusFor($done, $required);
+    $state = statusFor($done, $required, in_array('in_progress', $tStates, true));
+    $tot['total']++; $tot[$state]++;
     if ($status !== 'all' && $state !== $status) continue;
 
     $percentage = $required > 0 ? min(100, round(($done / $required) * 100)) : 0;
@@ -319,47 +425,36 @@ foreach ($students as $student) {
         'done' => min($done, $required),
         'state' => $state,
         'pct' => $percentage,
-        'last' => $last
+        'last' => $last,
+        'caption' => 'Targets the student must evaluate',
+        'noun' => 'student',
+        'details' => trackerStudentDetails($mysqli, $reqKeys, $tStates)
     ];
 }
 
-$summary = [
-    'junior_high' => ['total'=>0,'completed'=>0,'pending'=>0],
-    'senior_high' => ['total'=>0,'completed'=>0,'pending'=>0],
-    'college' => ['total'=>0,'completed'=>0,'pending'=>0]
-];
-
-$summaryRes = $mysqli->query("SELECT id, education_level, year_level FROM users WHERE role='student' AND is_active=1");
-if ($summaryRes) {
-    while ($student = $summaryRes->fetch_assoc()) {
-        $lvl = $student['education_level'];
-        if (!isset($summary[$lvl])) continue;
-        $summary[$lvl]['total']++;
-
-        [$required, $done] = trackerStudentProgress($mysqli, $student, $periodId, $periodSemester);
-
-        if (statusFor($done, $required) === 'completed') $summary[$lvl]['completed']++;
-        else $summary[$lvl]['pending']++;
-    }
-    $summaryRes->free();
-}
+$summary = $tot;
 } else {
     $levels = [];
     $rows = []; $summary = [];
     $allRows = trackerEvaluatorRows($mysqli, $tab, $periodId, $people);
-    $tot = ['total' => count($allRows), 'completed' => 0, 'in_progress' => 0, 'not_started' => 0];
+    $tot = ['total' => 0, 'completed' => 0, 'in_progress' => 0, 'not_started' => 0];
+    // Dean / Principal are single people: one card + no status/search filters.
+    $single = (in_array($tab, ['dean','principal'], true) && count($allRows) === 1) ? $allRows[0] : null;
     foreach ($allRows as $r) {
-        $tot[$r['state']]++;
-        if ($status !== 'all' && $r['state'] !== $status) continue;
+        // Faculty scope tab (High School / College) also filters the summary cards.
         if ($tab === 'faculty' && $scopeFilter !== 'all') {
             $k = $r['scope_key'];
             if ($scopeFilter === 'hs' && !in_array($k, ['hs','both'], true)) continue;
             if ($scopeFilter === 'college' && !in_array($k, ['college','both'], true)) continue;
         }
         if ($search !== '' && stripos($r['full_name'], $search) === false) continue;
+        $tot['total']++;
+        $tot[$r['state']]++;
+        if ($status !== 'all' && $r['state'] !== $status) continue;
         $rows[] = $r;
     }
     $summary = $tot;
+    if ($single) { $rows = [$single]; }
 }
 ?>
 
@@ -466,13 +561,19 @@ button, .btn { font-weight:700; }
 a { color:inherit; }
 
 /* Tracker tabs */
-.et-tabs{display:flex;gap:6px;flex-wrap:wrap;width:fit-content;max-width:100%;margin:0 0 22px;padding:6px;background:#FFFFFF;border:1px solid #D8E5F4;border-radius:12px;box-shadow:0 2px 4px rgba(30,82,144,.05)}
-.et-tab{display:inline-flex;align-items:center;gap:9px;padding:10px 16px;border-radius:9px;font-size:13px;font-weight:700;color:#67819E;text-decoration:none;white-space:nowrap}
-.et-tab:hover{background:#F0FAF6;color:#0F9F6E}
+.et-topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 22px}
+.et-topbar .et-tabs{margin:0}
+.et-topfilters{display:flex;gap:8px;align-items:center;margin-left:auto}
+.et-topfilters .et-search{width:260px}
+@media(max-width:900px){.et-topfilters{width:100%}.et-topfilters .et-search{flex:1;width:auto}}
+.et-tabs{display:flex;gap:6px;flex-wrap:wrap;width:fit-content;max-width:100%;margin:0 0 22px;padding:0;background:transparent;border:0;border-radius:0;box-shadow:none}
+.et-tab{display:inline-flex;align-items:center;gap:9px;padding:10px 18px;border-radius:12px;border:1px solid #D8E5F4;background:#FFFFFF;box-shadow:0 2px 4px rgba(30,82,144,.05);font-size:13px;font-weight:700;color:#67819E;text-decoration:none;white-space:nowrap;transition:background .15s,border-color .15s,color .15s}
+.et-tab:hover{background:#F0FAF6;border-color:#BFE6D6;color:#0F9F6E}
 .et-tab .et-tab-n{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:#E6F7F1;color:#0F9F6E}
-.et-tab.active{background:#0F9F6E;color:#FFFFFF}
+.et-tab.active{background:#0F9F6E;border-color:#0F9F6E;color:#FFFFFF}
 .et-tab.active .et-tab-n{background:rgba(255,255,255,.24);color:#FFFFFF}
-html[data-theme="dark"] .et-tabs{background:var(--panel-bg,#132238);border-color:var(--panel-border,#284260)}
+html[data-theme="dark"] .et-tab{background:var(--panel-bg,#132238);border-color:var(--panel-border,#284260)}
+html[data-theme="dark"] .et-tab.active{background:#0F9F6E;border-color:#0F9F6E}
 html[data-theme="dark"] .et-tab{color:var(--muted,#9FB2C9)}
 html[data-theme="dark"] .et-tab.active{color:#fff}
 .et-refresh{border:0;background:none;color:#0F9F6E;cursor:pointer;font-size:15px;line-height:1;padding:0 6px 0 0;vertical-align:middle}
@@ -480,10 +581,89 @@ html[data-theme="dark"] .et-tab.active{color:#fff}
 .et-refresh.spin{animation:et-spin .8s linear infinite}
 @keyframes et-spin{to{transform:rotate(360deg)}}
 </style>
+<style id="et-expand-style">
+/* Clickable rows + per-row list of every evaluation target */
+.et-table tr.et-row{cursor:pointer}
+.et-table tr.et-row:focus-visible{outline:2px solid #0F9F6E;outline-offset:-2px}
+.et-table tr.et-row.open td{background:#F0FAF6 !important}
+.et-chev{display:inline-block;transition:transform .18s}
+.et-row.open .et-chev{transform:rotate(90deg)}
+.et-table tr.et-detail[hidden]{display:none}
+.et-table tr.et-detail td{height:auto !important;padding:16px 22px 20px !important;background:#F7FAFF !important;border-bottom:1px solid #D8E5F4 !important}
+.et-detail-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:0 0 12px}
+.et-detail-head strong{font-size:13.5px;color:#0B1F3A}
+.et-detail-head span{font-size:12px;color:#67819E}
+.et-detail-empty{margin:0;font-size:13px;color:#67819E}
+.et-targets{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:8px}
+.et-target{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;background:#fff;border:1px solid #D8E5F4;font-size:13px;min-width:0}
+.et-target-ico{flex:0 0 auto;font-size:15px;line-height:1;color:#91A6BE}
+.et-target.completed .et-target-ico{color:#0F9F6E}
+.et-target.in_progress .et-target-ico{color:#B45309}
+.et-target-name{flex:1;min-width:0;font-weight:600;color:#0B1F3A;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.et-target-type{flex:0 0 auto;padding:2px 8px;border-radius:999px;background:#E6F7F1;color:#0F7A55;font-size:10.5px;font-weight:800}
+.et-target-state{flex:0 0 auto;font-size:11.5px;color:#67819E}
+html[data-theme="dark"] .et-table tr.et-row.open td{background:var(--panel-bg-2,#1A2E4A) !important}
+html[data-theme="dark"] .et-table tr.et-detail td{background:var(--panel-bg-2,#10223D) !important;border-bottom-color:var(--panel-border,#284260) !important}
+html[data-theme="dark"] .et-detail-head strong,html[data-theme="dark"] .et-target-name{color:#E0E6F0 !important}
+html[data-theme="dark"] .et-detail-head span,html[data-theme="dark"] .et-detail-empty,html[data-theme="dark"] .et-target-state{color:#A0B3C6 !important}
+html[data-theme="dark"] .et-target{background:var(--panel-bg,#132238) !important;border-color:var(--panel-border,#284260) !important}
+html[data-theme="dark"] .et-target-type{background:rgba(15,159,110,.18) !important;color:#6EE7B7 !important}
+</style>
 <link rel="stylesheet" href="admin_appearance.css">
 <script src="admin_appearance.js"></script>
 <link rel="stylesheet" href="admin_unified_ui.css?v=<?= (int)@filemtime(__DIR__ . '/admin_unified_ui.css') ?>">
 <script src="eval_status_poll.js" data-watch="submissions" defer></script>
+<style>
+/* Separated tabs: strip the shared container the theme stylesheets add around the tab pills */
+html body nav.et-tabs,html[data-theme="dark"] body nav.et-tabs,html.dark-theme body nav.et-tabs{background:transparent !important;border:0 !important;box-shadow:none !important;padding:0 !important;border-radius:0 !important;gap:8px !important;}
+/* Pull the tracker content closer to the top */
+.et-wrap{padding:10px 24px 24px !important;min-height:0 !important;}
+.et-head{display:none !important;margin:0 !important;}
+.et-topbar{margin:0 0 12px !important;}
+.et-controls{margin-bottom:10px !important;}
+
+/* Level filter buttons + level pills: compact, not tall ovals/boxes */
+.et-levels{align-items:center !important;}
+.et-btn{display:inline-flex !important;align-items:center !important;height:auto !important;min-height:0 !important;width:auto !important;aspect-ratio:auto !important;flex:0 0 auto !important;line-height:1.2 !important;padding:9px 16px !important;border-radius:999px !important;font-size:12px !important;}
+.et-level-pill{display:inline-block !important;height:auto !important;min-height:0 !important;width:auto !important;aspect-ratio:auto !important;line-height:1.3 !important;padding:4px 12px !important;font-size:11px !important;}
+
+/* Readability */
+.et-mini{font-size:12px !important;color:#5B7490 !important;}
+.et-note{font-size:11px !important;color:#67819E !important;}
+
+/* Clickable rows: hover state + obvious chevron */
+.et-table tr.et-row{transition:background .12s}
+.et-table tr.et-row:hover td{background:#F0FAF6 !important}
+.et-arrow{width:56px}
+.et-chev{width:26px;height:26px;border-radius:50%;background:#E6F7F1;color:#0F9F6E;display:inline-flex !important;align-items:center;justify-content:center;font-size:20px;line-height:1;padding-bottom:2px;box-sizing:border-box}
+.et-row:hover .et-chev{background:#0F9F6E;color:#fff}
+
+/* Totals strip */
+.et-totals{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 12px}
+.et-total{display:inline-flex;align-items:center;gap:8px;padding:7px 14px;border-radius:999px;background:#F4F8FF;border:1px solid #D8E5F4;font-size:12px;font-weight:600;color:#294765}
+.et-total b{font-size:15px}
+a.et-total{text-decoration:none;cursor:pointer;transition:box-shadow .12s,transform .12s}
+a.et-total:hover{box-shadow:0 2px 8px rgba(30,82,144,.15);transform:translateY(-1px)}
+a.et-total:focus-visible{outline:2px solid #0F9F6E;outline-offset:2px}
+a.et-total.active{box-shadow:0 0 0 2px #0F9F6E;background:#fff}
+a.et-total.t-done.active{background:#ECFDF5}
+a.et-total.t-prog.active{background:#FFFBEB}
+.et-total.t-done{background:#ECFDF5;border-color:#A7F3D0;color:#047857}
+.et-total.t-prog{background:#FFFBEB;border-color:#FDE68A;color:#B45309}
+.et-total.t-none{background:#F4F8FF;color:#67819E}
+
+/* Clear filters + no-match message */
+.et-clear{font-size:12px;font-weight:700;color:#0F9F6E !important;text-decoration:none;white-space:nowrap;padding:0 4px}
+.et-clear:hover{text-decoration:underline}
+.et-nomatch{padding:32px;text-align:center;color:#67819E;font-size:13px}
+
+/* Sortable headers */
+.et-table th[data-sort]{cursor:pointer;user-select:none}
+.et-table th[data-sort]:hover{color:#0F9F6E}
+.et-table th[data-sort]::after{content:"\2195";margin-left:6px;font-size:11px;opacity:.35}
+.et-table th[data-sort][data-dir="asc"]::after{content:"\2191";opacity:1;color:#0F9F6E}
+.et-table th[data-sort][data-dir="desc"]::after{content:"\2193";opacity:1;color:#0F9F6E}
+</style>
 
 <div class="et-wrap">
     <div class="et-head">
@@ -492,49 +672,38 @@ html[data-theme="dark"] .et-tab.active{color:#fff}
         </div>
     </div>
 
+    <div class="et-topbar">
     <nav class="et-tabs" aria-label="Evaluation tracker tabs">
         <?php foreach (['students'=>'Students','faculty'=>'Faculty','dean'=>'Dean','principal'=>'Principal'] as $tk=>$tl): ?>
-            <a class="et-tab <?=$tab===$tk?'active':''?>" href="?tab=<?=$tk?>"><?=$tl?> <span class="et-tab-n"><?=$tabCounts[$tk]?></span></a>
+            <a class="et-tab <?=$tab===$tk?'active':''?>" href="?tab=<?=$tk?>"><?=$tl?></a>
         <?php endforeach; ?>
     </nav>
-
-    <div class="et-cards">
-        <?php if ($tab==='students'): foreach (['junior_high'=>'JUNIOR HIGH','senior_high'=>'SENIOR HIGH','college'=>'COLLEGE'] as $key=>$label): ?>
-            <div class="et-card">
-                <div class="et-card-top">
-                    <div>
-                        <div class="et-card-label"><?=$label?></div>
-                        <div class="et-card-number"><?=$summary[$key]['total']?></div>
-                    </div>
-                    <div class="et-card-icon">▣</div>
-                </div>
-                <div class="et-card-line"></div>
-                <div class="et-card-foot"><span class="done"><?=$summary[$key]['completed']?> completed</span><span class="sep">|</span><span><?=$summary[$key]['pending']?> pending</span></div>
-            </div>
-        <?php endforeach; else:
-            $tabWord = ['faculty'=>'FACULTY','dean'=>'DEAN','principal'=>'PRINCIPAL'][$tab];
-            $cardDefs = [
-                ['et-card-junior_high', 'TOTAL '.$tabWord, $summary['total'], '<span class="done">'.$summary['completed'].' completed</span><span class="sep">|</span><span>'.($summary['total']-$summary['completed']).' pending</span>'],
-                ['et-card-senior_high', 'IN PROGRESS', $summary['in_progress'], '<span>Started, not yet finished</span>'],
-                ['et-card-college', 'NOT STARTED', $summary['not_started'], '<span>No submissions yet</span>'],
-            ];
-            foreach ($cardDefs as $cd): ?>
-            <div class="et-card <?=$cd[0]?>">
-                <div class="et-card-top">
-                    <div>
-                        <div class="et-card-label"><?=$cd[1]?></div>
-                        <div class="et-card-number"><?=$cd[2]?></div>
-                    </div>
-                    <div class="et-card-icon">▣</div>
-                </div>
-                <div class="et-card-line"></div>
-                <div class="et-card-foot"><?=$cd[3]?></div>
-            </div>
-        <?php endforeach; endif; ?>
+    <?php if (!$single): ?>
+    <div class="et-topfilters">
+        <?php if ($tab==='students'): ?>
+        <select class="et-select" name="year" form="etFilterForm" onchange="this.form.submit()">
+            <option value="all" <?=$year==='all'?'selected':''?>>All Year Levels</option>
+            <?php if ($level==='all'): foreach ($yearLevelsByLevel as $lk=>$ys): ?>
+                <optgroup label="<?=htmlspecialchars($levels[$lk])?>">
+                    <?php foreach ($ys as $y): ?><option value="<?=htmlspecialchars($y)?>" <?=$year===$y?'selected':''?>><?=htmlspecialchars($y)?></option><?php endforeach; ?>
+                </optgroup>
+            <?php endforeach; else: foreach ($yearLevelsByLevel[$level] as $y): ?>
+                <option value="<?=htmlspecialchars($y)?>" <?=$year===$y?'selected':''?>><?=htmlspecialchars($y)?></option>
+            <?php endforeach; endif; ?>
+        </select>
+        <?php endif; ?>
+        <input class="et-search" type="text" name="search" form="etFilterForm" value="<?=htmlspecialchars($search)?>" placeholder="🔍  Search <?= $tab==='students' ? 'student' : ($tab==='faculty' ? 'faculty' : $tab) ?> by name...">
+        <?php if ($status!=='all' || $search!=='' || ($tab==='students' && ($level!=='all' || $year!=='all')) || ($tab==='faculty' && $scopeFilter!=='all')): ?>
+            <a class="et-clear" href="?tab=<?=htmlspecialchars($tab)?>">Clear filters</a>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
     </div>
 
-    <form class="et-controls" method="get">
+    <?php if (!$single): ?>
+    <form class="et-controls" id="etFilterForm" method="get">
         <input type="hidden" name="tab" value="<?=htmlspecialchars($tab)?>">
+        <?php if ($status!=='all'): ?><input type="hidden" name="status" value="<?=htmlspecialchars($status)?>"><?php endif; ?>
         <div class="et-levels">
             <?php if ($tab==='students'): ?>
                 <a class="et-btn <?=$level==='all'?'active':''?>" href="?tab=students&level=all&status=<?=urlencode($status)?>&search=<?=urlencode($search)?>">All Levels</a>
@@ -542,35 +711,36 @@ html[data-theme="dark"] .et-tab.active{color:#fff}
                 <a class="et-btn <?=$level==='senior_high'?'active':''?>" href="?tab=students&level=senior_high&status=<?=urlencode($status)?>&search=<?=urlencode($search)?>">Senior High School</a>
                 <a class="et-btn <?=$level==='college'?'active':''?>" href="?tab=students&level=college&status=<?=urlencode($status)?>&search=<?=urlencode($search)?>">College</a>
             <?php elseif ($tab==='faculty'): ?>
-                <?php foreach (['all'=>'All Faculty','hs'=>'High School','college'=>'College'] as $sk=>$sl): ?>
+                <?php foreach (['all'=>'All Faculty','hs'=>'JHS/SHS','college'=>'College'] as $sk=>$sl): ?>
                     <a class="et-btn <?=$scopeFilter===$sk?'active':''?>" href="?tab=faculty&scope=<?=$sk?>&status=<?=urlencode($status)?>&search=<?=urlencode($search)?>"><?=$sl?></a>
                 <?php endforeach; ?>
             <?php endif; ?>
         </div>
         <div class="et-right">
-            <select class="et-select" name="status" onchange="this.form.submit()">
-                <option value="all" <?=$status==='all'?'selected':''?>>All Status</option>
-                <option value="not_started" <?=$status==='not_started'?'selected':''?>>Not Started</option>
-                <option value="in_progress" <?=$status==='in_progress'?'selected':''?>>In Progress</option>
-                <option value="completed" <?=$status==='completed'?'selected':''?>>Completed</option>
-            </select>
-            <?php if ($tab==='students'): ?>
-            <select class="et-select" name="year" onchange="this.form.submit()">
-                <option value="all" <?=$year==='all'?'selected':''?>>All Year Levels</option>
-                <?php if ($level==='all'): foreach ($yearLevelsByLevel as $lk=>$ys): ?>
-                    <optgroup label="<?=htmlspecialchars($levels[$lk])?>">
-                        <?php foreach ($ys as $y): ?><option value="<?=htmlspecialchars($y)?>" <?=$year===$y?'selected':''?>><?=htmlspecialchars($y)?></option><?php endforeach; ?>
-                    </optgroup>
-                <?php endforeach; else: foreach ($yearLevelsByLevel[$level] as $y): ?>
-                    <option value="<?=htmlspecialchars($y)?>" <?=$year===$y?'selected':''?>><?=htmlspecialchars($y)?></option>
-                <?php endforeach; endif; ?>
-            </select>
-            <?php endif; ?>
-            <input class="et-search" type="text" name="search" value="<?=htmlspecialchars($search)?>" placeholder="🔍  Search <?= $tab==='students' ? 'student' : ($tab==='faculty' ? 'faculty' : $tab) ?> by name...">
             <?php if ($tab==='students'): ?><input type="hidden" name="level" value="<?=htmlspecialchars($level)?>"><?php endif; ?>
             <?php if ($tab==='faculty'): ?><input type="hidden" name="scope" value="<?=htmlspecialchars($scopeFilter)?>"><?php endif; ?>
         </div>
     </form>
+    <?php endif; ?>
+
+    <?php if (!$single): ?>
+    <?php
+    $chipHref = function (string $st) use ($tab, $level, $year, $scopeFilter, $search) {
+        $q = ['tab' => $tab];
+        if ($tab === 'students') { if ($level !== 'all') $q['level'] = $level; if ($year !== 'all') $q['year'] = $year; }
+        if ($tab === 'faculty' && $scopeFilter !== 'all') $q['scope'] = $scopeFilter;
+        if ($search !== '') $q['search'] = $search;
+        if ($st !== 'all') $q['status'] = $st;
+        return '?' . http_build_query($q);
+    };
+    $chips = [['all','Total','','total'], ['completed','Completed','t-done','completed'], ['in_progress','In progress','t-prog','in_progress'], ['not_started','Not started','t-none','not_started']];
+    ?>
+    <div class="et-totals" aria-label="Filter by status">
+        <?php foreach ($chips as [$st, $label, $cls, $key]): $on = ($status === $st); ?>
+        <a class="et-total <?=$cls?> <?=$on?'active':''?>" href="<?=htmlspecialchars($chipHref($st))?>" <?=$on?'aria-current="true"':''?> title="<?=$st==='all' ? 'Show everyone' : 'Show only: ' . $label?>"><b><?=(int)($summary[$key] ?? 0)?></b> <?=$label?></a>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
 
     <div class="et-table">
 <?php if ($tab !== 'students'): ?>
@@ -578,18 +748,18 @@ html[data-theme="dark"] .et-tab.active{color:#fff}
             <div class="et-empty">No <?= $tab==='faculty' ? 'faculty' : htmlspecialchars($tab) ?> accounts match the selected filters.</div>
         <?php else: ?>
             <table>
-                <thead><tr><th style="width:38%">EVALUATOR</th><th style="width:12%">REQUIRED</th><th style="width:14%">COMPLETED</th><th style="width:16%">STATUS</th><th style="width:17%">PROGRESS</th><th style="width:3%"></th></tr></thead>
+                <thead><tr><th style="width:38%" data-sort="name">EVALUATOR</th><th style="width:12%" data-sort="req">REQUIRED</th><th style="width:14%" data-sort="done">COMPLETED</th><th style="width:16%" data-sort="state">STATUS</th><th style="width:17%" data-sort="pct">PROGRESS</th><th style="width:3%"></th></tr></thead>
                 <tbody>
                 <?php foreach ($rows as $r):
                     $photo = trim((string)($r['photo'] ?? ''));
                     $stateClass = $r['state']==='completed' ? 'st-completed' : ($r['state']==='in_progress' ? 'st-progress' : 'st-start');
                     $stateLabel = $r['state']==='completed' ? 'Completed' : ($r['state']==='in_progress' ? 'In Progress' : 'Not Started');
                 ?>
-                    <tr>
+                    <tr class="et-row" data-key="<?=htmlspecialchars($tab . '-' . (int)$r['id'])?>" data-name="<?=htmlspecialchars(mb_strtolower((string)$r['full_name']))?>" data-level="<?=htmlspecialchars((string)($r['education_level'] ?? ''))?>" data-req="<?=(float)$r['required']?>" data-done="<?=(float)$r['done']?>" data-pct="<?=(float)$r['pct']?>" data-state="<?=htmlspecialchars((string)$r['state'])?>" tabindex="0" aria-expanded="false">
                         <td>
                             <div class="et-student">
                                 <div class="et-avatar">
-                                    <?php if ($photo): ?><img src="<?=htmlspecialchars($photo)?>" alt=""><?php else: ?><svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5Z"/></svg><?php endif; ?>
+                                    <?= trackerAvatar($photo) ?>
                                 </div>
                                 <div><div class="et-name"><?=htmlspecialchars($r['full_name'])?></div><div class="et-mini"><?=htmlspecialchars($r['sub'])?></div></div>
                             </div>
@@ -601,8 +771,9 @@ html[data-theme="dark"] .et-tab.active{color:#fff}
                             <div class="et-progress"><span class="et-progress-text"><?=$r['pct']?>%</span><div class="et-bar"><div class="et-fill" style="width:<?=$r['pct']?>%"></div></div></div>
                             <?php if ($r['last']): ?><div class="et-note">Last: <?=htmlspecialchars(date('M j, Y g:i A', strtotime($r['last'])))?></div><?php endif; ?>
                         </td>
-                        <td class="et-arrow">›</td>
+                        <td class="et-arrow"><span class="et-chev">›</span></td>
                     </tr>
+                    <tr class="et-detail" data-key="<?=htmlspecialchars($tab . '-' . (int)$r['id'])?>" hidden><td colspan="6"><?= trackerRenderDetail($r) ?></td></tr>
                 <?php endforeach; ?>
                 </tbody>
             </table>
@@ -612,7 +783,7 @@ html[data-theme="dark"] .et-tab.active{color:#fff}
             <div class="et-empty">No students match the selected level, year level, status or search.</div>
         <?php else: ?>
             <table>
-                <thead><tr><th style="width:22%">STUDENT</th><th style="width:20%">LEVEL</th><th style="width:10%">REQUIRED</th><th style="width:11%">COMPLETED</th><th style="width:14%">STATUS</th><th style="width:18%">PROGRESS</th><th style="width:5%"></th></tr></thead>
+                <thead><tr><th style="width:22%" data-sort="name">STUDENT</th><th style="width:20%" data-sort="level">LEVEL</th><th style="width:10%" data-sort="req">REQUIRED</th><th style="width:11%" data-sort="done">COMPLETED</th><th style="width:14%" data-sort="state">STATUS</th><th style="width:18%" data-sort="pct">PROGRESS</th><th style="width:5%"></th></tr></thead>
                 <tbody>
                 <?php foreach ($rows as $r):
                     $photo = trim((string)($r['photo'] ?? ''));
@@ -620,11 +791,11 @@ html[data-theme="dark"] .et-tab.active{color:#fff}
                     $stateLabel = $r['state']==='completed' ? 'Completed' : ($r['state']==='in_progress' ? 'In Progress' : 'Not Started');
                     $levelClass = $r['education_level']==='college' ? 'lvl-col' : ($r['education_level']==='senior_high' ? 'lvl-shs' : 'lvl-jhs');
                 ?>
-                    <tr>
+                    <tr class="et-row" data-key="<?=htmlspecialchars($tab . '-' . (int)$r['id'])?>" data-name="<?=htmlspecialchars(mb_strtolower((string)$r['full_name']))?>" data-level="<?=htmlspecialchars((string)($r['education_level'] ?? ''))?>" data-req="<?=(float)$r['required']?>" data-done="<?=(float)$r['done']?>" data-pct="<?=(float)$r['pct']?>" data-state="<?=htmlspecialchars((string)$r['state'])?>" tabindex="0" aria-expanded="false">
                         <td>
                             <div class="et-student">
                                 <div class="et-avatar">
-                                    <?php if ($photo): ?><img src="<?=htmlspecialchars($photo)?>" alt=""><?php else: ?><svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5Z"/></svg><?php endif; ?>
+                                    <?= trackerAvatar($photo) ?>
                                 </div>
                                 <div><div class="et-name"><?=htmlspecialchars($r['full_name'])?></div><div class="et-mini"><?=htmlspecialchars(trim((string)($r['year_level'] ?? '')) ?: ($levels[$r['education_level']] ?? $r['education_level']))?></div></div>
                             </div>
@@ -637,8 +808,9 @@ html[data-theme="dark"] .et-tab.active{color:#fff}
                             <div class="et-progress"><span class="et-progress-text"><?=$r['pct']?>%</span><div class="et-bar"><div class="et-fill" style="width:<?=$r['pct']?>%"></div></div></div>
                             <?php if ($r['last']): ?><div class="et-note">Last: <?=htmlspecialchars(date('M j, Y g:i A', strtotime($r['last'])))?></div><?php endif; ?>
                         </td>
-                        <td class="et-arrow">›</td>
+                        <td class="et-arrow"><span class="et-chev">›</span></td>
                     </tr>
+                    <tr class="et-detail" data-key="<?=htmlspecialchars($tab . '-' . (int)$r['id'])?>" hidden><td colspan="7"><?= trackerRenderDetail($r) ?></td></tr>
                 <?php endforeach; ?>
                 </tbody>
             </table>
@@ -656,6 +828,44 @@ html[data-theme="dark"] .et-tab.active{color:#fff}
   var busy = false, timer = null, fails = 0, lastRun = Date.now();
   var btn = document.getElementById('etRefresh');
   var stamp = document.getElementById('etUpdatedAt');
+  var wrap = document.querySelector('.et-wrap');
+  var openKeys = {};
+  var tableNow = document.querySelector('.et-table');
+  var lastTableHtml = tableNow ? tableNow.innerHTML : '';   // what the server last sent (not what the user toggled)
+
+  function setOpen(row, on) {
+    var detail = row.nextElementSibling;
+    row.classList.toggle('open', on);
+    row.setAttribute('aria-expanded', on ? 'true' : 'false');
+    if (detail && detail.classList.contains('et-detail')) detail.hidden = !on;
+    if (on) openKeys[row.getAttribute('data-key')] = true; else delete openKeys[row.getAttribute('data-key')];
+  }
+  function restoreOpen() {
+    document.querySelectorAll('.et-table tr.et-row').forEach(function (row) {
+      if (openKeys[row.getAttribute('data-key')]) setOpen(row, true);
+    });
+  }
+  function swapTable(doc) {
+    var cur = document.querySelector('.et-table'), nxt = doc.querySelector('.et-table');
+    if (!cur || !nxt) return;
+    if (nxt.innerHTML !== lastTableHtml) {          // data really changed -> redraw, keep open rows open
+      lastTableHtml = nxt.innerHTML;
+      cur.innerHTML = nxt.innerHTML;
+      restoreOpen();
+    }
+  }
+  if (wrap) {
+    wrap.addEventListener('click', function (e) {
+      var row = e.target.closest ? e.target.closest('tr.et-row') : null;
+      if (row && wrap.contains(row)) setOpen(row, !row.classList.contains('open'));
+    });
+    wrap.addEventListener('keydown', function (e) {
+      if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('et-row')) {
+        e.preventDefault();
+        setOpen(e.target, !e.target.classList.contains('open'));
+      }
+    });
+  }
 
   function userIsTyping() {
     var a = document.activeElement;
@@ -680,7 +890,7 @@ html[data-theme="dark"] .et-tab.active{color:#fff}
       .then(function (html) {
         var doc = new DOMParser().parseFromString(html, 'text/html');
         if (!doc.querySelector('.et-wrap')) throw new Error('unexpected response (session expired?)');
-        swap('.et-tabs', doc); swap('.et-cards', doc); swap('.et-table', doc);
+        swap('.et-tabs', doc); swap('.et-cards', doc); swap('.et-totals', doc); swapTable(doc);
         var t = doc.getElementById('etUpdatedAt');
         if (t && stamp) stamp.textContent = t.textContent;
         fails = 0;
@@ -695,6 +905,78 @@ html[data-theme="dark"] .et-tab.active{color:#fff}
     if (!document.hidden && Date.now() - lastRun >= ET_REFRESH_MS) refresh(false);
   });
   schedule();
+})();
+</script>
+<script>
+/* Live search (filters visible rows as you type) + click-to-sort column headers.
+   Re-applies itself whenever the auto-refresh redraws the table. */
+(function () {
+  var search = document.querySelector('.et-search');
+  var sort = { key: null, dir: null };
+  var stateOrder = { not_started: 0, in_progress: 1, completed: 2 };
+
+  function table() { return document.querySelector('.et-table'); }
+  function pairs() {
+    var out = [];
+    document.querySelectorAll('.et-table tr.et-row').forEach(function (row, i) {
+      if (row.dataset.i === undefined) row.dataset.i = i;
+      var d = row.nextElementSibling;
+      out.push({ row: row, detail: (d && d.classList.contains('et-detail')) ? d : null });
+    });
+    return out;
+  }
+  function val(row, key) {
+    if (key === 'name' || key === 'level') return row.dataset[key] || '';
+    if (key === 'state') return stateOrder[row.dataset.state] || 0;
+    return parseFloat(row.dataset[key]) || 0;
+  }
+  function applySort() {
+    var ps = pairs(); if (!ps.length) return;
+    var tbody = ps[0].row.parentNode;
+    ps.sort(function (a, b) {
+      if (!sort.key) return (+a.row.dataset.i) - (+b.row.dataset.i);
+      var x = val(a.row, sort.key), y = val(b.row, sort.key);
+      var c = (typeof x === 'string') ? x.localeCompare(y) : x - y;
+      if (c === 0) c = (+a.row.dataset.i) - (+b.row.dataset.i);
+      return sort.dir === 'desc' ? -c : c;
+    });
+    ps.forEach(function (p) { tbody.appendChild(p.row); if (p.detail) tbody.appendChild(p.detail); });
+    document.querySelectorAll('.et-table th[data-sort]').forEach(function (th) {
+      if (th.dataset.sort === sort.key) th.setAttribute('data-dir', sort.dir); else th.removeAttribute('data-dir');
+    });
+  }
+  function applyFilter() {
+    var t = table(); if (!t) return;
+    var q = search ? search.value.trim().toLowerCase() : '';
+    var ps = pairs(), shown = 0;
+    ps.forEach(function (p) {
+      var hit = !q || (p.row.dataset.name || '').indexOf(q) !== -1;
+      p.row.style.display = hit ? '' : 'none';
+      if (p.detail) p.detail.style.display = hit ? '' : 'none';
+      if (hit) shown++;
+    });
+    var msg = t.querySelector('.et-nomatch');
+    if (ps.length && !shown) {
+      if (!msg) { msg = document.createElement('div'); msg.className = 'et-nomatch'; msg.textContent = 'No names match your search.'; t.appendChild(msg); }
+    } else if (msg) { msg.remove(); }
+  }
+  function applyAll() { applySort(); applyFilter(); }
+
+  document.addEventListener('click', function (e) {
+    var th = e.target.closest ? e.target.closest('.et-table th[data-sort]') : null;
+    if (!th) return;
+    var k = th.dataset.sort;
+    if (sort.key !== k) { sort.key = k; sort.dir = 'asc'; }
+    else if (sort.dir === 'asc') { sort.dir = 'desc'; }
+    else { sort.key = null; sort.dir = null; }
+    applyAll();
+  });
+  if (search) search.addEventListener('input', applyFilter);
+
+  // Auto-refresh replaces the table's contents -> re-apply sort + search
+  var t0 = table();
+  if (t0 && window.MutationObserver) new MutationObserver(applyAll).observe(t0, { childList: true });
+  applyAll();
 })();
 </script>
 <?php $mysqli->close(); ?>

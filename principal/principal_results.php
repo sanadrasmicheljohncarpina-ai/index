@@ -23,6 +23,92 @@ const PRINCIPAL_EVAL_ELIGIBLE="et.target_user_id=? AND et.status IN ('submitted'
      OR et.eval_type='school_head'
    )";
 
+// ── DETAILS ENDPOINT (used by the "View Details" modal) ─────────────
+// Served by this page itself so it always uses the same eligibility rules as
+// the list below. Returns NO evaluator identity.
+//   ?details=<id>             -> live evaluation_tracker row
+//   ?details=<id>&src=kept    -> identity-free copy kept by System Archive
+if(isset($_GET['details'])){
+ header('Content-Type: application/json; charset=utf-8');
+ $detailId=(int)$_GET['details'];
+ $isKept=(($_GET['src']??'')==='kept');
+ $notFound=static function(){
+  http_response_code(404);
+  echo json_encode(['ok'=>false,'error'=>'This evaluation could not be found.']);
+  exit;
+ };
+ $answers=[];$comment='';$submittedAt=null;$periodLabel='';
+ if($isKept){
+  $rows=safe_rows($mysqli,"SELECT remarks, submitted_at, school_year, semester, period_label, answers_json
+   FROM feedback_received_keep WHERE id=? AND target_user_id=? LIMIT 1",'ii',[$detailId,$principalId]);
+  if(!$rows) $notFound();
+  $kept=$rows[0];
+  foreach((json_decode((string)$kept['answers_json'],true)?:[]) as $a){
+   $answers[]=[
+    'category'=>!empty($a['category'])?(string)$a['category']:'General',
+    'question_text'=>(string)($a['question_text']??'Question'),
+    'score'=>isset($a['score'])?(float)$a['score']:null,
+   ];
+  }
+  $comment=(string)($kept['remarks']??'');
+  $submittedAt=$kept['submitted_at'];
+  $periodLabel=(!empty($kept['school_year'])&&!empty($kept['semester']))
+   ?$kept['school_year'].' · '.$kept['semester']
+   :(string)($kept['period_label']??'');
+ }else{
+  $rows=safe_rows($mysqli,"
+   SELECT et.id, et.remarks AS comment, et.submitted_at, ep.period_label, ep.semester, ep.school_year
+   FROM evaluation_tracker et
+   LEFT JOIN evaluation_periods ep ON ep.id=et.period_id
+   WHERE ".PRINCIPAL_EVAL_ELIGIBLE." AND et.id=?
+   LIMIT 1",'ii',[$principalId,$detailId]);
+  if(!$rows) $notFound();
+  $t=$rows[0];
+  foreach(safe_rows($mysqli,"
+   SELECT qa.answer_score,
+          COALESCE(uq.category, eq.category, 'General') AS category,
+          COALESCE(uq.question_text, eq.question_text,
+                   CONCAT('Question #', COALESCE(qa.user_question_id, qa.question_id, qa.id))) AS question_text
+   FROM questionnaire_answers qa
+   LEFT JOIN user_questions uq ON qa.question_source='user' AND uq.id=COALESCE(qa.user_question_id, qa.question_id)
+   LEFT JOIN evaluation_questions eq ON qa.question_source='evaluation' AND eq.id=qa.question_id
+   WHERE qa.tracker_id=?
+   ORDER BY category, qa.id",'i',[$detailId]) as $a){
+   $answers[]=[
+    'category'=>trim((string)$a['category'])!==''?trim((string)$a['category']):'General',
+    'question_text'=>(string)$a['question_text'],
+    'score'=>$a['answer_score']!==null?(float)$a['answer_score']:null,
+   ];
+  }
+  $comment=(string)($t['comment']??'');
+  $submittedAt=$t['submitted_at'];
+  $periodLabel=(!empty($t['school_year'])&&!empty($t['semester']))
+   ?$t['school_year'].' · '.$t['semester']
+   :((string)($t['period_label']??'')?:(string)($t['semester']??''));
+ }
+ $cats=[];$sumAll=0.0;$cntAll=0;$questions=[];
+ foreach($answers as $a){
+  if($a['score']===null) continue;           // only scored answers are shown
+  $c=$a['category'];
+  if(!isset($cats[$c])) $cats[$c]=[0.0,0];
+  $cats[$c][0]+=$a['score'];$cats[$c][1]++;
+  $sumAll+=$a['score'];$cntAll++;
+  $questions[]=['question_text'=>$a['question_text'],'score'=>$a['score']];
+ }
+ $catRows=[];
+ foreach($cats as $name=>$v){ $catRows[]=['category'=>(string)$name,'avg'=>round($v[0]/$v[1],2)]; }
+ echo json_encode([
+  'ok'=>true,
+  'period_label'=>$periodLabel,
+  'submitted_at'=>$submittedAt?date('F j, Y g:i A',strtotime($submittedAt)):'—',
+  'overall_score'=>$cntAll?round($sumAll/$cntAll,2):null,
+  'categories'=>$catRows,
+  'questions'=>$questions,
+  'comment'=>pr_clean_comment($comment),
+ ],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+ exit;
+}
+
 $termIds=[];
 if(!empty($hasPeriod)) $termIds[(int)$period_id_int]=true;
 foreach(safe_rows($mysqli,"SELECT DISTINCT et.period_id AS pid FROM evaluation_tracker et WHERE ".PRINCIPAL_EVAL_ELIGIBLE,'i',[$principalId]) as $r){
@@ -662,22 +748,6 @@ main.main::before {
   <?php endif; ?>
  </div>
 
- <?php if($catStats): ?>
- <div class="section">
-  <div class="er-head">
-   <h2><i class="fa-solid fa-chart-simple"></i> Performance by Category</h2>
-   <span class="er-shown">Average score out of 5</span>
-  </div>
-  <?php foreach($catStats as $c): $pct=max(0,min(100,round(($c['avg']/5)*100))); ?>
-  <div class="er-cat">
-   <div class="er-cat-name"><?= htmlspecialchars($c['name']) ?></div>
-   <div class="er-cat-track"><div class="er-cat-fill <?= er_score_class($c['avg']) ?>" style="width:<?= $pct ?>%"></div></div>
-   <div class="er-cat-score"><?= number_format($c['avg'],2) ?></div>
-  </div>
-  <?php endforeach; ?>
- </div>
- <?php endif; ?>
-
  <div class="section">
   <div class="er-head">
    <h2><i class="fa-solid fa-clock-rotate-left"></i> Evaluations Received <span class="er-count"><?= (int)$responseCount ?></span></h2>
@@ -724,7 +794,7 @@ let shown=0;items.forEach(el=>{const ok=!only||el.dataset.comment==='1';el.style
 document.getElementById('erShown').textContent='Showing '+shown+' of '+items.length;document.getElementById('erNoMatch').style.display=shown?'none':'block';}
 function e(v){if(v===null||v===undefined)return '';const d=document.createElement('div');d.textContent=v;return d.innerHTML;}
 function sh(s){let h='';for(let i=1;i<=5;i++)h+=`<i class="fa-solid fa-star star ${i<=s?'filled':''}"></i>`;return h;}
-function openPrincipalEvalDetails(id,src){const m=document.getElementById('principalEvalModal'),b=document.getElementById('principalEvalBody');b.innerHTML='<div class="loading-eval"><i class="fa-solid fa-spinner fa-spin"></i> Loading evaluation…</div>';m.classList.add('open');document.body.style.overflow='hidden';fetch('get_my_evaluation_details.php?'+(src==='kept'?'kept_id=':'tracker_id=')+encodeURIComponent(id)).then(r=>r.json()).then(d=>{if(!d.ok){b.innerHTML='<div class="loading-eval"><i class="fa-solid fa-triangle-exclamation"></i>'+e(d.error||'Unable to load this evaluation.')+'</div>';return;}let h=`<div class="info-grid"><div><div class="info-label">Evaluator</div><div class="info-value"><i class="fa-solid fa-eye-slash"></i> Anonymous Evaluator</div></div><div><div class="info-label">Period</div><div class="info-value">${e(d.period_label||'—')}</div></div><div><div class="info-label">Submitted</div><div class="info-value">${e(d.submitted_at||'—')}</div></div><div><div class="info-label">Overall Score</div><div class="info-value score-big">${Number(d.overall_score||0).toFixed(2)} / 5</div></div></div>`;if(d.categories?.length){h+='<h3 class="modal-section-title">Performance by Category</h3>';d.categories.forEach(c=>{h+=`<div class="cat-row-modal"><div class="cat-name-modal">${e(c.category)}</div><div class="cat-bar"><div style="width:${Math.round((c.avg/5)*100)}%"></div></div><div class="cat-score-modal">${Number(c.avg).toFixed(2)}</div></div>`})}if(d.questions?.length){h+='<h3 class="modal-section-title">Question-by-Question Results</h3>';d.questions.forEach((q,i)=>{h+=`<div class="q-result"><div class="q-no">Question ${i+1}</div><div class="q-text">${e(q.question_text)}</div><div class="q-score">${sh(q.score)} <span>Score: ${q.score} / 5</span></div></div>`})}h+='<h3 class="modal-section-title">Comments / Feedback</h3>';h+=d.comment?`<div class="comment-modal">“${e(d.comment)}”</div>`:'<div class="comment-modal empty">No written feedback was provided.</div>';b.innerHTML=h;}).catch(()=>{b.innerHTML='<div class="loading-eval"><i class="fa-solid fa-triangle-exclamation"></i>Something went wrong loading this evaluation.</div>';});}
+function openPrincipalEvalDetails(id,src){const m=document.getElementById('principalEvalModal'),b=document.getElementById('principalEvalBody');b.innerHTML='<div class="loading-eval"><i class="fa-solid fa-spinner fa-spin"></i> Loading evaluation…</div>';m.classList.add('open');document.body.style.overflow='hidden';fetch('principal_results.php?details='+encodeURIComponent(id)+(src==='kept'?'&src=kept':''),{credentials:'same-origin'}).then(r=>r.json()).then(d=>{if(!d.ok){b.innerHTML='<div class="loading-eval"><i class="fa-solid fa-triangle-exclamation"></i>'+e(d.error||'Unable to load this evaluation.')+'</div>';return;}let h=`<div class="info-grid"><div><div class="info-label">Evaluator</div><div class="info-value"><i class="fa-solid fa-eye-slash"></i> Anonymous Evaluator</div></div><div><div class="info-label">Period</div><div class="info-value">${e(d.period_label||'—')}</div></div><div><div class="info-label">Submitted</div><div class="info-value">${e(d.submitted_at||'—')}</div></div><div><div class="info-label">Overall Score</div><div class="info-value score-big">${d.overall_score!==null&&d.overall_score!==undefined?parseFloat(Number(d.overall_score).toFixed(2)):'—'} / 5</div></div></div>`;if(d.categories?.length){h+='<h3 class="modal-section-title">Performance by Category</h3>';d.categories.forEach(c=>{h+=`<div class="cat-row-modal"><div class="cat-name-modal">${e(c.category)}</div><div class="cat-bar"><div style="width:${Math.round((c.avg/5)*100)}%"></div></div><div class="cat-score-modal">${Number(c.avg).toFixed(2)}</div></div>`})}if(d.questions?.length){h+='<h3 class="modal-section-title">Question-by-Question Results</h3>';d.questions.forEach((q,i)=>{h+=`<div class="q-result"><div class="q-no">Question ${i+1}</div><div class="q-text">${e(q.question_text)}</div><div class="q-score">${sh(q.score)} <span>Score: ${q.score} / 5</span></div></div>`})}h+='<h3 class="modal-section-title">Comments / Feedback</h3>';h+=d.comment?`<div class="comment-modal">“${e(d.comment)}”</div>`:'<div class="comment-modal empty">No written feedback was provided.</div>';b.innerHTML=h;}).catch(()=>{b.innerHTML='<div class="loading-eval"><i class="fa-solid fa-triangle-exclamation"></i>Something went wrong loading this evaluation.</div>';});}
 function closePrincipalEvalDetails(){document.getElementById('principalEvalModal').classList.remove('open');document.body.style.overflow='';}
 document.getElementById('principalEvalModal').addEventListener('click',function(ev){if(ev.target===this)closePrincipalEvalDetails();});
 document.addEventListener('keydown',function(ev){if(ev.key==='Escape')closePrincipalEvalDetails();});

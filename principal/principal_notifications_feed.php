@@ -206,6 +206,8 @@ function principal_build_notifications(mysqli $mysqli, int $userId, ?array $sett
     }
 
     // Recent submitted evaluation events for the Principal bell.
+    // Up to 500 are kept for the current period so older notices do not drop off
+    // as new ones arrive.
     //
     // The Principal only receives submissions from JHS/SHS people:
     //   * Student Evaluation -> the evaluator must be an active JHS/SHS student
@@ -301,7 +303,7 @@ function principal_build_notifications(mysqli $mysqli, int $userId, ?array $sett
                                   AND NOT EXISTS (SELECT 1 FROM teaching_assignments pl_t WHERE pl_t.user_id=target.id))))
                   )
                 ORDER BY et.submitted_at DESC, et.id DESC
-                LIMIT 40";
+                LIMIT 500";
             $recent = $mysqli->query($recentSql);
             if ($recent) {
                 while ($event = $recent->fetch_assoc()) {
@@ -360,4 +362,3 @@ function principal_build_notifications(mysqli $mysqli, int $userId, ?array $sett
 
     return $out;
 }
-

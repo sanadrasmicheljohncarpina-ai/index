@@ -99,6 +99,17 @@ if ($account_status_is_new) {
     $mysqli->query("UPDATE users SET account_status = 'approved' WHERE account_status = 'pending'");
 }
 
+// ── ENSURE archive columns exist (used by ALL roles now — Principal, Dean,
+//    Faculty, Staff and Student accounts are archived, never deleted) ──
+$col4 = $mysqli->query("SHOW COLUMNS FROM users LIKE 'is_archived'");
+if ($col4 && $col4->num_rows === 0) {
+    $mysqli->query("ALTER TABLE users ADD COLUMN is_archived TINYINT(1) NOT NULL DEFAULT 0");
+}
+$col5 = $mysqli->query("SHOW COLUMNS FROM users LIKE 'archived_previous_active'");
+if ($col5 && $col5->num_rows === 0) {
+    $mysqli->query("ALTER TABLE users ADD COLUMN archived_previous_active TINYINT(1) NULL DEFAULT NULL");
+}
+
 // ── ENSURE user_year_levels TABLE EXISTS ────────────────────────
 $mysqli->query("
     CREATE TABLE IF NOT EXISTS user_year_levels (
@@ -205,8 +216,11 @@ function normalize_year_level(?string $yl): ?string {
     return $yl;
 }
 
+// Archived view: available for every role, plus an "All" tab (role=all) that
+// lists archived accounts across all five roles. "all" is only valid here.
+$viewArchived = (($_GET['archived'] ?? '') === '1');
 $viewRole = $_GET['role'] ?? 'teacher';
-if (!in_array($viewRole, $valid_roles, true)) $viewRole = 'teacher';
+if (!in_array($viewRole, $valid_roles, true) && !($viewArchived && $viewRole === 'all')) $viewRole = 'teacher';
 
 $viewStatus = $_GET['status'] ?? 'pending';
 if (!in_array($viewStatus, $valid_statuses, true)) $viewStatus = 'pending';
@@ -220,10 +234,11 @@ if ($levelFilter !== '' && !array_key_exists($levelFilter, $school_levels)) $lev
 $toast       = $_SESSION['toast']       ?? ''; unset($_SESSION['toast']);
 $toast_error = $_SESSION['toast_error'] ?? ''; unset($_SESSION['toast_error']);
 
-function redirect_back(string $viewRole, string $viewStatus, string $ylFilter = '', string $levelFilter = ''): void {
+function redirect_back(string $viewRole, string $viewStatus, string $ylFilter = '', string $levelFilter = '', bool $showArchived = false): void {
     $url = "manage_privileged_accounts.php?role=" . urlencode($viewRole) . "&status=" . urlencode($viewStatus);
     if ($ylFilter !== '') $url .= "&yl=" . urlencode($ylFilter);
     if ($levelFilter !== '') $url .= "&level=" . urlencode($levelFilter);
+    if ($showArchived) $url .= "&archived=1";
     header("Location: $url");
     exit;
 }
@@ -232,7 +247,7 @@ function redirect_back(string $viewRole, string $viewStatus, string $ylFilter = 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'approve_account') {
     if (!verify_csrf()) reject_csrf($viewRole, $viewStatus);
     $uid = intval($_POST['user_id'] ?? 0);
-    $stmt = $mysqli->prepare("UPDATE users SET account_status='approved', is_active=1 WHERE id=? AND role IN ('principal','dean','teacher','staff','student')");
+    $stmt = $mysqli->prepare("UPDATE users SET account_status='approved', is_active=1 WHERE id=? AND role IN ('principal','dean','teacher','staff','student') AND COALESCE(is_archived,0)=0");
     $stmt->bind_param("i", $uid);
     $stmt->execute();
     $stmt->close();
@@ -247,7 +262,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'block
     if ($uid === (int)$_SESSION['user_id']) {
         $_SESSION['toast_error'] = "You can't block your own account.";
     } else {
-        $stmt = $mysqli->prepare("UPDATE users SET account_status='blocked', is_active=0 WHERE id=? AND role IN ('principal','dean','teacher','staff','student')");
+        $stmt = $mysqli->prepare("UPDATE users SET account_status='blocked', is_active=0 WHERE id=? AND role IN ('principal','dean','teacher','staff','student') AND COALESCE(is_archived,0)=0");
         $stmt->bind_param("i", $uid);
         $stmt->execute();
         $stmt->close();
@@ -264,7 +279,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'bulk_
         $_SESSION['toast_error'] = "No accounts selected.";
     } else {
         $placeholders = implode(',', array_fill(0, count($uids), '?'));
-        $stmt = $mysqli->prepare("UPDATE users SET account_status='approved', is_active=1 WHERE id IN ($placeholders) AND role IN ('principal','dean','teacher','staff','student')");
+        $stmt = $mysqli->prepare("UPDATE users SET account_status='approved', is_active=1 WHERE id IN ($placeholders) AND role IN ('principal','dean','teacher','staff','student') AND COALESCE(is_archived,0)=0");
         $stmt->bind_param(str_repeat('i', count($uids)), ...$uids);
         $stmt->execute();
         $n = $stmt->affected_rows;
@@ -283,7 +298,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'bulk_
         $_SESSION['toast_error'] = "No eligible accounts selected.";
     } else {
         $placeholders = implode(',', array_fill(0, count($uids), '?'));
-        $stmt = $mysqli->prepare("UPDATE users SET account_status='blocked', is_active=0 WHERE id IN ($placeholders) AND role IN ('principal','dean','teacher','staff','student')");
+        $stmt = $mysqli->prepare("UPDATE users SET account_status='blocked', is_active=0 WHERE id IN ($placeholders) AND role IN ('principal','dean','teacher','staff','student') AND COALESCE(is_archived,0)=0");
         $stmt->bind_param(str_repeat('i', count($uids)), ...$uids);
         $stmt->execute();
         $n = $stmt->affected_rows;
@@ -534,63 +549,85 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'bulk_
     redirect_back($viewRole, $viewStatus, $ylFilter, $levelFilter);
 }
 
-// ── TOGGLE ACTIVE (post-approval activate/deactivate, distinct from block) ─
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'toggle_active') {
+
+// ── ARCHIVE ACCOUNT (all roles; preserves evaluation-linked records) ──
+// Replaces the old hard DELETE for Principal / Dean / Faculty / Staff, so
+// evaluation history is never orphaned or lost. Same flow students use.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'archive_account') {
     if (!verify_csrf()) reject_csrf($viewRole, $viewStatus);
 
-$id = intval($_POST['toggle_id'] ?? 0);
-    if ($id !== (int)$_SESSION['user_id']) {
-        $stmt = $mysqli->prepare("UPDATE users SET is_active = IF(is_active=1,0,1) WHERE id=? AND account_status='approved' AND role IN ('principal','dean','teacher','staff','student')");
+    $id = intval($_POST['archive_id'] ?? 0);
+    if ($id === (int)$_SESSION['user_id']) {
+        $_SESSION['toast_error'] = "You can't archive your own account.";
+    } else {
+        $stmt = $mysqli->prepare("UPDATE users SET is_archived=1, archived_previous_active=is_active, is_active=0 WHERE id=? AND role IN ('principal','dean','teacher','staff','student') AND COALESCE(is_archived,0)=0");
         $stmt->bind_param("i", $id);
         $stmt->execute();
+        $changed = $stmt->affected_rows;
         $stmt->close();
-        $_SESSION['toast'] = "Account status updated.";
-    } else {
-        $_SESSION['toast_error'] = "You can't deactivate your own account.";
+        if ($changed > 0) {
+            $_SESSION['toast'] = "Account archived. Evaluation records and account data were preserved.";
+        } else {
+            $_SESSION['toast_error'] = "Account was not found or is already archived.";
+        }
     }
-    redirect_back($viewRole, $viewStatus, $ylFilter, $levelFilter);
+    redirect_back($viewRole, $viewStatus, '', '', true);
 }
 
-// ── DELETE ───────────────────────────────────────────────────────
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_account') {
+// ── RESTORE ARCHIVED ACCOUNT (all roles) ──────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'restore_account') {
     if (!verify_csrf()) reject_csrf($viewRole, $viewStatus);
 
-$id = intval($_POST['delete_id'] ?? 0);
-    if ($id !== (int)$_SESSION['user_id']) {
-        try {
-            $stmt = $mysqli->prepare("DELETE FROM users WHERE id=? AND role IN ('principal','dean','teacher','staff','student')");            $stmt->bind_param("i", $id);
-            $ok = $stmt->execute();
-            $stmt->close();
-
-            if ($ok) {
-                $_SESSION['toast'] = "Account removed.";
-            } elseif ($mysqli->errno === 1451) {
-                $_SESSION['toast_error'] = "This account can't be deleted — it still has evaluation records tied to it. Block it instead.";
-            } else {
-                $_SESSION['toast_error'] = "Failed to delete account: " . $mysqli->error;
-            }
-        } catch (mysqli_sql_exception $e) {
-            if ($e->getCode() === 1451) {
-                $_SESSION['toast_error'] = "This account can't be deleted — it still has evaluation records tied to it. Block it instead.";
-            } else {
-                $_SESSION['toast_error'] = "Failed to delete account: " . $e->getMessage();
-            }
-        }
-    } else {
-        $_SESSION['toast_error'] = "You can't delete your own account.";
+    $id = intval($_POST['archive_id'] ?? 0);
+    if ($id === (int)$_SESSION['user_id']) {
+        $_SESSION['toast_error'] = "You can't restore your own account from this page.";
+        redirect_back($viewRole, $viewStatus, '', $levelFilter, true);
     }
-    redirect_back($viewRole, $viewStatus, $ylFilter, $levelFilter);
+
+    $lookup = $mysqli->prepare("SELECT role, account_status FROM users WHERE id=? AND role IN ('principal','dean','teacher','staff','student') AND is_archived=1 LIMIT 1");
+    $lookup->bind_param("i", $id);
+    $lookup->execute();
+    $archivedAccount = $lookup->get_result()->fetch_assoc();
+    $lookup->close();
+
+    if (!$archivedAccount) {
+        $_SESSION['toast_error'] = "Archived account not found.";
+        redirect_back($viewRole, $viewStatus, '', $levelFilter, true);
+    }
+
+    $stmt = $mysqli->prepare("UPDATE users SET is_archived=0, is_active=IF(account_status='approved', COALESCE(archived_previous_active,1), 0), archived_previous_active=NULL WHERE id=? AND role IN ('principal','dean','teacher','staff','student') AND is_archived=1");
+    $stmt->bind_param("i", $id);
+    $stmt->execute();
+    $changed = $stmt->affected_rows;
+    $stmt->close();
+    if ($changed > 0) {
+        $_SESSION['toast'] = "Account restored from archive.";
+    } else {
+        $_SESSION['toast_error'] = "Account could not be restored.";
+    }
+    $restoreStatus = in_array($archivedAccount['account_status'], $valid_statuses, true) ? $archivedAccount['account_status'] : $viewStatus;
+    // Land on the restored account's own role tab (the "All" archive view has no live tab).
+    redirect_back($archivedAccount['role'], $restoreStatus, '', '', false);
 }
+
+// NOTE: the old 'delete_account' handler was removed on purpose. No role can
+// be hard-deleted from this page anymore — everyone is archived instead.
 
 // ── FETCH DATA ───────────────────────────────────────────────────
 // Shows self-registered accounts for the selected role + approval status.
 // Newest-first when reviewing Pending (so the newest registrations surface
 // first for triage); alphabetical once already Approved/Blocked.
 $orderClause = $viewStatus === 'pending' ? 'u.created_at DESC' : 'u.full_name ASC';
-// Tabs are based strictly on the account's role. A Staff account stays in the
-// Staff tab even when it has year-level (teaching) assignments.
-$stmt = $mysqli->prepare("SELECT u.* FROM users u WHERE u.role=? AND u.account_status=? ORDER BY $orderClause");
-$stmt->bind_param("ss", $viewRole, $viewStatus);
+// Archived view is available for every role. All other views exclude archived rows.
+if ($viewArchived && $viewRole === 'all') {
+    $stmt = $mysqli->prepare("SELECT u.* FROM users u WHERE u.role IN ('principal','dean','teacher','staff','student') AND COALESCE(u.is_archived,0)=1 ORDER BY FIELD(u.role,'principal','dean','teacher','staff','student'), u.full_name ASC");
+} elseif ($viewArchived) {
+    $stmt = $mysqli->prepare("SELECT u.* FROM users u WHERE u.role=? AND COALESCE(u.is_archived,0)=1 ORDER BY u.full_name ASC");
+    $stmt->bind_param("s", $viewRole);
+} else {
+    $stmt = $mysqli->prepare("SELECT u.* FROM users u WHERE u.role=? AND u.account_status=? AND COALESCE(u.is_archived,0)=0 ORDER BY $orderClause");
+    $stmt->bind_param("ss", $viewRole, $viewStatus);
+}
 $stmt->execute();
 $entries = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
@@ -638,6 +675,7 @@ foreach ($valid_roles as $r) { foreach ($valid_statuses as $s) { $countGrid[$r][
 $cq = $mysqli->query("SELECT u.role AS report_role, u.account_status, COUNT(*) c
     FROM users u
     WHERE u.role IN ('" . implode("','", $valid_roles) . "')
+      AND COALESCE(u.is_archived,0)=0
     GROUP BY u.role, u.account_status");
 if ($cq) {
     while ($row = $cq->fetch_assoc()) {
@@ -648,6 +686,24 @@ if ($cq) {
 }
 $roleTotals = [];
 foreach ($valid_roles as $r) { $roleTotals[$r] = array_sum($countGrid[$r]); }
+// Archived counts per role (feeds the Archived tab badge and the archive-mode role tabs).
+$archivedByRole = array_fill_keys($valid_roles, 0);
+$aq = $mysqli->query("SELECT role, COUNT(*) c FROM users
+    WHERE role IN ('" . implode("','", $valid_roles) . "') AND COALESCE(is_archived,0)=1
+    GROUP BY role");
+if ($aq) {
+    while ($row = $aq->fetch_assoc()) {
+        if (isset($archivedByRole[$row['role']])) $archivedByRole[$row['role']] = (int)$row['c'];
+    }
+}
+$archivedTotal = array_sum($archivedByRole);
+// The Archived tab badge always shows the overall archived total ($archivedTotal), regardless of the role tab being viewed.
+
+// Pending/Approved/Blocked counts for the current view ("all" only exists in the archive view).
+$viewCounts = ['pending' => 0, 'approved' => 0, 'blocked' => 0];
+if ($viewRole !== 'all') {
+    $viewCounts = $countGrid[$viewRole];
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -709,6 +765,24 @@ body{font-family:'Inter',sans-serif;background:var(--page-bg);color:var(--text-d
 .status-tab.active[data-s="approved"]{background:var(--success-bg);color:var(--success);}
 .status-tab.active[data-s="blocked"]{background:var(--danger-bg);color:var(--danger);}
 .status-tab:not(.active):hover{color:var(--text-dark);background:rgba(37,99,235,.05);}
+html.pbi-parent-dims .modal-overlay{background:transparent !important;}
+.archive-panel{background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;padding:22px 24px 24px;margin-bottom:24px;box-shadow:var(--card-shadow);}
+.archive-panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:16px;}
+.archive-panel-title{font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;color:var(--text-dark);display:flex;align-items:center;gap:8px;}
+.archive-panel-title i{color:var(--text-dim);font-size:16px;}
+.archive-panel-sub{font-size:12.5px;color:var(--text-dim);margin-top:3px;max-width:640px;line-height:1.5;}
+.archive-panel-total{font-size:12px;font-weight:600;color:var(--text-dim);white-space:nowrap;}
+.archive-panel-total span{font-size:22px;font-weight:700;color:var(--text-dark);margin-right:3px;}
+.archive-panel .archive-subtabs{margin-bottom:16px;}
+.archive-panel .table-wrap{box-shadow:none;}
+/* Status row: approval-state tabs on the left, Archived on the opposite (right) side */
+.role-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+.role-row .sector-tabs{margin-bottom:0;}
+.role-row .archive-tab-wrap{margin:0 0 0 auto;}
+.status-row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:24px;}
+.status-row .status-tabs{margin-bottom:0;}
+.status-row .archive-tab-wrap{margin-left:auto;}
+.role-pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:var(--inner);border:1px solid var(--card-border);color:var(--text-dark);}
 
 .stats-row{display:flex;gap:16px;margin-bottom:24px;flex-wrap:wrap;}
 .stat-card{background:var(--card-bg);border:1px solid var(--card-border);border-top:4px solid var(--accent);border-radius:14px;padding:16px 22px;flex:1;min-width:130px;box-shadow:var(--card-shadow);}
@@ -759,17 +833,13 @@ tbody td{padding:14px 16px;font-size:14px;vertical-align:middle;}
 .btn-icon.block:hover{background:var(--danger-bg);}
 .btn-icon.edit:hover{border-color:var(--accent-border);color:#93C5FD;}
 .btn-icon.key:hover{border-color:var(--amber-border);color:var(--amber);}
-.btn-icon.toggle-on{border-color:var(--success-border);color:var(--success);}
-.btn-icon.toggle-on:hover{background:var(--success-bg);}
-.btn-icon.toggle-off{border-color:var(--amber-border);color:var(--amber);}
-.btn-icon.toggle-off:hover{background:var(--amber-bg);}
 .btn-icon.danger:hover{border-color:var(--danger-border);color:var(--danger);}
 .action-divider{display:inline-block;width:1px;align-self:stretch;margin:2px 5px;background:var(--card-border);}
 
 .empty-state{text-align:center;padding:56px 20px;color:var(--text-dim);}
 .empty-state i{font-size:40px;margin-bottom:14px;display:block;opacity:.3;}
 
-.modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:200;display:none;align-items:center;justify-content:center;padding:20px;}
+.modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55) !important;backdrop-filter:none !important;-webkit-backdrop-filter:none !important;z-index:200;display:none;align-items:center;justify-content:center;padding:20px;}
 .modal-overlay.open{display:flex;}
 .modal{background:var(--card-bg);border:1px solid var(--card-border);border-radius:16px;padding:30px;width:100%;max-width:440px;box-shadow:0 24px 64px rgba(0,0,0,.45);max-height:90vh;overflow-y:auto;}
 .modal-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;}
@@ -854,6 +924,13 @@ tbody tr:hover{background:#F8FAFC !important;}
 body{padding:28px !important;}
 .page-header{padding:22px 26px !important;}
 .status-tab.active,.sector-tab.active{background:#2563EB !important;color:#fff !important;}
+.status-tab.active[data-s="archived"]{background:#475569 !important;color:#fff !important;}
+/* Separated tabs: each tab is its own bordered pill instead of sitting inside one shared bar */
+.sector-tabs,.status-tabs{background:transparent !important;border:0 !important;box-shadow:none !important;padding:0 !important;gap:8px !important;}
+.sector-tab,.status-tab{border:1px solid #D8E5F4 !important;border-radius:12px !important;padding:10px 18px !important;background:#fff !important;box-shadow:0 2px 4px rgba(30,82,144,.05) !important;}
+.sector-tab:not(.active):hover,.status-tab:not(.active):hover{background:#F7FAFF !important;border-color:#B9CDE5 !important;}
+.sector-tab.active,.status-tab.active{border-color:#2563EB !important;background:#2563EB !important;}
+.status-tab.active[data-s="archived"]{border-color:#475569 !important;background:#475569 !important;}
 .info-banner{background:#E6F0FF !important;color:#67819E !important;}
 
 
@@ -963,6 +1040,12 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
 <link rel="stylesheet" href="admin_appearance.css">
 <script src="admin_appearance.js"></script>
 <link rel="stylesheet" href="admin_unified_ui.css?v=<?= (int)@filemtime(__DIR__ . '/admin_unified_ui.css') ?>">
+<style>
+/* Separated tabs: strip the shared container the theme stylesheets add around the tab pills */
+html body .sector-tabs,html body .status-tabs,
+html[data-theme="dark"] body .sector-tabs,html[data-theme="dark"] body .status-tabs,
+html.dark-theme body .sector-tabs,html.dark-theme body .status-tabs{background:transparent !important;border:0 !important;box-shadow:none !important;padding:0 !important;border-radius:0 !important;gap:8px !important;}
+</style>
 </head>
 <body class="feature-compact">
 
@@ -973,34 +1056,68 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
 <div class="toast error"><i class="fa-solid fa-circle-exclamation"></i><?= htmlspecialchars($toast_error) ?></div>
 <?php endif; ?>
 
-<a href="admin_dashboard.php" class="back-link" onclick="if(window.parent&&window.parent!==window&&window.parent.showPage){window.parent.showPage('dashboard',window.parent.document.getElementById('link-dashboard'));return false;}"><i class="fa-solid fa-arrow-left"></i> Back to Dashboard</a>
 
 
 
+<div class="role-row">
 <div class="sector-tabs">
     <?php foreach ($valid_roles as $r):
         $pendingN = $countGrid[$r]['pending']; ?>
-    <a class="sector-tab role-<?= htmlspecialchars($r, ENT_QUOTES, 'UTF-8') ?> <?= $viewRole===$r?'active':'' ?>" href="manage_privileged_accounts.php?role=<?= $r ?>&status=<?= $viewStatus ?>">
+    <a class="sector-tab role-<?= htmlspecialchars($r, ENT_QUOTES, 'UTF-8') ?> <?= (!$viewArchived && $viewRole===$r)?'active':'' ?>" href="manage_privileged_accounts.php?role=<?= $r ?>&status=<?= $viewStatus ?>">
         <i class="fa-solid <?= $role_icons[$r] ?>"></i> <?= $role_labels[$r] ?>
-        <span class="tab-badge <?= $pendingN > 0 ? 'pending-badge' : '' ?>"><?= $pendingN > 0 ? $pendingN : $roleTotals[$r] ?></span>
     </a>
     <?php endforeach; ?>
 </div>
-
-<div class="status-tabs">
-    <?php foreach ($valid_statuses as $s): ?>
-    <a class="status-tab status-<?= htmlspecialchars($s, ENT_QUOTES, 'UTF-8') ?> <?= $viewStatus===$s?'active':'' ?>" data-s="<?= $s ?>" href="manage_privileged_accounts.php?role=<?= $viewRole ?>&status=<?= $s ?>">
-        <i class="fa-solid <?= $status_icons[$s] ?>"></i> <?= $status_labels[$s] ?>
-        <span class="tab-badge"><?= $countGrid[$viewRole][$s] ?></span>
-    </a>
-    <?php endforeach; ?>
+    <!-- Archived sits opposite the Student tab (right side) -->
+    <div class="status-tabs archive-tab-wrap">
+        <a class="status-tab status-archived <?= $viewArchived ? 'active' : '' ?>" data-s="archived" href="manage_privileged_accounts.php?role=all&status=<?= htmlspecialchars($viewStatus, ENT_QUOTES, 'UTF-8') ?>&archived=1">
+            <i class="fa-solid fa-box-archive"></i> Archived
+            <span class="tab-badge"><?= $archivedTotal ?></span>
+        </a>
+    </div>
 </div>
 
+<?php $statusLinkRole = ($viewRole === 'all') ? 'teacher' : $viewRole; ?>
+<div class="status-row">
+    <div class="status-tabs">
+        <?php foreach ($valid_statuses as $s): ?>
+        <a class="status-tab status-<?= htmlspecialchars($s, ENT_QUOTES, 'UTF-8') ?> <?= (!$viewArchived && $viewStatus===$s)?'active':'' ?>" data-s="<?= $s ?>" href="manage_privileged_accounts.php?role=<?= $statusLinkRole ?>&status=<?= $s ?>">
+            <i class="fa-solid <?= $status_icons[$s] ?>"></i> <?= $status_labels[$s] ?>
+            <?php if (!$viewArchived): ?><span class="tab-badge"><?= $viewCounts[$s] ?></span><?php endif; ?>
+        </a>
+        <?php endforeach; ?>
+    </div>
+</div>
+
+<?php if ($viewArchived): ?>
+<!-- ARCHIVE PANEL: a framed section inside the page with its own role filter tabs -->
+<div class="archive-panel">
+    <div class="archive-panel-head">
+        <div>
+            <div class="archive-panel-title"><i class="fa-solid fa-box-archive"></i> Archived Accounts</div>
+            <div class="archive-panel-sub">Archived accounts can't log in and are hidden from the regular lists. Their evaluation records are preserved, and you can restore them any time.</div>
+        </div>
+        <div class="archive-panel-total"><span><?= $archivedTotal ?></span> total</div>
+    </div>
+    <div class="sector-tabs archive-subtabs">
+        <a class="sector-tab role-all <?= $viewRole==='all'?'active':'' ?>" href="manage_privileged_accounts.php?role=all&status=<?= $viewStatus ?>&archived=1">
+            <i class="fa-solid fa-layer-group"></i> All
+            <span class="tab-badge"><?= $archivedTotal ?></span>
+        </a>
+        <?php foreach ($valid_roles as $r): ?>
+        <a class="sector-tab role-<?= htmlspecialchars($r, ENT_QUOTES, 'UTF-8') ?> <?= $viewRole===$r?'active':'' ?>" href="manage_privileged_accounts.php?role=<?= $r ?>&status=<?= $viewStatus ?>&archived=1">
+            <i class="fa-solid <?= $role_icons[$r] ?>"></i> <?= $role_labels[$r] ?>
+            <span class="tab-badge"><?= $archivedByRole[$r] ?></span>
+        </a>
+        <?php endforeach; ?>
+    </div>
+<?php else: ?>
 <div class="stats-row">
-    <div class="stat-card amber-card"><div class="stat-label">Pending</div><div class="stat-value amber"><?= $countGrid[$viewRole]['pending'] ?></div></div>
-    <div class="stat-card green-card"><div class="stat-label">Approved</div><div class="stat-value green"><?= $countGrid[$viewRole]['approved'] ?></div></div>
-    <div class="stat-card red-card"><div class="stat-label">Blocked</div><div class="stat-value red"><?= $countGrid[$viewRole]['blocked'] ?></div></div>
+    <div class="stat-card amber-card"><div class="stat-label">Pending</div><div class="stat-value amber"><?= $viewCounts['pending'] ?></div></div>
+    <div class="stat-card green-card"><div class="stat-label">Approved</div><div class="stat-value green"><?= $viewCounts['approved'] ?></div></div>
+    <div class="stat-card red-card"><div class="stat-label">Blocked</div><div class="stat-value red"><?= $viewCounts['blocked'] ?></div></div>
 </div>
+<?php endif; ?>
 
 <?php if ($viewRole === 'student'): ?>
 <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
@@ -1012,7 +1129,7 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
         <?php endforeach; ?>
     </select>
     <?php if ($levelFilter !== ''): ?>
-    <a href="manage_privileged_accounts.php?role=student&status=<?= $viewStatus ?>" style="font-size:12px;color:var(--text-dim);text-decoration:none;">Clear</a>
+    <a href="manage_privileged_accounts.php?role=student&status=<?= $viewStatus ?><?= $viewArchived ? '&archived=1' : '' ?>" style="font-size:12px;color:var(--text-dim);text-decoration:none;">Clear</a>
     <?php endif; ?>
 </div>
 <?php endif; ?>
@@ -1045,13 +1162,15 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
 </div>
 <?php endif; ?>
 
+<?php $showDesig = in_array($viewRole, ['principal','dean','teacher','staff'], true); ?>
 <div class="table-wrap">
 <table>
     <thead>
         <tr>
-            <th style="width:36px;"><input type="checkbox" id="selectAllCb" onchange="toggleSelectAll(this)"/></th>
+            <th style="width:36px;"><input type="checkbox" id="selectAllCb" onchange="toggleSelectAll(this)" <?= $viewArchived ? 'disabled' : '' ?>/></th>
             <th>#</th><th>Name</th><th>Username</th>
-            <?php if ($viewRole === 'teacher' || $viewRole === 'staff'): ?><th>Designation</th><?php endif; ?>
+            <?php if ($viewRole === 'all'): ?><th>Role</th><?php endif; ?>
+            <?php if ($showDesig): ?><th>Designation</th><?php endif; ?>
             <?php if ($viewRole === 'student'): ?><th>Year Level</th><?php endif; ?>
             <?php if ($viewRole === 'teacher' || $viewRole === 'staff'): ?><th>Year Level(s)</th><th>Period</th><?php endif; ?>
             <th>Status</th><th>Registered</th><th>Actions</th>
@@ -1060,25 +1179,30 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
     <tbody>
     <?php
     $colspan = 7;
+    if ($viewRole === 'all') $colspan = 8; // +1 for Role
     if ($viewRole === 'student') $colspan = 8;
     if ($viewRole === 'teacher' || $viewRole === 'staff') $colspan = 10; // +1 for Designation
+    if ($viewRole === 'principal' || $viewRole === 'dean') $colspan = 8; // +1 for Designation
     ?>
     <?php if (empty($entries)): ?>
     <tr><td colspan="<?= $colspan ?>">
         <div class="empty-state">
             <i class="fa-solid fa-user-slash"></i>
-            <p><?= $levelFilter !== '' ? 'No '.$role_labels[$viewRole].' match that school level.' : ($ylFilter !== '' ? 'No '.$role_labels[$viewRole].' match that year level.' : 'No '.strtolower($status_labels[$viewStatus]).' '.$role_labels[$viewRole].' accounts.') ?></p>
+            <p><?= $viewArchived ? ($viewRole === 'all' ? 'No archived accounts.' : 'No archived ' . strtolower($role_labels[$viewRole]) . ' accounts.') : ($levelFilter !== '' ? 'No '.$role_labels[$viewRole].' match that school level.' : ($ylFilter !== '' ? 'No '.$role_labels[$viewRole].' match that year level.' : 'No '.strtolower($status_labels[$viewStatus]).' '.$role_labels[$viewRole].' accounts.')) ?></p>
         </div>
     </td></tr>
     <?php else: foreach ($entries as $i => $u): ?>
     <tr id="row-<?= $u['id'] ?>">
         <td>
-            <input type="checkbox" class="rowCb" value="<?= $u['id'] ?>" onchange="updateBulkBar()"/>
+            <input type="checkbox" class="rowCb" value="<?= $u['id'] ?>" onchange="updateBulkBar()" <?= $viewArchived ? 'disabled' : '' ?>/>
         </td>
         <td style="color:var(--text-dim);font-size:13px;"><?= $i+1 ?></td>
         <td><div class="user-name"><?= htmlspecialchars($u['full_name']) ?></div></td>
         <td><span class="user-username">@<?= htmlspecialchars($u['username']) ?></span></td>
-        <?php if ($viewRole === 'teacher' || $viewRole === 'staff'): ?>
+        <?php if ($viewRole === 'all'): ?>
+        <td><span class="role-pill role-<?= htmlspecialchars($u['role'], ENT_QUOTES, 'UTF-8') ?>"><i class="fa-solid <?= $role_icons[$u['role']] ?? 'fa-user' ?>"></i> <?= htmlspecialchars($role_labels[$u['role']] ?? ucfirst($u['role'])) ?></span></td>
+        <?php endif; ?>
+        <?php if ($showDesig): ?>
         <?php $desig = trim((string)($u['designation'] ?? '')); ?>
         <td class="designation-cell"<?= $desig !== '' ? ' title="' . htmlspecialchars($desig) . '"' : '' ?>>
             <?php if ($desig !== ''): ?>
@@ -1130,39 +1254,40 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
         <td style="font-size:13px;color:var(--text-dim);"><?= date('M d, Y', strtotime($u['created_at'])) ?></td>
         <td>
             <div class="action-wrap">
-                <?php if ($u['account_status'] !== 'approved'): ?>
-                <button class="btn-icon approve" title="Approve" onclick='openConfirmModal("approve_account", [<?= $u["id"] ?>], <?= json_encode("Approve " . $u["full_name"] . "'s account? They will be able to log in immediately.", JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
-                    <i class="fa-solid fa-check"></i>
+                <?php if ($viewArchived): ?>
+                <button class="btn-icon" title="Restore Account" style="border-color:var(--success-border);color:var(--success);"
+                        onclick='confirmArchive(<?= (int)$u["id"] ?>, <?= json_encode($u["full_name"], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) ?>, true)'>
+                    <i class="fa-solid fa-box-open"></i>
                 </button>
+                <?php else: ?>
+                    <?php if ($u['account_status'] !== 'approved'): ?>
+                    <button class="btn-icon approve" title="Approve" onclick='openConfirmModal("approve_account", [<?= $u["id"] ?>], <?= json_encode("Approve " . $u["full_name"] . "'s account? They will be able to log in immediately.", JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
+                        <i class="fa-solid fa-check"></i>
+                    </button>
+                    <?php endif; ?>
+                    <?php if ($u['account_status'] !== 'blocked'): ?>
+                    <button class="btn-icon block" title="Block" onclick='openConfirmModal("block_account", [<?= $u["id"] ?>], <?= json_encode("Block " . $u["full_name"] . "'s account? They will lose access immediately.", JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
+                        <i class="fa-solid fa-ban"></i>
+                    </button>
+                    <?php endif; ?>
+                    <?php if ($viewRole === 'teacher' || $viewRole === 'staff'): ?>
+                    <button class="btn-icon" title="Assign Year Levels" style="border-color:var(--accent-border);color:var(--accent);"
+                            onclick='openYlModal(<?= json_encode(["id"=>$u["id"],"full_name"=>$u["full_name"],"year_levels"=>$u["year_levels"]], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) ?>)'>
+                        <i class="fa-solid fa-layer-group"></i>
+                    </button>
+                    <?php if ($u['has_college']): ?>
+                    <button class="btn-icon" title="Assign Period" style="border-color:var(--teal-border);color:var(--teal);"
+                            onclick='openPeriodModal(<?= json_encode(["id"=>$u["id"],"full_name"=>$u["full_name"],"assigned_period"=>$u["assigned_period"]], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) ?>)'>
+                        <i class="fa-solid fa-calendar-days"></i>
+                    </button>
+                    <?php endif; ?>
+                    <?php endif; ?>
+                    <span class="action-divider"></span>
+                    <button class="btn-icon" title="Archive Account" style="border-color:var(--amber-border);color:var(--amber);"
+                            onclick='confirmArchive(<?= (int)$u["id"] ?>, <?= json_encode($u["full_name"], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) ?>, false)'>
+                        <i class="fa-solid fa-box-archive"></i>
+                    </button>
                 <?php endif; ?>
-                <?php if ($u['account_status'] !== 'blocked'): ?>
-                <button class="btn-icon block" title="Block" onclick='openConfirmModal("block_account", [<?= $u["id"] ?>], <?= json_encode("Block " . $u["full_name"] . "'s account? They will lose access immediately.", JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
-                    <i class="fa-solid fa-ban"></i>
-                </button>
-                <?php endif; ?>
-                <?php if ($viewRole === 'teacher' || $viewRole === 'staff'): ?>
-                <button class="btn-icon" title="Assign Year Levels" style="border-color:var(--accent-border);color:var(--accent);"
-                        onclick='openYlModal(<?= json_encode(["id"=>$u["id"],"full_name"=>$u["full_name"],"year_levels"=>$u["year_levels"]], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) ?>)'>
-                    <i class="fa-solid fa-layer-group"></i>
-                </button>
-                <?php if ($u['has_college']): ?>
-                <button class="btn-icon" title="Assign Period" style="border-color:var(--teal-border);color:var(--teal);"
-                        onclick='openPeriodModal(<?= json_encode(["id"=>$u["id"],"full_name"=>$u["full_name"],"assigned_period"=>$u["assigned_period"]], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) ?>)'>
-                    <i class="fa-solid fa-calendar-days"></i>
-                </button>
-                <?php endif; ?>
-                <?php endif; ?>
-                <?php if ($u['account_status'] === 'approved'): ?>
-                <button class="btn-icon <?= $u['is_active'] ? 'toggle-off' : 'toggle-on' ?>" title="<?= $u['is_active']?'Deactivate':'Activate' ?>"
-                        onclick='openToggleModal(<?= $u["id"] ?>, <?= json_encode($u["full_name"], JSON_HEX_APOS | JSON_HEX_QUOT) ?>, <?= $u['is_active'] ? 'true' : 'false' ?>)'>
-                    <i class="fa-solid <?= $u['is_active']?'fa-user-slash':'fa-user-check' ?>"></i>
-                </button>
-                <?php endif; ?>
-                <span class="action-divider"></span>
-                <button class="btn-icon danger" title="Delete"
-                        onclick="confirmDelete(<?= $u['id'] ?>, '<?= htmlspecialchars(addslashes($u['full_name'])) ?>')">
-                    <i class="fa-solid fa-trash-can"></i>
-                </button>
             </div>
         </td>
     </tr>
@@ -1170,6 +1295,9 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
     </tbody>
 </table>
 </div>
+<?php if ($viewArchived): ?>
+</div><!-- /.archive-panel -->
+<?php endif; ?>
 
 <!-- EDIT MODAL -->
 <div class="modal-overlay" id="editModal">
@@ -1324,7 +1452,6 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
         <input type="hidden" name="action" id="confirmActionInput"/>
         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>"/>
         <input type="hidden" name="user_id" id="confirmSingleUserId"/>
-        <input type="hidden" name="toggle_id" id="confirmToggleIdInput"/>
         <div id="confirmBulkIdsContainer"></div>
         <div class="modal-actions">
             <button type="button" class="btn-cancel" onclick="closeModal('confirmModal')">Cancel</button>
@@ -1334,24 +1461,25 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
 </div>
 </div>
 
-<!-- DELETE MODAL -->
-<div class="modal-overlay" id="deleteModal">
+<!-- STUDENT ARCHIVE / RESTORE MODAL -->
+<div class="modal-overlay" id="archiveModal">
 <div class="modal" style="max-width:400px;">
-    <div class="modal-title" style="margin-bottom:8px;">Delete Account</div>
-    <p id="deleteSubText" style="font-size:13px;color:var(--text-dim);margin-bottom:20px;line-height:1.6;"></p>
+    <div class="modal-title" id="archiveModalTitle" style="margin-bottom:8px;">Archive Account</div>
+    <p id="archiveSubText" style="font-size:13px;color:var(--text-dim);margin-bottom:20px;line-height:1.6;"></p>
     <div class="modal-actions">
-        <button class="btn-cancel" onclick="closeModal('deleteModal')">Cancel</button>
-        <button class="btn-confirm-del" onclick="doDelete()">Yes, Delete</button>
+        <button class="btn-cancel" onclick="closeModal('archiveModal')">Cancel</button>
+        <button class="btn-confirm-del" id="archiveSubmitBtn" onclick="doArchive()">Yes, Archive</button>
     </div>
 </div>
 </div>
-<form method="POST" id="deleteForm" action="manage_privileged_accounts.php?role=<?= $viewRole ?>&status=<?= $viewStatus ?>" style="display:none;">
-    <input type="hidden" name="action" value="delete_account"/>
+<form method="POST" id="archiveForm" action="manage_privileged_accounts.php?role=<?= $viewRole ?>&status=<?= $viewStatus ?><?= $viewArchived ? '&archived=1' : '' ?>" style="display:none;">
+    <input type="hidden" name="action" id="archiveActionInput" value="archive_account"/>
     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>"/>
-    <input type="hidden" name="delete_id" id="deleteIdInput"/>
+    <input type="hidden" name="archive_id" id="archiveIdInput"/>
 </form>
 
 <!-- BULK ACTION BAR -->
+<?php if (!$viewArchived): ?>
 <div class="bulk-bar" id="bulkBar">
     <span id="bulkCount">0 selected</span>
     <?php if ($viewStatus !== 'approved'): ?>
@@ -1372,6 +1500,7 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
     <?php endif; ?>
     <button class="bulk-btn clear" onclick="clearSelection()">Clear</button>
 </div>
+<?php endif; ?>
 
 <form method="POST" id="bulkPeriodForm" action="manage_privileged_accounts.php?role=<?= $viewRole ?>&status=<?= $viewStatus ?><?= $ylFilter ? '&yl='.urlencode($ylFilter) : '' ?>" style="display:none;">
     <input type="hidden" name="action" value="bulk_assign_period"/>
@@ -1423,9 +1552,41 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
 </div>
 
 <script>
-let _deleteId = null;
-function openModal(id){document.getElementById(id).classList.add('open');}
-function closeModal(id){document.getElementById(id).classList.remove('open');}
+let _archiveId = null;
+// ── Full-page dim ────────────────────────────────────────────────
+// This page runs inside the dashboard's iframe. While a modal is open we ask
+// the dashboard (admin_dashboard.php -> pbiFrameDim) to draw ONE plain dim over
+// the whole window — sidebar, top bar, this page and its scrollbar — leaving
+// only the modal card undimmed, exactly like the logout dialog. This page's
+// own overlay then goes transparent. Opened on its own (no dashboard), nothing
+// changes and the normal overlay dim is used.
+function pbiModalRect(){
+    const m = document.querySelector('.modal-overlay.open .modal');
+    if (!m) return null;
+    const r = m.getBoundingClientRect();
+    return {x:r.left, y:r.top, w:r.width, h:r.height, r:parseFloat(getComputedStyle(m).borderTopLeftRadius) || 0};
+}
+function pbiCloseAllModals(){
+    document.querySelectorAll('.modal-overlay.open').forEach(el => closeModal(el.id));
+}
+function pbiParentDim(on){
+    try {
+        if (window.parent !== window && typeof window.parent.pbiFrameDim === 'function') {
+            window.parent.pbiFrameDim(on, window.frameElement, on ? pbiModalRect() : null, pbiCloseAllModals);
+            document.documentElement.classList.toggle('pbi-parent-dims', !!on);
+        }
+    } catch (e) { /* cross-origin or no parent */ }
+}
+// Form submits reload the iframe; never leave the dashboard dimmed behind.
+window.addEventListener('pagehide', () => pbiParentDim(false));
+window.addEventListener('resize', () => { if (document.querySelector('.modal-overlay.open')) pbiParentDim(true); });
+pbiParentDim(false);
+
+function openModal(id){document.getElementById(id).classList.add('open'); pbiParentDim(true);}
+function closeModal(id){
+    document.getElementById(id).classList.remove('open');
+    if (!document.querySelector('.modal-overlay.open')) pbiParentDim(false);
+}
 document.querySelectorAll('.modal-overlay').forEach(el=>el.addEventListener('click',e=>{if(e.target===el)closeModal(el.id);}));
 
 function openEditModal(u){
@@ -1463,34 +1624,29 @@ function openPeriodModal(u){
     openModal('periodModal');
 }
 
-// ── SINGLE approve/block/toggle confirmation ───────────────────
+// ── SINGLE / BULK approve & block confirmation ─────────────────
 function openConfirmModal(action, ids, message){
-    const titles = {approve_account:'Approve Account', bulk_approve:'Approve Accounts', block_account:'Block Account', bulk_block:'Block Accounts', toggle_active_on:'Activate Account', toggle_active_off:'Deactivate Account'};
+    const titles = {approve_account:'Approve Account', bulk_approve:'Approve Accounts', block_account:'Block Account', bulk_block:'Block Accounts'};
     document.getElementById('confirmTitle').textContent = titles[action] || 'Confirm';
     document.getElementById('confirmText').textContent = message;
-    document.getElementById('confirmActionInput').value = action === 'toggle_active_on' || action === 'toggle_active_off' ? 'toggle_active' : action;
+    document.getElementById('confirmActionInput').value = action;
 
     const btn = document.getElementById('confirmSubmitBtn');
     const btnStyles = {
         approve_account:['btn-confirm-approve','Yes, Approve'], bulk_approve:['btn-confirm-approve','Yes, Approve'],
-        block_account:['btn-confirm-del','Yes, Block'], bulk_block:['btn-confirm-del','Yes, Block'],
-        toggle_active_on:['btn-confirm-approve','Yes, Activate'], toggle_active_off:['btn-confirm-del','Yes, Deactivate']
+        block_account:['btn-confirm-del','Yes, Block'], bulk_block:['btn-confirm-del','Yes, Block']
     };
     const [cls, label] = btnStyles[action] || ['btn-confirm-approve','Yes, Confirm'];
     btn.className = cls;
     btn.textContent = label;
 
     const singleField = document.getElementById('confirmSingleUserId');
-    const toggleField = document.getElementById('confirmToggleIdInput');
     const bulkContainer = document.getElementById('confirmBulkIdsContainer');
     bulkContainer.innerHTML = '';
     singleField.value = '';
-    toggleField.value = '';
 
     if (action === 'approve_account' || action === 'block_account') {
         singleField.value = ids[0];
-    } else if (action === 'toggle_active_on' || action === 'toggle_active_off') {
-        toggleField.value = ids[0];
     } else {
         ids.forEach(id => {
             const inp = document.createElement('input');
@@ -1499,14 +1655,6 @@ function openConfirmModal(action, ids, message){
         });
     }
     openModal('confirmModal');
-}
-
-function openToggleModal(id, name, isActive){
-    const action = isActive ? 'toggle_active_off' : 'toggle_active_on';
-    const message = isActive
-        ? `Deactivate ${name}'s account? They will lose access until reactivated — this is reversible any time.`
-        : `Activate ${name}'s account? They will be able to log in again immediately.`;
-    openConfirmModal(action, [id], message);
 }
 
 function bulkConfirm(action){
@@ -1529,15 +1677,22 @@ function applyLevelFilter(val){
     window.location.href = url.toString();
 }
 
-function confirmDelete(id,name){
-    document.getElementById('deleteSubText').textContent=`Permanently delete "${name}"'s account? This cannot be undone.`;
-    _deleteId = id;
-    openModal('deleteModal');
+function confirmArchive(id, name, restore = false){
+    _archiveId = id;
+    document.getElementById('archiveModalTitle').textContent = restore ? 'Restore Account' : 'Archive Account';
+    document.getElementById('archiveSubText').textContent = restore
+        ? `Restore "${name}" from the archive? The account will return to its original approval-status tab.`
+        : `Archive "${name}"? This removes the account from the regular status tabs and disables access, while preserving account details and evaluation records.`;
+    document.getElementById('archiveActionInput').value = restore ? 'restore_account' : 'archive_account';
+    const submit = document.getElementById('archiveSubmitBtn');
+    submit.textContent = restore ? 'Yes, Restore' : 'Yes, Archive';
+    submit.className = restore ? 'btn-confirm-approve' : 'btn-confirm-del';
+    openModal('archiveModal');
 }
-function doDelete(){
-    if(_deleteId===null) return;
-    document.getElementById('deleteIdInput').value = _deleteId;
-    document.getElementById('deleteForm').submit();
+function doArchive(){
+    if (_archiveId === null) return;
+    document.getElementById('archiveIdInput').value = _archiveId;
+    document.getElementById('archiveForm').submit();
 }
 
 function togglePw(inputId, btn){

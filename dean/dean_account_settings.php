@@ -68,16 +68,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = 'Full name must be 150 characters or fewer.';
             }
 
+            if ($newDesignation === '') {
+                $errors[] = "Designation can't be empty.";
+            } elseif (mb_strlen($newDesignation) > 100) {
+                $errors[] = 'Designation must be 100 characters or fewer.';
+            }
+
             if ($newUsername === '') {
                 $errors[] = "Username can't be empty.";
             } elseif (mb_strlen($newUsername) > 50) {
                 $errors[] = 'Username must be 50 characters or fewer.';
             } elseif (preg_match('/\s/', $newUsername)) {
                 $errors[] = 'Username cannot contain spaces.';
-            }
-
-            if (mb_strlen($newDesignation) > 100) {
-                $errors[] = 'Designation must be 100 characters or fewer.';
             }
 
             if (!$errors) {
@@ -207,7 +209,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $photoUrl = !empty($me['photo']) ? UPLOAD_URL . $me['photo'] : UPLOAD_URL . 'pbi_logo';
-$displayDesignation = trim((string)($me['designation'] ?? '')) ?: 'Dean';
+$displayDesignation = trim((string)($me['designation'] ?? '')) !== '' ? $me['designation'] : 'Dean';
+
+// Which tab to show: after saving anything on the Profile tab, stay on it.
+$activeTab = ($_SERVER['REQUEST_METHOD'] !== 'POST' && ($_GET['tab'] ?? '') === 'appearance')
+           ? 'appearance' : 'profile';
 
 $active = 'settings';
 $sidebarScope = 'Higher Education Division';
@@ -326,6 +332,17 @@ if(localStorage.getItem('dean_reduce_motion')==='1')d.classList.add('dean-reduce
     <?php if ($success): ?><div class="alert success"><i class="fa-solid fa-circle-check"></i><?= htmlspecialchars($success) ?></div><?php endif; ?>
     <?php foreach ($errors as $err): ?><div class="alert error"><i class="fa-solid fa-circle-exclamation"></i><?= htmlspecialchars($err) ?></div><?php endforeach; ?>
 
+    <div class="ac-tabs" role="tablist" aria-label="Settings sections">
+        <button type="button" class="ac-tab<?= $activeTab === 'profile' ? ' active' : '' ?>" role="tab" id="tabBtnProfile" data-tab="profile" aria-controls="tab-profile" aria-selected="<?= $activeTab === 'profile' ? 'true' : 'false' ?>">
+            <i class="fa-solid fa-user-gear"></i> Profile &amp; Security
+        </button>
+        <button type="button" class="ac-tab<?= $activeTab === 'appearance' ? ' active' : '' ?>" role="tab" id="tabBtnAppearance" data-tab="appearance" aria-controls="tab-appearance" aria-selected="<?= $activeTab === 'appearance' ? 'true' : 'false' ?>">
+            <i class="fa-solid fa-palette"></i> Appearance
+        </button>
+    </div>
+
+    <!-- TAB 1: APPEARANCE -->
+    <div class="ac-tabpanel<?= $activeTab === 'appearance' ? ' active' : '' ?>" id="tab-appearance" role="tabpanel" aria-labelledby="tabBtnAppearance"<?= $activeTab === 'appearance' ? '' : ' hidden' ?>>
     <div class="section appearance-settings-section ac-card ac-c1" id="dean-appearance-settings">
         <div class="appearance-heading-row ac-head">
             <span class="ac-icon"><i class="fa-solid fa-palette"></i></span>
@@ -396,6 +413,10 @@ if(localStorage.getItem('dean_reduce_motion')==='1')d.classList.add('dean-reduce
         </div>
     </div>
 
+    </div><!-- /#tab-appearance -->
+
+    <!-- TAB 2: PROFILE PHOTO, PROFILE DETAILS, CHANGE PASSWORD -->
+    <div class="ac-tabpanel<?= $activeTab === 'profile' ? ' active' : '' ?>" id="tab-profile" role="tabpanel" aria-labelledby="tabBtnProfile"<?= $activeTab === 'profile' ? '' : ' hidden' ?>>
     <div class="section ac-card ac-c2">
         <div class="ac-head">
             <span class="ac-icon"><i class="fa-solid fa-id-badge"></i></span>
@@ -423,7 +444,7 @@ if(localStorage.getItem('dean_reduce_motion')==='1')d.classList.add('dean-reduce
             <span class="ac-icon"><i class="fa-solid fa-user-pen"></i></span>
             <div>
                 <h2>Profile Details</h2>
-                <p class="ac-sub">Update your name, username and designation.</p>
+                <p class="ac-sub">Update your name, username, and designation.</p>
             </div>
         </div>
         <form method="post">
@@ -432,7 +453,7 @@ if(localStorage.getItem('dean_reduce_motion')==='1')d.classList.add('dean-reduce
             <div class="form-grid">
                 <div class="form-group"><label>Full Name</label><input type="text" name="full_name" maxlength="150" value="<?= htmlspecialchars($me['full_name'] ?? '') ?>" required></div>
                 <div class="form-group"><label>Username</label><input type="text" name="username" maxlength="50" value="<?= htmlspecialchars($me['username'] ?? '') ?>" required autocomplete="username"></div>
-                <div class="form-group"><label>Designation</label><input type="text" name="designation" maxlength="100" value="<?= htmlspecialchars($me['designation'] ?? '') ?>"></div>
+                <div class="form-group"><label>Designation</label><input type="text" name="designation" maxlength="100" value="<?= htmlspecialchars(($me['designation'] ?? '') !== '' ? $me['designation'] : 'Dean') ?>" placeholder="e.g. Dean" required></div>
             </div>
             <button class="btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button>
         </form>
@@ -450,14 +471,15 @@ if(localStorage.getItem('dean_reduce_motion')==='1')d.classList.add('dean-reduce
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
             <input type="hidden" name="action" value="change_password">
             <div class="form-grid">
-                <div class="form-group"><label>Current Password</label><input type="password" name="current_password" minlength="1" required autocomplete="current-password"></div>
+                <div class="form-group"><label>Current Password</label><div class="pw-wrap"><input type="password" name="current_password" minlength="1" required autocomplete="current-password"><button type="button" class="pw-toggle" aria-label="Show password" aria-pressed="false"><svg class="pw-eye" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="pw-eye-off" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19C5 19 1 12 1 12a18.5 18.5 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12A3 3 0 1 1 9.88 9.88"/><line x1="1" y1="1" x2="23" y2="23"/></svg></button></div></div>
                 <div class="form-group"></div>
-                <div class="form-group"><label>New Password</label><input type="password" name="new_password" minlength="8" required autocomplete="new-password"></div>
-                <div class="form-group"><label>Confirm New Password</label><input type="password" name="confirm_password" minlength="8" required autocomplete="new-password"></div>
+                <div class="form-group"><label>New Password</label><div class="pw-wrap"><input type="password" name="new_password" minlength="8" required autocomplete="new-password"><button type="button" class="pw-toggle" aria-label="Show password" aria-pressed="false"><svg class="pw-eye" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="pw-eye-off" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19C5 19 1 12 1 12a18.5 18.5 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12A3 3 0 1 1 9.88 9.88"/><line x1="1" y1="1" x2="23" y2="23"/></svg></button></div></div>
+                <div class="form-group"><label>Confirm New Password</label><div class="pw-wrap"><input type="password" name="confirm_password" minlength="8" required autocomplete="new-password"><button type="button" class="pw-toggle" aria-label="Show password" aria-pressed="false"><svg class="pw-eye" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="pw-eye-off" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19C5 19 1 12 1 12a18.5 18.5 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12A3 3 0 1 1 9.88 9.88"/><line x1="1" y1="1" x2="23" y2="23"/></svg></button></div></div>
             </div>
             <button class="btn-primary" type="submit"><i class="fa-solid fa-key"></i> Update Password</button>
         </form>
     </div>
+    </div><!-- /#tab-profile -->
 </main>
 <script>
 /* Dean appearance controls — same options as the Principal settings page. */
@@ -520,6 +542,74 @@ if(localStorage.getItem('dean_reduce_motion')==='1')d.classList.add('dean-reduce
     paintDensity(get(KEY_DENSITY,'comfortable')==='compact'?'compact':'comfortable');
     paintMotion(get(KEY_MOTION,'0')==='1');
   });
+})();
+</script>
+<style id="dean-password-toggle">
+main.main .pw-wrap{position:relative;display:block;}
+main.main .pw-wrap input{width:100%;padding-right:46px !important;}
+main.main .pw-toggle{position:absolute;top:50%;right:8px;transform:translateY(-50%);width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:0;border-radius:8px;background:transparent;color:#64748B;cursor:pointer;padding:0;}
+main.main .pw-toggle .pw-eye{display:none;}
+main.main .pw-toggle .pw-eye-off{display:block;}
+main.main .pw-toggle[aria-pressed="true"] .pw-eye{display:block;}
+main.main .pw-toggle[aria-pressed="true"] .pw-eye-off{display:none;}
+main.main .pw-toggle:hover{color:#5F45B8;background:rgba(124,95,217,.12);}
+main.main .pw-toggle:focus-visible{outline:2px solid #7C5FD9;outline-offset:1px;}
+</style>
+<script>
+/* Settings tabs: Profile & Security | Appearance */
+(function(){
+    var tabs = Array.prototype.slice.call(document.querySelectorAll('.ac-tab'));
+    var panels = Array.prototype.slice.call(document.querySelectorAll('.ac-tabpanel'));
+    function show(name, focus){
+        tabs.forEach(function(t){
+            var on = t.getAttribute('data-tab') === name;
+            t.classList.toggle('active', on);
+            t.setAttribute('aria-selected', on ? 'true' : 'false');
+            t.tabIndex = on ? 0 : -1;
+            if (on && focus) t.focus();
+        });
+        panels.forEach(function(p){
+            var on = p.id === 'tab-' + name;
+            p.classList.toggle('active', on);
+            p.hidden = !on;
+        });
+        try { history.replaceState(null, '', '?tab=' + name); } catch(e){}
+    }
+    tabs.forEach(function(t, i){
+        t.addEventListener('click', function(){ show(t.getAttribute('data-tab')); });
+        t.addEventListener('keydown', function(e){
+            if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+            var n = (i + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+            show(tabs[n].getAttribute('data-tab'), true);
+        });
+    });
+    tabs.forEach(function(t){ if (!t.classList.contains('active')) t.tabIndex = -1; });
+})();
+</script>
+<script>
+document.querySelectorAll('.pw-toggle').forEach(function(btn){
+    btn.addEventListener('click', function(){
+        var input = btn.parentElement.querySelector('input');
+        var show = input.type === 'password';
+        input.type = show ? 'text' : 'password';
+        btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+        btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    });
+});
+</script>
+<script id="dean-rename-settings-label">
+/* Sidebar/header label: "Account Settings" -> "Settings" (stopgap until includes/dean_sidebar.php is edited). */
+(function(){
+    function rename(){
+        var w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT,{acceptNode:function(n){
+            var p=n.parentNode&&n.parentNode.nodeName;
+            return (p==='SCRIPT'||p==='STYLE'||p==='TEXTAREA')?NodeFilter.FILTER_REJECT:NodeFilter.FILTER_ACCEPT;
+        }});
+        var n,list=[];
+        while((n=w.nextNode())){ if(n.nodeValue.trim()==='Account Settings') list.push(n); }
+        list.forEach(function(t){ t.nodeValue=t.nodeValue.replace('Account Settings','Settings'); });
+    }
+    if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',rename); else rename();
 })();
 </script>
 </body>
@@ -648,6 +738,16 @@ html.dean-reduce-motion *,html.dean-reduce-motion *::before,html.dean-reduce-mot
   .appearance-device-badge{display:none;}
 }
 @media print{html:not(.dark-theme) main.main{margin:0 !important;background:#fff !important;}}
+
+/* ── Settings tabs ───────────────────────────────────────────── */
+.ac-tabs{display:flex;gap:6px;margin:0 0 22px;padding:5px;width:fit-content;max-width:100%;overflow-x:auto;border-radius:14px;background:var(--ap-card,#fff);border:1px solid var(--ap-line,#E2E8F0);}
+.ac-tab{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border:0;border-radius:10px;background:transparent;color:var(--ap-muted,#64748B);font:600 13.5px 'DM Sans',sans-serif;cursor:pointer;white-space:nowrap;transition:background .2s,color .2s;}
+.ac-tab i{font-size:14px;}
+.ac-tab:hover{color:var(--ap-accent,#7C5FD9);background:var(--ap-accent-bg,rgba(124,95,217,.10));}
+.ac-tab.active{background:#7C5FD9;color:#fff;box-shadow:0 4px 14px rgba(124,95,217,.25);}
+.ac-tab:focus-visible{outline:2px solid #7C5FD9;outline-offset:2px;}
+.ac-tabpanel[hidden]{display:none !important;}
+@media(max-width:600px){.ac-tabs{width:100%;}.ac-tab{flex:1;justify-content:center;padding:10px 12px;}}
 </style>
 </html>
 <?php $mysqli->close(); ?>

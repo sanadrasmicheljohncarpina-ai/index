@@ -21,7 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $mysqli->prepare(
             "SELECT id, full_name, password_hash, role, designation, account_status, is_active
              FROM users
-             WHERE BINARY username = ? AND role = 'teacher' AND is_active = 1
+             WHERE BINARY username = ? AND role = 'teacher'
              LIMIT 1"
         );
 
@@ -38,12 +38,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 if (!$user) {
                     $error = 'Incorrect username or password. Please try again.';
-                } elseif ($user['account_status'] !== 'approved') {
-                    $error = $user['account_status'] === 'pending'
-                        ? 'Your account is awaiting admin approval. You will be able to log in once it is approved.'
-                        : 'Your account has been blocked. Please contact the administrator.';
+                } elseif ($user['account_status'] === 'pending') {
+                    $error = 'Your account is awaiting admin approval. You will be able to log in once it is approved.';
                 } elseif (!password_verify($password, $user['password_hash'])) {
                     $error = 'Incorrect username or password. Please try again.';
+                } elseif ($user['account_status'] !== 'approved' || (int)$user['is_active'] !== 1) {
+                    // Correct credentials, but the account is currently blocked by the Executive Assistant.
+                    $error = 'This account has been blocked by the Executive Assistant. Please contact the administrator.';
                 } else {
 
                     // Keep compatibility with installations that do/don't have

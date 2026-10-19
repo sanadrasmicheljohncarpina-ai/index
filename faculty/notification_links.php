@@ -23,3 +23,14 @@ if (!function_exists('notif_link_for')) {
         return $base . '?page=' . $page;
     }
 }
+
+// Wording used everywhere for "someone evaluated you". The evaluator is never named.
+if (!defined('NOTIF_EVAL_RECEIVED_MSG')) {
+    define('NOTIF_EVAL_RECEIVED_MSG', 'You have received a new evaluation from an anonymous evaluator.');
+}
+if (!function_exists('notif_apply_eval_wording')) {
+    // Keeps old and new evaluation notifications worded the same and anonymous.
+    function notif_apply_eval_wording(array $row, string $message): string {
+        return (($row['type'] ?? '') === 'evaluation_received') ? NOTIF_EVAL_RECEIVED_MSG : $message;
+    }
+}

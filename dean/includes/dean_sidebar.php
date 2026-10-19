@@ -34,7 +34,7 @@ $navItems = [
     'tracker'    => ['dean_evaluation_tracker.php', 'fa-satellite-dish',  'Evaluation Tracker'],
     'results'    => ['dean_results.php',            'fa-star-half-stroke',"Evaluation Received"],
     'reports'    => ['dean_reports.php',            'fa-chart-line',      'Evaluation Reports'],
-    'settings'   => ['dean_account_settings.php',   'fa-gear',            'Account Settings'],
+    'settings'   => ['dean_account_settings.php',   'fa-gear',            'Settings'],
 ];
 ?>
 <aside class="sidebar" id="sidebar">
@@ -55,10 +55,8 @@ $navItems = [
                  onerror="if (this.dataset.fallbackApplied !== '1') { this.dataset.fallbackApplied='1'; this.src='<?= htmlspecialchars($profileFallbackSrc) ?>'; }"/>
         </div>
         <div class="portal-profile-name"><?= htmlspecialchars($me['full_name'] ?? 'Dean') ?></div>
-        <div class="portal-profile-role">DEAN</div>
-        <?php if (!empty($sidebarScope)): ?>
-        <div class="portal-profile-scope"><?= htmlspecialchars($sidebarScope) ?></div>
-        <?php endif; ?>
+        <?php $sidebarDesignation = trim((string)($me['designation'] ?? '')); ?>
+        <div class="portal-profile-role"><?= htmlspecialchars($sidebarDesignation !== '' ? $sidebarDesignation : 'Dean') ?></div>
     </div>
 
     <nav class="sidebar-nav portal-sidebar-nav">

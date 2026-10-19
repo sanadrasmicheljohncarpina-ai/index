@@ -180,6 +180,7 @@ if ($existingAnswers) {
 
 // ── HANDLE SUBMIT ──────────────────────────────────────────────────────
 $errors = [];
+$commentMissing = false;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$existingTracker) {
     // EA Evaluation is intentionally not gated by the global schedule.
     // Re-check question availability and submission rules only.
@@ -196,10 +197,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$existingTracker) {
             $v = isset($ratings[$q['id']]) ? (int)$ratings[$q['id']] : 0;
             if ($v < 1 || $v > 5) { $valid = false; break; }
         }
+        $comment = mb_substr(trim((string) ($_POST['comment'] ?? '')), 0, 2000);
+        // A comment is required. Whitespace-only (incl. non-breaking / zero-width
+        // spaces) counts as empty. This is the authoritative check — the
+        // browser-side check is only a convenience and can be bypassed.
+        $commentMissing = (preg_replace('/[\s\x{00A0}\x{200B}]+/u', '', $comment) === '');
         if (!$valid) {
             $errors[] = 'Please answer every question before submitting.';
-        } else {
-            $comment = mb_substr(trim((string) ($_POST['comment'] ?? '')), 0, 2000);
+        }
+        if ($commentMissing) {
+            $errors[] = 'Please write a comment before submitting. The Comments, Suggestions & Areas for Improvement box is required.';
+        }
+        if (!$errors) {
             $submittedAt = ss_now()->format('Y-m-d H:i:s');
             $mysqli->begin_transaction();
             try {
@@ -356,6 +365,12 @@ html[data-theme="dark"] .eval-validation strong{color:#ffd0d0;}
 .comment-textarea{width:100%;background:var(--ta-bg);border:1px solid var(--ta-line);border-radius:8px;color:var(--ta-color);padding:12px 14px;font-size:13px;font-family:'Inter',sans-serif;resize:vertical;outline:none;transition:border-color .2s;line-height:1.5;min-height:100px;}
 .comment-textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(184,134,11,.14);}
 .comment-textarea::placeholder{color:#64748b;opacity:1;}
+.comment-req{color:#ef4444;margin-left:3px;font-weight:800;}
+.comment-hint{font-size:11.5px;color:var(--muted);margin:8px 0 0;}
+.comment-box.comment-missing{border-color:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.12);}
+.comment-box.comment-missing .comment-textarea{border-color:#ef4444;}
+.comment-box.comment-missing .comment-hint{color:#b91c1c;font-weight:600;}
+html[data-theme="dark"] .comment-box.comment-missing .comment-hint{color:#ff9b9b;}
 .comment-readonly{font-size:13px;color:var(--light);font-style:italic;line-height:1.6;margin:0;}
 
 .summary-line{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:0 0 16px;color:var(--muted);font-size:12px;}
@@ -381,6 +396,18 @@ html:has(body.embed)::-webkit-scrollbar,body.embed::-webkit-scrollbar{display:no
     .modal-footer{display:grid;grid-template-columns:1fr 1.3fr}
     .modal-overlay{padding:10px}
 }
+
+/* Leave-without-submitting confirm (styled like the log out dialog) */
+.leave-dlg-overlay{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;background:var(--overlay)}
+.leave-dlg{width:100%;max-width:420px;background:var(--mid);color:var(--light);border:1px solid var(--modal-border);border-radius:18px;box-shadow:var(--modal-shadow);padding:26px 28px 24px;font-family:'Inter',Segoe UI,Arial,sans-serif}
+.leave-dlg h3{margin:0 0 8px;font-size:16px;font-weight:700}
+.leave-dlg p{margin:0 0 22px;font-size:13.5px;line-height:1.55;color:var(--muted)}
+.leave-dlg-actions{display:flex;gap:12px}
+.leave-dlg-actions button{flex:1;padding:12px 16px;border-radius:var(--radius);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit}
+.leave-dlg-stay{background:var(--inner);border:1px solid var(--border);color:var(--light)}
+.leave-dlg-stay:hover{background:var(--soft)}
+.leave-dlg-leave{background:#D97706;border:1px solid #D97706;color:#fff}
+.leave-dlg-leave:hover{background:#B45F04}
 </style>
 </head>
 <body class="<?= $embed ? 'embed' : '' ?>">
@@ -461,7 +488,7 @@ $closeAttr = $embed ? ' onclick="parent.closeEvalModal();return false;"' : '';
         <div class="eval-validation" id="evalValidation" role="alert" aria-live="assertive" <?= $errors ? '' : 'hidden' ?>>
           <?php if ($errors): ?><i class="fa-solid fa-circle-exclamation"></i><div><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div><?php endif; ?>
         </div>
-        <div class="eval-progress" id="evalProgress"><span>Please rate every question before submitting.</span><span class="progress-status" id="evalProgressStatus">0 / <?= count($questions) ?> answered</span></div>
+        <div class="eval-progress" id="evalProgress"><span>Please rate every question and write a comment before submitting.</span><span class="progress-status" id="evalProgressStatus">0 / <?= count($questions) ?> answered</span></div>
         <div class="scale-legend">
           <div class="legend-item"><div class="legend-dot">5</div> Always</div>
           <div class="legend-item"><div class="legend-dot">4</div> Often</div>
@@ -490,14 +517,15 @@ $closeAttr = $embed ? ' onclick="parent.closeEvalModal();return false;"' : '';
           </table>
         </div>
         <?php endforeach; ?>
-        <div class="comment-box">
-          <div class="comment-label"><i class="fa-solid fa-comment-dots"></i> Comments, Suggestions &amp; Areas for Improvement</div>
-          <textarea name="comment" class="comment-textarea" rows="4" maxlength="2000"
+        <div class="comment-box<?= $commentMissing ? ' comment-missing' : '' ?>" id="commentBox">
+          <div class="comment-label"><i class="fa-solid fa-comment-dots"></i> Comments, Suggestions &amp; Areas for Improvement <span class="comment-req" title="Required" aria-hidden="true">*</span></div>
+          <textarea name="comment" class="comment-textarea" rows="4" maxlength="2000" required aria-required="true"
             placeholder="Share your thoughts, suggestions, or concerns about this person's performance...."><?= e($_POST['comment'] ?? '') ?></textarea>
+          <p class="comment-hint" id="commentHint">Required — you can't submit this evaluation without a comment.</p>
         </div>
       </div>
       <div class="modal-footer">
-        <a class="btn-cancel-modal" href="<?= e($backUrl) ?>"<?= $closeAttr ?>>Cancel</a>
+        <a class="btn-cancel-modal" id="evalCancel" href="<?= e($backUrl) ?>">Cancel</a>
         <button type="submit" class="btn-submit"><i class="fa-solid fa-paper-plane"></i> Submit Evaluation</button>
       </div>
     </form>
@@ -523,29 +551,58 @@ $closeAttr = $embed ? ' onclick="parent.closeEvalModal();return false;"' : '';
             status.style.color = answered === all.length ? 'var(--accent)' : '';
         }
     }
+    const commentEl  = form.querySelector('textarea[name="comment"]');
+    const commentBox = form.querySelector('#commentBox');
+    // Whitespace-only (incl. non-breaking / zero-width spaces) counts as empty.
+    function commentEmpty(){ return !commentEl || commentEl.value.replace(/[\s\u00A0\u200B]+/g, '') === ''; }
+
     function clearValidation(){
         const box = form.querySelector('#evalValidation');
         if (box) { box.hidden = true; box.innerHTML = ''; }
         form.querySelectorAll('.unanswered-question').forEach(r => r.classList.remove('unanswered-question'));
+        if (commentBox) commentBox.classList.remove('comment-missing');
     }
-    function showValidation(unanswered){
+    // Paints the red message + highlights for whatever is still missing.
+    function showValidation(unanswered, noComment, scroll){
         const box = form.querySelector('#evalValidation');
         const rows = unanswered.map(n => form.querySelector('input[name="' + CSS.escape(n) + '"]')?.closest('tr')).filter(Boolean);
         form.querySelectorAll('.unanswered-question').forEach(r => r.classList.remove('unanswered-question'));
         rows.forEach(r => r.classList.add('unanswered-question'));
-        const nums = rows.map(r => r.dataset.questionNumber).filter(Boolean);
-        const detail = (nums.length && nums.length <= 6) ? ' Missing: ' + nums.map(n => 'Question ' + n).join(', ') + '.' : '';
+        if (commentBox) commentBox.classList.toggle('comment-missing', !!noComment);
+
+        const parts = [];
+        if (unanswered.length) {
+            const nums = rows.map(r => r.dataset.questionNumber).filter(Boolean);
+            const detail = (nums.length && nums.length <= 6) ? ' Missing: ' + nums.map(n => 'Question ' + n).join(', ') + '.' : '';
+            parts.push('<div><strong>Please complete all required questions.</strong> You have '
+                + unanswered.length + ' unanswered question' + (unanswered.length === 1 ? '' : 's') + '.' + detail + '</div>');
+        }
+        if (noComment) {
+            parts.push('<div><strong>A comment is required.</strong> Please write a comment in the Comments, Suggestions &amp; Areas for Improvement box before submitting.</div>');
+        }
         if (box) {
-            box.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i><div><strong>Please complete all required questions.</strong> You have '
-                + unanswered.length + ' unanswered question' + (unanswered.length === 1 ? '' : 's') + '.' + detail + '</div>';
+            box.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i><div>' + parts.join('') + '</div>';
             box.hidden = false;
         }
+        if (!scroll) return;
         const first = rows[0];
         if (first) {
             first.scrollIntoView({behavior:'smooth', block:'center'});
             const radio = first.querySelector('input[type="radio"]');
             if (radio) setTimeout(() => radio.focus({preventScroll:true}), 120);
+        } else if (noComment && commentEl) {
+            commentBox.scrollIntoView({behavior:'smooth', block:'center'});
+            setTimeout(() => commentEl.focus({preventScroll:true}), 120);
         }
+    }
+    // After the user fixes something, drop the message once everything is fine,
+    // otherwise keep it but only for what is still missing (no scroll jumping).
+    function revalidateIfShown(){
+        const box = form.querySelector('#evalValidation');
+        if (!box || box.hidden) return;
+        const un = names().filter(n => !isAnswered(n));
+        const nc = commentEmpty();
+        if (!un.length && !nc) clearValidation(); else showValidation(un, nc, false);
     }
 
     form.addEventListener('change', function(e){
@@ -553,17 +610,155 @@ $closeAttr = $embed ? ' onclick="parent.closeEvalModal();return false;"' : '';
         if (!radio) return;
         radio.closest('tr')?.classList.remove('unanswered-question');
         updateProgress();
-        if (!names().filter(n => !isAnswered(n)).length) clearValidation();
+        revalidateIfShown();
     });
+    if (commentEl) commentEl.addEventListener('input', revalidateIfShown);
 
     form.addEventListener('submit', function(e){
         const unanswered = names().filter(n => !isAnswered(n));
+        const noComment = commentEmpty();
         updateProgress();
-        if (unanswered.length) { e.preventDefault(); showValidation(unanswered); return; }
+        if (unanswered.length || noComment) { e.preventDefault(); showValidation(unanswered, noComment, true); return; }
         clearValidation();
         const btn = form.querySelector('.btn-submit');
         if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Submitting Evaluation...'; }
     });
+
+    /* ── Unsaved-evaluation guard ─────────────────────────────────── */
+    let dirty = !!(form.querySelector('input[type="radio"]:checked') || (form.querySelector('textarea[name="comment"]')?.value || '').trim());
+    let submitting = false;
+
+    form.addEventListener('input',  function(){ dirty = true; });
+    form.addEventListener('change', function(){ dirty = true; });
+    form.addEventListener('submit', function(e){
+        // only a valid, actually-sent submit counts as a legitimate exit
+        if (!e.defaultPrevented) submitting = true;
+    });
+
+    // Refresh, closing the tab, browser back, sidebar navigation
+    window.addEventListener('beforeunload', function(e){
+        if (dirty && !submitting) { e.preventDefault(); e.returnValue = ''; }
+    });
+
+    // Lets the host page ask before it closes the popup
+    window.isEvalDirty = function(){ return dirty && !submitting; };
+
+    // Styled confirm dialog (replaces the browser's plain confirm box)
+    function askLeave(){
+        return new Promise(function(resolve){
+            const ov = document.createElement('div');
+            ov.className = 'leave-dlg-overlay';
+            ov.setAttribute('role', 'alertdialog');
+            ov.setAttribute('aria-modal', 'true');
+            ov.setAttribute('aria-labelledby', 'leaveDlgTitle');
+            ov.innerHTML = '<div class="leave-dlg">'
+                + '<h3 id="leaveDlgTitle">Leave without submitting?</h3>'
+                + '<p>You have an unsubmitted evaluation. If you leave now, your answers will be lost.</p>'
+                + '<div class="leave-dlg-actions">'
+                + '<button type="button" class="leave-dlg-stay">Stay</button>'
+                + '<button type="button" class="leave-dlg-leave">Leave</button>'
+                + '</div></div>';
+            function done(v){ document.removeEventListener('keydown', onKey, true); ov.remove(); resolve(v); }
+            function onKey(e){ if (e.key === 'Escape') { e.stopPropagation(); done(false); } }
+            ov.querySelector('.leave-dlg-stay').addEventListener('click', function(){ done(false); });
+            ov.querySelector('.leave-dlg-leave').addEventListener('click', function(){ done(true); });
+            document.addEventListener('keydown', onKey, true);
+            document.body.appendChild(ov);
+            ov.querySelector('.leave-dlg-stay').focus();
+        });
+    }
+    // Lets the host page use the same dialog
+    window.askEvalLeave = function(){ return window.isEvalDirty() ? askLeave() : Promise.resolve(true); };
+
+    function leaveNow(){
+        dirty = false;
+        let inPopup = false;
+        try { inPopup = window.parent !== window && typeof parent.closeEvalModal === 'function'; } catch (err) {}
+        if (inPopup) parent.closeEvalModal(); else location.href = cancel.href;
+    }
+
+    // Cancel button
+    const cancel = document.getElementById('evalCancel');
+    if (cancel) cancel.addEventListener('click', function(e){
+        e.preventDefault();
+        window.askEvalLeave().then(function(ok){ if (ok) leaveNow(); });
+    });
+
+    // Escape key inside the form
+    document.addEventListener('keydown', function(e){
+        if (e.key !== 'Escape' || document.querySelector('.leave-dlg-overlay')) return;
+        if (!document.getElementById('evalCancel')) return;
+        window.askEvalLeave().then(function(ok){ if (ok) leaveNow(); });
+    });
+
+    /* ── Intercept clicks on the dashboard (sidebar, Log Out, backdrop) ──
+       Those clicks happen outside this iframe, so without this the browser's
+       plain "Leave site?" box appears. We catch them first and show the styled dialog. */
+    (function guardHost(){
+        let host = null, frameEl = null;
+        try { if (window.parent !== window) { host = parent.document; frameEl = window.frameElement; } } catch (err) {}
+        if (!host || !frameEl) return;
+
+        let bypass = false;
+        const DLG_ID = 'evalLeaveHostDlg';
+
+        function showHostDialog(){
+            return new Promise(function(resolve){
+                const dark = (host.documentElement.getAttribute('data-theme') || '') === 'dark';
+                const c = dark
+                    ? {bg:'#132844', fg:'#F5F7FB', mut:'#9CB0CA', line:'#213A5C', btn:'#10233D'}
+                    : {bg:'#ffffff', fg:'#10243f', mut:'#66809c', line:'#dce8f5', btn:'#f8fbff'};
+                const ov = host.createElement('div');
+                ov.id = DLG_ID;
+                ov.setAttribute('role', 'alertdialog');
+                ov.setAttribute('aria-modal', 'true');
+                ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(9,17,30,.55);font-family:Inter,Segoe UI,Arial,sans-serif';
+                ov.innerHTML = '<div style="width:100%;max-width:420px;background:' + c.bg + ';color:' + c.fg + ';border-radius:18px;box-shadow:0 30px 80px rgba(15,23,42,.35);padding:26px 28px 24px">'
+                    + '<h3 style="margin:0 0 8px;font-size:16px;font-weight:700">Leave without submitting?</h3>'
+                    + '<p style="margin:0 0 22px;font-size:13.5px;line-height:1.55;color:' + c.mut + '">You have an unsubmitted evaluation. If you leave now, your answers will be lost.</p>'
+                    + '<div style="display:flex;gap:12px">'
+                    + '<button type="button" data-a="stay" style="flex:1;padding:12px 16px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;background:' + c.btn + ';border:1px solid ' + c.line + ';color:' + c.fg + '">Stay</button>'
+                    + '<button type="button" data-a="leave" style="flex:1;padding:12px 16px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;background:#D97706;border:1px solid #D97706;color:#fff">Leave</button>'
+                    + '</div></div>';
+                function done(v){ host.removeEventListener('keydown', onKey, true); ov.remove(); resolve(v); }
+                function onKey(e){ if (e.key === 'Escape') { e.stopPropagation(); done(false); } }
+                ov.addEventListener('click', function(e){
+                    const a = e.target.closest('[data-a]');
+                    if (a) done(a.getAttribute('data-a') === 'leave');
+                });
+                host.addEventListener('keydown', onKey, true);
+                host.body.appendChild(ov);
+                ov.querySelector('[data-a="stay"]').focus();
+            });
+        }
+
+        function onHostClick(e){
+            if (bypass || !window.isEvalDirty()) return;
+            const t = e.target;
+            if (!t || !t.closest) return;
+            if (t.closest('#' + DLG_ID)) return;              // clicks inside our own dialog
+            if (t === frameEl || frameEl.contains(t)) return; // clicks inside the form
+            const overlay = frameEl.parentElement && frameEl.parentElement.parentElement; // popup backdrop
+            const isBackdrop = overlay && t === overlay;
+            const actionable = t.closest('a[href], button, [onclick], [role="button"], li');
+            if (!isBackdrop && !actionable) return;
+            const href = actionable && actionable.getAttribute && actionable.getAttribute('href');
+            if (href && (href.charAt(0) === '#' || href.indexOf('javascript:') === 0)) return;
+
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            const target = isBackdrop ? t : (actionable || t);
+            showHostDialog().then(function(leave){
+                if (!leave) return;
+                dirty = false;          // no second (native) prompt
+                bypass = true;
+                try { target.click(); } finally { bypass = false; }
+            });
+        }
+        host.addEventListener('click', onHostClick, true);
+        window.addEventListener('pagehide', function(){ try { host.removeEventListener('click', onHostClick, true); } catch (err) {} });
+    })();
 
     updateProgress();
 })();

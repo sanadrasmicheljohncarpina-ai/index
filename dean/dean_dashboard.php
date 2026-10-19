@@ -59,8 +59,44 @@ $settings = sh_gate_apply($settings, 'dean');
 // If the Executive Assistant has the active Academic Structure set to
 // something else, the Dean must not show Higher Ed analytics as current.
 $structureActive  = !empty($settings['school_head_applicable']);
-$period_id_int    = $settings['period_id'] ?? 0;
+$period_id_int    = (int)($settings['period_id'] ?? 0);
 $evalOpen         = !empty($settings['school_head_is_open']);
+
+// Treat a period as current only while its evaluation_periods row is active.
+// System Archive marks an archived period inactive and clears its live rows;
+// this extra check prevents stale system settings from resurrecting its scores
+// on the Dean dashboard after the archive completes.
+$dashboardCurrentPeriodId = 0;
+if ($structureActive && $period_id_int > 0) {
+    try {
+        // A period that System Archive has archived (and not restored) is never current,
+        // even if something flips its is_active flag back on. If the archive table does
+        // not exist yet (fresh install), fall back to the plain active-period check.
+        $periodCheck = false;
+        try {
+            $periodCheck = $mysqli->prepare("SELECT ep.id FROM evaluation_periods ep
+                WHERE ep.id=? AND ep.is_active=1
+                  AND NOT EXISTS (SELECT 1 FROM system_archives sa WHERE sa.period_id=ep.id AND sa.status='archived')
+                LIMIT 1");
+        } catch (Throwable $archiveCheckError) {
+            $periodCheck = false;
+        }
+        if (!$periodCheck) {
+            $periodCheck = $mysqli->prepare("SELECT id FROM evaluation_periods WHERE id=? AND is_active=1 LIMIT 1");
+        }
+        if ($periodCheck) {
+            $periodCheck->bind_param('i', $period_id_int);
+            if ($periodCheck->execute()) {
+                $currentPeriodRow = $periodCheck->get_result()->fetch_assoc();
+                if ($currentPeriodRow) $dashboardCurrentPeriodId = (int)$currentPeriodRow['id'];
+            }
+            $periodCheck->close();
+        }
+    } catch (Throwable $periodCheckError) {
+        $dashboardCurrentPeriodId = 0;
+    }
+}
+$hasCurrentEvaluationPeriod = $dashboardCurrentPeriodId > 0;
 
 // Step 8: internal value stays "college" everywhere; this is the only
 // display label used in markup below.
@@ -73,10 +109,10 @@ const HIGHER_ED_LABEL = 'Higher Education';
 // has to sit empty (see the personnel-overview branch below). Only the
 // evaluation-status math (completed/pending, ratings) depends on the
 // active period actually being college and is gated behind $structureActive.
-$facultyList = ea_get_faculty($mysqli, $period_id_int);
-$staffList   = ea_get_staff($mysqli, $period_id_int);
-$eaList      = ea_get_executive_assistants($mysqli, $period_id_int);
-$studentList = ea_get_students($mysqli, $period_id_int);
+$facultyList = ea_get_faculty($mysqli, $dashboardCurrentPeriodId);
+$staffList   = ea_get_staff($mysqli, $dashboardCurrentPeriodId);
+$eaList      = ea_get_executive_assistants($mysqli, $dashboardCurrentPeriodId);
+$studentList = ea_get_students($mysqli, $dashboardCurrentPeriodId);
 
 $countByStatus = function (array $rows, string $status): int {
     return count(array_filter($rows, fn($r) => ($r['evaluation_status'] ?? '') === $status));
@@ -88,7 +124,7 @@ $overallCompletionPct = 0;
 $studentParticipationPct = 0;
 $totalAssigned = 0;
 
-if ($structureActive) {
+if ($hasCurrentEvaluationPeriod) {
     $facultyCompleted = $countByStatus($facultyList, 'completed');
     $staffCompleted   = $countByStatus($staffList, 'completed');
     $eaCompleted      = $countByStatus($eaList, 'completed');
@@ -120,8 +156,8 @@ foreach (dean_ea_notices($settings) as $eaNotice) {
 
 // Seed the bell with the latest submitted evaluation events as well as the
 // current status notices. The browser poll keeps these events visible.
-if (($settings['period_id'] ?? 0) > 0) {
-    $currentPeriodId = (int)$settings['period_id'];
+if ($hasCurrentEvaluationPeriod) {
+    $currentPeriodId = $dashboardCurrentPeriodId;
     $collegeLevels = "'1st Year College','2nd Year College','3rd Year College','4th Year College'";
     $recentEvalQ = $mysqli->query("SELECT et.id, et.eval_type, et.submitted_at, target.full_name AS target_name
         FROM evaluation_tracker et
@@ -130,13 +166,14 @@ if (($settings['period_id'] ?? 0) > 0) {
           AND et.submitted_at IS NOT NULL
           AND target.is_active=1
           AND target.account_status='approved'
+          AND et.target_user_id <> " . (int)($_SESSION['user_id'] ?? 0) . "
           AND (target.role IN ('principal','staff') OR (target.role IN ('teacher','faculty') AND EXISTS (
               SELECT 1 FROM user_year_levels uyl
               WHERE uyl.user_id=target.id AND uyl.year_level IN ($collegeLevels)
           )))
           AND et.eval_type IN ('student','peer','faculty_peer','staff_peer')
         ORDER BY et.submitted_at DESC, et.id DESC
-        LIMIT 12");
+        LIMIT 500");
     if ($recentEvalQ) {
         while ($ev = $recentEvalQ->fetch_assoc()) {
             $kind = in_array($ev['eval_type'] ?? '', ['peer','faculty_peer','staff_peer'], true) ? 'Peer-to-Peer' : 'Student';
@@ -146,7 +183,7 @@ if (($settings['period_id'] ?? 0) > 0) {
     }
 }
 
-if ($structureActive) {
+if ($hasCurrentEvaluationPeriod) {
     if ($evalOpen && ($facultyPending + $staffPending + $eaPending) > 0) {
         $remaining = $facultyPending + $staffPending + $eaPending;
         $notifications[] = "{$remaining} evaluation" . ($remaining === 1 ? '' : 's') . " still pending.";
@@ -170,7 +207,7 @@ if (empty($notifications)) {
 const DEAN_RESULT_EVAL_TYPE   = 'teacher';
 const DEAN_RESULT_EVAL_BUCKET = 'Dean';
 $myRating = null;
-if ($structureActive && $period_id_int > 0) {
+if ($hasCurrentEvaluationPeriod) {
     try {
         // bind_param() requires actual variables passed by reference — a
         // class constant or an array element (like $_SESSION['user_id'])
@@ -185,7 +222,7 @@ if ($structureActive && $period_id_int > 0) {
             WHERE eval_type=? AND eval_bucket=? AND status IN ('submitted','approved')
               AND target_user_id=? AND period_id=?
         ");
-        $stmt->bind_param("ssii", $evalType, $evalBucket, $deanIdForRating, $period_id_int);
+        $stmt->bind_param("ssii", $evalType, $evalBucket, $deanIdForRating, $dashboardCurrentPeriodId);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
@@ -194,55 +231,61 @@ if ($structureActive && $period_id_int > 0) {
         $myRating = null;
     }
 }
-// ── ALL-TERMS RECEIVED-EVALUATION SUMMARY ─────────────────────────────
-// Mirrors the Faculty dashboard's all-time summary. Live responses and the
-// identity-free copies retained by System Archive are combined so older
-// evaluations continue to contribute after an evaluation period is archived.
-// Keep this query aligned with dean_results.php: student school-head reviews
-// and Executive Assistant reviews, submitted/approved only, and never expose
-// or query the evaluator's identity.
+// ── CURRENT-PERIOD RECEIVED-EVALUATION SUMMARY ────────────────────────
+// Dashboard headline figures are cycle-specific. Once System Archive marks a
+// period inactive, its retained feedback remains available in the results/archive
+// workflow but must not count toward the fresh dashboard cycle.
+// Count only submitted/approved student school-head reviews and EA reviews for
+// the active period, without querying or exposing evaluator identity.
 $deanOverallAverage = null;
 $deanOverallResponses = 0;
 $deanOverallScoreSum = 0.0;
 $deanOverallAnswerCount = 0;
 $deanSummaryTargetId = (int)($_SESSION['user_id'] ?? 0);
 
-try {
-    $summaryStmt = $mysqli->prepare("\n        SELECT COUNT(*) AS response_count,\n               COALESCE(SUM(answer_totals.score_sum), 0) AS score_sum,\n               COALESCE(SUM(answer_totals.score_count), 0) AS score_count\n        FROM evaluation_tracker et\n        LEFT JOIN (\n            SELECT tracker_id, SUM(answer_score) AS score_sum, COUNT(answer_score) AS score_count\n            FROM questionnaire_answers\n            GROUP BY tracker_id\n        ) answer_totals ON answer_totals.tracker_id = et.id\n        WHERE ((et.eval_type='student' AND et.evaluation_context='school_head') OR et.eval_type='ea')\n          AND et.status IN ('submitted','approved')\n          AND et.target_user_id=?\n    ");
-    $summaryStmt->bind_param('i', $deanSummaryTargetId);
-    $summaryStmt->execute();
-    $summaryRow = $summaryStmt->get_result()->fetch_assoc() ?: [];
-    $summaryStmt->close();
+if ($hasCurrentEvaluationPeriod) {
+    try {
+        $summaryStmt = $mysqli->prepare("
+            SELECT COUNT(*) AS response_count,
+                   COALESCE(SUM(answer_totals.score_sum), 0) AS score_sum,
+                   COALESCE(SUM(answer_totals.score_count), 0) AS score_count
+            FROM evaluation_tracker et
+            LEFT JOIN (
+                SELECT tracker_id, SUM(answer_score) AS score_sum, COUNT(answer_score) AS score_count
+                FROM questionnaire_answers
+                GROUP BY tracker_id
+            ) answer_totals ON answer_totals.tracker_id = et.id
+            WHERE ((et.eval_type='student' AND et.evaluation_context='school_head') OR et.eval_type='ea')
+              AND et.status IN ('submitted','approved')
+              AND et.target_user_id=?
+              AND et.period_id=?
+        ");
+        if ($summaryStmt) {
+            $summaryStmt->bind_param('ii', $deanSummaryTargetId, $dashboardCurrentPeriodId);
+            $summaryStmt->execute();
+            $summaryRow = $summaryStmt->get_result()->fetch_assoc() ?: [];
+            $summaryStmt->close();
 
-    $deanOverallResponses += (int)($summaryRow['response_count'] ?? 0);
-    $deanOverallScoreSum += (float)($summaryRow['score_sum'] ?? 0);
-    $deanOverallAnswerCount += (int)($summaryRow['score_count'] ?? 0);
-} catch (Throwable $summaryError) {
-    // Keep the dashboard available if an optional evaluation field/table is
-    // missing in an older installation; archived feedback is attempted below.
-}
+            $deanOverallResponses += (int)($summaryRow['response_count'] ?? 0);
+            $deanOverallScoreSum += (float)($summaryRow['score_sum'] ?? 0);
+            $deanOverallAnswerCount += (int)($summaryRow['score_count'] ?? 0);
+        }
+    } catch (Throwable $summaryError) {
+        // Keep the dashboard usable on older installations with optional schema differences.
+    }
 
-try {
-    $keptSummaryStmt = $mysqli->prepare("\n        SELECT COUNT(*) AS response_count,\n               COALESCE(SUM(score_sum), 0) AS score_sum,\n               COALESCE(SUM(score_count), 0) AS score_count\n        FROM feedback_received_keep\n        WHERE target_user_id=?\n    ");
-    $keptSummaryStmt->bind_param('i', $deanSummaryTargetId);
-    $keptSummaryStmt->execute();
-    $keptSummaryRow = $keptSummaryStmt->get_result()->fetch_assoc() ?: [];
-    $keptSummaryStmt->close();
-
-    $deanOverallResponses += (int)($keptSummaryRow['response_count'] ?? 0);
-    $deanOverallScoreSum += (float)($keptSummaryRow['score_sum'] ?? 0);
-    $deanOverallAnswerCount += (int)($keptSummaryRow['score_count'] ?? 0);
-} catch (Throwable $archiveSummaryError) {
-    // An archive table may not exist yet on a fresh deployment.
+    // Retained (archived) feedback is deliberately NOT added back here. It stays
+    // readable on the Evaluation Received page, but the dashboard figures only
+    // reflect the live, active evaluation cycle so they reset after an archive.
 }
 
 $deanOverallAverage = $deanOverallAnswerCount > 0
     ? round($deanOverallScoreSum / $deanOverallAnswerCount, 2)
     : null;
 
-// Mirror the Faculty workspace's performance labels and 5-point interpretation.
+// A fresh/empty cycle has no performance rating yet.
 $deanPerformanceLabel = $deanOverallAverage === null
-    ? '—'
+    ? 'No Ratings Yet'
     : ($deanOverallAverage >= 4 ? 'Excellent' : ($deanOverallAverage >= 3 ? 'Good' : 'Needs Improvement'));
 $deanPerformanceClass = $deanOverallAverage === null
     ? 'neutral'
@@ -766,10 +809,12 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
     <section class="dean-dashboard-intro">
         <div class="dean-dashboard-kicker"><i class="fa-solid fa-chart-line" aria-hidden="true"></i> Dashboard Overview</div>
         
-        <span class="dean-dashboard-status <?= ($structureActive && $evalOpen) ? '' : 'closed' ?>">
-            <i class="fa-solid <?= ($structureActive && $evalOpen) ? 'fa-lock-open' : 'fa-lock' ?>" aria-hidden="true"></i>
+        <span class="dean-dashboard-status <?= ($hasCurrentEvaluationPeriod && $evalOpen) ? '' : 'closed' ?>">
+            <i class="fa-solid <?= ($hasCurrentEvaluationPeriod && $evalOpen) ? 'fa-lock-open' : 'fa-lock' ?>" aria-hidden="true"></i>
             <?php if (!$structureActive): ?>
                 Higher Education is not the active evaluation structure
+            <?php elseif (!$hasCurrentEvaluationPeriod): ?>
+                No active evaluation period
             <?php elseif ($evalOpen): ?>
                 Evaluation period is currently open
             <?php else: ?>
@@ -783,20 +828,20 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
         <div class="dean-schedule-grid">
             <div class="dean-schedule-item">
                 <span class="dean-schedule-label">Academic Year</span>
-                <strong class="dean-schedule-value"><?= htmlspecialchars($settings['academic_year'] ?? '—') ?></strong>
+                <strong class="dean-schedule-value"><?= $hasCurrentEvaluationPeriod ? htmlspecialchars($settings['academic_year'] ?? '—') : '—' ?></strong>
             </div>
             <div class="dean-schedule-item">
                 <span class="dean-schedule-label">Evaluation Opens</span>
-                <strong class="dean-schedule-value"><?= !empty($settings['eval_start_display']) ? htmlspecialchars(dean_strip_tz_label($settings['eval_start_display'])) : '—' ?></strong>
+                <strong class="dean-schedule-value"><?= $hasCurrentEvaluationPeriod && !empty($settings['eval_start_display']) ? htmlspecialchars(dean_strip_tz_label($settings['eval_start_display'])) : '—' ?></strong>
             </div>
             <div class="dean-schedule-item">
                 <span class="dean-schedule-label">Evaluation Closes</span>
-                <strong class="dean-schedule-value"><?= !empty($settings['eval_end_display']) ? htmlspecialchars(dean_strip_tz_label($settings['eval_end_display'])) : '—' ?></strong>
+                <strong class="dean-schedule-value"><?= $hasCurrentEvaluationPeriod && !empty($settings['eval_end_display']) ? htmlspecialchars(dean_strip_tz_label($settings['eval_end_display'])) : '—' ?></strong>
             </div>
             <div class="dean-schedule-item">
                 <span class="dean-schedule-label">Status</span>
-                <span class="dean-schedule-status <?= ($structureActive && $evalOpen) ? '' : 'closed' ?>">
-                    <?= !$structureActive ? 'Inactive Structure' : htmlspecialchars($settings['status']['label'] ?? ($evalOpen ? 'Open' : 'Closed')) ?>
+                <span class="dean-schedule-status <?= ($hasCurrentEvaluationPeriod && $evalOpen) ? '' : 'closed' ?>">
+                    <?= !$structureActive ? 'Inactive Structure' : (!$hasCurrentEvaluationPeriod ? 'No Active Period' : htmlspecialchars($settings['status']['label'] ?? ($evalOpen ? 'Open' : 'Closed'))) ?>
                 </span>
             </div>
         </div>
@@ -806,7 +851,7 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
         $periodHeadline = is_array($periodMessage) ? ($periodMessage['headline'] ?? '') : (string)$periodMessage;
         $periodSub = is_array($periodMessage) ? ($periodMessage['sub'] ?? '') : '';
         ?>
-        <?php if (trim((string)$periodHeadline) !== '' || trim((string)$periodSub) !== '' || (!empty($settings['countdown_enabled']) && $evalOpen && !empty($settings['eval_end']))): ?>
+        <?php if ($hasCurrentEvaluationPeriod && (trim((string)$periodHeadline) !== '' || trim((string)$periodSub) !== '' || (!empty($settings['countdown_enabled']) && $evalOpen && !empty($settings['eval_end'])))): ?>
         <div class="dean-schedule-extras">
             <?php if (trim((string)$periodHeadline) !== '' || trim((string)$periodSub) !== ''): ?>
             <div class="period-message">
@@ -814,7 +859,7 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
                 <?= htmlspecialchars(dean_strip_tz_label($periodSub)) ?>
             </div>
             <?php endif; ?>
-            <?php if (!empty($settings['countdown_enabled']) && $evalOpen && !empty($settings['eval_end'])): ?>
+            <?php if ($hasCurrentEvaluationPeriod && !empty($settings['countdown_enabled']) && $evalOpen && !empty($settings['eval_end'])): ?>
             <div class="countdown-row" id="countdownRow" data-end="<?= htmlspecialchars(ss_parse_datetime($settings['eval_end'])->format('c')) ?>">
                 <div class="countdown-box"><div class="num" id="cd-days">—</div><div class="lbl">Days</div></div>
                 <div class="countdown-box"><div class="num" id="cd-hours">—</div><div class="lbl">Hours</div></div>
@@ -828,10 +873,10 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
     <section class="dean-welcome-bar" id="dean-overall-summary" aria-label="Dean evaluation summary">
         <div class="dean-welcome-text">
             <h2>Welcome, <?= htmlspecialchars($me['full_name'] ?? 'Dean') ?>!</h2>
-            <p><strong>Dean</strong> &nbsp;·&nbsp; <?= htmlspecialchars($settings['academic_year'] ?? '—') ?> — <?= htmlspecialchars($settings['academic_term'] ?? 'Current Term') ?> · <?= HIGHER_ED_LABEL ?></p>
+            <p><strong>Dean</strong> &nbsp;·&nbsp; <?= $hasCurrentEvaluationPeriod ? htmlspecialchars($settings['academic_year'] ?? '—') . ' — ' . htmlspecialchars($settings['academic_term'] ?? 'Current Term') : 'No Active Period' ?> · <?= HIGHER_ED_LABEL ?></p>
         </div>
         <div class="dean-score-chip">
-            <div class="dean-score-value"><?= $deanOverallAverage !== null ? number_format($deanOverallAverage, 2) : '—' ?></div>
+            <div class="dean-score-value"><?= number_format($deanOverallAverage ?? 0, 2) ?></div>
             <div class="dean-score-label">Your Avg Score</div>
         </div>
     </section>
@@ -845,7 +890,7 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
         <div class="dean-faculty-stat">
             <div class="dean-faculty-stat-icon"><i class="fa-solid fa-circle-check" aria-hidden="true"></i></div>
             <div class="dean-faculty-stat-label">Overall Average</div>
-            <div class="dean-faculty-stat-value"><?= $deanOverallAverage !== null ? number_format($deanOverallAverage, 2) . ' / 5' : '—' ?></div>
+            <div class="dean-faculty-stat-value"><?= number_format($deanOverallAverage ?? 0, 2) ?> / 5</div>
         </div>
         <div class="dean-faculty-stat">
             <div class="dean-faculty-stat-icon"><i class="fa-solid fa-award" aria-hidden="true"></i></div>
@@ -855,7 +900,7 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
         <div class="dean-faculty-stat">
             <div class="dean-faculty-stat-icon"><i class="fa-solid fa-calendar" aria-hidden="true"></i></div>
             <div class="dean-faculty-stat-label">Current Period</div>
-            <div class="dean-faculty-stat-value compact"><?= htmlspecialchars($settings['academic_term'] ?? '—') ?></div>
+            <div class="dean-faculty-stat-value compact"><?= $hasCurrentEvaluationPeriod ? htmlspecialchars($settings['academic_term'] ?? '—') : 'No Active Period' ?></div>
         </div>
     </section>
 
@@ -865,7 +910,7 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
                 <span class="dean-quick-access-kicker">WORKSPACE SHORTCUTS</span>
                 <h2>Continue where you need to be</h2>
             </div>
-            <span class="dean-quick-access-caption">Your most-used Dean tools</span>
+            <span class="dean-quick-access-caption"></span>
         </div>
         <div class="dean-quick-access-grid">
             <a class="dean-quick-access-card dean-quick-violet" href="dean_results.php">
@@ -876,19 +921,19 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
                 </span>
                 <i class="fa-solid fa-arrow-right dean-quick-access-arrow" aria-hidden="true"></i>
             </a>
-            <a class="dean-quick-access-card dean-quick-blue" href="#dean-evaluation-schedule">
-                <span class="dean-quick-access-icon"><i class="fa-solid fa-calendar-days" aria-hidden="true"></i></span>
+            <a class="dean-quick-access-card dean-quick-blue" href="dean_results.php?period=all">
+                <span class="dean-quick-access-icon"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i></span>
                 <span class="dean-quick-access-copy">
-                    <strong>Evaluation Schedule</strong>
-                    <small>Check the current evaluation period and dates.</small>
+                    <strong>Evaluation History</strong>
+                    <small>Browse feedback from past and current terms.</small>
                 </span>
                 <i class="fa-solid fa-arrow-right dean-quick-access-arrow" aria-hidden="true"></i>
             </a>
-            <a class="dean-quick-access-card dean-quick-amber" href="#dean-performance-summary">
-                <span class="dean-quick-access-icon"><i class="fa-solid fa-award" aria-hidden="true"></i></span>
+            <a class="dean-quick-access-card dean-quick-amber" href="dean_account_settings.php">
+                <span class="dean-quick-access-icon"><i class="fa-solid fa-gear" aria-hidden="true"></i></span>
                 <span class="dean-quick-access-copy">
-                    <strong>Performance Summary</strong>
-                    <small>View your overall score and performance level.</small>
+                    <strong>Settings</strong>
+                    <small>Manage your account and preferences.</small>
                 </span>
                 <i class="fa-solid fa-arrow-right dean-quick-access-arrow" aria-hidden="true"></i>
             </a>
@@ -920,5 +965,20 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
 
 
 <script src="../admin/eval_status_poll.js" defer></script>
+<script id="dean-rename-settings-label">
+/* Sidebar/header label: "Account Settings" -> "Settings" (stopgap until includes/dean_sidebar.php is edited). */
+(function(){
+    function rename(){
+        var w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT,{acceptNode:function(n){
+            var p=n.parentNode&&n.parentNode.nodeName;
+            return (p==='SCRIPT'||p==='STYLE'||p==='TEXTAREA')?NodeFilter.FILTER_REJECT:NodeFilter.FILTER_ACCEPT;
+        }});
+        var n,list=[];
+        while((n=w.nextNode())){ if(n.nodeValue.trim()==='Account Settings') list.push(n); }
+        list.forEach(function(t){ t.nodeValue=t.nodeValue.replace('Account Settings','Settings'); });
+    }
+    if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',rename); else rename();
+})();
+</script>
 </body>
 </html>

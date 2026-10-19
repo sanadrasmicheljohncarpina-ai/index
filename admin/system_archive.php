@@ -16,10 +16,6 @@ if (empty($_SESSION['user_id'])) {
 
 mysqli_report(MYSQLI_REPORT_OFF);
 
-// Archiving/restoring a full year can touch tens of thousands of rows: allow this page more time and memory.
-@set_time_limit(300);
-@ini_set('memory_limit', '512M');
-
 // ── CSRF protection ────────────────────────────────────────────────────────
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -59,7 +55,7 @@ $mysqli->query("CREATE TABLE IF NOT EXISTS system_archives (
     summary_json LONGTEXT DEFAULT NULL,
     payload_json LONGTEXT NOT NULL,
     PRIMARY KEY (id),
-    KEY idx_system_archive_period (period_id),
+    UNIQUE KEY uq_system_archive_period (period_id),
     KEY idx_system_archive_year (school_year),
     KEY idx_system_archive_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
@@ -110,18 +106,6 @@ foreach ([
 }
 $_SESSION['archive_schema_v1'] = true;
 } // end one-time schema setup
-
-// v2: a period can be archived, restored and re-archived any number of times, so each archive click
-// creates its own snapshot row. Older installs had UNIQUE(period_id); swap it for a plain index.
-if (empty($_SESSION['archive_schema_v2'])) {
-    $hasUnique = false;
-    if ($ri = $mysqli->query("SHOW INDEX FROM system_archives WHERE Key_name='uq_system_archive_period'")) { $hasUnique = $ri->num_rows > 0; }
-    $v2ok = true;
-    if ($hasUnique) {
-        $v2ok = (bool)$mysqli->query("ALTER TABLE system_archives DROP INDEX uq_system_archive_period, ADD KEY idx_system_archive_period (period_id)");
-    }
-    if ($v2ok) $_SESSION['archive_schema_v2'] = true;
-}
 
 // Dean + Principal "Feedback's Received" keep-copy.
 // The archive clears live evaluation rows, but the Dean and the Principal must still be able to
@@ -295,62 +279,6 @@ function tracker_ids(array $rows): array {
 }
 function count_rows(array $data): int { return count($data); }
 
-/** Column names that exist in a live table right now (cached per request). */
-function live_columns(mysqli $db, string $table): array {
-    static $cache = [];
-    if (!isset($cache[$table])) {
-        $cols = [];
-        if ($rc = $db->query("SHOW COLUMNS FROM `" . str_replace('`', '``', $table) . "`")) {
-            while ($c = $rc->fetch_assoc()) $cols[$c['Field']] = true;
-        }
-        $cache[$table] = $cols;
-    }
-    return $cache[$table];
-}
-
-/**
- * Insert one archived row back into a live table (prepared statement, all values bound).
- * $dropId = true omits the `id` column so MySQL assigns a fresh auto-increment id.
- * Returns ['ok'=>bool, 'errno'=>int, 'error'=>string, 'insert_id'=>int].
- */
-function restore_insert_row(mysqli $db, string $table, array $row, bool $dropId = false): array {
-    // Years later the live table may have lost or renamed columns that an old archive still has.
-    // Only columns that exist today are restored; new columns simply get their defaults.
-    $liveCols = live_columns($db, $table);
-    if ($liveCols) $row = array_intersect_key($row, $liveCols);
-    if ($dropId) unset($row['id']);
-    $columns = array_keys($row);
-    if (!$columns) return ['ok' => false, 'errno' => 0, 'error' => 'empty row', 'insert_id' => 0];
-    $quotedCols = '`' . implode('`,`', array_map(fn($c) => str_replace('`', '``', (string)$c), $columns)) . '`';
-    $placeholders = implode(',', array_fill(0, count($columns), '?'));
-    $stmt = $db->prepare("INSERT INTO `" . str_replace('`', '``', $table) . "` ($quotedCols) VALUES ($placeholders)");
-    if (!$stmt) return ['ok' => false, 'errno' => (int)$db->errno, 'error' => 'could not prepare: ' . $db->error, 'insert_id' => 0];
-
-    $types = '';
-    $values = [];
-    foreach ($columns as $c) {
-        $v = $row[$c];
-        $types .= is_int($v) ? 'i' : (is_float($v) ? 'd' : 's');
-        $values[] = $v;
-    }
-    $bind = [$types];
-    foreach ($values as $k => $v) $bind[] = &$values[$k];
-    call_user_func_array([$stmt, 'bind_param'], $bind);
-
-    if (!$stmt->execute()) {
-        $out = ['ok' => false, 'errno' => (int)$stmt->errno, 'error' => $stmt->error, 'insert_id' => 0];
-        $stmt->close();
-        return $out;
-    }
-    if ($stmt->affected_rows !== 1) {
-        $stmt->close();
-        return ['ok' => false, 'errno' => 0, 'error' => 'a row was not inserted.', 'insert_id' => 0];
-    }
-    $out = ['ok' => true, 'errno' => 0, 'error' => '', 'insert_id' => (int)$stmt->insert_id];
-    $stmt->close();
-    return $out;
-}
-
 $flash = null;
 $flashType = 'ok';
 $viewArchive = null;
@@ -396,9 +324,15 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $archiveErrs[] = "Period #$periodId could not be found.";
         } else {
             $periodName = $period['school_year'] . ' — ' . $period['period_label'];
-            // A period may have many snapshots (archive -> restore -> archive again), so there is
-            // no "already archived" check here; every archive click creates a new Archive #N.
-            {
+            $stmt = $mysqli->prepare("SELECT id, status FROM system_archives WHERE period_id=? LIMIT 1");
+            $stmt->bind_param('i', $periodId);
+            $stmt->execute();
+            $existing = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+
+            if ($existing && $existing['status'] === 'archived') {
+                $archiveErrs[] = "$periodName already has an archive record.";
+            } else {
                 // The modern evaluation_tracker table is the source of truth.
                 $trackers = json_rows($mysqli->query("SELECT * FROM evaluation_tracker WHERE period_id=" . $periodId));
                 $trackerIds = tracker_ids($trackers);
@@ -475,16 +409,6 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     $archiveErrs[] = "$periodName was NOT archived (nothing was changed): could not read notifications ($snapshotReadError).";
                     continue;
                 }
-                // Friendly early check: a large year of evaluations can exceed MySQL's per-query limit.
-                // Nothing has been changed at this point, so this is always safe.
-                $mpRes = $mysqli->query("SELECT @@max_allowed_packet AS mp");
-                $maxPacket = $mpRes ? (int)$mpRes->fetch_assoc()['mp'] : 0;
-                if ($maxPacket > 0 && strlen($payload) + 8192 > $maxPacket) {
-                    $needMb = (int)ceil((strlen($payload) + 8192) / 1048576);
-                    $haveMb = (int)floor($maxPacket / 1048576);
-                    $archiveErrs[] = "$periodName was NOT archived (nothing was changed): the data is about {$needMb} MB but MySQL only accepts {$haveMb} MB per query. In XAMPP open my.ini, set max_allowed_packet=256M under [mysqld], restart MySQL, then try again.";
-                    continue;
-                }
                 $payloadLen = function_exists('mb_strlen') ? mb_strlen($payload, 'UTF-8') : null;
                 $byId = (int)$_SESSION['user_id'];
                 $byName = $_SESSION['full_name'] ?? $_SESSION['username'] ?? 'Administrator';
@@ -500,17 +424,32 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (!$lock->execute()) throw new Exception('Could not lock the period: ' . $lock->error);
                     $lock->close();
 
+                    $recheck = $mysqli->query("SELECT id, status FROM system_archives WHERE period_id=" . (int)$periodId . " LIMIT 1 FOR UPDATE");
+                    if ($recheck === false) throw new Exception('Could not re-check archive state: ' . $mysqli->error);
+                    $nowExisting = $recheck->fetch_assoc();
+                    if ($nowExisting && $nowExisting['status'] === 'archived') throw new Exception('this period was just archived by someone else.');
+                    if ($nowExisting && !$existing) throw new Exception('an archive record for this period appeared while archiving; please retry.');
+
                     $liveNow = $mysqli->query("SELECT COUNT(*) c FROM evaluation_tracker WHERE period_id=" . (int)$periodId);
                     if ($liveNow === false || (int)$liveNow->fetch_assoc()['c'] !== count($trackers)) {
                         throw new Exception('evaluation data changed while the snapshot was being taken; please retry.');
                     }
 
-                    $ins = $mysqli->prepare("INSERT INTO system_archives (period_id, period_label, school_year, archived_by, archived_by_name, record_count, summary_json, payload_json) VALUES (?,?,?,?,?,?,?,?)");
-                    if (!$ins) throw new Exception('Could not create archive record: ' . $mysqli->error);
-                    $ins->bind_param('issisiss', $periodId, $period['period_label'], $period['school_year'], $byId, $byName, $total, $summary, $payload);
-                    if (!$ins->execute()) throw new Exception('Could not create archive record: ' . $ins->error);
-                    $archiveId = $ins->insert_id;
-                    $ins->close();
+                    if ($existing) {
+                        // Previously restored: refresh the existing record instead of inserting a
+                        // new one, since period_id is UNIQUE in system_archives.
+                        $upd = $mysqli->prepare("UPDATE system_archives SET period_label=?, school_year=?, archived_by=?, archived_by_name=?, archived_at=NOW(), restored_at=NULL, restored_by=NULL, status='archived', record_count=?, summary_json=?, payload_json=? WHERE id=?");
+                        $upd->bind_param('ssisissi', $period['period_label'], $period['school_year'], $byId, $byName, $total, $summary, $payload, $existing['id']);
+                        if (!$upd->execute()) throw new Exception('Could not update archive record: ' . $upd->error);
+                        $archiveId = (int)$existing['id'];
+                        $upd->close();
+                    } else {
+                        $ins = $mysqli->prepare("INSERT INTO system_archives (period_id, period_label, school_year, archived_by, archived_by_name, record_count, summary_json, payload_json) VALUES (?,?,?,?,?,?,?,?)");
+                        $ins->bind_param('issisiss', $periodId, $period['period_label'], $period['school_year'], $byId, $byName, $total, $summary, $payload);
+                        if (!$ins->execute()) throw new Exception('Could not create archive record: ' . $ins->error);
+                        $archiveId = $ins->insert_id;
+                        $ins->close();
+                    }
 
                     // Read the archive back and confirm it was stored intact BEFORE deleting anything.
                     $chk = $mysqli->prepare("SELECT CHAR_LENGTH(payload_json) AS len, record_count FROM system_archives WHERE id=?");
@@ -591,8 +530,6 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $restoreErrors = [];
             $restored = 0;
-            $mergeSkipped = 0;
-            $fkSkipped = 0;
 
             try {
                 $mysqli->begin_transaction();
@@ -618,18 +555,15 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         continue;
                     }
 
-                    // Restoring is allowed even when the period already has live records: the archived
-                    // rows are merged in. If an archived row's id is already used by a live row (ids
-                    // can be reused after the tables were emptied), the row is inserted under a fresh
-                    // id and rows that point at it (answers, results) are re-pointed to the new id.
-                    $idMap = [];
-                    $skipIds = [];
-                    $fkMap = [
-                        'questionnaire_answers'     => ['tracker_id'    => 'evaluation_tracker'],
-                        'evaluation_answers'        => ['tracker_id'    => 'evaluation_tracker'],
-                        'evaluation_results'        => ['tracker_id'    => 'evaluation_tracker'],
-                        'peer_evaluation_results'   => ['submission_id' => 'peer_evaluation_submissions'],
-                    ];
+                    $live = $mysqli->query(
+                        "SELECT COUNT(*) c FROM evaluation_tracker WHERE period_id=" . (int)$archive['period_id']
+                    );
+                    $liveCount = $live ? (int)$live->fetch_assoc()['c'] : 0;
+
+                    if ($liveCount > 0) {
+                        $restoreErrors[] = "Archive #$archiveId was skipped because {$archive['school_year']} already contains live evaluation records.";
+                        continue;
+                    }
 
                     $order = [
                         'evaluation_tracker',
@@ -649,50 +583,41 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         foreach ($rows as $row) {
                             if (!$row) continue;
 
-                            // Rows that belong to an archived parent that was skipped (see below) are
-                            // skipped too, so no orphan answers/results are created.
-                            $parentSkipped = false;
-                            foreach (($fkMap[$table] ?? []) as $fkCol => $parentTable) {
-                                if (isset($row[$fkCol]) && isset($skipIds[$parentTable][$row[$fkCol]])) { $parentSkipped = true; break; }
-                            }
-                            if ($parentSkipped) {
-                                if (array_key_exists('id', $row)) $skipIds[$table][$row['id']] = true;
-                                continue;
+                            $columns = array_keys($row);
+                            $quotedCols = '`' . implode('`,`', array_map(
+                                fn($c) => str_replace('`', '``', $c),
+                                $columns
+                            )) . '`';
+                            $placeholders = implode(',', array_fill(0, count($columns), '?'));
+                            $sql = "INSERT INTO `$table` ($quotedCols) VALUES ($placeholders)";
+
+                            $stmt = $mysqli->prepare($sql);
+                            if (!$stmt) {
+                                throw new Exception("Could not prepare restore for table $table: " . $mysqli->error);
                             }
 
-                            // Re-point foreign keys at parent rows that were inserted under a new id.
-                            foreach (($fkMap[$table] ?? []) as $fkCol => $parentTable) {
-                                if (isset($row[$fkCol]) && isset($idMap[$parentTable][$row[$fkCol]])) {
-                                    $row[$fkCol] = $idMap[$parentTable][$row[$fkCol]];
-                                }
+                            $types = '';
+                            $values = [];
+                            foreach ($columns as $c) {
+                                $v = $row[$c];
+                                $types .= is_int($v) ? 'i' : (is_float($v) ? 'd' : 's');
+                                $values[] = $v;
                             }
 
-                            $oldId = $row['id'] ?? null;
-                            $res = restore_insert_row($mysqli, $table, $row, false);
-                            if (!$res['ok'] && $res['errno'] === 1062 && array_key_exists('id', $row)) {
-                                // The old id is taken by a live row: insert as a new row instead.
-                                $res = restore_insert_row($mysqli, $table, $row, true);
-                                if ($res['ok'] && $oldId !== null) $idMap[$table][$oldId] = $res['insert_id'];
+                            $bind = [$types];
+                            foreach ($values as $k => $v) $bind[] = &$values[$k];
+                            call_user_func_array([$stmt, 'bind_param'], $bind);
+
+                            if (!$stmt->execute()) {
+                                $err = $stmt->error;
+                                $stmt->close();
+                                throw new Exception("Restore failed for archive #$archiveId in $table: $err");
                             }
-                            if (!$res['ok'] && $res['errno'] === 1062) {
-                                // Still a duplicate: the same record (e.g. same evaluator, target and
-                                // period) already exists live. The live copy wins; the archived copy is
-                                // not duplicated, and anything that belongs to it is skipped as well.
-                                if ($oldId !== null) $skipIds[$table][$oldId] = true;
-                                if ($table === 'evaluation_tracker') $mergeSkipped++;
-                                continue;
+                            if ($stmt->affected_rows !== 1) {
+                                $stmt->close();
+                                throw new Exception("Restore failed for archive #$archiveId in $table: a row was not inserted.");
                             }
-                            if (!$res['ok'] && $res['errno'] === 1452) {
-                                // The row points at something that no longer exists (e.g. a deleted
-                                // account or question). Skip it instead of failing the whole restore;
-                                // the archive itself keeps the full original data.
-                                if ($oldId !== null) $skipIds[$table][$oldId] = true;
-                                $fkSkipped++;
-                                continue;
-                            }
-                            if (!$res['ok']) {
-                                throw new Exception("Restore failed for archive #$archiveId in $table: " . $res['error']);
-                            }
+                            $stmt->close();
                         }
                     }
 
@@ -775,12 +700,6 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         : 'No selected archives were restored.';
                     $flashType = $restored > 0 ? 'ok' : 'err';
                 }
-                if ($fkSkipped > 0 && $flashType === 'ok') {
-                    $flash .= " $fkSkipped record" . ($fkSkipped === 1 ? ' was' : 's were') . ' not restored because the account or question it refers to no longer exists.';
-                }
-                if ($mergeSkipped > 0 && $flashType === 'ok') {
-                    $flash .= " $mergeSkipped archived evaluation" . ($mergeSkipped === 1 ? '' : 's') . ' already existed in the live data, so the live copy was kept and not duplicated.';
-                }
             } catch (Throwable $ex) {
                 $mysqli->rollback();
                 $flash = 'Restore failed: ' . $ex->getMessage();
@@ -811,9 +730,16 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $flashType = 'err';
         } else {
             $hPid = (int)$h['period_id'];
+            $stmt = $mysqli->prepare("SELECT id FROM system_archives WHERE period_id=? LIMIT 1");
+            $stmt->bind_param('i', $hPid);
+            $stmt->execute();
+            $conflict = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
 
-            // A period can hold several archives now, so a newer archive no longer blocks this.
-            {
+            if ($conflict) {
+                $flash = "{$h['school_year']} ({$h['period_label']}) already has a newer archive record, so the deleted one cannot be restored.";
+                $flashType = 'err';
+            } else {
                 try {
                     $mysqli->begin_transaction();
 
@@ -935,25 +861,11 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $flashType = 'ok';
             } catch (Throwable $ex) {
                 $mysqli->rollback();
-                $flash = 'Delete cancelled, the archive was kept: ' . $ex->getMessage() . ' (If this mentions max_allowed_packet, raise it in XAMPP\'s my.ini, e.g. max_allowed_packet=256M, then restart MySQL.)';
+                $flash = 'Delete cancelled, the archive was kept: ' . $ex->getMessage() . ' (If this mentions max_allowed_packet, raise it in XAMPP\'s my.ini, e.g. max_allowed_packet=64M, then restart MySQL.)';
                 $flashType = 'err';
             }
         }
     }
-}
-
-// Post/Redirect/Get: after any action, remember the message and redirect, so pressing refresh
-// (F5) never re-submits the restore/archive/delete form.
-if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST' && $flash !== null) {
-    $_SESSION['archive_flash'] = ['text' => $flash, 'type' => $flashType];
-    header('Location: system_archive.php', true, 303);
-    exit;
-}
-if ($allowed && isset($_SESSION['archive_flash'])) {
-    $flash = (string)($_SESSION['archive_flash']['text'] ?? '');
-    $flashType = ($_SESSION['archive_flash']['type'] ?? 'ok') === 'err' ? 'err' : 'ok';
-    unset($_SESSION['archive_flash']);
-    if ($flash === '') $flash = null;
 }
 
 // ── View one archive ───────────────────────────────────────────────────────
@@ -982,7 +894,9 @@ $res = $mysqli->query("
            ep.date_start, ep.date_end, COUNT(et.id) AS live_count
     FROM evaluation_periods ep
     INNER JOIN evaluation_tracker et ON et.period_id = ep.id
-    WHERE ep.school_year REGEXP '^[0-9]{4}-[0-9]{4}$'
+    LEFT JOIN system_archives sa ON sa.period_id = ep.id AND sa.status = 'archived'
+    WHERE sa.id IS NULL
+      AND ep.school_year REGEXP '^[0-9]{4}-[0-9]{4}$'
       AND ep.semester IN ('1st Semester','2nd Semester','Summer','School Year')
     GROUP BY ep.id, ep.period_label, ep.semester, ep.school_year, ep.is_active, ep.date_start, ep.date_end
     HAVING COUNT(et.id) > 0
@@ -1067,7 +981,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
 <?php if (!$allowed): ?>
 <div class="card restricted"><div class="icon"><i class="fa-solid fa-lock"></i></div><h1>System Archive is restricted</h1><p class="sub">Only the Super Admin, or an Admin explicitly granted the <strong>System Archive</strong> edit permission, can archive or restore evaluation data.</p></div>
 <?php else: ?>
-<?php if ($flash): ?><div class="notice" style="border-color:<?= $flashType==='ok'?'#BDE9D4':'#F1B7C0' ?> !important;background:<?= $flashType==='ok'?'#EAF9F2':'#FFF0F2' ?> !important;color:<?= $flashType==='ok'?'#08734F':'#A62A42' ?> !important;"><i class="fa-solid <?= $flashType==='ok'?'fa-circle-check':'fa-circle-exclamation' ?>"></i><span><?= e($flash) ?></span></div><?php endif; ?>
+<?php if ($flash): ?><div class="notice" style="border-color:<?= $flashType==='ok'?'#BDE9D4':'#F1B7C0' ?>;background:<?= $flashType==='ok'?'#EAF9F2':'#FFF0F2' ?>;color:<?= $flashType==='ok'?'#08734F':'#A62A42' ?>;"><i class="fa-solid <?= $flashType==='ok'?'fa-circle-check':'fa-circle-exclamation' ?>"></i><span><?= e($flash) ?></span></div><?php endif; ?>
 <div class="grid">
 <div class="card">
 <h2>Archive This Year Evaluation</h2><div class="sub">Archive all evaluation submissions and related data for the selected academic year.</div>
@@ -1127,7 +1041,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
 <div class="archive-table">
 <table><thead><tr><th class="select-col"><input type="checkbox" id="selectAllArchives" title="Select all archived records"></th><th>Academic Year</th><th>Archived On</th><th>Archived By</th><th>Records</th><th>Status</th><th>Actions</th></tr></thead><tbody>
 <?php if (!$archives): ?><tr><td colspan="7" class="empty">No archived evaluation years yet.</td></tr>
-<?php else: foreach ($archives as $a): ?><tr class="archive-row" data-term="<?= e($a['period_label']) ?>" data-year="<?= e($a['school_year']) ?>"><td class="select-col"><?php if ($a['status']==='archived'): ?><input type="checkbox" class="archive-check" value="<?= (int)$a['id'] ?>" data-label="<?= e($a['school_year'] . ' — ' . $a['period_label']) ?>"><?php else: ?><span style="color:#B7C5D5">—</span><?php endif; ?></td><td><strong><?= e($a['school_year']) ?></strong><br><span style="color:#91A6BE;font-size:10.5px"><?= e($a['period_label']) ?> · Archive #<?= (int)$a['id'] ?></span><?php $rng = eval_date_range($a['ep_start'] ?? null, $a['ep_end'] ?? null); if ($rng): ?><br><span style="color:#6D86A3;font-size:10.5px;font-weight:600"><i class="fa-regular fa-calendar" style="margin-right:4px"></i><?= e($rng) ?></span><?php endif; ?></td><td><?= e($a['archived_at']) ?></td><td><?= e($a['archived_by_name']) ?></td><td><?= number_format((int)$a['record_count']) ?></td><td><span class="status <?= e($a['status']) ?>"><?= ucfirst(e($a['status'])) ?></span></td><td style="display:flex;gap:6px;align-items:center"><?php if ($a['status']==='archived'): ?><form method="POST" onsubmit="return confirmRestore(this)"><?= csrf_field() ?><input type="hidden" name="action" value="restore"><input type="hidden" name="archive_id" value="<?= (int)$a['id'] ?>"><button class="btn primary" type="submit"><i class="fa-solid fa-box-open"></i> Restore</button></form><?php else: ?><span style="font-size:11px;color:#7A90AA;font-weight:600"><i class="fa-solid fa-circle-check"></i> Restored</span><?php endif; ?><form method="POST" onsubmit="return confirmDelete(this, <?= e(json_encode($a['school_year'] . ' — ' . $a['period_label'])) ?>, <?= e(json_encode($a['status'])) ?>)"><?= csrf_field() ?><input type="hidden" name="action" value="delete"><input type="hidden" name="archive_id" value="<?= (int)$a['id'] ?>"><button class="btn danger" type="submit"><i class="fa-solid fa-trash"></i> Delete</button></form></td></tr><?php endforeach; endif; ?>
+<?php else: foreach ($archives as $a): ?><tr class="archive-row" data-term="<?= e($a['period_label']) ?>" data-year="<?= e($a['school_year']) ?>"><td class="select-col"><?php if ($a['status']==='archived'): ?><input type="checkbox" class="archive-check" value="<?= (int)$a['id'] ?>" data-label="<?= e($a['school_year'] . ' — ' . $a['period_label']) ?>"><?php else: ?><span style="color:#B7C5D5">—</span><?php endif; ?></td><td><strong><?= e($a['school_year']) ?></strong><br><span style="color:#91A6BE;font-size:10.5px"><?= e($a['period_label']) ?></span><?php $rng = eval_date_range($a['ep_start'] ?? null, $a['ep_end'] ?? null); if ($rng): ?><br><span style="color:#6D86A3;font-size:10.5px;font-weight:600"><i class="fa-regular fa-calendar" style="margin-right:4px"></i><?= e($rng) ?></span><?php endif; ?></td><td><?= e($a['archived_at']) ?></td><td><?= e($a['archived_by_name']) ?></td><td><?= number_format((int)$a['record_count']) ?></td><td><span class="status <?= e($a['status']) ?>"><?= ucfirst(e($a['status'])) ?></span></td><td style="display:flex;gap:6px;align-items:center"><?php if ($a['status']==='archived'): ?><form method="POST" onsubmit="return confirmRestore(this)"><?= csrf_field() ?><input type="hidden" name="action" value="restore"><input type="hidden" name="archive_id" value="<?= (int)$a['id'] ?>"><button class="btn primary" type="submit"><i class="fa-solid fa-box-open"></i> Restore</button></form><?php else: ?><span style="font-size:11px;color:#7A90AA;font-weight:600"><i class="fa-solid fa-circle-check"></i> Restored</span><?php endif; ?><form method="POST" onsubmit="return confirmDelete(this, <?= e(json_encode($a['school_year'] . ' — ' . $a['period_label'])) ?>, <?= e(json_encode($a['status'])) ?>)"><?= csrf_field() ?><input type="hidden" name="action" value="delete"><input type="hidden" name="archive_id" value="<?= (int)$a['id'] ?>"><button class="btn danger" type="submit"><i class="fa-solid fa-trash"></i> Delete</button></form></td></tr><?php endforeach; endif; ?>
 <tr id="archiveNoMatch" style="display:none"><td colspan="7" class="empty">No archived records match this filter.</td></tr>
 </tbody></table></div></div>
 
@@ -1316,7 +1230,7 @@ function confirmSubmit(form, message, opts){
     return false;
 }
 function confirmArchive(form){const chosen=periodChecks.filter(c=>c.checked);if(!chosen.length)return false;const n=chosen.length;return confirmSubmit(form, `Archive ${n===1?'this period':n+' periods'}?\n\nThis cannot be undone from the live dashboards.`, {okLabel:'Archive'});}
-function confirmRestore(form){return confirmSubmit(form, 'Restore this archive back into the live evaluation tables?\n\nIf the period already has live evaluation records, the archived records are merged in alongside them.', {okLabel:'Restore', danger:false});}
+function confirmRestore(form){return confirmSubmit(form, 'Restore this archive back into the live evaluation tables?\n\nThis is allowed only when the selected period has no live evaluation records.', {okLabel:'Restore', danger:false});}
 const archiveChecks=[...document.querySelectorAll('.archive-check')];
 const selectAllArchives=document.getElementById('selectAllArchives');
 const bulkRestoreBtn=document.getElementById('bulkRestoreBtn');
@@ -1379,7 +1293,7 @@ if(selectAllArchives){
 function confirmBulkRestore(form){
     const selected=archiveChecks.filter(c=>c.checked);
     if(!selected.length) return false;
-    return confirmSubmit(form, `Restore ${selected.length} selected archive${selected.length===1?'':'s'}?\n\nAny live records already in those periods are kept, and the archived records are merged in. Continue?`, {okLabel:'Restore', danger:false});
+    return confirmSubmit(form, `Restore ${selected.length} selected archive${selected.length===1?'':'s'}?\n\nEach selected period must have no live evaluation records. Continue?`, {okLabel:'Restore', danger:false});
 }
 syncArchiveSelection();
 function confirmDelete(form, label, status){const d=<?= (int)ARCHIVE_TRASH_DAYS ?>;const risk=status==='archived'?`⚠ This archive has NOT been restored, so it holds the only copy of this evaluation data.\n\n`:`This archive was already restored to the live tables.\n\n`;return confirmSubmit(form, `Are you sure you want to delete the archive for ${label}?\n\n${risk}It will move to Recently Deleted, where you can restore it for ${d} days. After ${d} days it is permanently erased and cannot be recovered.`, {okLabel:'Delete'});}

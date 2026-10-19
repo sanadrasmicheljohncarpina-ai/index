@@ -62,13 +62,14 @@ if ($period_id_int > 0) {
           AND et.submitted_at IS NOT NULL
           AND target.is_active=1
           AND target.account_status='approved'
+          AND et.target_user_id <> " . (int)($_SESSION['user_id'] ?? 0) . "
           AND (target.role IN ('principal','staff') OR (target.role IN ('teacher','faculty') AND EXISTS (
               SELECT 1 FROM user_year_levels uyl
               WHERE uyl.user_id=target.id AND uyl.year_level IN ($collegeLevels)
           )))
           AND et.eval_type IN ('student','peer','faculty_peer','staff_peer')
         ORDER BY et.submitted_at DESC, et.id DESC
-        LIMIT 12";
+        LIMIT 500";
     $recentEvalQ = $mysqli->query($recentEvalSql);
     if ($recentEvalQ) {
         $recent = $recentEvalQ->fetch_all(MYSQLI_ASSOC);

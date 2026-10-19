@@ -257,7 +257,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$readOnly) {
             }
 
             $comment = trim((string)($_POST['comment'] ?? ''));
-            if ($error === '' && $scoreCount === 0) {
+            if ($error === '' && $comment === '') {
+                $error = 'Please write a comment before submitting. Comments are required.';
+            } elseif ($error === '' && $scoreCount === 0) {
                 $error = 'There are no answerable questions in this questionnaire.';
             } elseif ($error === '' && $scoreCount !== count($questions)) {
                 $missingCount = count($questions) - $scoreCount;
@@ -564,7 +566,7 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
                     <span id="evalCompletionText">0 of <?= count($questions) ?> questions answered</span>
                 </div>
                 <div class="eval-validation-summary" id="evalValidationSummary" role="alert" aria-live="assertive" hidden></div>
-                <div class="comment-block"><label for="comment">Comment (optional)</label><textarea id="comment" name="comment" placeholder="Any additional feedback..."></textarea></div>
+                <div class="comment-block"><label for="comment">Comment <span style="color:#ef4444">*</span></label><textarea id="comment" name="comment" required aria-required="true" placeholder="Share your feedback (required)..."></textarea></div>
                 <button type="submit" class="btn-submit" <?= (!$hasPeriod || !$evalOpen) ? 'disabled style="opacity:.5;cursor:not-allowed;"' : '' ?>><i class="fa-solid fa-paper-plane"></i> Submit Evaluation</button>
             </form>
         <?php endif; ?>

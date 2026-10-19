@@ -56,6 +56,8 @@ if ($mysqli->ping()) $mysqli->close();
 .log-action-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:6px}
 .log-user{font-weight:600;white-space:nowrap}
 .log-details{color:var(--text-dim);word-break:break-word}
+.logs-more{display:block;margin:16px auto;padding:9px 20px;border:1px solid var(--accent-border);border-radius:20px;background:var(--accent-bg);color:var(--accent);font-weight:700;font-size:13px;cursor:pointer}
+.logs-more:disabled{opacity:.6;cursor:default}
 .logs-empty{padding:40px 20px;text-align:center;color:var(--text-dim);font-size:13.5px}
 .logs-error{color:#b91c1c}
 .logs-retry{margin-left:8px;padding:5px 10px;border:1px solid currentColor;border-radius:6px;background:transparent;color:inherit;font-weight:600;cursor:pointer}
@@ -120,6 +122,8 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
   </table>
 </div>
 
+<button type="button" class="logs-more" id="logsMoreBtn" style="display:none" onclick="loadMoreLogs()">Load more</button>
+
 </main>
 
 <script>
@@ -159,6 +163,14 @@ function renderLoadError(message){
             +' <button type="button" class="logs-retry" onclick="refreshLogs()">Retry</button></td></tr>';
     }
 }
+const PAGE_SIZE=50;
+let logsLimit=PAGE_SIZE;
+function loadMoreLogs(){
+    logsLimit+=PAGE_SIZE;
+    const more=document.getElementById('logsMoreBtn');
+    if(more) more.disabled=true;
+    refreshLogs();
+}
 let _logsRequest=null;
 function refreshLogs(){
     if(_logsRequest) _logsRequest.abort();
@@ -166,7 +178,7 @@ function refreshLogs(){
     _logsRequest=controller;
     const timeout=setTimeout(()=>controller.abort(),8000);
 
-    fetch('dashboard_counts.php',{
+    fetch('dashboard_counts.php?feed_limit='+logsLimit,{
         credentials:'same-origin',
         cache:'no-store',
         signal:controller.signal
@@ -182,7 +194,16 @@ function refreshLogs(){
         }
         return d;
     })
-    .then(d=>{ if(d) renderLogsTable(d.feed_full); })
+    .then(d=>{
+        if(!d) return;
+        renderLogsTable(d.feed_full);
+        const more=document.getElementById('logsMoreBtn');
+        if(more){
+            more.disabled=false;
+            // a full page back means there may be older entries
+            more.style.display=(d.feed_full||[]).length>=logsLimit ? 'block' : 'none';
+        }
+    })
     .catch(err=>{
         if(err?.name==='AbortError'){
             renderLoadError('Recent activity is taking too long to load.');

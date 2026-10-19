@@ -717,7 +717,7 @@ $HEALTH_ITEMS = [
     .notif-header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #E8DFC4;}
     .notif-header-title{font-size:13px;font-weight:700;color:#0B1F3A;display:flex;align-items:center;gap:7px;}
     .notif-mark-read{font-size:11px;color:var(--blue-accent);cursor:pointer;font-weight:600;background:none;border:none;font-family:'Inter',sans-serif;padding:0;}
-    .notif-list{max-height:360px;overflow-y:auto;}
+    .notif-list{max-height:min(360px,calc(100vh - 170px));overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#D9CBA0 transparent;}
     .notif-list::-webkit-scrollbar{width:4px;}
     .notif-list::-webkit-scrollbar-thumb{background:#D9CBA0;border-radius:4px;}
     .notif-list::-webkit-scrollbar-thumb:hover{background:#91A6BE;}
@@ -1872,7 +1872,7 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { display:none !important; widt
 <!-- Custom confirm modal: replaces the native "localhost says" browser confirm() dialog -->
 <div class="pbi-confirm-overlay" id="pbiConfirmOverlay">
     <div class="pbi-confirm-card">
-        <div class="pbi-confirm-msg">Are you sure you want to logout?</div>
+        <div class="pbi-confirm-msg">Are you sure you want to log out?</div>
         <div class="pbi-confirm-actions">
             <button type="button" class="pbi-confirm-btn cancel" id="pbiConfirmCancel">Cancel</button>
             <button type="button" class="pbi-confirm-btn ok" id="pbiConfirmOk">OK</button>
@@ -2300,21 +2300,21 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { display:none !important; widt
                     <div class="pbi-stat-label">Total Personnel</div>
                     <div class="pbi-stat-value" id="cnt-faculty"><?= number_format($facultyCount) ?></div>
                     <div class="pbi-stat-sub">Faculty + Staff</div>
-                    <div class="pbi-stat-trend flat" id="trend-faculty"><i class="fa-solid fa-minus"></i> No change yet</div>
+                    <div class="pbi-stat-trend flat" id="trend-faculty"><i class="fa-solid fa-minus"></i> </div>
                 </div>
                 <div class="pbi-stat-card stat-skyblue">
                     <div class="pbi-stat-icon-circle"><i class="fa-solid fa-graduation-cap"></i></div>
                     <div class="pbi-stat-label">Active Students</div>
                     <div class="pbi-stat-value" id="cnt-students"><?= number_format($studentCount) ?></div>
                     <div class="pbi-stat-sub">Active student accounts</div>
-                    <div class="pbi-stat-trend flat" id="trend-students"><i class="fa-solid fa-minus"></i> No change yet</div>
+                    <div class="pbi-stat-trend flat" id="trend-students"><i class="fa-solid fa-minus"></i></div>
                 </div>
                 <div class="pbi-stat-card stat-violet">
                     <div class="pbi-stat-icon-circle"><i class="fa-solid fa-clipboard-check"></i></div>
                     <div class="pbi-stat-label">Evaluations Submitted</div>
                     <div class="pbi-stat-value" id="cnt-evals"><?= number_format($periodSubmittedEvaluationCount) ?></div>
                     <div class="pbi-stat-sub">Submissions in the current period</div>
-                    <div class="pbi-stat-trend flat" id="trend-evals"><i class="fa-solid fa-minus"></i> No change yet</div>
+                    <div class="pbi-stat-trend flat" id="trend-evals"><i class="fa-solid fa-minus"></i></div>
                 </div>
                 <div class="pbi-stat-card stat-gold pbi-completion-card">
                     <div class="pbi-completion-ring" id="completion-ring" style="--pct:<?= min(100,$submissionPct) ?>;">
@@ -2484,12 +2484,57 @@ function pbiConfirm(message, opts){
 function pbiConfirmLogout(link){
     var cur=document.querySelector('.page.active');
     var go=function(){
-        pbiConfirm('Are you sure you want to logout?', {okLabel:'OK'}).then(function(ok){
+        pbiConfirm('Are you sure you want to log out?', {okLabel:'OK'}).then(function(ok){
             if(ok) window.location.href=link.href;
         });
     };
     if(cur&&cur.id==='settings') pbiGuardUnsaved(go); else go();
     return false; // stop the link's default navigation until confirmed
+}
+
+/* ── FULL-PAGE DIM FOR MODALS INSIDE AN IFRAME PAGE ──
+   Pages such as Account Management run in an iframe, so their own modal
+   overlay can only dim the iframe (and leaves its scrollbar/edges bright).
+   Instead they call window.parent.pbiFrameDim(true, frameEl, rect, onBackdrop)
+   when a modal opens and pbiFrameDim(false) when it closes. ONE plain dim —
+   the same colour as the logout dialog — is drawn over the entire window
+   (sidebar, top bar, iframe content and scrollbar), with a rounded cut-out
+   exactly where the modal card is, so only the card shows through undimmed.
+   rect = {x,y,w,h,r} of the modal card in the iframe's own coordinates. */
+var _pbiFrameDimEl=null, _pbiFrameDimTarget=null, _pbiFrameDimRect=null;
+function _pbiFrameDimLayout(){
+    if(!_pbiFrameDimEl||!_pbiFrameDimTarget) return;
+    var f=_pbiFrameDimTarget.getBoundingClientRect();
+    var rc=_pbiFrameDimRect;
+    var x,y,w,h,rad;
+    if(rc){ x=f.left+rc.x; y=f.top+rc.y; w=rc.w; h=rc.h; rad=rc.r||0; }
+    else  { x=f.left; y=f.top; w=f.width; h=f.height; rad=parseFloat(getComputedStyle(_pbiFrameDimTarget).borderTopLeftRadius)||0; }
+    rad=Math.max(0,Math.min(rad,w/2,h/2));
+    var W=window.innerWidth, H=window.innerHeight;
+    var hole='M'+(x+rad)+' '+y+'H'+(x+w-rad)+'A'+rad+' '+rad+' 0 0 1 '+(x+w)+' '+(y+rad)+
+             'V'+(y+h-rad)+'A'+rad+' '+rad+' 0 0 1 '+(x+w-rad)+' '+(y+h)+
+             'H'+(x+rad)+'A'+rad+' '+rad+' 0 0 1 '+x+' '+(y+h-rad)+
+             'V'+(y+rad)+'A'+rad+' '+rad+' 0 0 1 '+(x+rad)+' '+y+'Z';
+    _pbiFrameDimEl.style.clipPath='path(evenodd,"M0 0H'+W+'V'+H+'H0Z '+hole+'")';
+}
+function pbiFrameDim(on, frameEl, rect, onBackdrop){
+    if(on){
+        if(!_pbiFrameDimEl){
+            _pbiFrameDimEl=document.createElement('div');
+            _pbiFrameDimEl.id='pbiFrameDim';
+            _pbiFrameDimEl.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:10000;';
+            document.body.appendChild(_pbiFrameDimEl);
+            window.addEventListener('resize',_pbiFrameDimLayout);
+        }
+        _pbiFrameDimEl.onclick=function(){ if(typeof onBackdrop==='function') onBackdrop(); };
+        _pbiFrameDimTarget=frameEl||document.querySelector('.page.active iframe')||document.querySelector('iframe');
+        _pbiFrameDimRect=rect||null;
+        _pbiFrameDimLayout();
+    } else if(_pbiFrameDimEl){
+        window.removeEventListener('resize',_pbiFrameDimLayout);
+        _pbiFrameDimEl.remove();
+        _pbiFrameDimEl=null; _pbiFrameDimTarget=null; _pbiFrameDimRect=null;
+    }
 }
 
 /* ── SETTINGS MODAL ── */
@@ -2627,6 +2672,95 @@ document.addEventListener('click',function(e){
     if(ov&&e.target===ov&&ov._close) ov._close();
 });
 
+
+// Called by Settings > My Account (nested iframe) after the admin edits their profile,
+// so the sidebar name/photo update immediately without a page reload.
+window.pbiUpdateProfile=function(d){
+    d=d||{};
+    if(d.full_name){
+        var n=document.querySelector('.sidebar-profile-name'); if(n) n.textContent=d.full_name;
+        var p=d.full_name.trim().split(/\s+/), ini=((p[0]||'')[0]||'').toUpperCase()+((p[1]||'')[0]||'').toUpperCase();
+        document.querySelectorAll('.sidebar-profile-initials').forEach(function(x){x.textContent=ini;});
+    }
+    if('photo_url' in d){
+        var logo=document.querySelector('.sidebar-profile-logo'); if(!logo) return;
+        var img=logo.querySelector('img'), ini2=logo.querySelector('.sidebar-profile-initials');
+        if(d.photo_url){
+            if(!img){ img=document.createElement('img'); logo.insertBefore(img, logo.firstChild); }
+            img.style.display=''; img.src=d.photo_url+'?t='+Date.now();
+            if(ini2) ini2.style.display='none';
+        } else {
+            if(img) img.remove();
+            if(ini2) ini2.style.display='flex';
+        }
+    }
+};
+
+// ── Full-page dim for modals that open inside a feature iframe ─────────────
+// A modal inside an iframe can only dim the iframe itself. The page posts
+// {type:'pbi-modal-dim', open:bool}; we dim everything OUTSIDE that iframe
+// (sidebar, top bar, margins) with the same tint so the whole page looks dimmed.
+(function(){
+    var dim=null, activeFrame=null;
+    var TINT='rgba(15,23,42,.55)', BLUR='none'; // identical to the logout confirm overlay (flat tint, no blur)
+    (function(){
+        var st=document.createElement('style');
+        st.id='pbi-frame-dim-style';
+        // While a popup is open the frame stops looking like a bordered card, so the
+        // whole screen reads as one plain dimmed background.
+        st.textContent='html body .iframe-box.pbi-frame-dimmed{border-width:0!important;border-radius:0!important;box-shadow:none!important;}';
+        document.head.appendChild(st);
+    })();
+    function syncInner(f){
+        // Give the popup backdrop inside the iframe the exact same tint/blur as the outer dim.
+        try{
+            var d=f.contentDocument;
+            if(!d||d.getElementById('pbi-dim-sync')) return;
+            var s=d.createElement('style');
+            s.id='pbi-dim-sync';
+            // Flat tint over the whole frame; hide the frame's scrollbar so the dim has no light strip at the edge.
+            s.textContent='.qxm-modal-backdrop{background:'+TINT+'!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;}'+
+                          'html:has(.qxm-modal-backdrop.open),html:has(.qxm-modal-backdrop.open) body{scrollbar-width:none!important;}'+
+                          'html:has(.qxm-modal-backdrop.open)::-webkit-scrollbar,html:has(.qxm-modal-backdrop.open) body::-webkit-scrollbar{display:none!important;}';
+            d.head.appendChild(s);
+        }catch(err){}
+    }
+    function ensure(){
+        if(dim) return dim;
+        dim=document.createElement('div');
+        dim.id='pbiGlobalDim';
+        dim.style.cssText='position:fixed;inset:0;z-index:9990;display:none;background:'+TINT+';-webkit-backdrop-filter:'+BLUR+';backdrop-filter:'+BLUR+';';
+        document.body.appendChild(dim);
+        return dim;
+    }
+    function layout(){
+        if(!dim||!activeFrame||dim.style.display==='none') return;
+        var r=activeFrame.getBoundingClientRect(), W=window.innerWidth, H=window.innerHeight;
+        var rad=0; // square cut-out: no visible rounded box around the frame
+        var x=r.left,y=r.top,w=r.width,h=r.height;
+        var hole='M'+(x+rad)+' '+y+'H'+(x+w-rad)+'A'+rad+' '+rad+' 0 0 1 '+(x+w)+' '+(y+rad)+
+                 'V'+(y+h-rad)+'A'+rad+' '+rad+' 0 0 1 '+(x+w-rad)+' '+(y+h)+'H'+(x+rad)+
+                 'A'+rad+' '+rad+' 0 0 1 '+x+' '+(y+h-rad)+'V'+(y+rad)+'A'+rad+' '+rad+' 0 0 1 '+(x+rad)+' '+y+'Z';
+        dim.style.clipPath='path(evenodd,"M0 0H'+W+'V'+H+'H0Z'+hole+'")';
+    }
+    function hide(){
+        if(dim) dim.style.display='none';
+        if(activeFrame) activeFrame.classList.remove('pbi-frame-dimmed');
+        activeFrame=null;
+    }
+    window.addEventListener('message',function(e){
+        if(!e.data||e.data.type!=='pbi-modal-dim'||e.origin!==location.origin) return;
+        if(!e.data.open){ hide(); return; }
+        var f=Array.prototype.find.call(document.querySelectorAll('iframe'),function(i){return i.contentWindow===e.source;});
+        if(!f) return;
+        if(activeFrame&&activeFrame!==f) activeFrame.classList.remove('pbi-frame-dimmed');
+        activeFrame=f; f.classList.add('pbi-frame-dimmed'); syncInner(f);
+        ensure().style.display='block'; layout();
+    });
+    window.addEventListener('resize',layout);
+    // A form submit / navigation inside the frame reloads it: never leave the dim stuck on.
+    document.addEventListener('load',function(e){ if(e.target&&e.target.tagName==='IFRAME') hide(); },true);
+})();
 function showPage(pageId,element){
     var cur=document.querySelector('.page.active');
     if(cur&&cur.id==='settings'&&pageId!=='settings'){
@@ -2890,12 +3024,33 @@ function renderCounts(counts){
     if(counts.trend_students!==undefined)renderTrend('trend-students',counts.trend_students);
     if(counts.trend_evals!==undefined)renderTrend('trend-evals',counts.trend_evals);
 }
+// Notifications are kept for the whole session: items that drop out of the
+// server's latest feed are retained (below the current ones) instead of
+// vanishing, so the list only ever grows and is simply scrolled.
+const NOTIF_KEEP_MAX=500;
+let _notifStore=[],_notifLastHtml='';
+function notifKey(e,n){
+    if(e.id) return 'id:'+e.id;   // server-supplied stable id
+    return [e.type,e.text,e.meta,e.target_user_id||e.account_user_id||'',n].join('|');
+}
+function mergeNotifFeed(feed){
+    const seen={},fresh=[];
+    (feed||[]).forEach(e=>{
+        const base=notifKey(e,''); seen[base]=(seen[base]||0)+1;
+        fresh.push({k:notifKey(e,seen[base]),e:e});
+    });
+    const freshKeys=new Set(fresh.map(x=>x.k));
+    const kept=_notifStore.filter(x=>!freshKeys.has(x.k));
+    _notifStore=fresh.concat(kept).slice(0,NOTIF_KEEP_MAX);
+    return _notifStore.map(x=>x.e);
+}
 function renderBell(feed,unreadCount){
     const badge=document.getElementById('notifBadge'),btn=document.getElementById('notifBtn'),list=document.getElementById('notifList');
     if(unreadCount>0){badge.textContent=unreadCount>99?'99+':unreadCount;badge.classList.add('show');btn.classList.add('has-unread');}
     else{badge.classList.remove('show');btn.classList.remove('has-unread');}
     if(!feed||feed.length===0){list.innerHTML='<div class="notif-empty"><i class="fa-regular fa-bell-slash"></i>No recent activity</div>';return;}
-    list.innerHTML=feed.map(e=>{
+    feed=mergeNotifFeed(feed);
+    const html=feed.map(e=>{
         // Evaluation-submission notifications link to that person's report;
         // role-change/new-account ones link to their Account Management row.
         // Both require the backend to have supplied a usable id/role/status.
@@ -2917,6 +3072,14 @@ function renderBell(feed,unreadCount){
             ${clickable?'<i class="fa-solid fa-chevron-right" style="font-size:10px;color:var(--muted);margin-top:5px;flex-shrink:0;"></i>':''}
         </div>`;
     }).join('');
+    // Nothing changed since the last poll: leave the DOM (and the scroll
+    // position) completely untouched.
+    if(html===_notifLastHtml && list.children.length) return;
+    _notifLastHtml=html;
+    // Repaint, but keep the reader exactly where they were scrolled to.
+    const prevTop=list.scrollTop;
+    list.innerHTML=html;
+    list.scrollTop=prevTop;
 }
 function renderLogsTable(feedFull){
     const body=document.getElementById('logsTableBody');if(!body)return;
@@ -3424,9 +3587,9 @@ html[data-theme="dark"] body:has(#dashboard.active) .pbi-panel-viewall:hover{bac
 
 <!-- EA evaluation popup: lives at the top level so the blur covers the whole screen (sidebar + header included). -->
 <style>
-.ea-eval-overlay{position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(9,17,30,.64);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
+.ea-eval-overlay{position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;padding:10px 20px;background:rgba(9,17,30,.64);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
 .ea-eval-overlay.open{display:flex}
-.ea-eval-wrap{width:100%;max-width:780px;height:92vh}
+.ea-eval-wrap{width:100%;max-width:780px;height:96vh;max-height:calc(100vh - 20px)}
 .ea-eval-wrap iframe{width:100%;height:100%;border:0;background:transparent;border-radius:18px}
 @media(max-width:700px){.ea-eval-overlay{padding:10px}}
 </style>

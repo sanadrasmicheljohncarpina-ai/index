@@ -1934,3 +1934,372 @@ html.principal-reduced-motion *::after{animation-duration:.01ms!important;animat
   #principal-appearance-settings .appearance-choice-copy{flex:1;}
   #principal-appearance-settings .appearance-density-options{grid-template-columns:1fr;}
 }
+
+/* ==========================================================================
+   Evaluation Received (principal_results.php) — dark mode
+   That page ships late inline light styles (ID-scoped, !important), so these
+   rules use html.principal-theme-dark + #principalFeatureWorkspace to win.
+   Palette matches Evaluation Tracker: #172A45 cards, #0F1F3D inner, #E0E6F0 text.
+   ========================================================================== */
+
+/* KPI cards */
+html.principal-theme-dark #principalFeatureWorkspace .er-stats .stat-card{
+  background:#172A45!important;
+  border-color:rgba(255,255,255,.08)!important;
+  box-shadow:0 4px 20px rgba(0,0,0,.28)!important;
+}
+html.principal-theme-dark #principalFeatureWorkspace .er-stat-icon{background:rgba(217,154,43,.16)!important;}
+html.principal-theme-dark #principalFeatureWorkspace .er-stat-icon i{color:#F0B84D!important;}
+html.principal-theme-dark #principalFeatureWorkspace .stat-card .num{color:#F4F7FB!important;}
+html.principal-theme-dark #principalFeatureWorkspace .stat-card .label{color:#A0B3C6!important;}
+html.principal-theme-dark #principalFeatureWorkspace .er-num-unit,
+html.principal-theme-dark #principalFeatureWorkspace .er-stat-sub,
+html.principal-theme-dark #principalFeatureWorkspace .er-shown,
+html.principal-theme-dark #principalFeatureWorkspace .empty-note{color:#9FB2C6!important;}
+html.principal-theme-dark #principalFeatureWorkspace .er-stars span{color:rgba(255,255,255,.18)!important;}
+html.principal-theme-dark #principalFeatureWorkspace .er-stars span.on{color:#F5B301!important;}
+html.principal-theme-dark #principalFeatureWorkspace .er-trend.up{color:#34D399!important;}
+html.principal-theme-dark #principalFeatureWorkspace .er-trend.down{color:#F87171!important;}
+html.principal-theme-dark #principalFeatureWorkspace .er-trend.flat{color:#9FB2C6!important;}
+
+/* Section cards + headings */
+html.principal-theme-dark #principalFeatureWorkspace .section{
+  background:#172A45!important;
+  border-color:rgba(255,255,255,.08)!important;
+  box-shadow:0 4px 20px rgba(0,0,0,.28)!important;
+}
+html.principal-theme-dark #principalFeatureWorkspace .section h2{color:#F4F7FB!important;}
+html.principal-theme-dark #principalFeatureWorkspace .section h2 i{color:#F0B84D!important;}
+html.principal-theme-dark #principalFeatureWorkspace .er-count{background:rgba(217,154,43,.18)!important;color:#F0B84D!important;}
+
+/* Performance by Category */
+html.principal-theme-dark #principalFeatureWorkspace .er-cat-name{color:#E0E6F0!important;}
+html.principal-theme-dark #principalFeatureWorkspace .er-cat-score{color:#F4F7FB!important;}
+html.principal-theme-dark #principalFeatureWorkspace .er-cat-score small{color:#9FB2C6!important;}
+html.principal-theme-dark #principalFeatureWorkspace .er-cat-track{background:rgba(255,255,255,.10)!important;}
+html.principal-theme-dark #principalFeatureWorkspace .er-cat-tag.highest{background:rgba(16,185,129,.16)!important;color:#34D399!important;}
+html.principal-theme-dark #principalFeatureWorkspace .er-cat-tag.lowest{background:rgba(245,158,11,.16)!important;color:#FBBF24!important;}
+
+/* Term picker */
+html.principal-theme-dark #principalFeatureWorkspace .term-picker label{color:#9FB2C6!important;}
+html.principal-theme-dark #principalFeatureWorkspace .term-picker select{
+  background:#0F1F3D!important;
+  color:#E0E6F0!important;
+  border-color:rgba(255,255,255,.13)!important;
+}
+html.principal-theme-dark #principalFeatureWorkspace .term-picker .sel-wrap i{color:#E0E6F0!important;}
+html.principal-theme-dark #principalFeatureWorkspace .term-picker select option{background:#0F1F3D;color:#E0E6F0;}
+html.principal-theme-dark #principalFeatureWorkspace .term-picker select:focus,
+html.principal-theme-dark #principalFeatureWorkspace .er-select:focus{border-color:#D99A2B!important;outline-color:rgba(217,154,43,.35);}
+
+/* Toolbar: sort, "with comments only" chip */
+html.principal-theme-dark #principalFeatureWorkspace .er-toolbar{border-top-color:rgba(255,255,255,.08)!important;}
+html.principal-theme-dark #principalFeatureWorkspace .er-select,
+html.principal-theme-dark #principalFeatureWorkspace .er-chip{
+  background:#0F1F3D!important;
+  color:#E0E6F0!important;
+  border-color:rgba(255,255,255,.13)!important;
+}
+html.principal-theme-dark #principalFeatureWorkspace .er-select option{background:#0F1F3D;color:#E0E6F0;}
+html.principal-theme-dark #principalFeatureWorkspace .er-chip:hover{border-color:rgba(217,154,43,.40)!important;}
+
+/* Evaluation list items */
+html.principal-theme-dark #principalFeatureWorkspace .er-item{
+  background:#0F1F3D!important;
+  border-color:rgba(255,255,255,.08)!important;
+  box-shadow:none!important;
+}
+html.principal-theme-dark #principalFeatureWorkspace .er-item:hover,
+html.principal-theme-dark #principalFeatureWorkspace .er-item:focus-visible{
+  background:#14284A!important;
+  border-color:rgba(217,154,43,.45)!important;
+  box-shadow:0 2px 14px rgba(0,0,0,.35)!important;
+}
+html.principal-theme-dark #principalFeatureWorkspace .er-eyebrow{color:#A0B3C6!important;}
+html.principal-theme-dark #principalFeatureWorkspace .er-meta{color:#9FB2C6!important;}
+html.principal-theme-dark #principalFeatureWorkspace .er-comment{color:#E0E6F0!important;}
+html.principal-theme-dark #principalFeatureWorkspace .er-comment.none{color:#8FA6BF!important;}
+html.principal-theme-dark #principalFeatureWorkspace .er-badge.high{background:rgba(16,185,129,.16)!important;color:#34D399!important;border-color:rgba(16,185,129,.35)!important;}
+html.principal-theme-dark #principalFeatureWorkspace .er-badge.mid{background:rgba(245,158,11,.16)!important;color:#FBBF24!important;border-color:rgba(245,158,11,.38)!important;}
+html.principal-theme-dark #principalFeatureWorkspace .er-badge.low{background:rgba(239,68,68,.16)!important;color:#F87171!important;border-color:rgba(239,68,68,.38)!important;}
+html.principal-theme-dark #principalFeatureWorkspace .er-badge.none{background:rgba(148,163,184,.14)!important;color:#A0B3C6!important;border-color:rgba(148,163,184,.28)!important;}
+html.principal-theme-dark #principalFeatureWorkspace .details-btn{
+  background:rgba(217,154,43,.14)!important;
+  border-color:rgba(217,154,43,.32)!important;
+  color:#F0B84D!important;
+}
+html.principal-theme-dark #principalFeatureWorkspace .details-btn:hover{background:rgba(217,154,43,.22)!important;}
+
+/* Evaluation Details modal (outside #principalFeatureWorkspace) */
+html.principal-theme-dark .eval-modal-overlay{background:rgba(3,10,22,.72)!important;}
+html.principal-theme-dark .eval-modal .info-grid{
+  background:transparent!important;
+  box-shadow:none!important;
+  border:0!important;
+}
+html.principal-theme-dark .eval-modal .info-grid>div{
+  background:#172A45!important;
+  border-color:rgba(255,255,255,.08)!important;
+  box-shadow:none!important;
+}
+html.principal-theme-dark .eval-modal .info-label{color:#8FA6BF!important;}
+html.principal-theme-dark .eval-modal .info-value{color:#EAF0F7!important;}
+html.principal-theme-dark .eval-modal .score-big{color:#F0B84D!important;}
+html.principal-theme-dark .eval-modal .modal-section-title{color:#EAF0F7!important;}
+html.principal-theme-dark .eval-modal .cat-name-modal{color:#C9D5E3!important;}
+html.principal-theme-dark .eval-modal .cat-score-modal{color:#F0B84D!important;}
+html.principal-theme-dark .eval-modal .cat-bar{background:rgba(255,255,255,.10)!important;}
+html.principal-theme-dark .eval-modal .cat-bar>div{background:linear-gradient(90deg,#B8801F,#F0B84D)!important;}
+html.principal-theme-dark .eval-modal .q-result{
+  background:#172A45!important;
+  border-color:rgba(255,255,255,.08)!important;
+  box-shadow:none!important;
+}
+html.principal-theme-dark .eval-modal .q-no,
+html.principal-theme-dark .eval-modal .q-score,
+html.principal-theme-dark .eval-modal .loading-eval{color:#9FB2C6!important;}
+html.principal-theme-dark .eval-modal .q-score span{color:#E0E6F0!important;}
+html.principal-theme-dark .eval-modal .q-text{color:#EAF0F7!important;}
+html.principal-theme-dark .eval-modal .star{color:rgba(255,255,255,.18)!important;}
+html.principal-theme-dark .eval-modal .star.filled{color:#FACC15!important;}
+html.principal-theme-dark .eval-modal .comment-modal{
+  background:#172A45!important;
+  color:#E0E6F0!important;
+  border-color:rgba(255,255,255,.08)!important;
+}
+html.principal-theme-dark .eval-modal .comment-modal.empty{color:#8FA6BF!important;}
+
+/* ==========================================================================
+   Evaluation Reports (principal_reports.php) — dark mode
+   Covers: Users Being Evaluated list, per-person Evaluation Results, and the
+   individual report sheet. The page ships several late light-only blocks
+   (main.main table thead th, .reports-table th, .detail-results-title i, ...)
+   so these selectors are prefixed with html.principal-theme-dark body main.main:not(#pbi-dark-id)
+   to out-rank them. The cumulative PRINT sheet is intentionally left alone.
+   Palette = Evaluation Tracker: #172A45 / #0F1F3D / #E0E6F0 / #9FB2C6 / amber.
+   ========================================================================== */
+html.principal-theme-dark body main.main:not(#pbi-dark-id){--dk-card:#172A45;--dk-inner:#0F1F3D;--dk-line:rgba(255,255,255,.08);}
+
+/* --- Tables: header bar, rows, text ------------------------------------ */
+html.principal-theme-dark body main.main:not(#pbi-dark-id) table thead,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) table thead tr,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .q-table thead tr{background:#0F1F3D!important;}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) table thead th,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-table th,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-results-table th,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .q-table th{
+  background:#0F1F3D!important;
+  color:#BFD0E0!important;
+  border-color:rgba(255,255,255,.08)!important;
+}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) table tbody td,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-table td,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-results-table td,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .q-table td{
+  background:#172A45!important;
+  color:#DCE6F0!important;
+  border-color:rgba(255,255,255,.07)!important;
+}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) table tbody tr:nth-child(even) td,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .q-table tbody tr:nth-child(even) td{background:#15263F!important;}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) table tbody tr:hover td,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-table tbody tr:hover td,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-results-table tbody tr:hover td,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .q-table tbody tr:hover td{background:#1D3554!important;}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .q-table,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-table,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-results-table{background:#172A45!important;border-color:rgba(255,255,255,.08)!important;}
+
+/* Individual cells that carried their own muted/dark colours */
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-table td.col-no,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-results-table td.detail-no,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .q-table td.q-num,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-no,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .q-num{color:#8FA6BF!important;}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-designation-cell,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-date,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-date,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-role{color:#A9BBCD!important;}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-evaluator,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-person-name,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-person-link{color:#F4F7FB!important;}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .q-table .q-text,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .q-table td:nth-child(2){color:#DCE6F0!important;}
+
+/* --- Users Being Evaluated panel ---------------------------------------- */
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-data-panel,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-table-wrap{
+  background:#172A45!important;
+  border-color:rgba(255,255,255,.08)!important;
+  box-shadow:0 4px 20px rgba(0,0,0,.28)!important;
+}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-data-title i,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-results-title i{color:#F0B84D!important;}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-data-title h2,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-results-title h2{color:#F4F7FB!important;}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-data-title span,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-results-title span{color:#9FB2C6!important;}
+
+/* Live pill */
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-live-status{
+  background:rgba(16,185,129,.14)!important;
+  border-color:rgba(16,185,129,.35)!important;
+  color:#34D399!important;
+}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-live-status.stale{
+  background:rgba(148,163,184,.12)!important;
+  border-color:rgba(148,163,184,.28)!important;
+  color:#A0B3C6!important;
+}
+
+/* Search box, Export, Filters */
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-search-box{
+  background:#0F1F3D!important;
+  border-color:rgba(255,255,255,.13)!important;
+}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-search-box i{color:#9FB2C6!important;}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-search-box input{
+  background:transparent!important;
+  color:#E0E6F0!important;
+  border:0!important;
+  box-shadow:none!important;
+}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-search-box input::placeholder{color:#8FA6BF!important;}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-export-btn,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-filters-btn,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-view-btn,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-view-btn,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-back,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .back-btn{
+  background:#0F1F3D!important;
+  color:#E0E6F0!important;
+  border-color:rgba(255,255,255,.14)!important;
+}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-export-btn:hover,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-filters-btn:hover,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-view-btn:hover,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-view-btn:hover,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-back:hover,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .back-btn:hover{
+  background:#1D3554!important;
+  color:#FFFFFF!important;
+  border-color:rgba(217,154,43,.40)!important;
+}
+
+/* Role / rating pills keep their semantic colours, tuned for dark */
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-score,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-avg{color:#34D399!important;}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-score.mid{color:#FBBF24!important;}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-score.low{color:#F87171!important;}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-empty-state,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-no-search,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .cum-empty,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-empty{
+  background:#172A45!important;
+  color:#9FB2C6!important;
+  border-color:rgba(255,255,255,.08)!important;
+}
+
+/* --- Per-person Evaluation Results screen ------------------------------- */
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-eval-banner,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-person-card,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-results-panel{
+  background:#172A45!important;
+  border-color:rgba(255,255,255,.08)!important;
+  box-shadow:0 4px 20px rgba(0,0,0,.28)!important;
+}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-eval-title{color:#F0B84D!important;}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-eval-sub,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-person-meta,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-person-desig,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-stat-label{color:#A9BBCD!important;}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-person-name,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-stat-value,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-legend-title{color:#F4F7FB!important;}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-legend{
+  background:#0F1F3D!important;
+  border-color:rgba(255,255,255,.10)!important;
+}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-legend-text{color:#E0E6F0!important;}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-year-filter label{color:#9FB2C6!important;}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-year-filter select,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-year-filter input{
+  background:#0F1F3D!important;
+  color:#E0E6F0!important;
+  border-color:rgba(255,255,255,.13)!important;
+}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-year-filter option{background:#0F1F3D;color:#E0E6F0;}
+
+/* --- Individual report sheet (screen only) ------------------------------ */
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .individual-sheet .sheet-header,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .individual-sheet .scale-bar,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .individual-sheet .cat-section,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .individual-sheet .comment-section,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .individual-sheet .avg-summary,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .individual-sheet .person-header{
+  background:#172A45!important;
+  color:#E0E6F0!important;
+  border-color:rgba(255,255,255,.08)!important;
+  box-shadow:none!important;
+}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .individual-sheet .eval-type-chip{
+  background:rgba(217,154,43,.12)!important;
+  border-color:rgba(217,154,43,.30)!important;
+  color:#F0B84D!important;
+}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .individual-sheet .eval-by-label,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .individual-sheet .eval-by-date,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .individual-sheet .person-meta,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .individual-sheet .avg-bar-label,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .individual-sheet .avg-out-of,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .individual-sheet .no-comment{color:#9FB2C6!important;}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .individual-sheet .eval-by-name,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .individual-sheet .person-name,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .individual-sheet .avg-bar-val{color:#F4F7FB!important;}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .individual-sheet .cat-title,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .individual-sheet .comment-title{
+  background:#0F1F3D!important;
+  border-color:rgba(255,255,255,.08)!important;
+  color:#F0B84D!important;
+}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .individual-sheet .comment-text{
+  background:#0F1F3D!important;
+  color:#DCE6F0!important;
+  border-color:rgba(255,255,255,.08)!important;
+}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .individual-sheet .avg-bar-bg{background:rgba(255,255,255,.10)!important;}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .individual-sheet .avg-score-big{color:#34D399!important;}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .individual-sheet .avg-score-label{color:#9FB2C6!important;}
+
+/* Rating chips inside the sheet table (e.g. "5.00 VERY SATISFIED") */
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .individual-sheet .rating-badge{
+  background:#0F1F3D!important;
+  border-color:rgba(255,255,255,.12)!important;
+}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-rating{background:rgba(16,185,129,.16)!important;color:#34D399!important;}
+
+/* Evaluation Reports list: View action is a plain eye icon (dark mode colours) */
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-table .reports-view-btn{
+  background:transparent!important;
+  border:0!important;
+  box-shadow:none!important;
+  color:#C5D4E5!important;
+}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .reports-table .reports-view-btn:hover{
+  background:rgba(240,184,77,.14)!important;
+  color:#F0B84D!important;
+}
+
+/* Evaluation Results (per person): icon-only actions, dark mode */
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-results-table .detail-view-btn,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-results-table .detail-view-btn.detail-report-btn{
+  background:transparent!important;
+  border:0!important;
+  box-shadow:none!important;
+  color:#C5D4E5!important;
+}
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-results-table .detail-view-btn:hover,
+html.principal-theme-dark body main.main:not(#pbi-dark-id) .detail-results-table .detail-view-btn.detail-report-btn:hover{
+  background:rgba(240,184,77,.14)!important;
+  color:#F0B84D!important;
+}

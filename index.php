@@ -1,7 +1,7 @@
 <?php
 // index/index.php
 // Landing page — directs users to the portal that authenticates their role.
-// Teacher and Staff intentionally share one portal; their assigned role
+// Faculty and Staff intentionally share one portal; their assigned role
 // determines the dashboard shown after sign-in.
 ?>
 <!DOCTYPE html>
@@ -132,38 +132,31 @@ body{
         <a class="role-card role-executive" href="admin/admin_login.php">
             <div class="role-icon"><i class="fa-solid fa-briefcase"></i></div>
             <div class="role-name">Executive Assistant</div>
-            <div class="role-desc">Access assigned administrative features</div>
         </a>
-
-        <a class="role-card role-student" href="student/student_login.php">
-            <div class="role-icon"><i class="fa-solid fa-user-graduate"></i></div>
-            <div class="role-name">Student</div>
-            <div class="role-desc">Evaluate your teachers and staff</div>
-        </a>
-
-        <a class="role-card role-faculty" href="faculty/faculty_login.php">
-            <div class="role-icon"><i class="fa-solid fa-chalkboard-user"></i></div>
-            <div class="role-name">Teacher</div>
-            <div class="role-desc">View results &amp; submit peer evaluations</div>
-        </a>
-
 
         <a class="role-card role-dean" href="dean/dean_login.php">
             <div class="role-icon"><i class="fa-solid fa-building-columns"></i></div>
             <div class="role-name">Dean</div>
-            <div class="role-desc">Evaluate College faculty &amp; staff</div>
-        </a>
-
-       <a class="role-card role-staff" href="faculty/staff_login.php">
-            <div class="role-icon"><i class="fa-solid fa-id-card-clip"></i></div>
-            <div class="role-name">Staff</div>
-            <div class="role-desc">Use the shared Teacher &amp; Staff portal</div>
         </a>
 
         <a class="role-card role-principal" href="principal/principal_login.php">
             <div class="role-icon"><i class="fa-solid fa-school"></i></div>
             <div class="role-name">Principal</div>
-            <div class="role-desc">Evaluate JHS/SHS faculty &amp; staff</div>
+        </a>
+
+        <a class="role-card role-faculty" href="faculty/faculty_login.php">
+            <div class="role-icon"><i class="fa-solid fa-chalkboard-user"></i></div>
+            <div class="role-name">Faculty</div>
+        </a>
+
+       <a class="role-card role-staff" href="faculty/staff_login.php">
+            <div class="role-icon"><i class="fa-solid fa-id-card-clip"></i></div>
+            <div class="role-name">Staff</div>
+        </a>
+
+        <a class="role-card role-student" href="student/student_login.php">
+            <div class="role-icon"><i class="fa-solid fa-user-graduate"></i></div>
+            <div class="role-name">Student</div>
         </a>
 
     </div>

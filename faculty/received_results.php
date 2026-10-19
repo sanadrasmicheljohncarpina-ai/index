@@ -353,22 +353,6 @@ if (!function_exists('render_received_results')) {
         <?php endif; ?>
     </div>
 
-    <?php if ($catStats): ?>
-    <section class="rr-panel" aria-label="Performance by category">
-        <div class="rr-head">
-            <h2><i class="fa-solid fa-chart-simple"></i> Performance by Category</h2>
-            <span class="rr-shown">Average score out of 5</span>
-        </div>
-        <?php foreach ($catStats as $c): $pct = max(0, min(100, round(($c['avg'] / 5) * 100))); ?>
-        <div class="rr-cat">
-            <div class="rr-cat-name"><?= $h($c['name']) ?></div>
-            <div class="rr-cat-track"><div class="rr-cat-fill <?= rr_score_class($c['avg']) ?>" style="width:<?= $pct ?>%"></div></div>
-            <div class="rr-cat-score"><?= number_format($c['avg'], 2) ?></div>
-        </div>
-        <?php endforeach; ?>
-    </section>
-    <?php endif; ?>
-
     <section class="rr-panel" aria-label="Evaluations received">
         <div class="rr-head">
             <h2><i class="fa-solid fa-clock-rotate-left"></i> Evaluations Received <span class="rr-count"><?= (int)$respCount ?></span></h2>

@@ -3,7 +3,7 @@
 //
 // Principal Evaluation Tracker — same layout as the Dean's tracker
 // (Students / Teachers tabs, per-grade summary cards, grade pills, status
-// filter, search, export and an expandable progress table), but the data
+// filter, search and an expandable progress table), but the data
 // is strictly limited to Basic Education:
 //
 //   Students tab  -> active JHS/SHS students (Grade 7-12) and the Student
@@ -35,6 +35,11 @@ $perPage     = 10;
 
 if (!in_array($gradeFilter, $scopeGrades, true)) $gradeFilter = '';
 if (!in_array($status, ['', 'not_started', 'in_progress', 'completed'], true)) $status = '';
+
+// Column sorting (server-side so it works across pages)
+$sort = trim((string)($_GET['sort'] ?? ''));
+$dir  = (($_GET['dir'] ?? '') === 'desc') ? 'desc' : 'asc';
+if (!in_array($sort, ['name', 'level', 'required', 'completed', 'status', 'progress'], true)) $sort = '';
 
 $isAjax = (($_GET['ajax'] ?? '') === '1');
 
@@ -234,7 +239,7 @@ function ptk_render_tabs(string $tab, int $studentTotal, int $teacherTotal, int 
     ob_start();
     foreach ($tabs as $key => [$label, $count]) {
         $active = $key === $tab;
-        ?><a class="ptk-tab<?= $active ? ' active' : '' ?>" data-nav href="<?= ptk_h(ptk_url(['tab' => $key])) ?>"<?= $active ? ' aria-current="page"' : '' ?>><?= ptk_h($label) ?><span class="ptk-tab-count"><?= number_format($count) ?></span></a><?php
+        ?><a class="ptk-tab<?= $active ? ' active' : '' ?>" data-nav href="<?= ptk_h(ptk_url(['tab' => $key])) ?>"<?= $active ? ' aria-current="page"' : '' ?>><?= ptk_h($label) ?></a><?php
     }
     return ob_get_clean();
 }
@@ -251,6 +256,27 @@ function ptk_render_cards(string $tab, array $cards): string {
             <div class="ptk-card-num"><?= number_format($c['total']) ?></div>
             <?php if (isset($c['foot'])): ?><div class="ptk-card-foot"><span><?= ptk_h($c['foot']) ?></span></div><?php else: ?><div class="ptk-card-foot"><b><?= number_format($c['completed']) ?> completed</b><span class="ptk-card-sep">|</span><span><?= number_format($c['pending']) ?> pending</span></div><?php endif; ?>
         </div><?php
+    }
+    return ob_get_clean();
+}
+
+/** Status chips: counts for the current tab/grade/search, each one a filter. */
+function ptk_render_chips(string $tab, array $counts): string {
+    global $status, $search, $gradeFilter;
+    $chips = [
+        ['', 'Total', '', 'total'],
+        ['completed', 'Completed', 'completed', 'completed'],
+        ['in_progress', 'In progress', 'in_progress', 'in_progress'],
+        ['not_started', 'Not started', 'not_started', 'not_started'],
+    ];
+    $filtersOn = ($status !== '' || $search !== '' || ($tab !== 'staff' && $gradeFilter !== ''));
+    ob_start();
+    foreach ($chips as [$st, $label, $cls, $key]) {
+        $on = ($status === $st);
+        ?><a class="ptk-chip <?= $cls ?><?= $on ? ' active' : '' ?>" data-nav href="<?= ptk_h(ptk_url(['status' => $st])) ?>"<?= $on ? ' aria-current="true"' : '' ?> title="<?= $st === '' ? 'Show everyone' : 'Show only: ' . ptk_h($label) ?>"><b><?= number_format((int)($counts[$key] ?? 0)) ?></b> <?= ptk_h($label) ?></a><?php
+    }
+    if ($filtersOn) {
+        ?><a class="ptk-clear" data-nav href="<?= ptk_h(ptk_url(['status' => '', 'search' => '', 'grade' => '', 'sort' => '', 'dir' => ''])) ?>"><i class="fa-solid fa-xmark"></i> Clear filters</a><?php
     }
     return ob_get_clean();
 }
@@ -278,7 +304,7 @@ function ptk_render_detail(array $r): string {
         $state = $d['state'];
         $icon  = $state === 'completed' ? 'fa-circle-check' : ($state === 'in_progress' ? 'fa-circle-half-stroke' : 'fa-circle');
         $text  = $state === 'completed' ? 'Done' : ($state === 'in_progress' ? 'In progress' : 'Pending');
-        ?><li class="ptk-target <?= ptk_h($state) ?>"><i class="fa-solid <?= $icon ?>"></i><span class="ptk-target-name"><?= ptk_h($d['label']) ?></span><span class="ptk-target-type"><?= ptk_h($d['type']) ?></span><span class="ptk-target-state"><?= $text ?></span></li><?php
+        ?><li class="ptk-target <?= ptk_h($state) ?>"><i class="fa-solid <?= $icon ?>"></i><span class="ptk-target-name" title="<?= ptk_h($d['label'] . ' (' . $d['type'] . ')') ?>"><?= ptk_h($d['label']) ?></span><span class="ptk-target-type"><?= ptk_h($d['type']) ?></span><span class="ptk-target-state"><?= $text ?></span></li><?php
     }
     ?></ul><?php
     return ob_get_clean();
@@ -289,22 +315,26 @@ function ptk_render_list(array $pageRows, string $tab, bool $hasPeriod, int $tot
     ob_start();
     ?><div class="ptk-list-scroll"><div class="ptk-list-inner" role="table" aria-label="<?= ptk_h($colHead) ?> evaluation progress">
         <div class="ptk-head" role="row">
-            <div role="columnheader"><?= ptk_h($colHead) ?></div>
-            <div role="columnheader">Level</div>
-            <div role="columnheader">Required</div>
-            <div role="columnheader">Completed</div>
-            <div role="columnheader">Status</div>
-            <div role="columnheader">Progress</div>
+            <?php
+            global $sort, $dir, $search, $gradeFilter, $status;
+            $cols = [['name', $colHead], ['level', 'Level'], ['required', 'Required'], ['completed', 'Completed'], ['status', 'Status'], ['progress', 'Progress']];
+            foreach ($cols as [$k, $lbl]):
+                $isOn = ($sort === $k);
+                $next = !$isOn ? ['sort' => $k, 'dir' => 'asc'] : ($dir === 'asc' ? ['sort' => $k, 'dir' => 'desc'] : ['sort' => '', 'dir' => '']);
+                $ico  = !$isOn ? 'fa-sort' : ($dir === 'asc' ? 'fa-sort-up' : 'fa-sort-down');
+            ?>
+            <div role="columnheader" aria-sort="<?= $isOn ? ($dir === 'asc' ? 'ascending' : 'descending') : 'none' ?>"><a class="ptk-sort<?= $isOn ? ' on' : '' ?>" data-nav href="<?= ptk_h(ptk_url($next)) ?>" title="Sort by <?= ptk_h(strtolower($lbl)) ?>"><?= ptk_h($lbl) ?><i class="fa-solid <?= $ico ?>"></i></a></div>
+            <?php endforeach; ?>
         </div>
         <?php if (!$hasPeriod): ?>
             <p class="ptk-empty">No active evaluation period right now.</p>
         <?php elseif (empty($pageRows)): ?>
-            <p class="ptk-empty">No <?= ptk_h($plural) ?> match the current filters.</p>
+            <p class="ptk-empty">No <?= ptk_h($plural) ?> match the current filters.<?php if ($status !== '' || $search !== '' || ($tab !== 'staff' && $gradeFilter !== '')): ?> <a class="ptk-clear-inline" data-nav href="<?= ptk_h(ptk_url(['status' => '', 'search' => '', 'grade' => '', 'sort' => '', 'dir' => ''])) ?>">Clear filters</a><?php endif; ?></p>
         <?php else: foreach ($pageRows as $r): ?>
             <div class="ptk-item" data-key="<?= ptk_h($r['key']) ?>">
-                <div class="ptk-row" role="row" tabindex="0" aria-expanded="false">
+                <div class="ptk-row" role="row" tabindex="0" aria-expanded="false" title="Click to see evaluation details">
                     <div class="ptk-c-person" role="cell">
-                        <span class="ptk-avatar"><?php if ($r['photo'] !== ''): ?><img src="../image/<?= ptk_h($r['photo']) ?>" alt=""><?php else: ?><i class="fa-solid fa-user"></i><?php endif; ?></span>
+                        <span class="ptk-avatar"><?php if ($r['photo'] !== ''): ?><img src="../image/<?= ptk_h($r['photo']) ?>" alt="" onerror="this.onerror=null;var i=document.createElement('i');i.className='fa-solid fa-user';this.replaceWith(i);"><?php else: ?><i class="fa-solid fa-user"></i><?php endif; ?></span>
                         <span class="ptk-person-copy"><span class="ptk-name"><?= ptk_h($r['name']) ?></span><span class="ptk-sub"><?= ptk_h($r['sub']) ?></span></span>
                     </div>
                     <div role="cell"><span class="ptk-level"><?= ptk_h($r['level_pill']) ?></span></div>
@@ -714,7 +744,9 @@ if ($tab === 'staff') {
         ['label' => 'Completed',   'total' => $stDone, 'foot' => $pctOf($stDone)],
     ];
 }
-foreach ($tab === 'staff' ? [] : $scopeGrades as $g) {
+// When a grade pill is selected, show ONLY that grade's summary card.
+$cardGrades = $tab === 'staff' ? [] : ($gradeFilter !== '' ? [$gradeFilter] : $scopeGrades);
+foreach ($cardGrades as $g) {
     $inGrade = array_filter($activeAll, fn($r) => in_array($g, $r['grades'], true));
     $done = count(array_filter($inGrade, fn($r) => $r['status'] === 'completed'));
     $cards[] = [
@@ -736,31 +768,35 @@ if ($search !== '') {
 if ($gradeFilter !== '' && $tab !== 'staff') {
     $filtered = array_values(array_filter($filtered, fn($r) => in_array($gradeFilter, $r['grades'], true)));
 }
+// Chip counts: everything that matches search + grade, regardless of the status filter.
+$statusCounts = ['total' => count($filtered), 'completed' => 0, 'in_progress' => 0, 'not_started' => 0];
+foreach ($filtered as $r) { $statusCounts[$r['status']] = ($statusCounts[$r['status']] ?? 0) + 1; }
+
 if ($status !== '') {
     $filtered = array_values(array_filter($filtered, fn($r) => $r['status'] === $status));
+}
+if ($sort !== '') {
+    $statusOrder = ['not_started' => 0, 'in_progress' => 1, 'completed' => 2];
+    usort($filtered, function ($a, $b) use ($sort, $dir, $statusOrder) {
+        switch ($sort) {
+            case 'level':
+                $ga = $a['grades'] ? min(array_map('intval', $a['grades'])) : 99;
+                $gb = $b['grades'] ? min(array_map('intval', $b['grades'])) : 99;
+                $c = ($ga <=> $gb) ?: strnatcasecmp($a['level_pill'], $b['level_pill']); break;
+            case 'required':  $c = $a['required'] <=> $b['required']; break;
+            case 'completed': $c = $a['completed'] <=> $b['completed']; break;
+            case 'status':    $c = ($statusOrder[$a['status']] ?? 0) <=> ($statusOrder[$b['status']] ?? 0); break;
+            case 'progress':  $c = $a['progress'] <=> $b['progress']; break;
+            default:          $c = strnatcasecmp($a['name'], $b['name']);
+        }
+        if ($c === 0) $c = strnatcasecmp($a['name'], $b['name']);
+        return $dir === 'desc' ? -$c : $c;
+    });
 }
 
 $totalRows  = count($filtered);
 $totalPages = max(1, (int)ceil($totalRows / $perPage));
 $page       = max(1, min($totalPages, $page));
-
-// CSV export of the active tab (respects the current filters).
-if (($_GET['export'] ?? '') === 'csv' && $structureActive) {
-    $noun = $tab === 'teachers' ? 'teacher' : ($tab === 'staff' ? 'staff' : 'student');
-    header('Content-Type: text/csv; charset=utf-8');
-    header('Content-Disposition: attachment; filename="principal_' . $noun . '_tracker_' . date('Ymd_His') . '.csv"');
-    $out = fopen('php://output', 'w');
-    fputcsv($out, [ptk_nouns($tab)[2], 'Level', 'Grade', 'Required', 'Completed', 'Status', 'Progress', 'Last Activity']);
-    foreach ($filtered as $r) {
-        fputcsv($out, [
-            ptk_csv_cell($r['name']), $r['level_text'], ptk_grades_text($r['grades']),
-            $r['required'], $r['completed'] . ' / ' . $r['required'],
-            $r['status_label'], $r['progress'] . '%', $r['last_at'] ?? '',
-        ]);
-    }
-    fclose($out);
-    exit;
-}
 
 $pageRows = array_slice($filtered, ($page - 1) * $perPage, $perPage);
 
@@ -775,10 +811,9 @@ if ($isAjax) {
     echo json_encode([
         'ok'        => true,
         'tab'       => $tab,
-        'n'         => $tab === 'staff' ? 4 : count($scopeGrades),
         'tabs'      => ptk_render_tabs($tab, count($studentRows), count($teacherRows), count($staffRows)),
-        'cards'     => ptk_render_cards($tab, $cards),
         'pills'     => ptk_render_pills($tab, $scopeGrades, $gradeFilter),
+        'chips'     => ptk_render_chips($tab, $statusCounts),
         'list'      => ptk_render_list($pageRows, $tab, $hasPeriod, $totalRows, $page, $perPage, $totalPages),
         'checkedAt' => date('c'),
     ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
@@ -815,107 +850,145 @@ html.principal-theme-dark #ptk{
 
 /* Tabs */
 #ptk .ptk-topline{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:0 0 20px;}
-#ptk .ptk-tabs{display:inline-flex;gap:4px;padding:6px;background:var(--ptk-surface);border:1px solid var(--ptk-line);border-radius:14px;box-shadow:var(--ptk-shadow);}
-#ptk .ptk-tab{display:inline-flex;align-items:center;gap:9px;height:42px;padding:0 20px;border-radius:10px;color:var(--ptk-muted)!important;font-size:15px;font-weight:700;text-decoration:none!important;transition:background .15s,color .15s;}
-#ptk .ptk-tab:hover{color:var(--ptk-ink)!important;background:var(--ptk-soft);}
-#ptk .ptk-tab.active{background:linear-gradient(180deg,#E6AD3E,var(--ptk-accent))!important;color:var(--ptk-on-accent)!important;box-shadow:0 3px 10px rgba(217,154,43,.30);}
-#ptk .ptk-tab-count{min-width:24px;height:22px;padding:0 8px;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;background:var(--ptk-accent-soft);color:var(--ptk-accent-ink);font-size:12px;font-weight:800;}
+#ptk .ptk-tabs{display:inline-flex;flex-wrap:wrap;gap:8px;padding:0;background:transparent;border:0;border-radius:0;box-shadow:none;}
+#ptk .ptk-tab{display:inline-flex;align-items:center;gap:7.5px;height:40px;padding:0 18px;border-radius:12px;border:1px solid var(--ptk-line);background:var(--ptk-surface);box-shadow:0 2px 4px rgba(30,82,144,.05);color:var(--ptk-muted)!important;font-size:13px;font-weight:700;text-decoration:none!important;transition:background .15s,border-color .15s,color .15s;}
+#ptk .ptk-tab:hover{color:var(--ptk-ink)!important;background:var(--ptk-soft);border-color:var(--ptk-line-2);}
+#ptk .ptk-tab.active{background:linear-gradient(180deg,#E6AD3E,var(--ptk-accent))!important;border-color:var(--ptk-accent);color:var(--ptk-on-accent)!important;box-shadow:0 3px 8.5px rgba(217,154,43,.30);}
+#ptk .ptk-tab-count{min-width:20.5px;height:18.5px;padding:0 7px;display:inline-flex;align-items:center;justify-content:center;border-radius:849px;background:var(--ptk-accent-soft);color:var(--ptk-accent-ink);font-size:10px;font-weight:800;}
 #ptk .ptk-tab.active .ptk-tab-count{background:rgba(31,21,0,.16);color:var(--ptk-on-accent);}
-#ptk .ptk-live{display:inline-flex;align-items:center;gap:7px;padding:6px 11px;border-radius:999px;background:var(--ptk-green-soft);color:var(--ptk-green);font-size:11px;font-weight:800;}
-#ptk .ptk-live::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor;animation:ptkPulse 2s ease-in-out infinite;}
+#ptk .ptk-live{display:inline-flex;align-items:center;gap:6px;padding:5px 9.5px;border-radius:849px;background:var(--ptk-green-soft);color:var(--ptk-green);font-size:9.5px;font-weight:800;}
+#ptk .ptk-live::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;animation:ptkPulse 2s ease-in-out infinite;}
 #ptk .ptk-live.offline{background:var(--ptk-gray-soft);color:var(--ptk-gray);}
 #ptk .ptk-live.offline::before{animation:none;}
 @keyframes ptkPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.75)}}
 
 /* Summary cards (one per Grade in the Principal's scope) */
-#ptk .ptk-cards{display:grid;grid-template-columns:repeat(var(--ptk-n,4),minmax(0,1fr));gap:14px;margin:0 0 20px;}
-#ptk .ptk-card{background:var(--ptk-surface);border:1px solid var(--ptk-line);border-top:3px solid var(--ptk-accent);border-radius:14px;padding:16px 18px 14px;box-shadow:var(--ptk-shadow);}
-#ptk .ptk-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;}
-#ptk .ptk-card-label{font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--ptk-muted);padding-top:4px;}
-#ptk .ptk-card-icon{width:38px;height:38px;flex:0 0 38px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--ptk-accent-soft);color:var(--ptk-accent-ink);font-size:15px;}
-#ptk .ptk-card-num{margin:2px 0 12px;font-size:30px;line-height:1;font-weight:800;color:var(--ptk-ink);}
-#ptk .ptk-card-foot{display:flex;align-items:center;gap:9px;padding-top:11px;border-top:1px solid var(--ptk-line);font-size:13px;color:var(--ptk-muted);white-space:nowrap;}
+#ptk .ptk-cards{display:grid;grid-template-columns:repeat(var(--ptk-n,4),minmax(0,1fr));gap:12px;margin:0 0 17px;}
+#ptk .ptk-card{background:var(--ptk-surface);border:1px solid var(--ptk-line);border-top:3px solid var(--ptk-accent);border-radius:12px;padding:13.5px 15.5px 12px;box-shadow:var(--ptk-shadow);}
+#ptk .ptk-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8.5px;}
+#ptk .ptk-card-label{font-size:9.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--ptk-muted);padding-top:3.5px;}
+#ptk .ptk-card-icon{width:32.5px;height:32.5px;flex:0 0 32.5px;border-radius:8.5px;display:flex;align-items:center;justify-content:center;background:var(--ptk-accent-soft);color:var(--ptk-accent-ink);font-size:13px;}
+#ptk .ptk-card-num{margin:2px 0 10px;font-size:25.5px;line-height:1;font-weight:800;color:var(--ptk-ink);}
+#ptk .ptk-card-foot{display:flex;align-items:center;gap:7.5px;padding-top:9.5px;border-top:1px solid var(--ptk-line);font-size:11px;color:var(--ptk-muted);white-space:nowrap;}
 #ptk .ptk-card-foot b{color:var(--ptk-accent-ink);font-weight:700;}
 #ptk .ptk-card-sep{color:var(--ptk-line-2);}
 
 /* Filters */
-#ptk .ptk-filters{display:flex;align-items:center;justify-content:space-between;gap:12px 16px;flex-wrap:wrap;margin:0 0 16px;}
-#ptk .ptk-pills{display:flex;gap:10px;flex-wrap:wrap;}
-#ptk .ptk-pill{display:inline-flex;align-items:center;height:44px;padding:0 20px;border-radius:12px;border:1px solid var(--ptk-line-2);background:var(--ptk-surface);color:var(--ptk-ink)!important;font-size:14px;font-weight:600;text-decoration:none!important;transition:background .15s,border-color .15s;}
+#ptk .ptk-form{margin:0;}
+#ptk .ptk-filters{display:flex;align-items:center;justify-content:space-between;gap:10px 13.5px;flex-wrap:wrap;margin:0 0 13.5px;}
+#ptk .ptk-pills{display:flex;gap:8.5px;flex-wrap:wrap;}
+#ptk .ptk-pill{display:inline-flex;align-items:center;height:37.5px;padding:0 17px;border-radius:10px;border:1px solid var(--ptk-line-2);background:var(--ptk-surface);color:var(--ptk-ink)!important;font-size:12px;font-weight:600;text-decoration:none!important;transition:background .15s,border-color .15s;}
 #ptk .ptk-pill:hover{background:var(--ptk-soft);border-color:var(--ptk-accent-line);}
 #ptk .ptk-pill.active{background:linear-gradient(180deg,#E6AD3E,var(--ptk-accent))!important;border-color:var(--ptk-accent)!important;color:var(--ptk-on-accent)!important;font-weight:800;}
-#ptk .ptk-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-left:auto;}
-#ptk #ptkStatus{height:44px;min-width:140px;padding:0 38px 0 16px;border-radius:12px;border:1px solid var(--ptk-line-2)!important;background-color:var(--ptk-surface)!important;color:var(--ptk-ink)!important;font:600 14px 'DM Sans',sans-serif;appearance:none;-webkit-appearance:none;cursor:pointer;
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%236D8194' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")!important;background-repeat:no-repeat!important;background-position:right 14px center!important;}
+#ptk .ptk-controls{display:flex;align-items:center;gap:8.5px;flex-wrap:wrap;margin-left:auto;}
+#ptk #ptkStatus{height:37.5px;min-width:119px;padding:0 32.5px 0 13.5px;border-radius:10px;border:1px solid var(--ptk-line-2)!important;background-color:var(--ptk-surface)!important;color:var(--ptk-ink)!important;font:600 12px 'DM Sans',sans-serif;appearance:none;-webkit-appearance:none;cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%236D8194' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")!important;background-repeat:no-repeat!important;background-position:right 12px center!important;}
 #ptk #ptkStatus option{background:var(--ptk-surface);color:var(--ptk-ink);}
-#ptk .ptk-search{position:relative;display:block;width:270px;max-width:100%;}
-#ptk .ptk-search i{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--ptk-accent-ink);font-size:14px;pointer-events:none;}
-#ptk #ptkSearch{width:100%;height:44px;padding:0 14px 0 40px;border-radius:12px;border:1px solid var(--ptk-line-2)!important;background:var(--ptk-surface)!important;color:var(--ptk-ink)!important;font:500 14px 'DM Sans',sans-serif;outline:none;-webkit-appearance:none;appearance:none;}
+#ptk .ptk-search{position:relative;display:block;width:229.5px;max-width:100%;}
+#ptk .ptk-search i{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--ptk-accent-ink);font-size:12px;pointer-events:none;}
+#ptk #ptkSearch{width:100%;height:37.5px;padding:0 12px 0 34px;border-radius:10px;border:1px solid var(--ptk-line-2)!important;background:var(--ptk-surface)!important;color:var(--ptk-ink)!important;font:500 12px 'DM Sans',sans-serif;outline:none;-webkit-appearance:none;appearance:none;}
 #ptk #ptkSearch::placeholder{color:var(--ptk-muted);opacity:1;}
 #ptk #ptkStatus:focus,#ptk #ptkSearch:focus{border-color:var(--ptk-accent)!important;box-shadow:0 0 0 3px rgba(217,154,43,.18);}
-#ptk .ptk-export{display:inline-flex;align-items:center;gap:8px;height:44px;padding:0 18px;border-radius:12px;border:1px solid var(--ptk-accent-line);background:var(--ptk-accent-soft);color:var(--ptk-accent-ink)!important;font-size:14px;font-weight:700;text-decoration:none!important;white-space:nowrap;}
-#ptk .ptk-export:hover{border-color:var(--ptk-accent);}
 
 /* Table (CSS grid — avoids the global <table> overrides) */
-#ptk .ptk-list{background:var(--ptk-surface);border:1px solid var(--ptk-line);border-radius:14px;box-shadow:var(--ptk-shadow);overflow:hidden;}
+#ptk .ptk-list{background:var(--ptk-surface);border:1px solid var(--ptk-line);border-radius:12px;box-shadow:var(--ptk-shadow);overflow:hidden;}
 #ptk .ptk-list-scroll{overflow-x:auto;}
-#ptk .ptk-list-inner{min-width:900px;}
-#ptk .ptk-head,#ptk .ptk-row{display:grid;grid-template-columns:minmax(230px,2.5fr) minmax(120px,1.2fr) minmax(80px,.8fr) minmax(100px,1fr) minmax(120px,1.1fr) minmax(220px,2.2fr);align-items:center;column-gap:14px;padding:0 22px;}
-#ptk .ptk-head{height:56px;background:var(--ptk-soft);border-bottom:1px solid var(--ptk-line);font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--ptk-muted);}
+#ptk .ptk-list-inner{min-width:765px;}
+#ptk .ptk-head,#ptk .ptk-row{display:grid;grid-template-columns:minmax(195.5px,2.5fr) minmax(102px,1.2fr) minmax(68px,.8fr) minmax(85px,1fr) minmax(102px,1.1fr) minmax(187px,2.2fr);align-items:center;column-gap:12px;padding:0 18.5px;}
+#ptk .ptk-head{height:47.5px;background:var(--ptk-soft);border-bottom:1px solid var(--ptk-line);font-size:9.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--ptk-muted);}
 #ptk .ptk-item{border-bottom:1px solid var(--ptk-line);}
 #ptk .ptk-item:last-child{border-bottom:0;}
-#ptk .ptk-row{min-height:88px;cursor:pointer;transition:background .12s;outline:none;}
+#ptk .ptk-row{min-height:75px;cursor:pointer;transition:background .12s;outline:none;}
 #ptk .ptk-row:hover,#ptk .ptk-row:focus-visible{background:var(--ptk-hover);}
 #ptk .ptk-row:focus-visible{box-shadow:inset 3px 0 0 var(--ptk-accent);}
-#ptk .ptk-c-person{display:flex;align-items:center;gap:14px;min-width:0;}
-#ptk .ptk-avatar{width:54px;height:54px;flex:0 0 54px;border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;background:var(--ptk-accent-soft);border:1px solid var(--ptk-accent-line);color:var(--ptk-accent-ink);font-size:19px;}
+#ptk .ptk-c-person{display:flex;align-items:center;gap:12px;min-width:0;}
+#ptk .ptk-avatar{width:46px;height:46px;flex:0 0 46px;border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;background:var(--ptk-accent-soft);border:1px solid var(--ptk-accent-line);color:var(--ptk-accent-ink);font-size:16px;}
 #ptk .ptk-avatar img{width:100%;height:100%;object-fit:cover;}
 #ptk .ptk-person-copy{display:flex;flex-direction:column;gap:3px;min-width:0;}
-#ptk .ptk-name{font-size:15px;font-weight:700;color:var(--ptk-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-#ptk .ptk-sub{font-size:12.5px;color:var(--ptk-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-#ptk .ptk-level{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 18px;border-radius:12px;border:1px solid var(--ptk-accent-line);background:var(--ptk-accent-soft);color:var(--ptk-accent-ink);font-size:13px;font-weight:700;white-space:nowrap;}
-#ptk .ptk-num{font-size:16px;font-weight:500;color:var(--ptk-ink);}
-#ptk .ptk-status{display:inline-flex;align-items:center;padding:7px 14px;border-radius:999px;font-size:12.5px;font-weight:700;white-space:nowrap;}
+#ptk .ptk-name{font-size:13px;font-weight:700;color:var(--ptk-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#ptk .ptk-sub{font-size:10.5px;color:var(--ptk-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#ptk .ptk-level{display:inline-flex;align-items:center;justify-content:center;min-height:37.5px;padding:0 15.5px;border-radius:10px;border:1px solid var(--ptk-accent-line);background:var(--ptk-accent-soft);color:var(--ptk-accent-ink);font-size:11px;font-weight:700;white-space:nowrap;}
+#ptk .ptk-num{font-size:13.5px;font-weight:500;color:var(--ptk-ink);}
+#ptk .ptk-status{display:inline-flex;align-items:center;padding:6px 12px;border-radius:849px;font-size:10.5px;font-weight:700;white-space:nowrap;}
 #ptk .ptk-status.not_started{background:var(--ptk-gray-soft);color:var(--ptk-gray);}
 #ptk .ptk-status.in_progress{background:var(--ptk-amber-soft);color:var(--ptk-amber);}
 #ptk .ptk-status.completed{background:var(--ptk-green-soft);color:var(--ptk-green);}
-#ptk .ptk-c-prog{display:flex;align-items:center;gap:12px;min-width:0;}
-#ptk .ptk-pct{width:40px;flex:0 0 40px;font-size:14px;font-weight:600;color:var(--ptk-ink);}
-#ptk .ptk-bar-wrap{flex:1;min-width:110px;display:flex;flex-direction:column;gap:6px;}
-#ptk .ptk-bar{display:block;height:7px;border-radius:999px;background:var(--ptk-track);overflow:hidden;}
+#ptk .ptk-c-prog{display:flex;align-items:center;gap:10px;min-width:0;}
+#ptk .ptk-pct{width:34px;flex:0 0 34px;font-size:12px;font-weight:600;color:var(--ptk-ink);}
+#ptk .ptk-bar-wrap{flex:1;min-width:93.5px;display:flex;flex-direction:column;gap:5px;}
+#ptk .ptk-bar{display:block;height:6px;border-radius:849px;background:var(--ptk-track);overflow:hidden;}
 #ptk .ptk-bar i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#C98A1C,var(--ptk-accent));transition:width .25s;}
-#ptk .ptk-last{font-size:11.5px;color:var(--ptk-muted);white-space:nowrap;}
-#ptk .ptk-chev{width:16px;flex:0 0 16px;text-align:right;color:var(--ptk-muted);font-size:13px;transition:transform .18s;}
+#ptk .ptk-last{font-size:10px;color:var(--ptk-muted);white-space:nowrap;}
+#ptk .ptk-chev{width:13.5px;flex:0 0 13.5px;text-align:right;color:var(--ptk-muted);font-size:11px;transition:transform .18s;}
 #ptk .ptk-item.open .ptk-chev{transform:rotate(90deg);}
 #ptk .ptk-item.open .ptk-row{background:var(--ptk-hover);}
-#ptk .ptk-empty{margin:0;padding:34px 20px;text-align:center;font-size:14px;color:var(--ptk-muted);}
+#ptk .ptk-empty{margin:0;padding:29px 17px;text-align:center;font-size:12px;color:var(--ptk-muted);}
 
 /* Expanded per-row breakdown */
-#ptk .ptk-detail{padding:16px 22px 20px;background:var(--ptk-soft);border-top:1px solid var(--ptk-line);}
+#ptk .ptk-detail{padding:13.5px 18.5px 17px;background:var(--ptk-soft);border-top:1px solid var(--ptk-line);}
 #ptk .ptk-detail[hidden]{display:none;}
-#ptk .ptk-detail-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:0 0 12px;}
-#ptk .ptk-detail-head strong{font-size:13.5px;color:var(--ptk-ink);}
-#ptk .ptk-detail-head span{font-size:12px;color:var(--ptk-muted);}
-#ptk .ptk-detail-empty{margin:0;font-size:13px;color:var(--ptk-muted);}
-#ptk .ptk-targets{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:8px;}
-#ptk .ptk-target{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;background:var(--ptk-surface);border:1px solid var(--ptk-line);font-size:13px;min-width:0;}
-#ptk .ptk-target i{flex:0 0 auto;font-size:14px;}
+#ptk .ptk-detail-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 0 10px;}
+#ptk .ptk-detail-head strong{font-size:11.5px;color:var(--ptk-ink);}
+#ptk .ptk-detail-head span{font-size:10px;color:var(--ptk-muted);}
+#ptk .ptk-detail-empty{margin:0;font-size:11px;color:var(--ptk-muted);}
+#ptk .ptk-targets{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(229.5px,1fr));gap:7px;}
+#ptk .ptk-target{display:flex;align-items:center;gap:8.5px;padding:7.5px 10px;border-radius:8.5px;background:var(--ptk-surface);border:1px solid var(--ptk-line);font-size:11px;min-width:0;}
+#ptk .ptk-target i{flex:0 0 auto;font-size:12px;}
 #ptk .ptk-target.completed i{color:var(--ptk-green);}
 #ptk .ptk-target.in_progress i{color:var(--ptk-amber);}
 #ptk .ptk-target.pending i{color:var(--ptk-muted);opacity:.55;}
 #ptk .ptk-target-name{flex:1;min-width:0;font-weight:600;color:var(--ptk-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-#ptk .ptk-target-type{flex:0 0 auto;padding:2px 8px;border-radius:999px;background:var(--ptk-accent-soft);color:var(--ptk-accent-ink);font-size:10.5px;font-weight:800;}
-#ptk .ptk-target-state{flex:0 0 auto;font-size:11.5px;color:var(--ptk-muted);}
+#ptk .ptk-target-type{flex:0 0 auto;padding:2px 7px;border-radius:849px;background:var(--ptk-accent-soft);color:var(--ptk-accent-ink);font-size:9px;font-weight:800;}
+#ptk .ptk-target-state{flex:0 0 auto;font-size:10px;color:var(--ptk-muted);}
 
 /* Footer / pager */
-#ptk .ptk-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 22px;border-top:1px solid var(--ptk-line);font-size:13px;color:var(--ptk-muted);}
-#ptk .ptk-pager{display:flex;align-items:center;gap:6px;}
-#ptk .ptk-page{min-width:34px;height:34px;padding:0 10px;display:inline-flex;align-items:center;justify-content:center;border-radius:9px;border:1px solid var(--ptk-line-2);background:var(--ptk-surface);color:var(--ptk-muted)!important;font-size:13px;font-weight:700;text-decoration:none!important;}
+#ptk .ptk-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 18.5px;border-top:1px solid var(--ptk-line);font-size:11px;color:var(--ptk-muted);}
+#ptk .ptk-pager{display:flex;align-items:center;gap:5px;}
+#ptk .ptk-page{min-width:29px;height:29px;padding:0 8.5px;display:inline-flex;align-items:center;justify-content:center;border-radius:7.5px;border:1px solid var(--ptk-line-2);background:var(--ptk-surface);color:var(--ptk-muted)!important;font-size:11px;font-weight:700;text-decoration:none!important;}
 #ptk .ptk-page:hover{border-color:var(--ptk-accent-line);color:var(--ptk-ink)!important;}
 #ptk .ptk-page.active{background:var(--ptk-accent-soft);border-color:var(--ptk-accent);color:var(--ptk-accent-ink)!important;}
 #ptk .ptk-page.disabled{opacity:.4;pointer-events:none;}
 #ptk .ptk-ellipsis{color:var(--ptk-muted);padding:0 3px;}
 
+
+/* ── Usability additions ── */
+#ptk .ptk-topline{margin:0 0 14px;}
+#ptk .ptk-filters{margin:0 0 12px;}
+
+/* Status chips (click to filter) */
+#ptk .ptk-chips{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px;}
+#ptk .ptk-chip{display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 14px;border-radius:849px;border:1px solid var(--ptk-line-2);background:var(--ptk-surface);color:var(--ptk-ink)!important;font-size:12px;font-weight:600;text-decoration:none!important;transition:box-shadow .12s,transform .12s;}
+#ptk .ptk-chip b{font-size:14px;font-weight:800;}
+#ptk .ptk-chip.completed{background:var(--ptk-green-soft);color:var(--ptk-green)!important;}
+#ptk .ptk-chip.in_progress{background:var(--ptk-amber-soft);color:var(--ptk-amber)!important;}
+#ptk .ptk-chip.not_started{background:var(--ptk-gray-soft);color:var(--ptk-gray)!important;}
+#ptk .ptk-chip:hover{box-shadow:0 2px 8px rgba(20,42,67,.14);transform:translateY(-1px);}
+#ptk .ptk-chip:focus-visible,#ptk .ptk-sort:focus-visible{outline:2px solid var(--ptk-accent);outline-offset:2px;}
+#ptk .ptk-chip.active{box-shadow:0 0 0 2px var(--ptk-accent);}
+#ptk .ptk-clear,#ptk .ptk-clear-inline{font-size:12px;font-weight:700;color:var(--ptk-accent-ink)!important;text-decoration:none!important;white-space:nowrap;}
+#ptk .ptk-clear{margin-left:auto;padding:0 4px;}
+#ptk .ptk-clear:hover,#ptk .ptk-clear-inline:hover{text-decoration:underline!important;}
+
+/* Sortable column headers */
+#ptk .ptk-sort{display:inline-flex;align-items:center;gap:6px;color:inherit!important;text-decoration:none!important;cursor:pointer;}
+#ptk .ptk-sort i{font-size:10px;opacity:.35;}
+#ptk .ptk-sort:hover{color:var(--ptk-accent-ink)!important;}
+#ptk .ptk-sort.on{color:var(--ptk-accent-ink)!important;}
+#ptk .ptk-sort.on i{opacity:1;}
+
+/* Level pill: compact, not a tall box */
+#ptk .ptk-level{min-height:0;height:auto;padding:5px 13px;border-radius:849px;font-size:11px;}
+
+/* Clearer "click to open" chevron + hover */
+#ptk .ptk-chev{width:26px;flex:0 0 26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:var(--ptk-accent-soft);color:var(--ptk-accent-ink);font-size:11px;}
+#ptk .ptk-row:hover .ptk-chev{background:var(--ptk-accent);color:var(--ptk-on-accent);}
+
+/* Easier-to-read secondary text */
+#ptk .ptk-sub{font-size:11.5px;}
+#ptk .ptk-last{font-size:11px;}
+
+/* A single grade selected: one card, not stretched across the row. */
+#ptk .ptk-cards[data-n="1"]{grid-template-columns:minmax(0,306px);}
 
 /* Six grades (JHS + SHS) only fit in one row on wide screens; otherwise 3 x 2. */
 @media(max-width:1749px){#ptk .ptk-cards[data-n="6"]{grid-template-columns:repeat(3,minmax(0,1fr));}}
@@ -940,29 +1013,24 @@ html.principal-theme-dark #ptk{
 <?php if (!$structureActive): ?>
     <?php render_scope_status($settings, 'tracker'); ?>
 <?php else: ?>
-    <div class="ptk-topline">
-        <nav class="ptk-tabs" id="ptkTabs" aria-label="Tracker sections"><?= ptk_render_tabs($tab, count($studentRows), count($teacherRows), count($staffRows)) ?></nav>
-        <span class="ptk-live" id="ptkLive">Live</span>
-    </div>
-
-    <?php $cardsN = $tab === 'staff' ? 4 : (int)min(6, max(1, count($scopeGrades))); ?><section class="ptk-cards" id="ptkCards" data-n="<?= $cardsN ?>" style="--ptk-n:<?= $cardsN ?>" aria-label="Progress by grade level"><?= ptk_render_cards($tab, $cards) ?></section>
-
-    <form class="ptk-filters" id="ptkFilters" method="get" action="principal_evaluation_tracker.php">
+    <form class="ptk-form" id="ptkFilters" method="get" action="principal_evaluation_tracker.php">
         <input type="hidden" name="tab" value="<?= ptk_h($tab) ?>">
         <input type="hidden" name="grade" value="<?= ptk_h($gradeFilter) ?>">
-        <div class="ptk-pills" id="ptkPills"><?= ptk_render_pills($tab, $scopeGrades, $gradeFilter) ?></div>
-        <div class="ptk-controls">
-            <select id="ptkStatus" name="status" aria-label="Filter by status">
-                <option value="">All Status</option>
-                <option value="not_started" <?= $status === 'not_started' ? 'selected' : '' ?>>Not Started</option>
-                <option value="in_progress" <?= $status === 'in_progress' ? 'selected' : '' ?>>In Progress</option>
-                <option value="completed" <?= $status === 'completed' ? 'selected' : '' ?>>Completed</option>
-            </select>
-            <label class="ptk-search"><i class="fa-solid fa-magnifying-glass"></i><input id="ptkSearch" type="search" name="search" autocomplete="off" placeholder="Search <?= ptk_h(strtolower(ptk_nouns($tab)[0])) ?> by name…" value="<?= ptk_h($search) ?>"></label>
-            <a class="ptk-export" id="ptkExport" href="<?= ptk_h(ptk_url(['export' => 'csv'])) ?>"><i class="fa-solid fa-download"></i> Export</a>
-            <noscript><button type="submit">Apply</button></noscript>
+        <div class="ptk-topline">
+            <nav class="ptk-tabs" id="ptkTabs" aria-label="Tracker sections"><?= ptk_render_tabs($tab, count($studentRows), count($teacherRows), count($staffRows)) ?></nav>
+            <div class="ptk-controls">
+                <input type="hidden" id="ptkStatus" name="status" value="<?= ptk_h($status) ?>">
+                <label class="ptk-search"><i class="fa-solid fa-magnifying-glass"></i><input id="ptkSearch" type="search" name="search" autocomplete="off" placeholder="Search <?= ptk_h(strtolower(ptk_nouns($tab)[0])) ?> by name…" value="<?= ptk_h($search) ?>"></label>
+                <span class="ptk-live" id="ptkLive">Live</span>
+                <noscript><button type="submit">Apply</button></noscript>
+            </div>
+        </div>
+        <div class="ptk-filters">
+            <div class="ptk-pills" id="ptkPills"><?= ptk_render_pills($tab, $scopeGrades, $gradeFilter) ?></div>
         </div>
     </form>
+
+    <div class="ptk-chips" id="ptkChips" aria-label="Filter by status"><?= ptk_render_chips($tab, $statusCounts) ?></div>
 
     <section class="ptk-list" id="ptkList" aria-live="polite"><?= ptk_render_list($pageRows, $tab, $hasPeriod, $totalRows, $page, $perPage, $totalPages) ?></section>
 
@@ -978,8 +1046,8 @@ html.principal-theme-dark #ptk{
 
     const $ = id => document.getElementById(id);
     const els = {
-        tabs: $('ptkTabs'), cards: $('ptkCards'), pills: $('ptkPills'), list: $('ptkList'),
-        live: $('ptkLive'), search: $('ptkSearch'), status: $('ptkStatus'), exp: $('ptkExport'),
+        tabs: $('ptkTabs'), pills: $('ptkPills'), chips: $('ptkChips'), list: $('ptkList'),
+        live: $('ptkLive'), search: $('ptkSearch'), status: $('ptkStatus'),
         form: $('ptkFilters')
     };
     const BASE = 'principal_evaluation_tracker.php';
@@ -990,13 +1058,6 @@ html.principal-theme-dark #ptk{
 
     function currentUrl() { return new URL(window.location.href); }
 
-    function exportHref() {
-        const u = currentUrl();
-        u.searchParams.delete('ajax'); u.searchParams.delete('_ts'); u.searchParams.delete('page');
-        u.searchParams.set('export', 'csv');
-        return BASE + '?' + u.searchParams.toString();
-    }
-
     function syncControls() {
         const p = currentUrl().searchParams;
         if (document.activeElement !== els.search) els.search.value = p.get('search') || '';
@@ -1006,7 +1067,6 @@ html.principal-theme-dark #ptk{
         els.search.placeholder = 'Search ' + ({ teachers: 'teacher', staff: 'staff member', students: 'student' })[tab] + ' by name…';
         els.form.elements['tab'].value = tab;
         els.form.elements['grade'].value = p.get('grade') || '';
-        els.exp.href = exportHref();
     }
 
     function restoreOpen() {
@@ -1038,14 +1098,13 @@ html.principal-theme-dark #ptk{
             if (!d.ok) throw new Error('not ok');
             setLive('Live', false);
 
-            const sig = d.tabs + '|' + d.cards + '|' + d.pills + '|' + d.list;
+            const sig = d.tabs + '|' + d.pills + '|' + d.chips + '|' + d.list;
             if (!force && (lastSig === '' || sig === lastSig)) { lastSig = sig; return; }
             lastSig = sig;
 
-            if (d.n) { els.cards.dataset.n = d.n; els.cards.style.setProperty('--ptk-n', d.n); }
             els.tabs.innerHTML = d.tabs;
-            els.cards.innerHTML = d.cards;
             els.pills.innerHTML = d.pills;
+            els.chips.innerHTML = d.chips;
             els.list.innerHTML = d.list;
             restoreOpen();
             syncControls();

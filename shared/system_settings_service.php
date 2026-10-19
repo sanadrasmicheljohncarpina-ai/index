@@ -76,13 +76,7 @@ function ss_raw(mysqli $mysqli): array {
         'eval_end' => '',
         'maintenance' => 0,
         'year_level_edit_mode' => 'locked',
-        'rule_only_during_period' => 1,
-        'rule_edit_after_submit' => 0,
-        'rule_one_submission' => 1,
-        'rule_require_all' => 1,
-        'rule_auto_lock' => 1,
         'rule_countdown' => 1,
-        'rule_prevent_late' => 1,
         'publish_state' => 'published',
         'notify_eval_open' => 1,
         'notify_eval_closing' => 1,
@@ -418,4 +412,45 @@ function get_school_head_settings(mysqli $mysqli, string $role = 'principal'): a
     $sys['school_head_applicable'] = ss_school_head_role_applicable($sys, $role);
     $sys['school_head_is_open'] = ss_school_head_evaluation_open($sys, $role);
     return $sys;
+}
+
+/**
+ * Maintenance gate. Call this near the top of every page/endpoint that a
+ * logged-in user can open (Student, Teacher, Dean, Staff, Principal dashboards),
+ * AFTER session_start() and db.php:
+ *
+ *     require_once dirname(__DIR__) . '/shared/system_settings_service.php';
+ *     ss_enforce_maintenance($mysqli);
+ *
+ * Do NOT call it on login pages: the Executive Assistant must still be able to
+ * sign in while maintenance is on.
+ *
+ * When Maintenance Mode is ON, everyone except the exempt roles is sent to
+ * /index/maintenance.php?return=<page they were on>, so maintenance.php can put
+ * them back on that same page automatically once maintenance is turned off.
+ */
+function ss_enforce_maintenance(mysqli $mysqli, array $exemptRoles = ['admin', 'superadmin', 'executive_assistant']): void {
+    $sys = ss_raw($mysqli);
+    if (empty($sys['maintenance'])) return;
+
+    $role = strtolower(trim((string)($_SESSION['role'] ?? '')));
+    if (in_array($role, $exemptRoles, true)) return;
+
+    // Never gate the maintenance page itself (prevents a redirect loop).
+    if (basename((string)($_SERVER['SCRIPT_NAME'] ?? '')) === 'maintenance.php') return;
+
+    // Background requests (fetch/XHR) get a 503 instead of an HTML redirect.
+    $isAjax = strtolower((string)($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'xmlhttprequest'
+        || stripos((string)($_SERVER['HTTP_ACCEPT'] ?? ''), 'application/json') === 0;
+    if ($isAjax) {
+        http_response_code(503);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['error' => 'maintenance']);
+        exit;
+    }
+
+    $return = (string)($_SERVER['REQUEST_URI'] ?? '');
+    $url = '/index/maintenance.php' . ($return !== '' ? '?return=' . rawurlencode($return) : '');
+    if (!headers_sent()) header('Location: ' . $url);
+    exit;
 }

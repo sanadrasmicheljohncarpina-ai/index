@@ -6,6 +6,7 @@
 // Production values are loaded from hosting environment variables or root .env.php.
 // XAMPP defaults remain available automatically for local development.
 require_once dirname(__DIR__) . '/shared/app_config.php';
+require_once __DIR__ . '/../shared/auth_guard.php';
 $cfg = app_config();
 
 $mysqli = new mysqli(

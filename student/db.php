@@ -4,6 +4,7 @@
 // Include in every student PHP file with: require_once 'db.php';
 
 require_once dirname(__DIR__) . '/shared/app_config.php';
+require_once __DIR__ . '/../shared/auth_guard.php';
 $cfg = app_config();
 
 $mysqli = new mysqli(

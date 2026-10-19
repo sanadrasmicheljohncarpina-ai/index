@@ -51,6 +51,18 @@ if (!function_exists('aa_current_q_sql')) {
     }
 }
 
+// A submission only counts as an evaluation if it has at least one scored answer
+// to a question in the person's CURRENT questionnaire. Empty/abandoned submissions
+// (e.g. a tracker row saved with zero answers) used to inflate "Total Evaluations"
+// and the "Evaluated by: N" figure while contributing nothing to any score.
+//   $et  = alias of evaluation_tracker in the calling query
+//   $uid = SQL expression / int for the evaluated person's users.id
+if (!function_exists('aa_scored_tracker_sql')) {
+    function aa_scored_tracker_sql(string $et, $uid): string {
+        return "EXISTS (SELECT 1 FROM questionnaire_answers qsc WHERE qsc.tracker_id=$et.id AND qsc.answer_score IS NOT NULL AND " . aa_current_q_sql('qsc', $uid) . ")";
+    }
+}
+
 // Merge per-question rows that share the same wording (old + new question IDs
 // for the same question) into one row, using a response-weighted average.
 if (!function_exists('aa_merge_question_rows')) {
@@ -787,9 +799,12 @@ a { color:inherit; }
 // ══════════════════════════════════════════════════════════════
 // VIEW: EVALUATION SHEET
 // ══════════════════════════════════════════════════════════════
-if ($view === 'sheet' && $target_id && $tracker_id) {
-    // "Generate Report" (Actions column of the Evaluators List) links here
-    // with &report=1 so the sheet renders in its clean, print-style layout
+if ($view === 'sheet' && $target_id && ($tracker_id || ($_GET['report'] ?? '') === '1')) {
+    // The single "Generate Report" button (top of the Evaluators List) links
+    // here with &report=1 and NO tracker_id: the cumulative report pools every
+    // evaluator for this person, so it doesn't belong to any one submission.
+    // The per-row "View" action still passes a tracker_id for the individual sheet.
+    // report=1 makes the sheet render in its clean, print-style layout
     // by default on screen — the same look the browser's print preview
     // already produced — instead of the normal interactive dashboard sheet
     // that "View" opens. See body.report-mode CSS below.
@@ -877,7 +892,7 @@ if ($view === 'sheet' && $target_id && $tracker_id) {
         SELECT et.id AS tracker_id, et.submitted_at, et.remarks, u.role AS evaluator_role
         FROM evaluation_tracker et
         JOIN users u ON u.id = et.evaluator_id
-        WHERE et.target_user_id = $target_id AND $evalTypeSql $yearLevelSql
+        WHERE et.target_user_id = $target_id AND $evalTypeSql $yearLevelSql AND " . aa_scored_tracker_sql('et', (int)$target_id) . "
         ORDER BY et.submitted_at DESC
     ");
     if ($cq) $cumTrackers = $cq->fetch_all(MYSQLI_ASSOC);
@@ -1027,7 +1042,6 @@ if ($view === 'sheet' && $target_id && $tracker_id) {
 
 /* ── PRINT: hide evaluator identity entirely ── */
 @media print{
-  @page{margin:15mm 12mm;}
   html,body{width:100%!important;height:auto!important;}
   .no-print{display:none!important;}
   body{background:#fff!important;color:#000!important;padding:0!important;margin:0!important;min-height:0!important;}
@@ -1468,6 +1482,45 @@ html[data-theme="dark"] .comment-section,
 html[data-theme="dark"] .avg-summary{background:#fff!important;border-color:#ddd!important;}
 }
 
+
+/* ── PRINT (cumulative report): start near the top, compact enough for 30 questions,
+   no per-question satisfaction label, comments always on their own page ── */
+@page{margin:0!important;}
+@media print{
+  html body{padding:7mm 12mm 10mm!important;margin:0!important;}
+  /* any page header / top bar must not print */
+  .topbar,.top-header,.portal-topbar,.dean-portal-topbar,.admin-topbar,header.topbar{display:none!important;}
+  body .cumulative-sheet{margin:0!important;padding:0!important;}
+  body .cumulative-sheet .rating-lbl{display:none!important;}
+
+  body .cumulative-sheet .cum-topbar{margin:0 0 4px!important;padding:4px 10px!important;font-size:10px!important;}
+  body .cumulative-sheet .sheet-header{margin:0 0 4px!important;padding:6px 10px!important;gap:8px!important;}
+  body .cumulative-sheet .sheet-avatar,
+  body .cumulative-sheet .sheet-avatar-ph{width:32px!important;height:32px!important;font-size:14px!important;}
+  body .cumulative-sheet .sheet-name{font-size:14px!important;line-height:1.1!important;}
+  body .cumulative-sheet .sheet-desig{font-size:9px!important;line-height:1.2!important;}
+  body .cumulative-sheet .cum-date-label{font-size:8px!important;margin-bottom:0!important;}
+  body .cumulative-sheet .cum-date-val{font-size:11px!important;}
+  body .cumulative-sheet .cat-section{margin:0 0 5px!important;break-inside:auto!important;page-break-inside:auto!important;}
+  body .cumulative-sheet .cat-title{margin:0 0 3px!important;padding:0 0 2px!important;font-size:9px!important;letter-spacing:1px!important;break-after:avoid;page-break-after:avoid;}
+  body .cumulative-sheet .q-table thead{display:table-header-group;}
+  body .cumulative-sheet .q-table tr{break-inside:avoid;page-break-inside:avoid;}
+  body .cumulative-sheet .q-table th{padding:3px 8px!important;font-size:8.5px!important;}
+  body .cumulative-sheet .q-table td{padding:2px 8px!important;font-size:10.5px!important;line-height:1.15!important;}
+  body .cumulative-sheet .q-table td.q-num{padding-top:2px!important;width:30px!important;}
+  body .cumulative-sheet .q-table td.rating-cell{padding-top:2px!important;}
+  body .cumulative-sheet .rating-badge{width:62px!important;height:18px!important;padding:0 4px!important;border-radius:5px!important;}
+  body .cumulative-sheet .rating-num{font-size:11px!important;line-height:1!important;}
+  body .cumulative-sheet .cum-total{margin:0 0 5px!important;padding:6px 12px!important;}
+  body .cumulative-sheet .cum-total-label{font-size:11px!important;}
+  body .cumulative-sheet .avg-score-big{font-size:28px!important;}
+  body .cumulative-sheet .avg-score-label{font-size:11px!important;margin-top:2px!important;}
+  body .cumulative-sheet .avg-out-of{font-size:9px!important;margin-top:2px!important;}
+
+  /* Comments on their own page; padding (not margin) gives the top gap since margins are dropped at a page break */
+  body .cumulative-sheet .cum-comments-page{break-before:page!important;page-break-before:always!important;padding-top:14mm!important;margin:0!important;}
+  body .cumulative-sheet .cum-comments-page .comment-section{margin-top:0!important;}
+}
 </style>
 
 <link rel="stylesheet" href="admin_appearance.css">
@@ -1725,7 +1778,6 @@ function confirmNav(link, message, opts){
                 <td class="rating-cell">
                     <div class="rating-badge" style="border:1px solid <?= $cc ?>33">
                         <span class="rating-num" style="color:<?= $cc ?>"><?= number_format($cs, 2) ?></span>
-                        <span class="rating-lbl" style="color:<?= $cc ?>"><?= scoreSatisfactionLabel($cs) ?></span>
                     </div>
                 </td>
             </tr>
@@ -1751,6 +1803,7 @@ function confirmNav(link, message, opts){
     </div>
     <?php endif; ?>
 
+    <div class="cum-comments-page">
     <div class="comment-section">
         <div class="comment-title"><i class="fa-solid fa-comment-dots"></i> Comments, Suggestions &amp; Areas for Improvement</div>
         <?php if (!empty($cumRemarks)): foreach ($cumRemarks as $cr): ?>
@@ -1759,6 +1812,7 @@ function confirmNav(link, message, opts){
         <div class="no-comment">No comments or suggestions were provided.</div>
         <?php endif; ?>
     </div>
+    </div><!-- /.cum-comments-page -->
 
 </div><!-- /.cumulative-sheet -->
 
@@ -1769,8 +1823,15 @@ function confirmNav(link, message, opts){
 <!-- Print page margins. Kept at the very end of the document so no
      stylesheet loaded earlier (admin_ui_theme.css etc.) can override it. -->
 <style>
-@page{margin:15mm 12mm;}
+/* Print margins.
+   - Top/bottom: real @page margin, so EVERY printed page keeps its margin.
+   - Left/right: padding on <body>, because the browser's print-dialog setting
+     "Margins: None/Minimum" ignores @page entirely, and admin_unified_ui.css
+     forces `html body{padding:0!important}` in print. `html body` below has the
+     same specificity and comes later, so the side margin always survives. */
+@page{margin:12mm 0;}
 @media print{
+  html body{width:100%!important;box-sizing:border-box!important;margin:0!important;padding:6mm 16mm!important;}
   /* let long tables continue onto the next page instead of leaving a big
      blank gap, but never split a single row or strand a section title */
   .cumulative-sheet .cat-section{break-inside:auto!important;page-break-inside:auto!important;}
@@ -1797,7 +1858,7 @@ if ($view === 'students' && $target_id) {
                (SELECT AVG(qa.answer_score) FROM questionnaire_answers qa WHERE qa.tracker_id=et.id AND " . aa_current_q_sql('qa', (int)$target_id) . ") as avg_score
         FROM evaluation_tracker et
         JOIN users u ON u.id = et.evaluator_id
-        WHERE et.target_user_id = $target_id AND $evalTypeSql $yearLevelSql
+        WHERE et.target_user_id = $target_id AND $evalTypeSql $yearLevelSql AND " . aa_scored_tracker_sql('et', (int)$target_id) . "
         ORDER BY et.submitted_at DESC
     ");
     if ($eq) $evaluators = $eq->fetch_all(MYSQLI_ASSOC);
@@ -1975,6 +2036,22 @@ html[data-theme="dark"] table.results-table td a.rt-generate-btn{
 }
 html[data-theme="dark"] table.results-table td a.rt-generate-btn:hover{opacity:.88;}
 </style>
+<style id="rt-icon-actions">
+/* Evaluators List > Actions: plain icons (no button chrome). */
+html body table.results-table td a.rt-icon-btn,
+html body table.results-table td a.rt-icon-btn:link,
+html body table.results-table td a.rt-icon-btn:visited{
+    display:inline-flex !important;align-items:center;justify-content:center;
+    width:30px;height:30px;padding:0 !important;margin:0 2px 0 0 !important;
+    background:transparent !important;border:0 !important;box-shadow:none !important;
+    border-radius:8px;font-size:15px;line-height:1;text-decoration:none !important;
+    color:var(--ec,var(--accent,#2563EB)) !important;-webkit-text-fill-color:currentColor !important;
+    cursor:pointer;transition:opacity .15s,background-color .15s;
+}
+html body table.results-table td a.rt-icon-btn i{margin:0 !important;color:inherit !important}
+html body table.results-table td a.rt-icon-btn:hover,
+html body table.results-table td a.rt-icon-btn:focus-visible{background:var(--ec-bg,color-mix(in srgb,var(--accent,#2563EB) 12%,transparent)) !important;opacity:1}
+</style>
 <link rel="stylesheet" href="admin_unified_ui.css?v=<?= (int)@filemtime(__DIR__ . '/admin_unified_ui.css') ?>">
 </head><body>
 <script src="admin_ajax.php"></script>
@@ -2069,15 +2146,6 @@ function confirmNav(link, message, opts){
     </a>
 </div>
 
-<!-- eval type banner -->
-<div class="eval-banner" style="margin-bottom:18px;">
-    <div class="eval-banner-icon"><i class="fa-solid <?= $evalIcon ?>"></i></div>
-    <div>
-        <div class="eval-banner-title"><?= $evalLabel ?></div>
-        <div class="eval-banner-desc"><?= htmlspecialchars($cfg['desc']) ?></div>
-    </div>
-</div>
-
 <div class="target-card">
     <?php if ($tgt['photo']): ?><img class="target-avatar" src="../image/<?= htmlspecialchars($tgt['photo']) ?>" alt=""/>
     <?php else: ?><div class="target-avatar-ph"><i class="fa-solid fa-user"></i></div><?php endif; ?>
@@ -2097,7 +2165,7 @@ function confirmNav(link, message, opts){
         </div>
     </div>
     <div class="score-legend no-print">
-        <div class="score-legend-title">Score Legend</div>
+        <div class="score-legend-title">Rating Legend</div>
         <div class="score-legend-row"><span style="color:#32B98A">4.50 - 5.00</span> Always</div>
         <div class="score-legend-row"><span style="color:#6BCFA9">3.50 - 4.49</span> Often</div>
         <div class="score-legend-row"><span style="color:#facc15">2.50 - 3.49</span> Sometimes</div>
@@ -2112,8 +2180,26 @@ function confirmNav(link, message, opts){
         Evaluation Results
         <span style="font-size:13px;font-weight:400;color:var(--muted)">(<?= count($resultRows) ?>)</span>
     </span>
+    <span class="no-print" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+    <?php if (!empty($resultRows)): ?>
+    <!-- One Generate Report button for the whole list: opens the cumulative
+         report (average rating per question across ALL evaluators + overall).
+         Carries the current year-level filter so the report matches the list. -->
+    <a class="rt-generate-top" href="?view=sheet&target_id=<?= $target_id ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>&evaluator=<?= urlencode($evaluatorFilter) ?>&year_level=<?= urlencode($yearLevel) ?>&report=1">
+        <i class="fa-solid fa-file-lines"></i> Generate Report
+    </a>
+    <style>
+    html body a.rt-generate-top,html body a.rt-generate-top:link,html body a.rt-generate-top:visited{
+        display:inline-flex;align-items:center;gap:8px;padding:9px 18px;border-radius:8px;
+        background:var(--accent,#2563EB) !important;color:#fff !important;-webkit-text-fill-color:#fff !important;
+        border:1px solid var(--accent,#2563EB);font-size:13px;font-weight:700;text-decoration:none !important;
+        font-family:'Inter',sans-serif;}
+    html body a.rt-generate-top:hover{opacity:.88;}
+    html body a.rt-generate-top i{color:#fff !important;}
+    </style>
+    <?php endif; ?>
     <?php if ($activeEval === 'student'): ?>
-    <span class="no-print" style="display:flex;align-items:center;gap:8px;">
+    <span style="display:flex;align-items:center;gap:8px;">
         <label for="yearLevelSelect" style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">Year Level</label>
         <select id="yearLevelSelect" onchange="applyYearLevelFilter(this.value)" style="padding:8px 14px;border-radius:8px;border:1px solid var(--border);font-size:13px;font-weight:600;background:var(--mid);color:var(--light);">
             <option value="All" <?= $yearLevel==='All' ? 'selected' : '' ?>>All Year Levels</option>
@@ -2138,6 +2224,7 @@ function confirmNav(link, message, opts){
     }
     </script>
     <?php endif; ?>
+    </span>
 </div>
 
 <?php if (empty($resultRows)): ?>
@@ -2170,8 +2257,7 @@ function confirmNav(link, message, opts){
             <td><span class="rt-rating-pill" style="background:<?= $rc ?>1A;color:<?= $rc ?>"><?= scoreLabel($row['avg']) ?></span></td>
             <td><?= !empty($row['date']) ? date('M d, Y', strtotime($row['date'])) : '—' ?></td>
             <td class="no-print" style="white-space:nowrap;">
-                <a class="rt-print-btn rt-generate-btn" href="?view=sheet&target_id=<?= $target_id ?>&student_id=<?= $row['student_id'] ?>&tracker_id=<?= $row['tracker_id'] ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>&evaluator=<?= urlencode($evaluatorFilter) ?>&year_level=<?= urlencode($yearLevel) ?>&report=1"><i class="fa-solid fa-file-lines"></i> Generate Report</a>
-                <a class="rt-print-btn" href="?view=sheet&target_id=<?= $target_id ?>&student_id=<?= $row['student_id'] ?>&tracker_id=<?= $row['tracker_id'] ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>&evaluator=<?= urlencode($evaluatorFilter) ?>"><i class="fa-solid fa-eye"></i> View</a>
+                <a class="rt-icon-btn rt-icon-view" title="View" aria-label="View" href="?view=sheet&target_id=<?= $target_id ?>&student_id=<?= $row['student_id'] ?>&tracker_id=<?= $row['tracker_id'] ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>&evaluator=<?= urlencode($evaluatorFilter) ?>"><i class="fa-solid fa-eye"></i></a>
             </td>
         </tr>
     <?php endforeach; ?>
@@ -2244,7 +2330,7 @@ if ($view === 'archived') {
                AVG(qa.answer_score)  AS avg_score
         FROM analytics_archive aa
         JOIN users u ON u.id=aa.target_user_id
-        LEFT JOIN evaluation_tracker et ON et.target_user_id=u.id AND $evalTypeSql
+        LEFT JOIN evaluation_tracker et ON et.target_user_id=u.id AND $evalTypeSql AND " . aa_scored_tracker_sql('et', 'u.id') . "
         LEFT JOIN questionnaire_answers qa ON qa.tracker_id=et.id AND " . aa_current_q_sql('qa', 'u.id') . "
         WHERE $whereRoleArc
         GROUP BY u.id ORDER BY aa.archived_at DESC
@@ -2521,7 +2607,7 @@ $res = $mysqli->query("
            AVG(qa.answer_score)  AS avg_score,
            MAX(et.submitted_at)  AS last_evaluated
     FROM users u
-    JOIN evaluation_tracker et ON et.target_user_id=u.id AND $evalTypeSql
+    JOIN evaluation_tracker et ON et.target_user_id=u.id AND $evalTypeSql AND " . aa_scored_tracker_sql('et', 'u.id') . "
     LEFT JOIN questionnaire_answers qa ON qa.tracker_id=et.id AND " . aa_current_q_sql('qa', 'u.id') . "
     LEFT JOIN analytics_archive aa ON aa.target_user_id=u.id
     WHERE $whereRole AND u.is_active=1
@@ -2997,6 +3083,13 @@ a { color:inherit; }
 </style>
 <?php include __DIR__.'/analytics_dark_head.php'; ?>
 <link rel="stylesheet" href="admin_unified_ui.css?v=<?= (int)@filemtime(__DIR__ . '/admin_unified_ui.css') ?>">
+<style>
+/* Separated tabs: each evaluation tab is its own bordered pill, no shared bar behind them */
+html body .eval-switcher,html[data-theme="dark"] body .eval-switcher,html.dark-theme body .eval-switcher{background:transparent !important;border:0 !important;box-shadow:none !important;padding:0 !important;border-radius:0 !important;overflow:visible !important;gap:8px !important;}
+html body .eval-tab{border:1px solid #D8E5F4 !important;border-radius:12px !important;background:#fff !important;box-shadow:0 2px 4px rgba(30,82,144,.05) !important;padding:11px 20px !important;}
+html body .eval-tab.active{border-color:currentColor !important;}
+html body .eval-tab.active::after{display:none !important;}
+</style>
 </head>
 <body>
 <script src="admin_ajax.php"></script>
@@ -3095,6 +3188,7 @@ function confirmNav(link, message, opts){
 // that wouldn't apply.
 $groupForOtherTabs = $groupFilter;
 ?>
+<div class="ra-topbar">
 <div class="eval-switcher">
     <a href="?group=All&eval_type=student" class="eval-tab student <?= $activeEval==='student'?'active':'' ?>">
         <i class="fa-solid fa-graduation-cap"></i> Student Evaluation
@@ -3111,6 +3205,56 @@ $groupForOtherTabs = $groupFilter;
     <a href="?group=All&eval_type=staff" class="eval-tab staff-eval <?= $activeEval==='staff'?'active':'' ?>">
         <i class="fa-solid fa-users"></i> Staff Evaluation
     </a>
+</div>
+        <div class="ra-table-tools ra-top-tools no-print">
+            <div class="ra-filters-wrap">
+                <button class="ra-tool-btn" id="raFiltersToggle" onclick="raToggleFilters()"><i class="fa-solid fa-filter"></i> Filters</button>
+                <div class="ra-filters-panel" id="raFiltersPanel">
+                    <div class="ra-filter-row">
+                        <label>Min score</label>
+                        <select id="raMinScore" onchange="raFilterTable()">
+                            <option value="0">Any</option>
+                            <option value="4.5">4.50 (Excellent)</option>
+                            <option value="3.5">3.50 (Very Good)</option>
+                            <option value="2.5">2.50 (Good)</option>
+                        </select>
+                    </div>
+                    <div class="ra-filter-row">
+                        <label>Role</label>
+                        <select id="raRoleFilter" onchange="raFilterTable()">
+                            <option value="all">All</option>
+                            <?php
+                            if ($activeEval === 'schoolhead') {
+                                $reportRoles = [];
+                                foreach ($people as $rp) {
+                                    $rrg = ec_resolve_schoolhead_target_group($rp, $mysqli);
+                                    $label = match ($rrg) {
+                                        'faculty' => 'Faculty',
+                                        'staff' => 'Staff',
+                                        'ea' => 'Executive Assistant',
+                                        default => null,
+                                    };
+                                    if ($label !== null) $reportRoles[$label] = true;
+                                }
+                                foreach (array_keys($reportRoles) as $reportRoleLabel):
+                            ?>
+                            <option value="<?= htmlspecialchars(strtolower($reportRoleLabel)) ?>"><?= htmlspecialchars($reportRoleLabel) ?></option>
+                            <?php endforeach; ?>
+                            <?php } else { ?>
+                            <?php foreach (array_unique(array_column($people, 'role')) as $r): ?>
+                            <option value="<?= htmlspecialchars($r) ?>"><?= htmlspecialchars(ucfirst($r)) ?></option>
+                            <?php endforeach; ?>
+                            <?php } ?>
+                        </select>
+                    </div>
+                    <button class="ra-filter-clear" onclick="raClearFilters()">Clear filters</button>
+                </div>
+            </div>
+            <div class="ra-search-wrap">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" id="raSearch" class="ra-search" placeholder="Search name, designation..." oninput="raFilterTable()">
+            </div>
+        </div>
 </div>
 
 <!-- GROUP TABS -->
@@ -3220,6 +3364,10 @@ $groupForOtherTabs = $groupFilter;
 .ra-table-head{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:16px;}
 .ra-table-head .section-title{margin-bottom:0;}
 .ra-table-tools{display:flex;align-items:center;gap:10px;}
+.ra-topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:26px;}
+.ra-topbar .eval-switcher{margin-bottom:0;}
+.ra-top-tools{margin-left:auto;}
+@media(max-width:560px){.ra-top-tools{width:100%;}.ra-top-tools .ra-search-wrap{flex:1;}.ra-top-tools .ra-search{width:100%;min-width:0;box-sizing:border-box;}}
 .ra-tool-btn{padding:9px 14px;border-radius:8px;border:1px solid var(--border);background:var(--inner);color:var(--light);font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:7px;white-space:nowrap;}
 .ra-tool-btn:hover{border-color:var(--ec);color:var(--ec);}
 .ra-filters-wrap{position:relative;}
@@ -3231,7 +3379,8 @@ $groupForOtherTabs = $groupFilter;
 .ra-filter-clear{width:100%;padding:7px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;}
 .ra-filter-clear:hover{color:var(--ec);border-color:var(--ec);}
 .ra-search-wrap{position:relative;}
-.ra-search-wrap i{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;}
+.ra-search-wrap i{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;z-index:1;pointer-events:none;}
+html body .ra-search-wrap .ra-search{padding:9px 12px 9px 36px!important;}
 .ra-search{padding:9px 12px 9px 32px;border-radius:8px;border:1px solid var(--border);font-size:13px;background:var(--inner);color:var(--light);min-width:220px;}
 .ra-table-wrap{overflow-x:auto;}
 table.ra-table{width:100%;border-collapse:collapse;font-size:13px;}
@@ -3264,56 +3413,6 @@ table.ra-table tbody tr:hover{background:var(--inner);}
             <i class="fa-solid fa-list-check" style="color:var(--accent)"></i>
             <?= $activeEval==='student' ? 'Evaluated Personnel' : 'Evaluated Personnel' ?>
             <span style="font-size:13px;font-weight:400;color:var(--muted)">(<?= count($people) ?> evaluated)</span>
-        </div>
-        <div class="ra-table-tools no-print">
-            <button class="ra-tool-btn" onclick="raExportCsv()"><i class="fa-solid fa-download"></i> Export</button>
-            <div class="ra-search-wrap">
-                <i class="fa-solid fa-magnifying-glass"></i>
-                <input type="text" id="raSearch" class="ra-search" placeholder="Search name, designation..." oninput="raFilterTable()">
-            </div>
-            <div class="ra-filters-wrap">
-                <button class="ra-tool-btn" id="raFiltersToggle" onclick="raToggleFilters()"><i class="fa-solid fa-filter"></i> Filters</button>
-                <div class="ra-filters-panel" id="raFiltersPanel">
-                    <div class="ra-filter-row">
-                        <label>Min score</label>
-                        <select id="raMinScore" onchange="raFilterTable()">
-                            <option value="0">Any</option>
-                            <option value="4.5">4.50 (Excellent)</option>
-                            <option value="3.5">3.50 (Very Good)</option>
-                            <option value="2.5">2.50 (Good)</option>
-                        </select>
-                    </div>
-                    <div class="ra-filter-row">
-                        <label>Role</label>
-                        <select id="raRoleFilter" onchange="raFilterTable()">
-                            <option value="all">All</option>
-                            <?php
-                            if ($activeEval === 'schoolhead') {
-                                $reportRoles = [];
-                                foreach ($people as $rp) {
-                                    $rrg = ec_resolve_schoolhead_target_group($rp, $mysqli);
-                                    $label = match ($rrg) {
-                                        'faculty' => 'Faculty',
-                                        'staff' => 'Staff',
-                                        'ea' => 'Executive Assistant',
-                                        default => null,
-                                    };
-                                    if ($label !== null) $reportRoles[$label] = true;
-                                }
-                                foreach (array_keys($reportRoles) as $reportRoleLabel):
-                            ?>
-                            <option value="<?= htmlspecialchars(strtolower($reportRoleLabel)) ?>"><?= htmlspecialchars($reportRoleLabel) ?></option>
-                            <?php endforeach; ?>
-                            <?php } else { ?>
-                            <?php foreach (array_unique(array_column($people, 'role')) as $r): ?>
-                            <option value="<?= htmlspecialchars($r) ?>"><?= htmlspecialchars(ucfirst($r)) ?></option>
-                            <?php endforeach; ?>
-                            <?php } ?>
-                        </select>
-                    </div>
-                    <button class="ra-filter-clear" onclick="raClearFilters()">Clear filters</button>
-                </div>
-            </div>
         </div>
     </div>
 
@@ -3499,20 +3598,6 @@ table.ra-table tbody tr:hover{background:var(--inner);}
             document.getElementById('raFiltersPanel').classList.remove('open');
         }
     });
-
-    window.raExportCsv = function() {
-        const rows = [['No.','Name','Designation','Role','Overall Avg. Score','Last Evaluated']];
-        visibleRows().forEach((r, i) => {
-            const cells = r.querySelectorAll('td');
-            rows.push([i+1, cells[1].innerText.trim().split('\n')[0], cells[2].innerText.trim(), cells[3].innerText.trim(), cells[4].innerText.trim(), cells[5].innerText.trim()]);
-        });
-        const csv = rows.map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = 'evaluated_personnel.csv';
-        link.click();
-    };
 
     window.filterByDesig = function(desig) {
         activeDesig = desig;

@@ -35,6 +35,107 @@ if (empty($_SESSION['csrf_token'])) {
 }
 $csrf_token = $_SESSION['csrf_token'];
 
+// ── PROFILE PHOTO UPLOAD (handled inside the authenticated portal) ──
+// Posting to this dashboard keeps the user's existing portal session and
+// returns them to the correct role/page after the photo is saved.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['photo'])) {
+    $returnPage = (string)($_POST['return_page'] ?? 'profile');
+    if (!in_array($returnPage, ['settings', 'profile'], true)) $returnPage = 'profile';
+    $returnUrl = 'faculty_dashboard.php?page=' . rawurlencode($returnPage);
+
+    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', (string)$_POST['csrf_token'])) {
+        $_SESSION['toast_error'] = 'Your session expired. Please refresh the page and try again.';
+        header('Location: ' . $returnUrl);
+        exit;
+    }
+
+    $upload = $_FILES['photo'];
+    $uploadError = (int)($upload['error'] ?? UPLOAD_ERR_NO_FILE);
+    if ($uploadError !== UPLOAD_ERR_OK) {
+        $_SESSION['toast_error'] = in_array($uploadError, [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true)
+            ? 'Photo must be 10MB or smaller.'
+            : ($uploadError === UPLOAD_ERR_NO_FILE ? 'Please choose a photo to upload.' : 'Photo upload failed. Please try again.');
+        header('Location: ' . $returnUrl);
+        exit;
+    }
+
+    if (!is_uploaded_file((string)($upload['tmp_name'] ?? ''))) {
+        $_SESSION['toast_error'] = 'The uploaded photo could not be verified. Please try again.';
+        header('Location: ' . $returnUrl);
+        exit;
+    }
+    if ((int)($upload['size'] ?? 0) > 10 * 1024 * 1024) {
+        $_SESSION['toast_error'] = 'Photo must be 10MB or smaller.';
+        header('Location: ' . $returnUrl);
+        exit;
+    }
+
+    $allowedPhotoTypes = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif'];
+    $photoMime = '';
+    try {
+        $photoInfo = new finfo(FILEINFO_MIME_TYPE);
+        $photoMime = $photoInfo->file((string)$upload['tmp_name']) ?: '';
+    } catch (Throwable $photoCheckError) {
+        $photoMime = '';
+    }
+    if (!isset($allowedPhotoTypes[$photoMime])) {
+        $_SESSION['toast_error'] = 'Please upload a JPG, PNG, WEBP, or GIF image.';
+        header('Location: ' . $returnUrl);
+        exit;
+    }
+
+    $photoDir = rtrim(UPLOAD_DIR, '/\\') . DIRECTORY_SEPARATOR;
+    if (!is_dir($photoDir) && !@mkdir($photoDir, 0755, true)) {
+        $_SESSION['toast_error'] = 'The profile photo folder is not available.';
+        header('Location: ' . $returnUrl);
+        exit;
+    }
+    if (!is_writable($photoDir)) {
+        $_SESSION['toast_error'] = 'The profile photo folder is not writable.';
+        header('Location: ' . $returnUrl);
+        exit;
+    }
+
+    $newPhoto = 'fac_' . bin2hex(random_bytes(12)) . '.' . $allowedPhotoTypes[$photoMime];
+    $newPhotoPath = $photoDir . $newPhoto;
+    $photoSavedToDisk = false;
+    try {
+        $oldPhotoStmt = $mysqli->prepare('SELECT photo FROM users WHERE id = ? LIMIT 1');
+        $oldPhotoStmt->bind_param('i', $user_id);
+        $oldPhotoStmt->execute();
+        $oldPhoto = (string)($oldPhotoStmt->get_result()->fetch_assoc()['photo'] ?? '');
+        $oldPhotoStmt->close();
+
+        if (!move_uploaded_file((string)$upload['tmp_name'], $newPhotoPath)) {
+            throw new RuntimeException('move_uploaded_file failed');
+        }
+        $photoSavedToDisk = true;
+
+        $savePhotoStmt = $mysqli->prepare('UPDATE users SET photo = ? WHERE id = ?');
+        $savePhotoStmt->bind_param('si', $newPhoto, $user_id);
+        if (!$savePhotoStmt->execute()) {
+            $savePhotoStmt->close();
+            throw new RuntimeException('Photo database update failed');
+        }
+        $savePhotoStmt->close();
+
+        // Delete only files created by this upload flow, and only after the DB update succeeds.
+        $managedOldPhoto = str_starts_with($oldPhoto, 'fac_') || str_starts_with($oldPhoto, 'staff_');
+        if ($oldPhoto !== '' && basename($oldPhoto) === $oldPhoto && $managedOldPhoto && is_file($photoDir . $oldPhoto)) {
+            @unlink($photoDir . $oldPhoto);
+        }
+        $_SESSION['toast'] = 'Profile photo updated successfully.';
+    } catch (Throwable $photoSaveError) {
+        if ($photoSavedToDisk && is_file($newPhotoPath)) @unlink($newPhotoPath);
+        error_log('[faculty_dashboard.php] Profile photo update failed for user ' . (int)$user_id . ': ' . $photoSaveError->getMessage());
+        $_SESSION['toast_error'] = 'Unable to update your profile photo right now. Please try again.';
+    }
+
+    header('Location: ' . $returnUrl);
+    exit;
+}
+
+
 function csrf_check(): bool {
     return isset($_POST['csrf_token']) && hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token']);
 }
@@ -97,6 +198,13 @@ $phRes->bind_param("i", $user_id);
 $phRes->execute();
 $faculty_photo = $phRes->get_result()->fetch_assoc()['photo'] ?? '';
 $phRes->close();
+
+$account_username = '';
+$userNameStmt = $mysqli->prepare("SELECT username FROM users WHERE id=? LIMIT 1");
+$userNameStmt->bind_param("i", $user_id);
+$userNameStmt->execute();
+$account_username = (string)($userNameStmt->get_result()->fetch_assoc()['username'] ?? '');
+$userNameStmt->close();
 
 // ── VALID SPECIFIC YEAR LEVELS ───────────────────────────────────
 // Same exact list & string values as admin/manage_privileged_accounts.php
@@ -323,8 +431,8 @@ function eval_type_label($eval_type, $peer_group = null) {
     switch ($eval_type) {
         case 'student':               return 'Student Evaluation';
         case 'peer':
-        case 'faculty_peer':          return 'Peer-to-Peer Evaluation' . ($peer_group ? ' (' . $peer_group . ')' : '');
-        case 'school_head':           return 'Dean / Principal Peer-to-Peer Evaluation';
+        case 'faculty_peer':          return 'Evaluate Others' . ($peer_group ? ' (' . $peer_group . ')' : '');
+        case 'school_head':           return 'Dean / Principal Evaluate Others';
         case 'supervisor_to_teacher':
         case 'supervisor_to_staff':                              return 'Supervisor Evaluation';
         case 'upward_to_ea':                                     return 'Executive Assistant Review';
@@ -631,31 +739,63 @@ $up->bind_param('iiii', $user_id, $n1, $n2, $n3); $up->execute(); $up->close();
     header('Location: faculty_dashboard.php?page=settings'); exit;
 }
 
-// ── UPDATE ACCOUNT NAME (editable from Settings → Account Overview) ──
+// ── UPDATE ACCOUNT DETAILS FROM SETTINGS ──
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_account_name'])) {
     if (!csrf_check()) {
         $_SESSION['toast_error'] = 'Your session expired. Please try again.';
         header('Location: faculty_dashboard.php?page=settings'); exit;
     }
     $new_name = trim(preg_replace('/\s+/u', ' ', (string)($_POST['full_name'] ?? '')));
-    if ($new_name === '') {
-        $_SESSION['toast_error'] = 'Account name cannot be empty.';
-    } elseif (mb_strlen($new_name) > 100) {
-        $_SESSION['toast_error'] = 'Account name must be 100 characters or fewer.';
-    } elseif (preg_match('/[\x00-\x1F\x7F<>]/u', $new_name)) {
-        $_SESSION['toast_error'] = 'Account name contains invalid characters.';
-    } elseif ($new_name === (string)($_SESSION['full_name'] ?? '')) {
-        $_SESSION['toast'] = 'Account name is unchanged.';
+    $new_username = trim((string)($_POST['username'] ?? $account_username));
+    $new_desig = trim((string)($_POST['designation'] ?? $designation));
+    $profile_error = '';
+    if ($new_name === '') $profile_error = 'Full name cannot be empty.';
+    elseif (mb_strlen($new_name) > 150) $profile_error = 'Full name must be 150 characters or fewer.';
+    elseif (preg_match('/[\x00-\x1F\x7F<>]/u', $new_name)) $profile_error = 'Full name contains invalid characters.';
+    elseif ($new_username === '') $profile_error = 'Username cannot be empty.';
+    elseif (mb_strlen($new_username) > 50) $profile_error = 'Username must be 50 characters or fewer.';
+    elseif (preg_match('/\s/', $new_username)) $profile_error = 'Username cannot contain spaces.';
+    elseif ($new_desig === '') $profile_error = 'Designation cannot be empty.';
+    elseif (mb_strlen($new_desig) > 100) $profile_error = 'Designation must be 100 characters or fewer.';
+
+    if ($profile_error !== '') {
+        $_SESSION['toast_error'] = $profile_error;
     } else {
-        $nm = $mysqli->prepare("UPDATE users SET full_name=? WHERE id=?");
-        $nm->bind_param('si', $new_name, $user_id);
-        if ($nm->execute()) {
-            $_SESSION['full_name'] = $new_name;
-            $_SESSION['toast'] = 'Account name updated successfully.';
+        $checkName = $mysqli->prepare('SELECT id FROM users WHERE username=? AND id<>? LIMIT 1');
+        $checkName->bind_param('si', $new_username, $user_id);
+        $checkName->execute();
+        $duplicateUsername = (bool)$checkName->get_result()->fetch_assoc();
+        $checkName->close();
+        if ($duplicateUsername) {
+            $_SESSION['toast_error'] = 'That username is already in use.';
         } else {
-            $_SESSION['toast_error'] = 'Could not update your account name. Please try again.';
+            $oldDesignation = (string)$designation;
+            try {
+                $updateProfile = $mysqli->prepare('UPDATE users SET full_name=?, username=?, designation=? WHERE id=?');
+                $updateProfile->bind_param('sssi', $new_name, $new_username, $new_desig, $user_id);
+                $ok = $updateProfile->execute();
+                $updateProfile->close();
+                if (!$ok) {
+                    $_SESSION['toast_error'] = 'Could not update your profile. Please try again.';
+                } else {
+                    $_SESSION['full_name'] = $new_name;
+                    $_SESSION['username'] = $new_username;
+                    $_SESSION['designation'] = $new_desig;
+                    $full_name = $new_name; $account_username = $new_username; $designation = $new_desig;
+                    if ($new_desig !== $oldDesignation) {
+                        try {
+                            $audit = $mysqli->prepare("INSERT INTO role_change_log (user_id, old_role, new_role, old_designation, new_designation) VALUES (?, 'faculty', 'faculty', ?, ?)");
+                            $audit->bind_param('iss', $user_id, $oldDesignation, $new_desig);
+                            $audit->execute(); $audit->close();
+                        } catch (Throwable $auditError) { error_log('[faculty settings] Could not record designation update: ' . $auditError->getMessage()); }
+                    }
+                    $_SESSION['toast'] = 'Profile details updated successfully.';
+                }
+            } catch (mysqli_sql_exception $e) {
+                error_log('[faculty settings] Profile update failed for user ' . $user_id . ': ' . $e->getMessage());
+                $_SESSION['toast_error'] = 'Unable to update your profile right now. Please try again.';
+            }
         }
-        $nm->close();
     }
     header('Location: faculty_dashboard.php?page=settings'); exit;
 }
@@ -732,7 +872,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_peer'])) {
     if ($currentPeriodResult) $currentPeriod = $currentPeriodResult->fetch_assoc();
     if (!$currentPeriod) {
         $_SESSION['toast_error'] = $submitted_group === 'teacher'
-            ? "No semester period is configured for Faculty Peer-to-Peer Evaluation."
+            ? "No semester period is configured for Faculty Evaluate Others."
             : "No evaluation period is currently open.";
         header("Location: faculty_dashboard.php?page=peer&group=" . urlencode($submitted_group)); exit;
     }
@@ -873,9 +1013,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_peer'])) {
 
             $mysqli->commit();
 
-            $notif_msg = in_array($submitted_group, $school_head_groups, true)
-                ? "You have received a new " . ($submitted_group === 'principal' ? 'Principal' : 'Dean') . " evaluation."
-                : "You have received a new evaluation.";
+            $notif_msg = NOTIF_EVAL_RECEIVED_MSG; // anonymous: evaluator identity is never shown
             $nins = $mysqli->prepare("INSERT INTO notifications (type, user_id, message) VALUES ('evaluation_received', ?, ?)");
             $nins->bind_param("is", $tid, $notif_msg);
             $nins->execute();
@@ -1003,14 +1141,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_notifications_re
 // ── MY NOTIFICATIONS (bell) ──────────────────────────────────
 $my_notifications = [];
 $unread_count     = 0;
-$nq = $mysqli->prepare("SELECT id, type, message, extra_data, is_read, created_at FROM notifications WHERE user_id=?" . notif_muted_types_sql($user_prefs) . " ORDER BY created_at DESC, id DESC LIMIT 15");
+$nq = $mysqli->prepare("SELECT id, type, message, extra_data, is_read, created_at FROM notifications WHERE user_id=?" . notif_muted_types_sql($user_prefs) . " ORDER BY created_at DESC, id DESC");
 $nq->bind_param("i", $user_id);
 $nq->execute();
 $nres = $nq->get_result();
 if ($nres) $my_notifications = $nres->fetch_all(MYSQLI_ASSOC);
 $nq->close();
 foreach ($my_notifications as &$notification) {
-    $notification['message'] = notification_message_for_view($notification, (int)$user_id);
+    $notification['message'] = notif_apply_eval_wording($notification, notification_message_for_view($notification, (int)$user_id));
 }
 unset($notification);
 foreach ($my_notifications as $n) if (empty($n['is_read'])) $unread_count++;
@@ -1039,7 +1177,9 @@ $perf_color = $my_avg === null ? '#6b7280' : ($my_avg >= 4 ? '#4ade80' : ($my_av
 // real theme JS (further down) applies the correct class and reveals it.
 (function(){
     try{
-        if (localStorage.getItem('pbi_theme') === 'dark') {
+        var savedTheme = localStorage.getItem('pbi_theme');
+        var systemDark = savedTheme === 'system' && window.matchMedia && !window.matchMedia('(prefers-color-scheme: light)').matches;
+        if (savedTheme === 'dark' || systemDark) {
             document.write('<style id="theme-fouc-guard">body{visibility:hidden}</style>');
         }
     }catch(e){}
@@ -1491,10 +1631,10 @@ body.light-theme .peer-list-footer{border-top-color:#DCE6F1!important;}
 .notif-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;border-radius:9px;background:#ef4444;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px;border:2px solid var(--mid);}
 .notif-dropdown{position:absolute;top:calc(100% + 10px);right:0;width:min(320px,calc(100vw - 24px));max-height:min(70vh,560px);display:flex;flex-direction:column;background:var(--mid);border:1px solid var(--border);border-radius:14px;box-shadow:0 16px 48px rgba(0,0,0,.55);opacity:0;visibility:hidden;transform:translateY(-8px);transition:all .2s ease;z-index:120;overflow:hidden;}
 .notif-dropdown.show{opacity:1;visibility:visible;transform:translateY(0);}
-.notif-header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);}
+.notif-header{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);}
 .notif-header-title{font-size:13px;font-weight:700;color:#fff;display:flex;align-items:center;gap:7px;}
 .notif-mark-read{font-size:11px;color:var(--teal-hover);cursor:pointer;font-weight:600;background:none;border:none;font-family:'DM Sans',sans-serif;padding:0;}
-.notif-list{flex:1 1 auto;min-height:0;max-height:100%;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:rgba(148,163,184,.55) transparent;}
+.notif-list{flex:1 1 auto;min-height:0;max-height:100%;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-width:thin;scrollbar-color:rgba(148,163,184,.55) transparent;}
 .notif-list::-webkit-scrollbar{width:7px;}
 .notif-list::-webkit-scrollbar-track{background:transparent;}
 .notif-list::-webkit-scrollbar-thumb{background:rgba(148,163,184,.55);border-radius:8px;}
@@ -1503,6 +1643,11 @@ body.light-theme .peer-list-footer{border-top-color:#DCE6F1!important;}
 a.notif-item{text-decoration:none;color:inherit;cursor:pointer;transition:background .15s ease;}
 a.notif-item:hover,a.notif-item:focus-visible{background:rgba(255,255,255,.07);outline:none;}
 body.light-theme a.notif-item:hover,body.light-theme a.notif-item:focus-visible{background:rgba(15,31,61,.06);}
+a.notif-item::after{content:'\f054';font-family:'Font Awesome 6 Free';font-weight:900;font-size:10px;color:var(--muted);align-self:center;margin-left:auto;padding-left:6px;opacity:0;transform:translateX(-3px);transition:opacity .15s ease,transform .15s ease;}
+a.notif-item:hover::after,a.notif-item:focus-visible::after{opacity:1;transform:translateX(0);color:var(--teal-hover);}
+a.notif-item:hover,body.light-theme a.notif-item:hover,a.notif-item:focus-visible,body.light-theme a.notif-item:focus-visible{background:rgba(128,128,128,.10);background:color-mix(in srgb,var(--teal) 12%,transparent);}
+a.notif-item:focus-visible{outline:2px solid var(--teal);outline-offset:-2px;}
+a.notif-item:active{background:color-mix(in srgb,var(--teal) 20%,transparent);}
 .notif-item.unread{background:rgba(13,148,136,.07);}
 .notif-item.unread::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--teal);border-radius:0 2px 2px 0;}
 .notif-icon{width:30px;height:30px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;margin-top:1px;}
@@ -2713,7 +2858,7 @@ body:not(.light-theme) .section-card.peer-box::-webkit-scrollbar-thumb{backgroun
             <i class="fa-solid fa-chart-bar"></i><span>Evaluations Received</span>
         </a>
         <a href="faculty_dashboard.php?page=peer" class="nav-link <?= in_array($page,['peer','peer_eval'])?'active':'' ?>">
-            <i class="fa-solid fa-users-viewfinder"></i><span>Peer-to-Peer Evaluation</span>
+            <i class="fa-solid fa-users-viewfinder"></i><span>Evaluate Others</span>
             <?php if ($page==='peer' && (!empty($peers_all) || !empty($school_heads))): ?>
             <span class="side-nav-badge"><?= (count($peers_all) - count($done_peers)) + (count($school_heads) - count($done_school_heads)) ?></span>
             <?php endif; ?>
@@ -2742,8 +2887,10 @@ body:not(.light-theme) .section-card.peer-box::-webkit-scrollbar-thumb{backgroun
             </button>
         </div>
         <div class="photo-modal-body">
-            <form method="POST" action="update_photo.php" enctype="multipart/form-data" id="photoForm">
+            <form method="POST" action="faculty_dashboard.php" enctype="multipart/form-data" id="photoForm">
                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>"/>
+                        <input type="hidden" name="return_page" value="<?= in_array($page, ['settings', 'profile'], true) ? htmlspecialchars($page) : 'profile' ?>"/>
+                        <input type="hidden" name="portal_role" value="teacher"/>
                 <div class="photo-upload-circle" id="photoCircle" onclick="document.getElementById('photoFileInput').click()">
                     <img id="photoPreviewImg" src="<?= $faculty_photo ? UPLOAD_URL.htmlspecialchars($faculty_photo) : '' ?>"
                          style="<?= $faculty_photo ? 'display:block' : '' ?>"/>
@@ -2784,7 +2931,7 @@ body:not(.light-theme) .section-card.peer-box::-webkit-scrollbar-thumb{backgroun
             <i class="fa-solid fa-bars"></i>
         </button>
         <div class="nav-page-title">
-            <?php $titles=['dashboard'=>'Dashboard','profile'=>'Role & Designation','my_results'=>"Evaluations Received",'peer'=>'Peer-to-Peer Evaluation','peer_eval'=>'Peer-to-Peer Evaluation','settings'=>'Settings'];
+            <?php $titles=['dashboard'=>'Dashboard','profile'=>'Role & Designation','my_results'=>"Evaluations Received",'peer'=>'Evaluate Others','peer_eval'=>'Evaluate Others','settings'=>'Settings'];
             $title_icons=['dashboard'=>'fa-house','profile'=>'fa-id-badge','my_results'=>'fa-chart-bar','peer'=>'fa-clipboard-check','peer_eval'=>'fa-clipboard-check','settings'=>'fa-gear'];
             $title_key = isset($titles[$page]) ? $page : 'dashboard'; ?>
             <i class="fa-solid <?= $title_icons[$title_key] ?>"<?= $title_icons[$title_key] === 'fa-clipboard-check' ? ' style="color:#2563EB"' : '' ?> aria-hidden="true"></i>
@@ -2927,7 +3074,7 @@ body:not(.light-theme) .section-card.peer-box::-webkit-scrollbar-thumb{backgroun
             <span class="quick-access-kicker">WORKSPACE SHORTCUTS</span>
             <h2>Continue where you need to be</h2>
         </div>
-        <span class="quick-access-caption">Your most-used faculty tools</span>
+        <span class="quick-access-caption"></span>
     </div>
     <div class="quick-access-grid">
         <a class="quick-access-card quick-blue" href="faculty_dashboard.php?page=my_results">
@@ -3044,93 +3191,112 @@ body:not(.light-theme) .section-card.peer-box::-webkit-scrollbar-thumb{backgroun
 
     <?php elseif ($page === 'settings'): ?>
 
-<!-- SETTINGS — built from the same shell/intro/card language as the Dashboard -->
-<div class="dashboard-shell settings-shell">
-
-<div class="dashboard-intro settings-intro">
-    <div class="settings-appearance-current"><i class="fa-solid fa-circle-half-stroke"></i> Current: <span id="appearanceVal">Light</span></div>
-</div>
-
-<div class="settings-grid">
-<div class="settings-card full">
-            <div class="settings-card-head">
-                <div class="sicon"><i class="fa-solid fa-palette"></i></div>
-                <div><h3>Appearance</h3><p>Choose how the portal is displayed on this device.</p></div>
-            </div>
-            <div class="setting-row" style="border-top:0;padding-top:0;align-items:flex-start;">
-                <div style="padding-top:2px;">
-                    <strong>Theme</strong>
-                    <span>Light is the default portal appearance.</span>
-                </div>
-                <div class="appearance-choice-row">
-                    <button type="button" class="appearance-choice" id="appearanceLightBtn" onclick="setAppearance('light')"><i class="fa-solid fa-sun"></i> Light</button>
-                    <button type="button" class="appearance-choice" id="appearanceDarkBtn" onclick="setAppearance('dark')"><i class="fa-solid fa-moon"></i> Dark</button>
-                </div>
-            </div>
-        </div>
-<div class="settings-card full">
-            <div class="settings-card-head"><div class="sicon"><i class="fa-solid fa-user-shield"></i></div><div><h3>Account Overview</h3><p>Your access is controlled by the system administrator.</p></div></div>
-            <div class="account-facts">
-                <div class="account-fact account-name-fact">
-                    <label>Account Name</label>
-                    <div class="account-name-view" id="accountNameView">
-                        <b><?= htmlspecialchars($full_name) ?></b>
-                        <button type="button" class="account-name-edit" onclick="toggleAccountNameEdit(true)" title="Edit account name" aria-label="Edit account name"><i class="fa-solid fa-pen"></i></button>
-                    </div>
-                    <form method="post" action="faculty_dashboard.php?page=settings" class="account-name-form" id="accountNameForm" style="display:none;" autocomplete="off">
-                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
-                        <input type="hidden" name="update_account_name" value="1">
-                        <input type="text" name="full_name" id="accountNameInput" maxlength="100" required value="<?= htmlspecialchars($full_name) ?>" placeholder="Last Name, First Name M.I.">
-                        <div class="account-name-actions">
-                            <button type="button" class="account-name-cancel" onclick="toggleAccountNameEdit(false)">Cancel</button>
-                            <button type="submit" class="account-name-save"><i class="fa-solid fa-check"></i> Save</button>
-                        </div>
-                    </form>
-                    <script>
-                    function toggleAccountNameEdit(on){
-                        var v=document.getElementById('accountNameView'), f=document.getElementById('accountNameForm'), i=document.getElementById('accountNameInput');
-                        v.style.display = on ? 'none' : 'flex';
-                        f.style.display = on ? 'block' : 'none';
-                        if(on){ i.focus(); i.select(); } else { i.value = <?= json_encode($full_name, JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>; }
-                    }
-                    </script>
-                </div>
-                <div class="account-fact"><label>System Role</label><b>Faculty</b></div>
-                <div class="account-fact"><label>Evaluation Access</label><b>Peer-to-Peer Evaluation</b></div>
-            </div>
-        </div>
-
-        <div class="settings-card">
-            <div class="settings-card-head"><div class="sicon"><i class="fa-solid fa-bell"></i></div><div><h3>Notifications</h3><p>Choose which updates you want to receive.</p></div></div>
-            <form method="POST">
-                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
-                <input type="hidden" name="save_preferences" value="1">
-                <div class="setting-row"><div><strong>Evaluation schedule</strong><span>Notify me when the evaluation opens, closes, or its schedule changes.</span></div><label class="setting-toggle"><input type="checkbox" name="notify_evaluation_schedule" <?= !empty($user_prefs['notify_evaluation_schedule'])?'checked':'' ?>><span class="slider"></span></label></div><div class="setting-row"><div><strong>Year level assignment</strong><span>Notify me when I am assigned to a specific year level.</span></div><label class="setting-toggle"><input type="checkbox" name="notify_teaching_assignment" <?= !empty($user_prefs['notify_teaching_assignment'])?'checked':'' ?>><span class="slider"></span></label></div><div class="setting-row"><div><strong>School year &amp; semester</strong><span>Notify me when the active school year or semester changes.</span></div><label class="setting-toggle"><input type="checkbox" name="notify_academic_period" <?= !empty($user_prefs['notify_academic_period'])?'checked':'' ?>><span class="slider"></span></label></div>
-                <div class="settings-actions"><button class="settings-save" type="submit"><i class="fa-solid fa-check"></i> Save Preferences</button></div>
-            </form>
-        </div>
-
-        <div class="settings-card">
-            <div class="settings-card-head"><div class="sicon"><i class="fa-solid fa-lock"></i></div><div><h3>Security</h3><p>Keep your account protected.</p></div></div>
-            <div class="setting-row"><div><strong>Password</strong><span>Update your password without leaving the dashboard.</span></div><a href="change_password.php" class="settings-save" style="text-decoration:none;">Change</a></div><div class="setting-row"><div><strong>Security questions</strong><span>Needed to recover a forgotten password.</span></div><a href="security_questions.php" class="settings-save" style="text-decoration:none;">Set up</a></div>
-            <div class="setting-row"><div><strong>Role protection</strong><span>Your system role is administrator-controlled.</span></div><i class="fa-solid fa-shield-halved" style="color:var(--success)"></i></div>
-        </div>
-
-        <div class="settings-card full">
-            <div class="settings-card-head"><div class="sicon"><i class="fa-solid fa-circle-info"></i></div><div><h3>Faculty Evaluation Access</h3><p>What you can do in the Employee Performance Management System.</p></div></div>
-            <div class="account-facts">
-                <?php
-                $canEvaluateParts = ['Faculty', 'Staff'];
-                if ($can_evaluate_principal) $canEvaluateParts[] = 'Principal';
-                if ($can_evaluate_dean)      $canEvaluateParts[] = 'Dean';
-                ?>
-                <div class="account-fact"><label>Can Evaluate</label><b><?= htmlspecialchars(implode(', ', $canEvaluateParts)) ?></b></div>
-                <div class="account-fact"><label>Can View</label><b>Own Evaluation Results</b></div>
-                <div class="account-fact"><label>Privacy</label><b>Evaluator identity remains protected</b></div>
-            </div>
-        </div>
+<div class="dashboard-shell settings-shell principal-settings-layout" style="--ap-accent:#2563EB;--ap-accent-strong:#1D4ED8;--ap-accent-dark:#60A5FA;--ap-accent-rgb:37,99,235;">
+    <div class="settings-tabs" role="tablist" aria-label="Settings sections">
+        <button type="button" class="settings-tab active" id="settingsTabProfile" role="tab" aria-selected="true" aria-controls="settingsPanelProfile" data-settings-tab="profile"><i class="fa-solid fa-user-gear"></i> Profile &amp; Security</button>
+        <button type="button" class="settings-tab" id="settingsTabAppearance" role="tab" aria-selected="false" aria-controls="settingsPanelAppearance" data-settings-tab="appearance"><i class="fa-solid fa-palette"></i> Appearance</button>
     </div>
 
+    <div class="settings-layout-grid settings-tab-panel" id="settingsPanelProfile" role="tabpanel" aria-labelledby="settingsTabProfile">
+        <section class="settings-card full ac-card ac-c2">
+            <div class="ac-head"><span class="ac-icon"><i class="fa-solid fa-id-badge"></i></span><div><h2>Profile Photo</h2><p class="ac-sub">Update the photo shown in your sidebar and profile.</p></div></div>
+            <div class="profile-card">
+                <?php if ($faculty_photo): ?><img class="profile-photo-lg" src="<?= UPLOAD_URL . htmlspecialchars($faculty_photo) ?>" alt="Faculty profile photo"/><?php else: ?><div class="profile-photo-lg profile-photo-fallback"><i class="fa-solid fa-user"></i></div><?php endif; ?>
+                <div class="photo-form-wrap"><button class="btn-primary" type="button" onclick="openPhotoModal()"><i class="fa-solid fa-upload"></i> Upload New Photo</button><div class="photo-help">JPG, PNG, WEBP, or GIF only. Maximum file size: 10MB.</div></div>
+            </div>
+        </section>
+
+        <section class="settings-card full ac-card ac-c3">
+            <div class="ac-head"><span class="ac-icon"><i class="fa-solid fa-user-pen"></i></span><div><h2>Profile Details</h2><p class="ac-sub">Update your name, username, and designation.</p></div></div>
+            <form method="post" action="faculty_dashboard.php?page=settings" class="profile-details-form">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>"><input type="hidden" name="update_account_name" value="1">
+                <div class="form-grid">
+                    <div class="form-group"><label for="facultySettingsName">Full Name</label><input id="facultySettingsName" type="text" name="full_name" maxlength="150" required value="<?= htmlspecialchars($full_name) ?>" autocomplete="name"></div>
+                    <div class="form-group"><label for="facultySettingsUsername">Username</label><input id="facultySettingsUsername" type="text" name="username" maxlength="50" pattern="\S+" title="Username cannot contain spaces" required value="<?= htmlspecialchars($account_username) ?>" autocomplete="username"></div>
+                    <div class="form-group"><label for="facultySettingsDesignation">Designation</label><input id="facultySettingsDesignation" type="text" name="designation" maxlength="100" required value="<?= htmlspecialchars($designation) ?>"></div>
+                </div>
+                <button class="btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button>
+            </form>
+        </section>
+
+        <section class="settings-card full ac-card ac-c4">
+            <div class="ac-head"><span class="ac-icon"><i class="fa-solid fa-lock"></i></span><div><h2>Change Password</h2><p class="ac-sub">Your new password must be at least 8 characters and different from your current password.</p></div></div>
+            <form method="post" action="faculty_dashboard.php?page=settings" class="profile-details-form" id="facultySettingsPasswordForm" autocomplete="off">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>"><input type="hidden" name="update_password" value="1">
+                <div class="form-grid">
+                    <div class="form-group"><label for="facultyCurrentPassword">Current Password</label><input id="facultyCurrentPassword" type="password" name="current_password" required autocomplete="current-password"></div>
+                    <div class="form-group"></div>
+                    <div class="form-group"><label for="facultyNewPassword">New Password</label><input id="facultyNewPassword" type="password" name="new_password" minlength="8" required autocomplete="new-password"></div>
+                    <div class="form-group"><label for="facultyConfirmPassword">Confirm New Password</label><input id="facultyConfirmPassword" type="password" name="confirm_password" minlength="8" required autocomplete="new-password"></div>
+                </div>
+                <button class="btn-primary" type="submit"><i class="fa-solid fa-key"></i> Update Password</button>
+            </form>
+        </section>
+    </div>
+
+    <div class="settings-layout-grid settings-tab-panel" id="settingsPanelAppearance" role="tabpanel" aria-labelledby="settingsTabAppearance" hidden>
+        <section class="settings-card full ac-card ac-c1" id="principal-style-appearance">
+            <div class="ac-head appearance-heading-row">
+                <span class="ac-icon"><i class="fa-solid fa-palette"></i></span>
+                <div><h2>Appearance</h2><p class="ac-sub">Choose your theme, content spacing, and motion preferences.</p></div>
+                <span class="appearance-device-badge"><i class="fa-solid fa-laptop"></i> Saved on this device</span>
+            </div>
+            <div class="appearance-feature-grid">
+                <section class="appearance-control-card appearance-theme-card" aria-labelledby="appearanceThemeHeading">
+                    <div class="appearance-control-head">
+                        <span class="appearance-control-icon"><i class="fa-solid fa-circle-half-stroke"></i></span>
+                        <div><h3 id="appearanceThemeHeading">Theme mode</h3><p>Choose a look that suits your environment.</p></div>
+                    </div>
+                    <div class="appearance-theme-options" role="group" aria-label="Theme mode">
+                        <button type="button" class="appearance-choice" id="appearanceLightBtn" data-theme-choice="light" aria-pressed="false" onclick="setAppearance('light')"><span class="appearance-choice-icon"><i class="fa-solid fa-sun"></i></span><span class="appearance-choice-copy"><strong>Light</strong><small>Bright and clean</small></span><span class="appearance-choice-check"><i class="fa-solid fa-check"></i></span></button>
+                        <button type="button" class="appearance-choice" id="appearanceDarkBtn" data-theme-choice="dark" aria-pressed="false" onclick="setAppearance('dark')"><span class="appearance-choice-icon"><i class="fa-solid fa-moon"></i></span><span class="appearance-choice-copy"><strong>Dark</strong><small>Low-light friendly</small></span><span class="appearance-choice-check"><i class="fa-solid fa-check"></i></span></button>
+                        <button type="button" class="appearance-choice" id="appearanceSystemBtn" data-theme-choice="system" aria-pressed="false" onclick="setAppearance('system')"><span class="appearance-choice-icon"><i class="fa-solid fa-desktop"></i></span><span class="appearance-choice-copy"><strong>System</strong><small>Follow device setting</small></span><span class="appearance-choice-check"><i class="fa-solid fa-check"></i></span></button>
+                    </div>
+                    <div class="appearance-inline-status"><i class="fa-solid fa-circle-info"></i> Current mode: <strong id="appearanceCurrentMode">Light</strong></div>
+                </section>
+                <section class="appearance-control-card" aria-labelledby="appearanceLayoutHeading">
+                    <div class="appearance-control-head"><span class="appearance-control-icon"><i class="fa-solid fa-sliders"></i></span><div><h3 id="appearanceLayoutHeading">Interface spacing</h3><p>Choose how much space appears around tables and content.</p></div></div>
+                    <div class="appearance-density-options" role="group" aria-label="Interface spacing">
+                        <button type="button" class="appearance-density-choice" data-density-choice="comfortable" aria-pressed="false" onclick="setPrincipalDensity('comfortable')"><i class="fa-solid fa-expand"></i><span><strong>Comfortable</strong><small>More breathing room</small></span></button>
+                        <button type="button" class="appearance-density-choice" data-density-choice="compact" aria-pressed="false" onclick="setPrincipalDensity('compact')"><i class="fa-solid fa-compress"></i><span><strong>Compact</strong><small>More content on screen</small></span></button>
+                    </div>
+                </section>
+                <section class="appearance-control-card appearance-accessibility-card" aria-labelledby="appearanceAccessibilityHeading">
+                    <div class="appearance-control-head"><span class="appearance-control-icon"><i class="fa-solid fa-universal-access"></i></span><div><h3 id="appearanceAccessibilityHeading">Accessibility</h3><p>Reduce interface movement for a calmer experience.</p></div></div>
+                    <button type="button" class="appearance-motion-toggle" id="appearanceMotionBtn" aria-pressed="false" onclick="togglePrincipalReducedMotion()"><span class="appearance-motion-copy"><strong>Reduce animations</strong><small>Minimize transitions and motion effects</small></span><span class="appearance-switch-track" aria-hidden="true"><span class="appearance-switch-thumb"></span></span></button>
+                    <div class="appearance-accessibility-note"><i class="fa-solid fa-shield-heart"></i> Your settings stay in this browser and do not change other users' views.</div>
+                </section>
+            </div>
+        </section>
+    </div>
+
+    <script>
+    (function(){
+        var tabs = document.querySelectorAll('[data-settings-tab]');
+        var panels = {profile: document.getElementById('settingsPanelProfile'), appearance: document.getElementById('settingsPanelAppearance')};
+        if (!tabs.length || !panels.profile || !panels.appearance) return;
+        function show(name, updateHash) {
+            if (!panels[name]) name = 'profile';
+            Object.keys(panels).forEach(function(k){ panels[k].hidden = (k !== name); });
+            tabs.forEach(function(t){
+                var on = t.getAttribute('data-settings-tab') === name;
+                t.classList.toggle('active', on);
+                t.setAttribute('aria-selected', on ? 'true' : 'false');
+                t.tabIndex = on ? 0 : -1;
+            });
+            if (updateHash && window.history && history.replaceState) history.replaceState(null, '', name === 'profile' ? location.pathname + location.search : '#appearance');
+        }
+        tabs.forEach(function(t, i){
+            t.addEventListener('click', function(){ show(t.getAttribute('data-settings-tab'), true); });
+            t.addEventListener('keydown', function(e){
+                if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+                var n = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+                n.focus(); show(n.getAttribute('data-settings-tab'), true);
+            });
+        });
+        show(location.hash === '#appearance' ? 'appearance' : 'profile', false);
+    })();
+    </script>
 </div>
 
 <?php elseif ($page === 'my_results'): ?>
@@ -3160,7 +3326,7 @@ $dean_done_count = count(array_intersect(array_map('intval', array_column($dean_
 <div class="no-period-warn"><i class="fa-solid fa-clock"></i> Evaluation is currently closed until the scheduled opening time.</div>
 <?php endif; ?>
 
-    <h2 class="cat-heading"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i> Choose category</h2>
+    <h2 class="cat-heading"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i> Your Evaluation</h2>
     <div class="eval-group-grid peer-category-grid cat-select">
         <?php if ($can_evaluate_faculty_peer): ?>
         <a href="faculty_dashboard.php?page=peer&group=teacher#roster" class="eval-group-card">
@@ -3212,7 +3378,7 @@ $peer_principal_done = count(array_intersect(array_map('intval', array_column($p
 $peer_dean_done = count(array_intersect(array_map('intval', array_column($dean_targets, 'id')), $done_school_heads));
 ?>
 <div class="section-card peer-shell peer-box">
-    <h2 class="cat-heading"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i> Choose category</h2>
+    <h2 class="cat-heading"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i> Your Evaluation</h2>
     <div class="eval-group-grid peer-category-grid cat-select">
         <?php if ($can_evaluate_faculty_peer): ?><a href="faculty_dashboard.php?page=peer<?= $peer_group === 'teacher' ? '' : '&group=teacher#roster' ?>" class="eval-group-card <?= $peer_group === 'teacher' ? 'is-selected' : '' ?>" <?= $peer_group === 'teacher' ? 'aria-current="true"' : '' ?>><div class="eval-group-icon blue"><i class="fa-solid fa-chalkboard-user"></i></div><div class="eval-group-title">Faculty</div><div class="eval-group-count"><?= count($peer_teacher_targets) ?> members</div></a><?php endif; ?>
         <a href="faculty_dashboard.php?page=peer<?= $peer_group === 'staff' ? '' : '&group=staff#roster' ?>" class="eval-group-card <?= $peer_group === 'staff' ? 'is-selected' : '' ?>" <?= $peer_group === 'staff' ? 'aria-current="true"' : '' ?>><div class="eval-group-icon green"><i class="fa-solid fa-briefcase"></i></div><div class="eval-group-title">Staff</div><div class="eval-group-count"><?= count($peer_staff_targets) ?> members</div></a>
@@ -3311,7 +3477,7 @@ $displayPeerPeriod = ($peer_group === 'teacher' && $college_peer_period) ? $coll
 
     <?php if (empty($peer_questions)): ?>
       <div class="peer-eval-empty"><i class="fa-solid fa-triangle-exclamation"></i> No evaluation questions have been set up yet. Please contact the admin.</div>
-      <footer class="peer-eval-footer"><a class="btn-cancel-new" href="faculty_dashboard.php?page=peer&group=<?= urlencode($peer_eval_group) ?>">Back to Peer-to-Peer Evaluation</a></footer>
+      <footer class="peer-eval-footer"><a class="btn-cancel-new" href="faculty_dashboard.php?page=peer&group=<?= urlencode($peer_eval_group) ?>">Back to Evaluate Others</a></footer>
     <?php else: ?>
       <form class="peer-eval-form" method="POST" action="faculty_dashboard.php?page=peer_eval&tid=<?= $peer_target['id'] ?>&group=<?= urlencode($peer_eval_group) ?>" id="evalForm" novalidate>
         <div class="peer-eval-scroll" id="peerEvalScroll">
@@ -3524,7 +3690,7 @@ function renderEvalDetails(data) {
         <div class="eval-info-item"><div class="eval-info-label">Evaluator</div><div class="eval-info-value"><i class="fa-solid fa-eye-slash" style="color:var(--muted);margin-right:5px"></i>Anonymous Evaluator</div></div>
         <div class="eval-info-item"><div class="eval-info-label">Period</div><div class="eval-info-value">${escapeHtml(data.period_label || '—')}</div></div>
         <div class="eval-info-item"><div class="eval-info-label">Submitted</div><div class="eval-info-value">${escapeHtml(data.submitted_at)}</div></div>
-        <div class="eval-info-item"><div class="eval-info-label">Overall Score</div><div class="eval-info-value" style="color:var(--teal-hover)">${data.overall_score.toFixed(2)} / 5</div></div>
+        <div class="eval-info-item"><div class="eval-info-label">Overall Score</div><div class="eval-info-value" style="color:var(--teal-hover)">${parseFloat(Number(data.overall_score).toFixed(2))} / 5</div></div>
     </div>`;
 
     if (data.categories && data.categories.length) {
@@ -3602,11 +3768,19 @@ function openNotification(id, href) {
 
 // Clicking an unread notification marks it read first; read ones just follow the link.
 document.addEventListener('click', function(e) {
+    // Every notification row is a link: close the bell, mark it read if needed, then open its page.
     const item = e.target.closest('a.notif-item');
-    if (!item || !item.classList.contains('unread')) return;
-    if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    if (!item) return;
+    if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return; // let new-tab clicks behave normally
+    const href = item.getAttribute('href');
+    if (!href) return;
     e.preventDefault();
-    openNotification(Number(item.dataset.notificationId) || 0, item.getAttribute('href'));
+    document.getElementById('notifDropdown')?.classList.remove('show');
+    if (item.classList.contains('unread')) {
+        openNotification(Number(item.dataset.notificationId) || 0, href);
+    } else {
+        window.location.href = href;
+    }
 });
 
 function toggleNotifDropdown(e) {
@@ -3652,11 +3826,12 @@ function renderLiveNotifications(items) {
     if (!list) return;
 
     if (!items.length) {
+        list.dataset.sig = '';
         list.innerHTML = '<div class="notif-empty"><i class="fa-regular fa-bell-slash"></i>No notifications yet.</div>';
         return;
     }
 
-    list.innerHTML = items.map(n => {
+    const html = items.map(n => {
         const v = notificationVisual(n.type);
         const unread = Number(n.is_read) === 0;
         return `<a class="notif-item ${unread ? 'unread' : ''}" data-notification-id="${Number(n.id) || 0}" href="${escapeNotificationHtml(n.link || 'faculty_dashboard.php?page=dashboard')}">
@@ -3673,6 +3848,13 @@ function renderLiveNotifications(items) {
 ` +
             `</a>`;
     }).join('');
+
+    // Re-render only when something changed, and keep the user's scroll position
+    if (list.dataset.sig === html) return;
+    const prevTop = list.scrollTop;
+    list.dataset.sig = html;
+    list.innerHTML = html;
+    list.scrollTop = prevTop;
 }
 
 function updateNotificationBadge(count) {
@@ -3733,6 +3915,16 @@ async function refreshNotifications(showNewToast = true) {
         const incoming = Array.isArray(data.notifications) ? data.notifications : [];
         if (!notificationFirstRefresh && showNewToast) {
             const newUnread = incoming.filter(n => Number(n.is_read) === 0 && !notificationKnownIds.has(Number(n.id)));
+            // Auto-refresh read-only pages when something relevant changes (never on forms, never every 2s blindly).
+            const pageName = new URLSearchParams(window.location.search).get('page') || 'dashboard';
+            const refreshTypes = pageName === 'my_results' ? ['evaluation_received']
+                               : pageName === 'dashboard'  ? ['evaluation_received', 'evaluation_schedule', 'academic_period']
+                               : [];
+            const needsRefresh = newUnread.some(n => refreshTypes.includes(n.type));
+            const ae = document.activeElement;
+            const busyTyping = ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName);
+            const modalOpen = document.querySelector('[class*="modal"].open, [class*="overlay"].open, [class*="modal"].show');
+            if (needsRefresh && !busyTyping && !modalOpen) { window.location.reload(); return; }
             if (newUnread.length) showLiveNotificationToast(newUnread[0]);
         }
 
@@ -3750,7 +3942,7 @@ async function refreshNotifications(showNewToast = true) {
 
 function startNotificationPolling() {
     refreshNotifications(false);
-    setInterval(() => refreshNotifications(true), 5000);
+    setInterval(() => refreshNotifications(true), 2000);
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) refreshNotifications(false);
     });
@@ -3781,32 +3973,84 @@ function startNotificationPolling() {
 
 document.addEventListener('DOMContentLoaded', startNotificationPolling);
 
-// ── Appearance toggle (Dark / Light) ──
+// ── Appearance and accessibility preferences ──
 function applyAppearance(mode) {
-    const normalized = mode === 'dark' ? 'dark' : 'light';
-    document.body.classList.toggle('light-theme', normalized === 'light');
+    const normalized = ['light', 'dark', 'system'].includes(mode) ? mode : 'light';
+    const systemLight = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
+    const effectiveLight = normalized === 'light' || (normalized === 'system' && systemLight);
+    document.body.classList.toggle('light-theme', effectiveLight);
+    document.body.dataset.appearance = normalized;
     const value = document.getElementById('appearanceVal');
-    if (value) value.textContent = normalized === 'light' ? 'Light' : 'Dark';
-    const lightBtn = document.getElementById('appearanceLightBtn');
-    const darkBtn  = document.getElementById('appearanceDarkBtn');
-    if (lightBtn) lightBtn.classList.toggle('active', normalized === 'light');
-    if (darkBtn) darkBtn.classList.toggle('active', normalized === 'dark');
+    if (value) value.textContent = normalized.charAt(0).toUpperCase() + normalized.slice(1);
+    const current = document.getElementById('appearanceCurrentMode');
+    if (current) current.textContent = normalized.charAt(0).toUpperCase() + normalized.slice(1);
+    document.querySelectorAll('[data-theme-choice]').forEach(function(btn) {
+        const selected = btn.getAttribute('data-theme-choice') === normalized;
+        btn.classList.toggle('active', selected);
+        btn.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    });
 }
 function setAppearance(mode) {
-    const normalized = mode === 'dark' ? 'dark' : 'light';
-    localStorage.setItem('pbi_theme', normalized);
+    const normalized = ['light', 'dark', 'system'].includes(mode) ? mode : 'light';
+    try { localStorage.setItem('pbi_theme', normalized); } catch (e) {}
     applyAppearance(normalized);
 }
+function applyPrincipalDensity(mode) {
+    const density = mode === 'compact' ? 'compact' : 'comfortable';
+    document.body.classList.toggle('compact-density', density === 'compact');
+    document.querySelectorAll('[data-density-choice]').forEach(function(btn) {
+        const selected = btn.getAttribute('data-density-choice') === density;
+        btn.classList.toggle('active', selected);
+        btn.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    });
+}
+function setPrincipalDensity(mode) {
+    const density = mode === 'compact' ? 'compact' : 'comfortable';
+    try { localStorage.setItem('pbi_density', density); } catch (e) {}
+    applyPrincipalDensity(density);
+}
+function applyPrincipalReducedMotion(enabled) {
+    const on = !!enabled;
+    document.body.classList.toggle('reduce-motion', on);
+    const btn = document.getElementById('appearanceMotionBtn');
+    if (btn) btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+function togglePrincipalReducedMotion() {
+    const next = !document.body.classList.contains('reduce-motion');
+    try { localStorage.setItem('pbi_reduced_motion', next ? '1' : '0'); } catch (e) {}
+    applyPrincipalReducedMotion(next);
+}
 document.addEventListener('DOMContentLoaded', function() {
-    const savedTheme = localStorage.getItem('pbi_theme');
-    const theme = savedTheme === 'dark' ? 'dark' : 'light';
-    localStorage.setItem('pbi_theme', theme);
+    let theme = 'light', density = 'comfortable', reduceMotion = false;
+    try {
+        const savedTheme = localStorage.getItem('pbi_theme');
+        if (['light', 'dark', 'system'].includes(savedTheme)) theme = savedTheme;
+        density = localStorage.getItem('pbi_density') === 'compact' ? 'compact' : 'comfortable';
+        reduceMotion = localStorage.getItem('pbi_reduced_motion') === '1';
+        if (!localStorage.getItem('pbi_theme')) localStorage.setItem('pbi_theme', theme);
+    } catch (e) {}
     applyAppearance(theme);
-    // Reveal the page now that the correct theme class is in place
-    // (only needed when the FOUC guard above hid it for the dark case).
+    applyPrincipalDensity(density);
+    applyPrincipalReducedMotion(reduceMotion);
+    const passwordForm = document.getElementById('facultySettingsPasswordForm') || document.getElementById('staffSettingsPasswordForm');
+    if (passwordForm) passwordForm.addEventListener('submit', function(e) {
+        const newPassword = passwordForm.querySelector('[name="new_password"]').value;
+        const confirmPassword = passwordForm.querySelector('[name="confirm_password"]').value;
+        if (newPassword !== confirmPassword) {
+            e.preventDefault();
+            alert('New password and confirmation do not match.');
+        }
+    });
     document.body.style.visibility = 'visible';
 });
-
+if (window.matchMedia) {
+    const systemAppearance = window.matchMedia('(prefers-color-scheme: light)');
+    const handleSystemAppearance = function() {
+        try { if (localStorage.getItem('pbi_theme') === 'system') applyAppearance('system'); } catch (e) {}
+    };
+    if (systemAppearance.addEventListener) systemAppearance.addEventListener('change', handleSystemAppearance);
+    else if (systemAppearance.addListener) systemAppearance.addListener(handleSystemAppearance);
+}
 // ── Profile photo modal ──
 function openPhotoModal() {
     document.getElementById('photoModal').classList.add('open');
@@ -3846,22 +4090,23 @@ document.getElementById('photoModal').addEventListener('click', function(e) {
 <style>
 .lgo-overlay{position:fixed;inset:0;z-index:99999;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(2,8,23,.55);backdrop-filter:blur(3px)}
 .lgo-overlay.open{display:flex}
-.lgo-box{width:100%;max-width:360px;background:#0f1d36;color:#e6edf7;border:1px solid rgba(148,163,184,.25);border-radius:16px;padding:24px 22px 20px;box-shadow:0 24px 70px rgba(0,0,0,.45);text-align:center;font-family:inherit}
-.lgo-icon{width:46px;height:46px;margin:0 auto 12px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(240,84,84,.14);color:#f87171;font-size:18px}
-.lgo-title{font-size:17px;font-weight:700;margin:0 0 6px}
-.lgo-text{font-size:13.5px;line-height:1.5;color:#9fb0c7;margin:0 0 18px}
+.lgo-box{width:100%;max-width:360px;background:var(--mid);color:var(--light);border:1px solid var(--border);border-top:3px solid var(--teal);border-radius:16px;padding:24px 22px 20px;box-shadow:0 24px 70px rgba(0,0,0,.35);text-align:center;font-family:inherit}
+.lgo-icon{width:46px;height:46px;margin:0 auto 12px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(37,99,235,.14);color:var(--teal);font-size:18px}
+.lgo-title{font-size:17px;font-weight:700;margin:0 0 6px;color:var(--light)}
+.lgo-text{font-size:13.5px;line-height:1.5;color:var(--muted);margin:0 0 18px}
 .lgo-actions{display:flex;gap:10px}
-.lgo-actions a,.lgo-actions button{flex:1;padding:10px 12px;border-radius:10px;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;text-decoration:none;text-align:center;border:1px solid transparent}
-.lgo-cancel{background:transparent;color:#cbd5e1;border-color:rgba(148,163,184,.35)}
-.lgo-cancel:hover{background:rgba(148,163,184,.12)}
-.lgo-ok{background:#ef4444;color:#fff}
-.lgo-ok:hover{background:#dc2626}
+.lgo-actions a,.lgo-actions button{flex:1;padding:10px 12px;border-radius:10px;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;text-decoration:none;text-align:center;border:1px solid transparent;transition:background .15s,border-color .15s}
+.lgo-cancel{background:transparent;color:var(--light);border-color:var(--border)}
+.lgo-cancel:hover{background:var(--inner)}
+.lgo-ok{background:var(--teal);color:#fff}
+.lgo-ok:hover{background:var(--teal-hover)}
+.lgo-actions a:focus-visible,.lgo-actions button:focus-visible{outline:3px solid rgba(37,99,235,.45);outline-offset:2px}
 </style>
 <div class="lgo-overlay" id="lgoOverlay" role="dialog" aria-modal="true" aria-labelledby="lgoTitle">
     <div class="lgo-box">
         <div class="lgo-icon"><i class="fa-solid fa-power-off"></i></div>
-        <h3 class="lgo-title" id="lgoTitle">Log out?</h3>
-        <p class="lgo-text">Log out of your faculty session?</p>
+        <h3 class="lgo-title" id="lgoTitle">Log Out</h3>
+        <p class="lgo-text">Are you sure you want to log out?</p>
         <div class="lgo-actions">
             <button type="button" class="lgo-cancel" id="lgoCancel">Cancel</button>
             <a href="#" class="lgo-ok" id="lgoOk">Log Out</a>
@@ -3884,5 +4129,232 @@ document.getElementById('photoModal').addEventListener('click', function(e) {
     document.addEventListener('keydown',function(e){if(e.key==='Escape')close();});
 })();
 </script>
+<!-- ══════════ LEAVE-WITHOUT-SUBMITTING GUARD (evaluation forms) ══════════ -->
+<style>
+.leave-guard-overlay{position:fixed;inset:0;z-index:100000;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(15,23,42,.42);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);}
+.leave-guard-overlay.open{display:flex;}
+.leave-guard-box{width:100%;max-width:525px;background:#fff;border-radius:22px;padding:32px 35px 30px;box-shadow:0 30px 80px rgba(15,23,42,.28);font-family:inherit;animation:leaveGuardIn .18s ease-out;}
+@keyframes leaveGuardIn{from{opacity:0;transform:translateY(8px) scale(.98);}to{opacity:1;transform:none;}}
+.leave-guard-title{margin:0 0 10px;font-size:19px;line-height:24px;font-weight:700;color:#0f172a;}
+.leave-guard-text{margin:0 0 26px;font-size:15px;line-height:26px;color:#64748b;}
+.leave-guard-actions{display:flex;gap:15px;}
+.leave-guard-actions button{flex:1;height:46px;border-radius:12px;font:inherit;font-size:15.5px;font-weight:700;letter-spacing:.2px;cursor:pointer;transition:background .15s,box-shadow .15s,transform .1s;}
+.leave-guard-actions button:active{transform:translateY(1px);}
+.leave-guard-stay{background:#fff;color:#0f172a;border:1px solid #e2e8f0;}
+.leave-guard-stay:hover{background:#f8fafc;}
+.leave-guard-leave{background:var(--teal,#2563EB);color:#fff;border:0;box-shadow:0 10px 24px rgba(0,0,0,.18);box-shadow:0 10px 24px color-mix(in srgb,var(--teal,#2563EB) 38%,transparent);}
+.leave-guard-leave:hover{background:var(--teal-hover,#1D4ED8);}
+.leave-guard-actions button:focus-visible{outline:3px solid color-mix(in srgb,var(--teal,#2563EB) 45%,transparent);outline-offset:2px;}
+@media(max-width:560px){.leave-guard-box{padding:26px 22px 24px;border-radius:18px;}.leave-guard-actions{gap:12px;}}
+</style>
+<div class="leave-guard-overlay" id="leaveGuardOverlay" aria-hidden="true">
+    <div class="leave-guard-box" role="alertdialog" aria-modal="true" aria-labelledby="leaveGuardTitle" aria-describedby="leaveGuardText">
+        <h3 class="leave-guard-title" id="leaveGuardTitle">Leave without submitting?</h3>
+        <p class="leave-guard-text" id="leaveGuardText">You have an unsubmitted evaluation. If you leave now, your answers will be lost.</p>
+        <div class="leave-guard-actions">
+            <button type="button" class="leave-guard-stay" id="leaveGuardStay">Stay</button>
+            <button type="button" class="leave-guard-leave" id="leaveGuardLeave">Leave</button>
+        </div>
+    </div>
+</div>
+<script>
+(function(){
+    // Works for the faculty/staff peer evaluation (#evalForm) and the staff evaluation (#staffEvalForm).
+    var form = document.getElementById('evalForm') || document.getElementById('staffEvalForm');
+    var ov = document.getElementById('leaveGuardOverlay');
+    if (!form || !ov) return;
+    var stay = document.getElementById('leaveGuardStay'),
+        leave = document.getElementById('leaveGuardLeave'),
+        pending = null, allow = false, lastFocus = null;
+
+    function dirty() {
+        if (form.querySelector('input[type="radio"]:checked')) return true;
+        var tas = form.querySelectorAll('textarea');
+        for (var i = 0; i < tas.length; i++) if (tas[i].value.trim() !== '') return true;
+        return false;
+    }
+    function openGuard(url) {
+        pending = url; lastFocus = document.activeElement;
+        ov.classList.add('open'); ov.setAttribute('aria-hidden', 'false');
+        stay.focus();
+    }
+    function closeGuard() {
+        ov.classList.remove('open'); ov.setAttribute('aria-hidden', 'true'); pending = null;
+        if (lastFocus && lastFocus.focus) lastFocus.focus();
+    }
+
+    // Intercept every link that would take the user away from the form (X, Cancel, sidebar, logout…).
+    document.addEventListener('click', function(e) {
+        if (allow || ov.contains(e.target)) return;
+        var a = e.target.closest && e.target.closest('a[href]');
+        if (!a || !dirty()) return;
+        var href = a.getAttribute('href');
+        if (!href || href.charAt(0) === '#' || /^javascript:/i.test(href) || a.target === '_blank') return;
+        e.preventDefault(); e.stopPropagation();
+        openGuard(a.href);
+    }, true);
+
+    stay.addEventListener('click', closeGuard);
+    leave.addEventListener('click', function() {
+        allow = true;
+        var url = pending; ov.classList.remove('open');
+        if (url) window.location.href = url;
+    });
+    ov.addEventListener('click', function(e) { if (e.target === ov) closeGuard(); });
+    // Accidental click on the dimmed area outside the evaluation card -> ask first.
+    var evalOverlay = document.querySelector('.peer-eval-overlay, .staff-eval-modal-overlay');
+    var closeLink = document.querySelector('.peer-eval-close, .staff-eval-modal-close');
+    var downOnBackdrop = false;
+    if (evalOverlay) {
+        evalOverlay.addEventListener('mousedown', function(e) { downOnBackdrop = (e.target === evalOverlay); });
+        evalOverlay.addEventListener('touchstart', function(e) { downOnBackdrop = (e.target === evalOverlay); }, {passive: true});
+        evalOverlay.addEventListener('click', function(e) {
+            // Only a press AND release on the backdrop counts (not a text-selection drag that ends outside the card).
+            if (e.target !== evalOverlay || !downOnBackdrop) return;
+            downOnBackdrop = false;
+            if (allow || !dirty() || !closeLink) return;
+            openGuard(closeLink.href);
+        });
+    }
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key !== 'Escape') return;
+        if (ov.classList.contains('open')) { closeGuard(); return; }
+        if (!allow && dirty() && closeLink) openGuard(closeLink.href);
+    });
+
+    // A successful submit must never trigger the guard.
+    document.addEventListener('submit', function(e) { if (!e.defaultPrevented) allow = true; });
+
+    // Fallback for browser back / refresh / closing the tab.
+    window.addEventListener('beforeunload', function(e) {
+        if (allow || !dirty()) return;
+        e.preventDefault(); e.returnValue = '';
+    });
+})();
+</script>
+
+
+<style id="principal-matched-account-settings">
+/* Principal Account Settings visual language, recoloured for this role. */
+.settings-shell.principal-settings-layout {
+  --ap-card:var(--mid);--ap-soft:var(--inner);--ap-line:var(--border);
+  --ap-text:var(--light);--ap-muted:var(--muted);
+  --ap-accent-bg:rgba(var(--ap-accent-rgb),.10);--ap-ring:rgba(var(--ap-accent-rgb),.14);
+  max-width:1480px;padding-top:24px !important;padding-bottom:30px !important;
+}
+.settings-shell.principal-settings-layout .settings-page-head{display:flex;align-items:center;justify-content:space-between;gap:20px;margin:0 0 22px;padding:0 2px;}
+.settings-shell.principal-settings-layout .settings-page-kicker{display:flex;align-items:center;gap:7px;color:var(--ap-accent-dark);font-size:10.5px;font-weight:800;letter-spacing:1.05px;text-transform:uppercase;margin-bottom:5px;}
+.settings-shell.principal-settings-layout .settings-page-title{margin:0;color:var(--ap-text);font-family:'Rajdhani',sans-serif;font-size:29px;font-weight:800;line-height:1.15;}
+.settings-shell.principal-settings-layout .settings-page-subtitle{margin:5px 0 0;color:var(--ap-muted);font-size:13px;line-height:1.5;}
+.settings-shell.principal-settings-layout .settings-appearance-current{display:inline-flex;align-items:center;gap:7px;padding:9px 12px;border-radius:999px;background:var(--ap-accent-bg);border:1px solid rgba(var(--ap-accent-rgb),.22);color:var(--ap-accent-dark);font-size:11.5px;font-weight:700;white-space:nowrap;}
+.settings-shell.principal-settings-layout .settings-appearance-current strong{color:var(--ap-text);}
+.settings-shell.principal-settings-layout .settings-layout-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start;margin-top:0;}
+.settings-shell.principal-settings-layout .settings-card.ac-card{position:relative !important;overflow:hidden !important;grid-column:auto;border-radius:15px !important;padding:22px 24px 24px !important;margin:0 !important;background:var(--ap-card) !important;color:var(--ap-text) !important;border:1px solid var(--ap-line) !important;box-shadow:0 2px 10px rgba(15,23,42,.055) !important;}
+.settings-shell.principal-settings-layout .settings-card.ac-card.full{grid-column:1/-1;}
+.settings-shell.principal-settings-layout .settings-card.ac-card::before{content:'';position:absolute;left:0;right:0;top:0;height:3px;background:var(--ap-card-accent,var(--ap-accent));}
+.settings-shell.principal-settings-layout .ac-c1{--ap-card-accent:var(--ap-accent);}
+.settings-shell.principal-settings-layout .ac-c2{--ap-card-accent:var(--ap-accent);}
+.settings-shell.principal-settings-layout .ac-c3{--ap-card-accent:var(--ap-accent);}
+.settings-shell.principal-settings-layout .ac-c4{--ap-card-accent:var(--ap-accent);}
+.settings-shell.principal-settings-layout .ac-extra{--ap-card-accent:var(--ap-accent);}
+.settings-shell.principal-settings-layout .ac-head{display:flex;align-items:flex-start;gap:14px;margin:0 0 18px;}
+.settings-shell.principal-settings-layout .ac-icon{width:42px;height:42px;flex:0 0 42px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;font-size:17px;background:var(--ap-accent-bg) !important;color:var(--ap-accent-dark) !important;}
+.settings-shell.principal-settings-layout .ac-icon i{font-size:17px;color:var(--ap-accent-dark) !important;}
+.settings-shell.principal-settings-layout .ac-head h2{display:block;margin:0 0 4px;font-family:'Rajdhani',sans-serif;font-size:21px;font-weight:800;line-height:1.15;letter-spacing:0;color:var(--ap-text) !important;}
+.settings-shell.principal-settings-layout .ac-head .ac-sub{margin:0;font-size:13px;line-height:1.5;color:var(--ap-muted) !important;opacity:1;}
+.settings-shell.principal-settings-layout .ac-head.appearance-heading-row{justify-content:flex-start;}
+.settings-shell.principal-settings-layout .appearance-device-badge{margin-left:auto;display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border-radius:999px;background:var(--ap-soft);border:1px solid var(--ap-line);color:var(--ap-muted);font-size:10.5px;font-weight:700;white-space:nowrap;}
+.settings-shell.principal-settings-layout .appearance-feature-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;}
+.settings-shell.principal-settings-layout .appearance-theme-card{grid-column:1/-1;}
+.settings-shell.principal-settings-layout .appearance-control-card{display:block;background:var(--ap-soft);border:1px solid var(--ap-line);border-radius:14px;padding:18px;box-shadow:none;min-width:0;}
+.settings-shell.principal-settings-layout .appearance-control-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:14px;}
+.settings-shell.principal-settings-layout .appearance-control-icon{width:34px;height:34px;flex:0 0 34px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;background:var(--ap-accent-bg);color:var(--ap-accent-dark);font-size:14px;}
+.settings-shell.principal-settings-layout .appearance-control-head h3{font-size:15px;font-weight:700;color:var(--ap-text);margin:0 0 2px;}
+.settings-shell.principal-settings-layout .appearance-control-head p{font-size:12.5px;color:var(--ap-muted);margin:0;line-height:1.45;}
+.settings-shell.principal-settings-layout .appearance-theme-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
+.settings-shell.principal-settings-layout .appearance-choice{position:relative;display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:12px;width:auto;height:auto;min-height:0;padding:14px;text-align:left;border-radius:12px;border:1.5px solid var(--ap-line);background:var(--ap-card);color:var(--ap-text);cursor:pointer;box-shadow:none;transition:border-color .18s,background .18s;}
+.settings-shell.principal-settings-layout .appearance-choice::before,.settings-shell.principal-settings-layout .appearance-choice::after{display:none;content:none;}
+.settings-shell.principal-settings-layout .appearance-choice:hover{border-color:var(--ap-accent);color:var(--ap-text);}
+.settings-shell.principal-settings-layout .appearance-choice-icon{width:36px;height:36px;flex:0 0 36px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;background:var(--ap-soft);color:var(--ap-muted);font-size:15px;}
+.settings-shell.principal-settings-layout .appearance-choice-copy{display:block;min-width:0;}
+.settings-shell.principal-settings-layout .appearance-choice-copy strong,.settings-shell.principal-settings-layout .appearance-density-choice strong,.settings-shell.principal-settings-layout .appearance-motion-copy strong{display:block;font-size:13.5px;font-weight:700;color:var(--ap-text);}
+.settings-shell.principal-settings-layout .appearance-choice-copy small,.settings-shell.principal-settings-layout .appearance-density-choice small,.settings-shell.principal-settings-layout .appearance-motion-copy small{display:block;font-size:11.5px;color:var(--ap-muted);margin-top:1px;}
+.settings-shell.principal-settings-layout .appearance-choice-check{position:static;margin-left:auto;width:20px;height:20px;flex:0 0 20px;border:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;background:var(--ap-accent);color:#fff;opacity:0;transform:scale(.6);transition:opacity .2s,transform .2s;}
+.settings-shell.principal-settings-layout .appearance-choice[aria-pressed="true"],.settings-shell.principal-settings-layout .appearance-choice.active{border-color:var(--ap-accent);background:var(--ap-accent-bg);color:var(--ap-text);box-shadow:0 0 0 3px var(--ap-ring);}
+.settings-shell.principal-settings-layout .appearance-choice[aria-pressed="true"] .appearance-choice-icon{background:var(--ap-accent);color:#fff;}
+.settings-shell.principal-settings-layout .appearance-choice[aria-pressed="true"] .appearance-choice-check{opacity:1;transform:scale(1);}
+.settings-shell.principal-settings-layout .appearance-inline-status{margin-top:14px;font-size:12.5px;color:var(--ap-muted);display:flex;align-items:center;gap:7px;}
+.settings-shell.principal-settings-layout .appearance-inline-status i{color:var(--ap-accent-dark);}
+.settings-shell.principal-settings-layout .appearance-inline-status strong{color:var(--ap-text);}
+.settings-shell.principal-settings-layout .appearance-density-options{display:grid;grid-template-columns:1fr;gap:10px;}
+.settings-shell.principal-settings-layout .appearance-density-choice{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;text-align:left;border-radius:12px;border:1.5px solid var(--ap-line);background:var(--ap-card);color:var(--ap-muted);cursor:pointer;box-shadow:none;}
+.settings-shell.principal-settings-layout .appearance-density-choice:hover{border-color:var(--ap-accent);}
+.settings-shell.principal-settings-layout .appearance-density-choice>i{width:20px;flex:0 0 20px;background:transparent;border-radius:0;font-size:15px;text-align:center;color:var(--ap-muted);}
+.settings-shell.principal-settings-layout .appearance-density-choice[aria-pressed="true"],.settings-shell.principal-settings-layout .appearance-density-choice.active{border-color:var(--ap-accent);background:var(--ap-accent-bg);}
+.settings-shell.principal-settings-layout .appearance-density-choice[aria-pressed="true"]>i{color:var(--ap-accent-dark);}
+.settings-shell.principal-settings-layout .appearance-motion-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 14px;text-align:left;border-radius:12px;border:1.5px solid var(--ap-line);background:var(--ap-card);cursor:pointer;box-shadow:none;color:var(--ap-text);}
+.settings-shell.principal-settings-layout .appearance-motion-toggle:hover{border-color:var(--ap-accent);}
+.settings-shell.principal-settings-layout .appearance-motion-toggle[aria-pressed="true"]{border-color:var(--ap-accent);background:var(--ap-accent-bg);}
+.settings-shell.principal-settings-layout .appearance-switch-track{width:44px;height:24px;flex:0 0 44px;border-radius:999px;background:#CBD5E1;position:relative;transition:background .2s;}
+.settings-shell.principal-settings-layout .appearance-switch-thumb{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .2s;}
+.settings-shell.principal-settings-layout .appearance-motion-toggle[aria-pressed="true"] .appearance-switch-track{background:var(--ap-accent);}
+.settings-shell.principal-settings-layout .appearance-motion-toggle[aria-pressed="true"] .appearance-switch-thumb{transform:translateX(20px);}
+.settings-shell.principal-settings-layout .appearance-accessibility-note{margin-top:12px;font-size:11.5px;color:var(--ap-muted);display:flex;gap:7px;align-items:flex-start;line-height:1.5;}
+.settings-shell.principal-settings-layout .appearance-accessibility-note i{color:var(--ap-accent-dark);margin-top:2px;}
+.settings-shell.principal-settings-layout .profile-card{display:flex;align-items:center;gap:24px;}
+.settings-shell.principal-settings-layout .profile-photo-lg{width:96px;height:96px;flex:0 0 96px;border-radius:50%;object-fit:cover;border:3px solid var(--ap-accent);background:var(--ap-soft);display:flex;align-items:center;justify-content:center;color:var(--ap-accent-dark);font-size:28px;}
+.settings-shell.principal-settings-layout .profile-photo-fallback{display:flex;}
+.settings-shell.principal-settings-layout .photo-form-wrap{display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-width:0;}
+.settings-shell.principal-settings-layout .photo-help{font-size:12px;color:var(--ap-muted);margin-top:8px;line-height:1.5;}
+.settings-shell.principal-settings-layout .form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:17px 20px;margin-bottom:20px;}
+.settings-shell.principal-settings-layout .form-group{display:flex;flex-direction:column;gap:7px;min-width:0;}
+.settings-shell.principal-settings-layout .form-group label{font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--ap-muted);}
+.settings-shell.principal-settings-layout .form-group input{width:100%;box-sizing:border-box;padding:12px 13px;font:14px 'DM Sans',sans-serif;border-radius:9px;border:1px solid var(--ap-line);background:var(--ap-card);color:var(--ap-text);outline:none;}
+.settings-shell.principal-settings-layout .form-group input:focus{border-color:var(--ap-accent);box-shadow:0 0 0 3px var(--ap-ring);}
+.settings-shell.principal-settings-layout .form-group input[readonly]{background:var(--ap-soft);color:var(--ap-muted);cursor:default;}
+.settings-shell.principal-settings-layout .field-note{font-size:11px;line-height:1.4;color:var(--ap-muted);}
+.settings-shell.principal-settings-layout .btn-primary{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 17px;border:0;border-radius:9px;font:700 13.5px 'DM Sans',sans-serif;color:#fff;background:var(--ap-accent);box-shadow:0 4px 14px rgba(var(--ap-accent-rgb),.20);cursor:pointer;text-decoration:none;transition:transform .18s,background .18s;}
+.settings-shell.principal-settings-layout .btn-primary:hover{background:var(--ap-accent-strong);color:#fff;transform:translateY(-1px);}
+.settings-shell.principal-settings-layout .btn-primary:focus-visible,.settings-shell.principal-settings-layout button:focus-visible{outline:3px solid rgba(var(--ap-accent-rgb),.30);outline-offset:2px;}
+.settings-shell.principal-settings-layout .settings-action-link{font-size:12px;padding:9px 12px;white-space:nowrap;}
+.settings-shell.principal-settings-layout .settings-protected-icon{color:var(--ap-accent-dark);font-size:17px;flex:0 0 auto;}
+.settings-shell.principal-settings-layout .setting-row{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:13px 0;border-top:1px solid var(--ap-line);}
+.settings-shell.principal-settings-layout .setting-row:first-of-type{border-top:0;}
+.settings-shell.principal-settings-layout .setting-row strong{display:block;color:var(--ap-text);font-size:13px;}
+.settings-shell.principal-settings-layout .setting-row span{display:block;color:var(--ap-muted);font-size:11.5px;margin-top:3px;line-height:1.45;}
+.settings-shell.principal-settings-layout .setting-toggle{position:relative;width:44px;height:24px;flex:0 0 44px;}
+.settings-shell.principal-settings-layout .setting-toggle input{display:none;}
+.settings-shell.principal-settings-layout .setting-toggle .slider{position:absolute;inset:0;border-radius:20px;background:var(--ap-line);cursor:pointer;transition:background .2s;}
+.settings-shell.principal-settings-layout .setting-toggle .slider:before{content:'';position:absolute;width:18px;height:18px;left:3px;top:3px;background:#fff;border-radius:50%;transition:transform .2s;}
+.settings-shell.principal-settings-layout .setting-toggle input:checked+.slider{background:var(--ap-accent);}
+.settings-shell.principal-settings-layout .setting-toggle input:checked+.slider:before{transform:translateX(20px);}
+.settings-shell.principal-settings-layout .settings-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px;}
+.settings-shell.principal-settings-layout .account-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;}
+.settings-shell.principal-settings-layout .account-fact{background:var(--ap-soft);border:1px solid var(--ap-line);border-radius:10px;padding:12px;min-width:0;}
+.settings-shell.principal-settings-layout .account-fact label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--ap-muted);margin-bottom:4px;}
+.settings-shell.principal-settings-layout .account-fact b{color:var(--ap-text);font-size:12.5px;overflow-wrap:anywhere;}
+body:not(.light-theme) .settings-shell.principal-settings-layout{--ap-text:#E0E6F0;--ap-muted:#A0B3C6;--ap-line:rgba(255,255,255,.10);--ap-accent-bg:rgba(var(--ap-accent-rgb),.16);--ap-ring:rgba(var(--ap-accent-rgb),.16);}
+body:not(.light-theme) .settings-shell.principal-settings-layout .settings-card.ac-card{box-shadow:0 8px 24px rgba(0,0,0,.18) !important;}
+body:not(.light-theme) .settings-shell.principal-settings-layout .appearance-choice-check{color:#fff;}
+body.compact-density .settings-shell.principal-settings-layout .settings-card.ac-card{padding:17px 19px 19px !important;}
+body.compact-density .settings-shell.principal-settings-layout .appearance-control-card{padding:14px;}
+body.compact-density .settings-shell.principal-settings-layout .setting-row{padding:9px 0;}
+
+/* ── Settings tabs (Profile & Security / Appearance) — uses each portal's own accent ── */
+.settings-shell.principal-settings-layout .settings-tabs{display:inline-flex;gap:6px;padding:6px;margin:0 0 20px;background:var(--ap-card);border:1px solid var(--ap-line);border-radius:16px;box-shadow:0 2px 10px rgba(15,23,42,.045);max-width:100%;}
+.settings-shell.principal-settings-layout .settings-tab{display:inline-flex;align-items:center;justify-content:center;gap:9px;padding:11px 22px;border:0;border-radius:11px;background:transparent;color:var(--ap-muted);font:700 14px 'DM Sans',sans-serif;cursor:pointer;white-space:nowrap;transition:background .18s,color .18s,box-shadow .18s;}
+.settings-shell.principal-settings-layout .settings-tab i{font-size:15px;}
+.settings-shell.principal-settings-layout .settings-tab:hover{color:var(--ap-text);background:var(--ap-accent-bg);}
+.settings-shell.principal-settings-layout .settings-tab.active{background:var(--ap-accent);color:#fff;box-shadow:0 6px 16px rgba(var(--ap-accent-rgb),.28);}
+.settings-shell.principal-settings-layout .settings-tab:focus-visible{outline:3px solid rgba(var(--ap-accent-rgb),.30);outline-offset:2px;}
+.settings-shell.principal-settings-layout .settings-tab-panel[hidden]{display:none !important;}
+@media(max-width:560px){.settings-shell.principal-settings-layout .settings-tabs{display:flex;width:100%;box-sizing:border-box;}.settings-shell.principal-settings-layout .settings-tab{flex:1;padding:11px 10px;font-size:13px;}}
+body.reduce-motion *,body.reduce-motion *::before,body.reduce-motion *::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;scroll-behavior:auto !important;transition-duration:.01ms !important;}
+@media(max-width:900px){.settings-shell.principal-settings-layout .appearance-theme-options{grid-template-columns:1fr;}.settings-shell.principal-settings-layout .settings-layout-grid{grid-template-columns:1fr;}.settings-shell.principal-settings-layout .settings-card.ac-card.full{grid-column:auto;}.settings-shell.principal-settings-layout .appearance-feature-grid{grid-template-columns:1fr;}.settings-shell.principal-settings-layout .appearance-theme-card{grid-column:auto;}}
+@media(max-width:760px){.settings-shell.principal-settings-layout .settings-page-head{align-items:flex-start;flex-direction:column;}.settings-shell.principal-settings-layout .appearance-device-badge{display:none;}.settings-shell.principal-settings-layout .account-facts{grid-template-columns:1fr;}.settings-shell.principal-settings-layout .form-grid{grid-template-columns:1fr;}}
+@media(max-width:560px){.settings-shell.principal-settings-layout .settings-card.ac-card{padding:18px 17px 20px !important;}.settings-shell.principal-settings-layout .profile-card{align-items:flex-start;flex-direction:column;}.settings-shell.principal-settings-layout .ac-head{gap:11px;}.settings-shell.principal-settings-layout .ac-icon{width:38px;height:38px;flex-basis:38px;}.settings-shell.principal-settings-layout .setting-row{align-items:flex-start;}}
+</style>
+
 </body>
 </html>

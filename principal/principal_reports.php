@@ -76,8 +76,8 @@ if (!function_exists('principal_theme_assets')) {
         $done = true;
         ?>
 <script>(function(){try{if(localStorage.getItem('pbi_theme') === 'dark'){document.documentElement.classList.add('principal-theme-dark-pending');}}catch(e){}})();</script>
-<link rel="stylesheet" href="includes/principal_theme.css?v=20261011.4"/>
-<script defer src="includes/principal_theme.js?v=20261011.4"></script>
+<link rel="stylesheet" href="includes/principal_theme.css?v=20261011.10"/>
+<script defer src="includes/principal_theme.js?v=20261011.10"></script>
         <?php
     }
 }
@@ -1133,7 +1133,7 @@ button, .btn { font-weight:700; }
 a { color:inherit; }
 </style>
 <link rel="stylesheet" href="includes/principal_light_theme.css"/>
-<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20261011.4" id="principal-dark-repairs"/>
+<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20261011.10" id="principal-dark-repairs"/>
 </head><body class="<?= $reportMode ? 'report-mode' : '' ?>">
 </div>
 <?php render_exec_sidebar('reports', $me, $photo_src); ?>
@@ -1304,7 +1304,6 @@ a { color:inherit; }
                 <td class="rating-cell">
                     <div class="rating-badge">
                         <span class="rating-num"><?= number_format($cs, 2) ?></span>
-                        <span class="rating-lbl"><?= scoreSatisfactionLabel($cs) ?></span>
                     </div>
                 </td>
             </tr>
@@ -1330,6 +1329,7 @@ a { color:inherit; }
     </div>
     <?php endif; ?>
 
+    <div class="cum-comments-page">
     <div class="comment-section">
         <div class="comment-title"><i class="fa-solid fa-comment-dots"></i> Comments, Suggestions &amp; Areas for Improvement</div>
         <?php if (!empty($cumRemarks)): foreach ($cumRemarks as $cr): ?>
@@ -1338,6 +1338,7 @@ a { color:inherit; }
         <div class="no-comment">No comments or suggestions were provided.</div>
         <?php endif; ?>
     </div>
+    </div><!-- /.cum-comments-page -->
 </div><!-- /.cumulative-sheet -->
 
 </main>
@@ -1464,7 +1465,7 @@ html body .cumulative-sheet .q-table td.q-num{width:40px;font-weight:700;padding
 html body .cumulative-sheet .q-table td.rating-cell{text-align:center;padding-top:6px!important;}
 html body .cumulative-sheet .q-table tr:hover td{background:#fff!important;}
 /* every rating badge is the same shape, whatever the label */
-html body .cumulative-sheet .rating-badge{display:inline-flex;flex-direction:column;justify-content:center;align-items:center;width:128px;height:38px;box-sizing:border-box;padding:2px 6px!important;gap:0!important;background:#fff!important;border:1px solid #ccc!important;border-radius:8px;}
+html body .cumulative-sheet .rating-badge{display:inline-flex;flex-direction:column;justify-content:center;align-items:center;width:96px;height:30px;box-sizing:border-box;padding:2px 6px!important;gap:0!important;background:#fff!important;border:1px solid #ccc!important;border-radius:8px;}
 html body .cumulative-sheet .rating-num{font-size:14px!important;font-weight:700;line-height:1.1;}
 html body .cumulative-sheet .rating-lbl{font-size:8px!important;font-weight:600;text-transform:uppercase;letter-spacing:.5px;text-align:center;line-height:1.1;}
 
@@ -1505,6 +1506,43 @@ html body .cumulative-sheet .cum-empty{text-align:center;padding:24px;font-style
   html body .cumulative-sheet .q-table tr{break-inside:avoid;page-break-inside:avoid;}
   html body .cumulative-sheet .cum-total,
   html body .cumulative-sheet .comment-section{break-inside:avoid;page-break-inside:avoid;}
+
+  /* top header bar (page title, period chip, bell) must not print */
+  .dean-portal-topbar,.principal-portal-topbar,.portal-topbar,header.topbar,.dean-header-notif-dropdown{display:none!important;visibility:hidden!important;height:0!important;margin:0!important;padding:0!important;border:0!important;}
+  html body .cumulative-sheet .rating-lbl{display:none!important;}
+
+  /* Start the report near the top of the page */
+  html body{padding:7mm 12mm 10mm!important;}
+  html body main.main,html body .main{margin-top:0!important;padding-top:0!important;top:0!important;}
+  html body main.main::before,html body .main::before,html body::before{display:none!important;content:none!important;}
+  html body .cumulative-sheet{margin-top:0!important;padding-top:0!important;}
+
+  /* Compact spacing so a full 30-question evaluation fits on one page */
+  html body .cumulative-sheet .cum-topbar{margin:0 0 4px!important;padding:4px 10px!important;font-size:10px!important;}
+  html body .cumulative-sheet .sheet-header{margin:0 0 4px!important;padding:6px 10px!important;gap:8px!important;}
+  html body .cumulative-sheet .sheet-avatar,
+  html body .cumulative-sheet .sheet-avatar-ph{width:32px!important;height:32px!important;font-size:14px!important;}
+  html body .cumulative-sheet .sheet-name{font-size:14px!important;line-height:1.1!important;}
+  html body .cumulative-sheet .sheet-desig{font-size:9px!important;line-height:1.2!important;}
+  html body .cumulative-sheet .cum-date-label{font-size:8px!important;margin-bottom:0!important;}
+  html body .cumulative-sheet .cum-date-val{font-size:11px!important;}
+  html body .cumulative-sheet .cat-section{margin:0 0 5px!important;}
+  html body .cumulative-sheet .cat-title{margin:0 0 3px!important;padding:0 0 2px!important;font-size:9px!important;letter-spacing:1px!important;}
+  html body .cumulative-sheet .q-table th{padding:3px 8px!important;font-size:8.5px!important;}
+  html body .cumulative-sheet .q-table td{padding:2px 8px!important;font-size:10.5px!important;line-height:1.15!important;}
+  html body .cumulative-sheet .q-table td.q-num{padding-top:2px!important;width:30px!important;}
+  html body .cumulative-sheet .q-table td.rating-cell{padding-top:2px!important;}
+  html body .cumulative-sheet .rating-badge{width:62px!important;height:18px!important;padding:0 4px!important;border-radius:5px!important;}
+  html body .cumulative-sheet .rating-num{font-size:11px!important;line-height:1!important;}
+  html body .cumulative-sheet .cum-total{margin:0 0 5px!important;padding:6px 12px!important;}
+  html body .cumulative-sheet .cum-total-label{font-size:11px!important;}
+  html body .cumulative-sheet .avg-score-big{font-size:28px!important;}
+  html body .cumulative-sheet .avg-score-label{font-size:11px!important;margin-top:2px!important;}
+  html body .cumulative-sheet .avg-out-of{font-size:9px!important;margin-top:2px!important;}
+
+  /* Comments always on their own page; padding (not margin) gives the top gap at a page break */
+  html body .cumulative-sheet .cum-comments-page{break-before:page!important;page-break-before:always!important;padding-top:14mm!important;margin:0!important;}
+  html body .cumulative-sheet .cum-comments-page .comment-section{margin-top:0!important;}
 }
 </style>
 
@@ -1841,6 +1879,9 @@ if ($view === 'students' && $target_id) {
 .detail-view-btn:hover{background:#E7F0FF;}
 .detail-report-btn{background:#2D66E1!important;border-color:#2D66E1!important;color:#fff!important;margin-right:6px;}
 .detail-report-btn:hover{background:#2459C9!important;}
+/* Plain icon-only actions */
+.detail-results-table .detail-view-btn,.detail-results-table .detail-view-btn.detail-report-btn{width:34px;height:34px;padding:0!important;gap:0;margin:0 2px 0 0!important;background:transparent!important;border:0!important;box-shadow:none!important;border-radius:50%;color:#2363D4!important;font-size:16px;}
+.detail-results-table .detail-view-btn:hover,.detail-results-table .detail-view-btn.detail-report-btn:hover{background:rgba(35,99,212,.10)!important;}
 .detail-empty{text-align:center;padding:54px 22px;color:#70869A;}
 .detail-empty i{display:block;font-size:32px;margin-bottom:10px;color:#A4B5C5;}
 .detail-empty h3{font-family:'Rajdhani',sans-serif;font-size:19px;color:#163450;margin:0 0 4px;}
@@ -1985,11 +2026,11 @@ if ($view === 'students' && $target_id) {
                             ? '&report_period_id=' . $reportPeriodId . '&report_tracker_ids=' . urlencode($reportTrackerIds)
                             : '');
                 ?>
-                <a class="detail-view-btn detail-report-btn" href="<?= htmlspecialchars($sheetReportQs, ENT_QUOTES, 'UTF-8') ?>">
-                    <i class="fa-solid fa-file-lines"></i> Generate Report
+                <a class="detail-view-btn detail-report-btn" title="Generate Report" aria-label="Generate Report" href="<?= htmlspecialchars($sheetReportQs, ENT_QUOTES, 'UTF-8') ?>">
+                    <i class="fa-solid fa-file-lines"></i>
                 </a>
-                <a class="detail-view-btn" href="<?= $sheetQs ?>">
-                    <i class="fa-solid fa-eye"></i> View
+                <a class="detail-view-btn" title="View" aria-label="View evaluation" href="<?= $sheetQs ?>">
+                    <i class="fa-solid fa-eye"></i>
                 </a>
             </td>
         </tr>
@@ -2443,42 +2484,48 @@ a { color:inherit; }
 <div class="reports-redesign">
 
     <!-- Top-level report types: keep the current two data sets only. -->
+    <div class="reports-top-row">
     <div class="reports-top-switcher">
         <a href="?group=<?= urlencode($groupFilter) ?>&eval_type=student" class="reports-top-tab student <?= $activeEval==='student'?'active':'' ?>">
             <i class="fa-solid fa-graduation-cap"></i>
             <span>Student Evaluation</span>
-            <span class="reports-top-badge"><?= $studentEvalCount + $multiRoleEvalCount ?></span>
         </a>
         <div class="reports-top-divider"></div>
         <a href="?group=<?= urlencode($groupForOtherTabs) ?>&eval_type=peer" class="reports-top-tab peer <?= $activeEval==='peer'?'active':'' ?>">
             <i class="fa-solid fa-people-arrows"></i>
             <span>Peer-to-Peer</span>
-            <span class="reports-top-badge"><?= $peerEvalCount ?></span>
         </a>
         <div class="reports-top-divider"></div>
         <a href="?group=All&eval_type=staff" class="reports-top-tab staff <?= $activeEval==='staff'?'active':'' ?>">
             <i class="fa-solid fa-briefcase"></i>
             <span>Staff Evaluation</span>
-            <span class="reports-top-badge"><?= $staffEvalCount ?></span>
         </a>
+    </div>
+        <div class="reports-data-actions">
+            <button type="button" class="reports-action-btn reports-filters-btn" onclick="toggleReportsFilters()"><i class="fa-solid fa-filter"></i> Filters</button>
+            <div class="reports-search-box">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input id="reportsSearch" type="search" placeholder="Search name, designation..." autocomplete="off" aria-label="Search evaluated users">
+            </div>
+        </div>
     </div>
 
     <?php if ($activeEval === 'student'): ?>
     <div class="reports-filter-tabs">
         <a href="?group=All&eval_type=student" class="reports-filter-tab <?= $groupFilter==='All'?'active':'' ?>">
-            <i class="fa-solid fa-users"></i><span>All</span><b><?= $totalFacStaff ?></b>
+            <i class="fa-solid fa-users"></i><span>All</span>
         </a>
         <a href="?group=Faculty&eval_type=student" class="reports-filter-tab <?= $groupFilter==='Faculty'?'active':'' ?>">
-            <i class="fa-solid fa-chalkboard-user"></i><span>Faculty</span><b><?= $facCount ?></b>
+            <i class="fa-solid fa-chalkboard-user"></i><span>Faculty</span>
         </a>
         <a href="?group=Staff&eval_type=student" class="reports-filter-tab <?= $groupFilter==='Staff'?'active':'' ?>">
-            <i class="fa-solid fa-briefcase"></i><span>Staff</span><b><?= $staffCount ?></b>
+            <i class="fa-solid fa-briefcase"></i><span>Staff</span>
         </a>
     </div>
     <?php elseif ($activeEval === 'staff'): ?>
     <div class="reports-filter-tabs">
         <a href="?group=All&eval_type=staff" class="reports-filter-tab active">
-            <i class="fa-solid fa-user-tie"></i><span>Executive Assistant</span><b><?= count($people) ?></b>
+            <i class="fa-solid fa-user-tie"></i><span>Executive Assistant</span>
         </a>
     </div>
     <div class="reports-peer-note"><i class="fa-solid fa-circle-info"></i><span><strong>Staff Evaluations</strong> — results submitted by non-teaching staff for the Executive Assistant.<?php if ($staffUsesFallbackPeriod && $staffReportPeriodLabel !== ''): ?> Showing the latest available submissions from <?= htmlspecialchars($staffReportPeriodLabel) ?> because the configured period has no matching submissions.<?php endif; ?></span></div>
@@ -2486,7 +2533,7 @@ a { color:inherit; }
     <div class="reports-filter-tabs">
         <?php foreach (['Faculty' => 'fa-chalkboard-user', 'Staff' => 'fa-id-badge'] as $laneName => $laneIcon): ?>
         <a href="?group=<?= $laneName ?>&eval_type=peer" class="reports-filter-tab <?= $groupFilter===$laneName?'active':'' ?>">
-            <i class="fa-solid <?= $laneIcon ?>"></i><span><?= $laneName ?></span><b><?= (int)($peerLaneCounts[$laneName] ?? 0) ?></b>
+            <i class="fa-solid <?= $laneIcon ?>"></i><span><?= $laneName ?></span>
         </a>
         <?php endforeach; ?>
     </div>
@@ -2501,14 +2548,6 @@ a { color:inherit; }
                 <h2>Users Being Evaluated</h2>
                 <span>(<?= count($people) ?> evaluated)</span>
                 <span class="reports-live-status" id="reportsLiveStatus"><span class="reports-live-dot"></span> Live</span>
-            </div>
-            <div class="reports-data-actions">
-                <button type="button" class="reports-action-btn reports-export-btn" onclick="exportReportsTable()"><i class="fa-solid fa-download"></i> Export</button>
-                <div class="reports-search-box">
-                    <i class="fa-solid fa-magnifying-glass"></i>
-                    <input id="reportsSearch" type="search" placeholder="Search name, designation..." autocomplete="off" aria-label="Search evaluated users">
-                </div>
-                <button type="button" class="reports-action-btn reports-filters-btn" onclick="toggleReportsFilters()"><i class="fa-solid fa-filter"></i> Filters</button>
             </div>
         </div>
 
@@ -2573,7 +2612,7 @@ a { color:inherit; }
                         <td class="reports-date"><?= htmlspecialchars($lastEval) ?></td>
                         <td class="col-actions">
                             <div class="reports-row-actions">
-                                <a class="reports-view-btn" href="?view=students&target_id=<?= $p['id'] ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>"><i class="fa-solid fa-eye"></i> View</a>
+                                <a class="reports-view-btn" title="View" aria-label="View evaluation" href="?view=students&target_id=<?= $p['id'] ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>"><i class="fa-solid fa-eye"></i></a>
                             </div>
                         </td>
                     </tr>
@@ -2592,6 +2631,9 @@ a { color:inherit; }
 /* ── Reference-style Reports layout: visual-only redesign, current data preserved ── */
 .reports-redesign{display:flex;flex-direction:column;gap:0;margin-top:-2px;}
 /* Keep report-type tabs distinct from the secondary filters below. */
+.reports-top-row{display:flex;align-items:center;justify-content:space-between;gap:14px 16px;flex-wrap:wrap;margin:0 0 26px 0;}
+.reports-top-row .reports-top-switcher{margin:0;}
+.reports-top-row .reports-data-actions{margin-left:auto;}
 .reports-top-switcher{display:flex;align-items:center;justify-content:flex-start;gap:13px;width:max-content;max-width:100%;margin:0 0 26px 0;border:0;border-radius:0;background:transparent;overflow:visible;box-shadow:none;}
 .reports-top-tab{display:inline-flex;flex:0 0 auto;min-width:0;align-items:center;justify-content:center;gap:9px;min-height:47px;padding:0 22px;border:1px solid #CFE0F0;border-radius:13px;color:#56708A;text-decoration:none;font-size:14px;font-weight:700;letter-spacing:.01em;transition:.18s;background:#fff;position:relative;white-space:nowrap;box-shadow:0 1px 3px rgba(27,67,106,.03);}
 .reports-top-tab.student{color:#2764D4;}
@@ -2672,6 +2714,9 @@ a { color:inherit; }
 .reports-view-btn,.reports-archive-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:72px;padding:8px 11px;border-radius:9px;text-decoration:none;font-size:11px;font-weight:800;cursor:pointer;font-family:'Inter',sans-serif;}
 .reports-view-btn{background:#F1F6FF;border:1px solid #B5D0FF;color:#2363D4;}
 .reports-view-btn:hover{background:#E6F0FF;}
+/* Plain eye icon only (no pill/border) */
+.reports-table .reports-view-btn{min-width:0!important;width:34px;height:34px;padding:0!important;background:transparent!important;border:0!important;box-shadow:none!important;border-radius:50%;color:#2363D4!important;font-size:16px;}
+.reports-table .reports-view-btn:hover{background:rgba(35,99,212,.10)!important;}
 .reports-archive-btn{background:#fff;border:1px solid #C7D7E5;color:#687E92;}
 .reports-archive-btn:hover{background:#F7FAFC;color:#314E68;border-color:#AABFD2;}
 .reports-empty-state{text-align:center;padding:64px 24px;color:#6B8195;}
@@ -2707,6 +2752,31 @@ a { color:inherit; }
   .reports-top-switcher{box-shadow:none;}
   .reports-data-panel{box-shadow:none;border-color:#CBD5E1;}
 }
+/* ── Principal amber accent (matches Evaluation Tracker / dashboard) ── */
+.reports-redesign .reports-top-tab.student,.reports-redesign .reports-top-tab.peer,.reports-redesign .reports-top-tab.staff{color:#56708A;}
+.reports-redesign .reports-top-tab:hover,.reports-redesign .reports-filter-tab:hover{background:#FFF6E1;border-color:#EFCF86;color:#8F5F00;}
+.reports-redesign .reports-top-tab.active,.reports-redesign .reports-top-tab.student.active,.reports-redesign .reports-top-tab.peer.active,.reports-redesign .reports-top-tab.staff.active,
+.reports-redesign .reports-filter-tab.active{background:linear-gradient(180deg,#E6AD3E,#D99A2B)!important;border-color:#D99A2B!important;color:#1F1500!important;box-shadow:0 3px 10px rgba(217,154,43,.30);}
+.reports-redesign .reports-top-tab.active .reports-top-badge,.reports-redesign .reports-filter-tab.active b{background:rgba(31,21,0,.16)!important;color:#1F1500!important;}
+.reports-redesign .reports-data-title i{color:#D99A2B;}
+.reports-redesign .reports-sub-tab:hover,.reports-redesign .reports-designation-pill:hover{background:#FFF6E1;color:#8F5F00;}
+.reports-redesign .reports-sub-tab.active,.reports-redesign .reports-designation-pill.active{background:#FFF6E1;border-color:#EFCF86;color:#8F5F00;}
+.reports-redesign .reports-peer-note{border-color:#EFCF86;background:#FFF9EB;color:#7A5A1E;}
+.reports-redesign .reports-peer-note i{color:#D99A2B;}
+.reports-redesign .reports-peer-note strong{color:#8F5F00;}
+.reports-redesign .reports-active-filter-note button{color:#8F5F00;}
+.reports-redesign .reports-action-btn:hover{background:#FFF6E1;border-color:#EFCF86;}
+.reports-redesign .reports-data-actions{gap:10px;}
+.reports-redesign .reports-action-btn.reports-filters-btn{height:44px;padding:0 18px;border:1px solid #CFDBE7;border-radius:12px;background:#fff;color:#12263A;font:600 14px 'DM Sans','Inter',sans-serif;gap:9px;}
+.reports-redesign .reports-action-btn.reports-filters-btn i{color:#8F5F00;font-size:13px;}
+.reports-redesign .reports-search-box{position:relative;display:block;width:270px;max-width:100%;height:44px;padding:0;border:0;background:transparent;}
+.reports-redesign .reports-search-box i{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#8F5F00;font-size:14px;pointer-events:none;}
+.reports-redesign .reports-search-box input[type="search"]{display:block;width:100%;height:44px;padding:0 14px 0 40px!important;border:1px solid #CFDBE7!important;border-radius:12px!important;background:#fff!important;color:#12263A!important;font:500 14px 'DM Sans','Inter',sans-serif!important;outline:0!important;box-shadow:none!important;-webkit-appearance:none;appearance:none;}
+.reports-redesign .reports-search-box input[type="search"]::placeholder{color:#6D8194!important;opacity:1;}
+.reports-redesign .reports-search-box input[type="search"]:focus{border-color:#D99A2B!important;box-shadow:0 0 0 3px rgba(217,154,43,.18)!important;}
+.reports-redesign .reports-search-box input[type="search"]::-webkit-search-cancel-button{-webkit-appearance:none;}
+.reports-redesign .reports-table .reports-view-btn{color:#D99A2B!important;}
+.reports-redesign .reports-table .reports-view-btn:hover{background:rgba(217,154,43,.14)!important;}
 </style>
 
 <script>
@@ -2735,29 +2805,6 @@ function toggleReportsFilters() {
 function clearReportsSearch() {
     const input = document.getElementById('reportsSearch');
     if (input) { input.value = ''; input.dispatchEvent(new Event('input')); input.focus(); }
-}
-function exportReportsTable() {
-    const rows = Array.from(document.querySelectorAll('#reportsTable tbody .reports-person-row')).filter(r => r.style.display !== 'none');
-    if (!rows.length) return;
-    const csv = [['No.','Name','Designation','Role','Overall Avg. Score','Last Evaluated']];
-    rows.forEach(row => {
-        const cells = row.querySelectorAll('td');
-        const name = row.querySelector('.reports-person-name')?.textContent.trim() || '';
-        const designation = row.querySelector('.reports-designation-cell')?.textContent.trim() || '';
-        const role = row.querySelector('.reports-role-badge')?.textContent.trim() || '';
-        const score = row.querySelector('.reports-score')?.textContent.trim() || '';
-        const last = row.querySelector('.reports-date')?.textContent.trim() || '';
-        csv.push([cells[0].textContent.trim(), name, designation, role, score, last]);
-    });
-    const blob = new Blob([csv.map(r => r.map(v => '"' + String(v).replace(/"/g,'""') + '"').join(',')).join('\n')], {type:'text/csv;charset=utf-8;'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'principal-report-<?= $activeEval ?>.csv';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
 }
 document.addEventListener('DOMContentLoaded', () => {
     const input = document.getElementById('reportsSearch');
@@ -2879,6 +2926,57 @@ label,th{color:var(--muted)!important;}
 input,select,textarea{background:#0F1F3D!important;color:var(--light)!important;border-color:rgba(255,255,255,.12)!important;}
 input::placeholder,textarea::placeholder{color:#7890a8!important;}
 </style>
+
+<style id="reports-compact-scale">
+/* Compact sizing for Evaluation Reports - uses the same real dimensions as the
+   Evaluation Tracker (tabs ~36px tall, 13px labels, 10-11px meta text) instead of zoom. */
+@media screen{
+  .main{padding:28px 34px !important;}
+  .reports-redesign .reports-top-row{margin-bottom:18px;gap:10px 14px;}
+  .reports-redesign .reports-top-switcher{gap:9px;}
+  .reports-redesign .reports-top-tab,
+  .reports-redesign .reports-filter-tab{min-height:36px;padding:0 17px;gap:7.5px;border-radius:9px;font-size:13px;}
+  .reports-redesign .reports-top-tab i{font-size:13px;}
+  .reports-redesign .reports-top-badge,
+  .reports-redesign .reports-filter-tab b{min-width:20px;padding:3px 6px;font-size:10px;}
+  .reports-redesign .reports-filter-tabs{gap:9px;margin-bottom:10px;}
+  .reports-redesign .reports-sub-filters,
+  .reports-redesign .reports-designation-filters{padding:8px 10px;gap:6px;margin-bottom:11px;}
+  .reports-redesign .reports-sub-tab,
+  .reports-redesign .reports-designation-pill{padding:5px 10px;font-size:11px;}
+  .reports-redesign .reports-peer-note{padding:8px 11px;font-size:10.5px;margin-bottom:11px;}
+
+  .reports-redesign .reports-data-panel{border-radius:12px;}
+  .reports-redesign .reports-data-head{padding:16px 22px 13px;}
+  .reports-redesign .reports-data-title{gap:9px;}
+  .reports-redesign .reports-data-title i{font-size:16px;}
+  .reports-redesign .reports-data-title h2{font-size:20px;}
+  .reports-redesign .reports-data-title span{font-size:10px;}
+  .reports-redesign .reports-action-btn.reports-filters-btn{height:36px;padding:0 15px;border-radius:10px;font-size:12px;gap:7px;}
+  .reports-redesign .reports-action-btn.reports-filters-btn i{font-size:12px;}
+  .reports-redesign .reports-search-box{width:240px;height:36px;}
+  .reports-redesign .reports-search-box i{left:12px;font-size:12px;}
+  .reports-redesign .reports-search-box input[type="search"]{height:36px;padding:0 12px 0 34px!important;border-radius:10px!important;font-size:12px!important;}
+  .reports-redesign .reports-active-filter-note{margin:0 22px 10px;padding:7px 10px;font-size:10.5px;}
+
+  .reports-redesign .reports-table{min-width:880px;}
+  .reports-redesign .reports-table th{padding:9px 14px;font-size:9.5px!important;}
+  .reports-redesign .reports-table td{padding:11px 14px;font-size:12px!important;}
+  .reports-redesign .reports-table .col-no{width:48px;}
+  .reports-redesign .reports-table .col-actions{width:190px;}
+  .reports-redesign .reports-person-link{gap:10px;min-width:210px;}
+  .reports-redesign .reports-person-photo{width:36px;height:36px;}
+  .reports-redesign .reports-person-photo.placeholder{font-size:13px;}
+  .reports-redesign .reports-person-name{font-size:12px;}
+  .reports-redesign .reports-designation-cell{max-width:270px;line-height:1.3;}
+  .reports-redesign .reports-role-badge{padding:4px 9px;font-size:10px;gap:5px;}
+  .reports-redesign .reports-score{font-size:14px;}
+  .reports-redesign .reports-table .reports-view-btn{width:28px;height:28px;font-size:14px;}
+  .reports-redesign .reports-empty-state{padding:44px 20px;}
+  .reports-redesign .reports-live-status{padding:3px 7px;font-size:9.5px;}
+}
+</style>
+
 
 </body>
 <link rel="stylesheet" href="includes/principal_light_theme.css" id="principal-light-theme-final"/>

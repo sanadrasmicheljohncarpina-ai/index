@@ -310,6 +310,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_evaluation']))
             } elseif ($missing) {
                 $n = count($missing);
                 $submitError = 'Please answer all questions before submitting. You have ' . $n . ' unanswered question' . ($n === 1 ? '' : 's') . ' remaining.';
+            } elseif (trim((string)($_POST['comment'] ?? '')) === '') {
+                $submitError = 'Please write a comment before submitting. Comments, suggestions and areas for improvement are required.';
             } else {
                 $answers = [];
                 $scoreSum = 0;
@@ -531,20 +533,24 @@ html_head_open('PBI — Evaluate Others');
 .de-panel-foot b{color:var(--de-accent-dark);}
 
 /* modal */
-.de-overlay{position:fixed;inset:0;z-index:2000;background:rgba(10,25,47,.62);display:none;align-items:flex-start;justify-content:center;padding:28px 16px;overflow-y:auto;}
-.de-overlay.open{display:flex;}
-.de-modal{--de-accent:#D99A2B;--de-accent-dark:#B45309;--de-border:#D9E4EF;--de-ink:#172033;--de-muted:#64748B;--de-inner:#F5F7FB;width:100%;max-width:960px;background:#fff;color:var(--de-ink);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.35);display:flex;flex-direction:column;max-height:calc(100vh - 56px);}
-.de-modal-head{display:flex;align-items:center;gap:14px;padding:18px 24px;border-bottom:1px solid var(--de-border);}
-.de-modal-head img{width:56px;height:56px;border-radius:50%;object-fit:cover;border:2px solid var(--de-border);}
+.de-overlay{position:fixed;inset:0;z-index:2000;background:rgba(10,25,47,.55);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;padding:10px 20px;overflow-y:auto;}
+.de-overlay.open{display:flex;animation:deFade .18s ease-out;}
+@keyframes deFade{from{opacity:0}to{opacity:1}}
+@keyframes deRise{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+.de-overlay.open .de-modal{animation:deRise .22s ease-out;}
+.de-modal{--de-accent:#D99A2B;--de-accent-dark:#B45309;--de-border:#D9E4EF;--de-ink:#172033;--de-muted:#64748B;--de-inner:#F5F7FB;width:100%;max-width:780px;height:96vh;max-height:calc(100vh - 20px);background:#fff;color:var(--de-ink);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.35);display:flex;flex-direction:column;}
+.de-modal-head{display:flex;align-items:center;gap:16px;padding:20px 28px;border-bottom:1px solid var(--de-border);}
+.de-modal-head img{width:52px;height:52px;border-radius:50%;object-fit:cover;border:2px solid var(--de-border);}
 .de-modal-name{font-family:'Rajdhani',sans-serif;font-size:22px;font-weight:700;}
 .de-modal-sub{font-size:13px;color:var(--de-muted);}
 .de-modal-x{margin-left:auto;background:none;border:none;font-size:20px;color:var(--de-muted);cursor:pointer;padding:6px 10px;}
 .de-modal-x:hover{color:var(--de-ink);}
-.de-modal-body{padding:20px 24px;overflow-y:auto;flex:1;min-height:120px;}
-.de-modal-foot{display:flex;gap:12px;padding:16px 24px;border-top:1px solid var(--de-border);}
+.de-modal-body{padding:24px 28px 18px;overflow-y:auto;flex:1;min-height:120px;}
+.de-modal-foot{display:flex;gap:12px;padding:20px 28px;border-top:1px solid var(--de-border);}
 .de-modal-foot .de-btn{justify-content:center;padding:13px 20px;font-size:15px;}
 .de-modal-foot .de-btn-cancel{background:var(--de-inner);color:var(--de-ink);border-color:#CBD5E1;}
-.de-modal-foot .de-btn-submit{flex:1;background:var(--de-accent);color:#fff;border-color:var(--de-accent);}
+.de-modal-foot .de-btn{border-radius:12px;}
+.de-modal-foot .de-btn-submit{flex:1;background:var(--de-accent);color:#fff;border-color:var(--de-accent);box-shadow:0 8px 20px rgba(217,154,43,.30);}
 .de-modal-foot .de-btn-submit:hover{background:var(--de-accent-dark);border-color:var(--de-accent-dark);}
 .de-loading,.de-error{text-align:center;padding:36px 10px;color:var(--de-muted);font-size:14px;}
 .de-error{color:#d64545;}
@@ -556,7 +562,8 @@ html_head_open('PBI — Evaluate Others');
 .de-legend{display:flex;gap:16px;flex-wrap:wrap;padding:10px 14px;margin-bottom:16px;border-radius:10px;background:var(--de-inner);border:1px solid var(--de-border);font-size:12.5px;}
 .de-legend-item{display:flex;align-items:center;gap:7px;}
 .de-legend-dot{width:22px;height:22px;border-radius:6px;background:var(--de-accent);color:#fff;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;}
-.de-cat-title{display:flex;align-items:center;gap:7px;margin:18px 0 8px;font-size:12px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--de-accent-dark);}
+.de-cat-title{display:flex;align-items:center;gap:9px;margin:18px 0 8px;font-size:12px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--de-accent-dark);}
+.de-cat-title::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--de-accent);flex:0 0 auto;}
 .de-table-wrap{border:1px solid var(--de-border);border-radius:12px;overflow-x:auto;}
 .de-table{width:100%;border-collapse:collapse;}
 .de-table th{background:#F4F8FF;color:var(--de-muted);font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;text-align:center;padding:11px 8px;border-bottom:1px solid var(--de-border);}
@@ -569,15 +576,20 @@ html_head_open('PBI — Evaluate Others');
 .de-qno{color:var(--de-accent-dark);font-weight:700;margin-right:6px;}
 .de-rate{position:relative;display:inline-block;}
 .de-rate input{position:absolute;opacity:0;pointer-events:none;}
-.de-rate label{display:inline-flex;align-items:center;justify-content:center;width:36px;height:32px;border-radius:7px;border:1px solid #CBD5E1;background:var(--de-inner);color:var(--de-muted);font-size:13px;font-weight:600;cursor:pointer;transition:all .12s;}
+.de-rate label{display:inline-flex;align-items:center;justify-content:center;width:40px;height:36px;border-radius:9px;border:1px solid #CBD5E1;background:var(--de-inner);color:var(--de-muted);font-size:13px;font-weight:600;cursor:pointer;transition:all .12s;}
 .de-rate label:hover{border-color:var(--de-accent);color:var(--de-accent-dark);}
-.de-rate input:checked + label{background:var(--de-accent);border-color:var(--de-accent);color:#fff;}
+.de-rate input:checked + label{background:var(--de-accent);border-color:var(--de-accent);color:#fff;box-shadow:0 4px 12px rgba(217,154,43,.35);}
 .de-rate input:focus-visible + label{outline:2px solid var(--de-accent-dark);outline-offset:2px;}
 .de-table tr.unanswered td{background:rgba(240,84,84,.06);}
 .de-table tr.unanswered td:first-child{box-shadow:inset 3px 0 0 #ef4444;}
 .de-table tr.unanswered .de-qno{color:#ef4444;}
 .de-comment{margin-top:20px;}
-.de-comment-label{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--de-muted);margin-bottom:8px;}
+.de-comment.has-error{background:#F8FAFF;border:1px solid #F87171;border-radius:14px;padding:16px 20px 14px;box-shadow:0 0 0 3px rgba(239,68,68,.10);}
+.de-comment.has-error .de-comment-label{margin-bottom:10px;}
+.de-comment.has-error textarea{border-color:#EF4444;}
+.de-comment-error{margin-top:10px;font-size:13px;font-weight:700;color:#B91C1C;}
+.de-comment-error[hidden]{display:none;}
+.de-comment-label{font-size:13px;font-weight:700;color:var(--de-accent-dark);margin-bottom:8px;}
 .de-comment textarea{width:100%;min-height:96px;resize:vertical;background:var(--de-inner);color:var(--de-ink);border:1px solid #CBD5E1;border-radius:10px;padding:12px;font-family:inherit;font-size:13.5px;}
 .de-comment textarea:focus{outline:none;border-color:var(--de-accent);}
 .de-comment-readonly{font-size:13.5px;line-height:1.55;white-space:pre-wrap;}
@@ -586,7 +598,25 @@ html_head_open('PBI — Evaluate Others');
 .de-summary .of{font-size:13px;color:var(--de-muted);}
 .de-score-chip{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:28px;padding:0 8px;border-radius:7px;background:var(--de-accent);color:#fff;font-weight:700;font-size:13px;}
 
+/* "Leave without submitting?" confirmation (Principal amber accent) */
+.de-confirm-overlay{position:fixed;inset:0;z-index:2100;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(10,25,47,.40);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);}
+.de-confirm-overlay.open{display:flex;animation:deFade .15s ease-out;}
+.de-confirm{width:100%;max-width:525px;background:#fff;color:#172033;border-radius:20px;padding:34px 36px 36px;box-shadow:0 24px 70px rgba(0,0,0,.35);font-family:'DM Sans',sans-serif;animation:deRise .2s ease-out;}
+.de-confirm-title{margin:0 0 10px;font-family:'DM Sans',sans-serif;font-size:18px;font-weight:700;line-height:1.3;color:#172033;}
+.de-confirm-text{margin:0 0 26px;font-size:15px;line-height:1.8;color:#64748B;}
+.de-confirm-actions{display:flex;gap:16px;}
+.de-confirm-btn{flex:1;height:54px;border-radius:14px;font-family:'DM Sans',sans-serif;font-size:16px;font-weight:700;cursor:pointer;transition:transform .12s,box-shadow .12s,background .12s,border-color .12s;}
+.de-confirm-btn:focus-visible{outline:2px solid #B45309;outline-offset:3px;}
+.de-confirm-btn.stay{background:#fff;color:#172033;border:1px solid #D9E4EF;}
+.de-confirm-btn.stay:hover{border-color:#D99A2B;background:#FFF7ED;}
+.de-confirm-btn.leave{background:#D99A2B;color:#fff;border:1px solid #D99A2B;box-shadow:0 10px 24px rgba(217,154,43,.38);}
+.de-confirm-btn.leave:hover{background:#B45309;border-color:#B45309;transform:translateY(-1px);}
+@media(max-width:480px){.de-confirm{padding:26px 22px 24px;}.de-confirm-actions{gap:10px;}.de-confirm-btn{height:48px;font-size:15px;}}
+@media(prefers-reduced-motion:reduce){.de-overlay.open,.de-overlay.open .de-modal,.de-confirm-overlay.open,.de-confirm{animation:none;}}
+
 @media(max-width:900px){.de-cats{grid-template-columns:1fr;}.de-grid{grid-template-columns:1fr;}}
+@media(max-width:700px){.de-overlay{padding:10px;}}
+@media(max-width:640px){.de-modal-head{padding:16px 18px;gap:12px;}.de-modal-head img{width:52px;height:52px;}.de-modal-body{padding:18px;}.de-modal-foot{padding:14px 18px;gap:10px;}}
 @media(max-width:768px){.de-table th:not(:first-child){width:46px;}.de-rate label{width:30px;height:28px;}}
 </style>
 
@@ -1000,7 +1030,7 @@ main.main::before {
     <div class="alert error"><i class="fa-solid fa-hourglass-half"></i> Waiting for <?= BASIC_ED_LABEL ?> evaluation period</div>
     <?php endif; ?>
 
-    <div class="de-choose-title"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i><span>Choose category</span></div>
+    <div class="de-choose-title"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i><span>Your Evaluation</span></div>
     <div class="de-cats" role="tablist">
         <?php foreach ($validTabs as $t):
             $list = $rosterByTab[$t];
@@ -1108,6 +1138,17 @@ main.main::before {
     </div>
 </div>
 
+<div class="de-confirm-overlay" id="deConfirm" aria-hidden="true">
+    <div class="de-confirm" role="alertdialog" aria-modal="true" aria-labelledby="deConfirmTitle" aria-describedby="deConfirmText">
+        <h3 class="de-confirm-title" id="deConfirmTitle">Leave without submitting?</h3>
+        <p class="de-confirm-text" id="deConfirmText">You have an unsubmitted evaluation. If you leave now, your answers will be lost.</p>
+        <div class="de-confirm-actions">
+            <button type="button" class="de-confirm-btn stay" id="deStay">Stay</button>
+            <button type="button" class="de-confirm-btn leave" id="deLeave">Leave</button>
+        </div>
+    </div>
+</div>
+
 <script>
 (function(){
     const OPEN_ID   = <?= (int)$openId ?>;
@@ -1117,7 +1158,8 @@ main.main::before {
     const $ = (id) => document.getElementById(id);
     const overlay = $('deOverlay'), form = $('deForm'), body = $('deBody');
     const submitBtn = $('deSubmit'), cancelBtn = $('deCancel');
-    let mode = 'evaluate', loaded = false, requestToken = 0;
+    let mode = 'evaluate', loaded = false, requestToken = 0, submitting = false;
+    const confirmBox = $('deConfirm'), stayBtn = $('deStay'), leaveBtn = $('deLeave');
 
     function esc(s){
         return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1178,15 +1220,51 @@ main.main::before {
     }
     function closeModal(){
         requestToken++;
+        hideConfirm(false);
         overlay.classList.remove('open'); overlay.setAttribute('aria-hidden', 'true');
         document.body.style.overflow = '';
         loaded = false;
     }
+
+    /* ── leave-without-submitting guard ── */
+    function isDirty(){
+        if (mode !== 'evaluate' || !loaded) return false;
+        if (form.querySelector('input[type="radio"]:checked')) return true;
+        const c = form.querySelector('textarea[name="comment"]');
+        return !!(c && c.value.trim() !== '');
+    }
+    function showConfirm(){
+        confirmBox.classList.add('open'); confirmBox.setAttribute('aria-hidden', 'false');
+        stayBtn.focus();
+    }
+    function hideConfirm(restoreFocus){
+        if (!confirmBox.classList.contains('open')) return;
+        confirmBox.classList.remove('open'); confirmBox.setAttribute('aria-hidden', 'true');
+        if (restoreFocus) $('deClose').focus();
+    }
+    function requestClose(){
+        if (isDirty()) showConfirm(); else closeModal();
+    }
+    stayBtn.addEventListener('click', () => hideConfirm(true));
+    leaveBtn.addEventListener('click', closeModal);
+    confirmBox.addEventListener('click', e => { if (e.target === confirmBox) hideConfirm(true); });
+    confirmBox.addEventListener('keydown', e => {
+        if (e.key !== 'Tab') return;
+        e.preventDefault();
+        (document.activeElement === stayBtn ? leaveBtn : stayBtn).focus();
+    });
+    // Browser back / refresh / tab close while answers are unsaved.
+    window.addEventListener('beforeunload', e => {
+        if (!submitting && overlay.classList.contains('open') && isDirty()) { e.preventDefault(); e.returnValue = ''; }
+    });
     document.querySelectorAll('.de-person-action button[data-id]').forEach(b => b.addEventListener('click', () => openModal(b)));
-    $('deClose').addEventListener('click', closeModal);
-    cancelBtn.addEventListener('click', closeModal);
-    overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
-    document.addEventListener('keydown', e => { if (e.key === 'Escape' && overlay.classList.contains('open')) closeModal(); });
+    $('deClose').addEventListener('click', requestClose);
+    cancelBtn.addEventListener('click', requestClose);
+    overlay.addEventListener('click', e => { if (e.target === overlay) requestClose(); });
+    document.addEventListener('keydown', e => {
+        if (e.key !== 'Escape' || !overlay.classList.contains('open')) return;
+        if (confirmBox.classList.contains('open')) hideConfirm(true); else requestClose();
+    });
 
     function showError(msg){
         body.innerHTML = '<div class="de-error"><i class="fa-solid fa-triangle-exclamation"></i><p style="margin-top:10px">' + esc(msg) + '</p></div>';
@@ -1208,13 +1286,13 @@ main.main::before {
             qs.forEach(q => { (grouped[q.category || 'General'] = grouped[q.category || 'General'] || []).push(q); });
 
             let html = '<div class="de-validation" id="deValidation" role="alert" aria-live="assertive" hidden></div>';
-            html += '<div class="de-progress"><span>Please rate every question before submitting.</span><span class="de-progress-status" id="deProgress">0 / ' + qs.length + ' answered</span></div>';
+            html += '<div class="de-progress"><span>Please rate every question and write a comment before submitting.</span><span class="de-progress-status" id="deProgress">0 / ' + qs.length + ' answered</span></div>';
             html += '<div class="de-legend">' + [[5,'Always'],[4,'Often'],[3,'Sometimes'],[2,'Rarely'],[1,'Never']]
                 .map(x => '<div class="de-legend-item"><div class="de-legend-dot">' + x[0] + '</div> ' + x[1] + '</div>').join('') + '</div>';
 
             let n = 1;
             Object.keys(grouped).forEach(cat => {
-                html += '<div class="de-cat-title"><i class="fa-solid fa-layer-group"></i>' + esc(cat) + '</div>';
+                html += '<div class="de-cat-title">' + esc(cat) + '</div>';
                 html += '<div class="de-table-wrap"><table class="de-table"><thead><tr><th>Question</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th></tr></thead><tbody>';
                 grouped[cat].forEach(q => {
                     const num = n++;
@@ -1227,8 +1305,9 @@ main.main::before {
                 });
                 html += '</tbody></table></div>';
             });
-            html += '<div class="de-comment"><div class="de-comment-label"><i class="fa-solid fa-comment-dots"></i> Comments, Suggestions &amp; Areas for Improvement</div>' +
-                    '<textarea name="comment" rows="4" maxlength="2000" placeholder="Share your thoughts, suggestions, or concerns about this person\'s performance...."></textarea></div>';
+            html += '<div class="de-comment"><div class="de-comment-label"><i class="fa-solid fa-comment-dots"></i> Comments, Suggestions &amp; Areas for Improvement <span style="color:#ef4444">*</span></div>' +
+                    '<textarea name="comment" rows="4" maxlength="2000" required aria-required="true" placeholder="Share your thoughts, suggestions, or concerns about this person\'s performance...."></textarea>' +
+                    '<div class="de-comment-error" id="deCommentError" role="alert" hidden>Required — you can\'t submit this evaluation without a comment.</div></div>';
             body.innerHTML = html;
             loaded = true;
         }).catch(err => { if (token === requestToken) showError('Failed to load questions. ' + (err && err.message ? err.message : '')); });
@@ -1239,6 +1318,12 @@ main.main::before {
     }
     function isAnswered(name){
         return !!form.querySelector('input[name="' + CSS.escape(name) + '"]:checked');
+    }
+    function setCommentError(on){
+        const c = form.querySelector('textarea[name="comment"]'); if (!c) return;
+        const wrap = c.closest('.de-comment'); if (wrap) wrap.classList.toggle('has-error', !!on);
+        const msg = $('deCommentError'); if (msg) msg.hidden = !on;
+        c.setAttribute('aria-invalid', on ? 'true' : 'false');
     }
     function updateProgress(){
         const status = $('deProgress'); if (!status) return;
@@ -1254,24 +1339,40 @@ main.main::before {
         const box = $('deValidation');
         if (box && radioNames().every(isAnswered)) { box.hidden = true; box.innerHTML = ''; }
     });
+    form.addEventListener('input', e => {
+        if (!e.target.matches('textarea[name="comment"]')) return;
+        if (e.target.value.trim() !== '') {
+            setCommentError(false);
+            const box = $('deValidation');
+            if (box && !box.hidden && radioNames().every(isAnswered)) { box.hidden = true; box.innerHTML = ''; }
+        }
+    });
     form.addEventListener('submit', e => {
         if (mode !== 'evaluate' || !loaded) { e.preventDefault(); return; }
         const missing = radioNames().filter(n => !isAnswered(n));
-        if (missing.length) {
+        const cEl = form.querySelector('textarea[name="comment"]');
+        const noComment = !!cEl && cEl.value.trim() === '';
+        if (missing.length || noComment) {
             e.preventDefault();
             form.querySelectorAll('tr.unanswered').forEach(r => r.classList.remove('unanswered'));
             const rows = missing.map(n => form.querySelector('input[name="' + CSS.escape(n) + '"]').closest('tr'));
             rows.forEach(r => r.classList.add('unanswered'));
             const nums = rows.map(r => r.dataset.number);
+            if (cEl) setCommentError(noComment);
+            const msgs = [];
+            if (missing.length) msgs.push('<strong>Please answer all questions before submitting.</strong> You have ' + missing.length + ' unanswered question' + (missing.length === 1 ? '' : 's') +
+                (nums.length <= 8 ? ' (' + nums.join(', ') + ')' : '') + '.');
+            if (noComment) msgs.push('<strong>A comment is required.</strong> Please share your comments, suggestions or areas for improvement.');
             const box = $('deValidation');
             if (box) {
                 box.hidden = false;
-                box.innerHTML = '<strong>Please answer all questions before submitting.</strong> You have ' + missing.length + ' unanswered question' + (missing.length === 1 ? '' : 's') +
-                    (nums.length <= 8 ? ' (' + nums.join(', ') + ')' : '') + '.';
-                box.scrollIntoView({behavior: 'smooth', block: 'center'});
+                box.innerHTML = msgs.join('<br>');
+                if (missing.length) box.scrollIntoView({behavior: 'smooth', block: 'center'});
             }
+            if (!missing.length && cEl) { cEl.scrollIntoView({behavior: 'smooth', block: 'center'}); cEl.focus({preventScroll: true}); }
             return;
         }
+        submitting = true;
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Submitting...';
     });
@@ -1288,7 +1389,7 @@ main.main::before {
             (data.answers || []).forEach(a => { (grouped[a.category || 'General'] = grouped[a.category || 'General'] || []).push(a); });
             let n = 1;
             Object.keys(grouped).forEach(cat => {
-                html += '<div class="de-cat-title"><i class="fa-solid fa-layer-group"></i>' + esc(cat) + '</div>';
+                html += '<div class="de-cat-title">' + esc(cat) + '</div>';
                 html += '<div class="de-table-wrap"><table class="de-table"><thead><tr><th>Question</th><th>Your rating</th></tr></thead><tbody>';
                 grouped[cat].forEach(a => {
                     html += '<tr><td><div class="de-qtext"><span class="de-qno">' + (n++) + '.</span>' + esc(a.question) + '</div></td><td><span class="de-score-chip">' + esc(Math.round(a.score)) + '</span></td></tr>';
@@ -1623,6 +1724,26 @@ main.main > .page-header{
     background:#FFFFFF !important;
     border-radius:0 !important;
   }
+}
+
+/* Pull the content up: collapse the empty heading row and trim the top spacing. */
+.principal-feature-header-row,
+.principal-feature-heading{
+  min-height:0 !important;
+  height:0 !important;
+  margin:0 !important;
+  padding:0 !important;
+  overflow:hidden !important;
+}
+.principal-feature-page .principal-feature-shell{
+  padding-top:0 !important;
+  margin-top:0 !important;
+}
+.principal-feature-page .de-choose-title{
+  margin-top:0 !important;
+}
+main.main.principal-feature-page{
+  padding-top:12px !important;
 }
 </style>
 

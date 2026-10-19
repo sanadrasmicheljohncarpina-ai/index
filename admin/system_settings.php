@@ -52,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         $saveMsg = 'Invalid evaluation schedule. The closing time must be after the opening time.';
     }
 
-    $ruleKeys = ['rule_only_during_period','rule_edit_after_submit','rule_one_submission','rule_require_all','rule_auto_lock','rule_countdown','rule_prevent_late'];
+    $ruleKeys = ['rule_countdown'];
     if ($saveMsg === '') {
     $oldSys = $sys;
     $new = [
@@ -695,6 +695,17 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
           <span class="track"><span class="thumb"></span></span>
         </label>
       </div>
+
+      <div class="toggle-row">
+        <div class="toggle-copy">
+          <div class="field-label">Show Countdown</div>
+          <span class="field-help">Warns students before the evaluation closes</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="rule_countdown" <?=!empty($sys['rule_countdown'])?'checked':''?> >
+          <span class="track"><span class="thumb"></span></span>
+        </label>
+      </div>
     </div>
   </div>
 
@@ -728,17 +739,6 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
           </div>
         </label>
       </div>
-    </div>
-  </div>
-
-  <!-- EVALUATION RULES -->
-  <div class="section">
-    <div class="section-head">
-      <span class="section-eyebrow">Evaluation Rules</span>
-      <span class="section-hint">Submission and locking behavior</span>
-    </div>
-    <div class="section-body" id="rulesBody" style="gap:0;">
-      <!-- populated by JS -->
     </div>
   </div>
 
@@ -783,16 +783,6 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
     shs: 'Basic Education'
   };
 
-  const RULES = [
-    { id: 'onlyDuringPeriod', label: 'Allow submissions only during the evaluation period', help: 'Blocks submissions outside the configured window', def: true },
-    { id: 'editAfterSubmit',  label: 'Allow students to edit after submission', help: 'Off by default to protect evaluation integrity', def: false },
-    { id: 'oneSubmission',    label: 'Allow only one submission', help: 'Prevents duplicate or repeated submissions', def: true },
-    { id: 'requireAll',       label: 'Require all required evaluations before submission', help: 'Blocks partial submissions', def: true },
-    { id: 'autoLock',         label: 'Automatically lock an evaluation after submission', help: 'Prevents further changes once submitted', def: true },
-    { id: 'countdown',        label: 'Show a countdown before the evaluation closes', help: 'Warns students the window is ending', def: true },
-    { id: 'preventLate',      label: 'Prevent submissions after the closing time', help: 'Hard stop once the window closes', def: true },
-  ];
-
   const els = {
     structure: document.getElementById('academicStructure'),
     term: document.getElementById('academicTerm'),
@@ -807,7 +797,7 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
     statStatus: document.getElementById('statStatus'),
     statWindow: document.getElementById('statWindow'),
     statMode: document.getElementById('statMode'),
-    rulesBody: document.getElementById('rulesBody'),
+    countdown: document.getElementById('rule_countdown'),
     controlModes: document.getElementById('controlModes'),
     toast: document.getElementById('toast'),
     toastText: document.getElementById('toastText'),
@@ -934,7 +924,7 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
     isDirty = false;
     postDirty(false);
   }
-  [els.structure, els.term, els.opens, els.closes, els.auto, els.maintenance, els.controlModes]
+  [els.structure, els.term, els.opens, els.closes, els.auto, els.countdown, els.maintenance, els.controlModes]
     .forEach(el => el.addEventListener('change', markDirty));
   [els.year, els.opens, els.closes].forEach(el => el.addEventListener('input', markDirty));
   window.isSystemSettingsDirty = () => isDirty;
@@ -946,23 +936,6 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
     e.returnValue = '';
   });
 
-  RULES.forEach(rule => {
-    const row = document.createElement('div');
-    row.className = 'toggle-row';
-    row.innerHTML = `
-      <div class="toggle-copy">
-        <div class="field-label">${rule.label}</div>
-        <span class="field-help">${rule.help}</span>
-      </div>
-      <label class="switch">
-        <input type="checkbox" id="rule_${rule.id}" ${rule.def ? 'checked' : ''}>
-        <span class="track"><span class="thumb"></span></span>
-      </label>
-    `;
-    els.rulesBody.appendChild(row);
-    row.querySelector('input[type="checkbox"]').addEventListener('change', markDirty);
-  });
-
   // ── CHANGE SNAPSHOT (what exactly is unsaved) ──────────────
   const onOff = v => v ? 'On' : 'Off';
   const FIELD_DEFS = [
@@ -972,9 +945,10 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
     { label: 'Evaluation Opens',   get: () => els.opens.value,  fmt: v => v ? formatDateTime(v) : 'Not set' },
     { label: 'Evaluation Closes',  get: () => els.closes.value, fmt: v => v ? formatDateTime(v) : 'Not set' },
     { label: 'Automatic Schedule', get: () => els.auto.checked, fmt: onOff },
+    { label: 'Show Countdown',     get: () => els.countdown.checked, fmt: onOff },
     { label: 'Evaluation Access',  get: () => getControlMode(), fmt: v => MODE_LABEL[v] || v },
     { label: 'Maintenance Mode',   get: () => els.maintenance.checked, fmt: onOff },
-  ].concat(RULES.map(r => ({ label: r.label, get: () => document.getElementById('rule_' + r.id).checked, fmt: onOff })));
+  ];
   let baseline = null;
   function takeBaseline(){ baseline = FIELD_DEFS.map(d => d.get()); }
   function getChanges(){
@@ -1021,7 +995,7 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
     fd.append('control_mode', getControlMode());
     if (els.auto.checked) fd.append('auto_schedule','1');
     if (els.maintenance.checked) fd.append('maintenance','1');
-    RULES.forEach(rule => { if (document.getElementById('rule_'+rule.id).checked) fd.append(rule.id,'1'); });
+    if (els.countdown.checked) fd.append('rule_countdown','1');
     return fetch('system_settings.php',{method:'POST',body:fd,credentials:'same-origin'})
       .then(r=>r.ok?r.text():Promise.reject(new Error('save failed')))
       .then(()=>{ clearDirty(); showToast('System settings saved'); return true; })

@@ -3,6 +3,32 @@
 // Dean page right after includes/dean_sidebar.php so the header follows the
 // Dark/Light toggle no matter which copy of the shared header/theme files is live.
 ?>
+<style id="dean-header-notif-scroll">
+/* Notification bell: keep every notification in the list and let the list scroll
+   inside a fixed-height panel. The heading stays put; only the list moves.
+   Applies in both light and dark mode. */
+body .dean-portal-topbar .dean-header-notif-dropdown{
+  max-height:none !important;
+  overflow:hidden !important;
+}
+body .dean-portal-topbar .dean-header-notif-list{
+  max-height:min(340px, 60vh) !important;
+  overflow-y:auto !important;
+  overflow-x:hidden !important;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:thin;
+  scrollbar-color:#AEBAC8 transparent;
+  padding-right:4px;
+}
+body .dean-portal-topbar .dean-header-notif-list::-webkit-scrollbar{width:8px;}
+body .dean-portal-topbar .dean-header-notif-list::-webkit-scrollbar-track{background:transparent;}
+body .dean-portal-topbar .dean-header-notif-list::-webkit-scrollbar-thumb{background:#AEBAC8;border-radius:8px;}
+body .dean-portal-topbar .dean-header-notif-list::-webkit-scrollbar-thumb:hover{background:#8F9CAB;}
+html.dark-theme body .dean-portal-topbar .dean-header-notif-list{scrollbar-color:#2A4468 transparent;}
+html.dark-theme body .dean-portal-topbar .dean-header-notif-list::-webkit-scrollbar-thumb{background:#2A4468;}
+html.dark-theme body .dean-portal-topbar .dean-header-notif-list::-webkit-scrollbar-thumb:hover{background:#385A86;}
+</style>
 <style id="dean-header-dark">
 html.dark-theme body header.dean-portal-topbar,
 html.dark-theme body .dean-portal-topbar{background:#0F1F3D !important;color:#E0E6F0 !important;border-bottom:1px solid rgba(255,255,255,.08) !important;box-shadow:0 2px 14px rgba(0,0,0,.35) !important;}

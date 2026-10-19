@@ -166,8 +166,8 @@ if ($deanHeaderPeriod === '') $deanHeaderPeriod = 'Current Academic Period';
     top:calc(100% + 12px);
     right:0;
     width:min(360px, calc(100vw - 28px));
-    max-height:390px;
-    overflow:auto;
+    max-height:none;
+    overflow:hidden;
     padding:15px;
     border:1px solid #DCE7F1;
     border-radius:14px;
@@ -197,8 +197,23 @@ if ($deanHeaderPeriod === '') $deanHeaderPeriod = 'Current Academic Period';
 }
 .dean-header-live-dot { width:7px; height:7px; border-radius:50%; background:#10B981; box-shadow:0 0 0 4px rgba(16,185,129,.10); }
 .dean-header-live-dot.stale { background:#94A3B8; box-shadow:none; }
-.dean-header-notif-list { display:flex; flex-direction:column; gap:8px; list-style:none; margin:0; padding:0; }
+.dean-header-notif-list {
+    display:flex; flex-direction:column; gap:8px; list-style:none; margin:0; padding:0 4px 0 0;
+    max-height:min(340px, 60vh);
+    overflow-y:auto; overflow-x:hidden;
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:thin; scrollbar-color:#AEBAC8 transparent;
+}
+.dean-header-notif-list::-webkit-scrollbar { width:8px; }
+.dean-header-notif-list::-webkit-scrollbar-track { background:transparent; }
+.dean-header-notif-list::-webkit-scrollbar-thumb { background:#AEBAC8; border-radius:8px; }
+.dean-header-notif-list::-webkit-scrollbar-thumb:hover { background:#8F9CAB; }
+html.dark-theme .dean-header-notif-list { scrollbar-color:#2A4468 transparent; }
+html.dark-theme .dean-header-notif-list::-webkit-scrollbar-thumb { background:#2A4468; }
+html.dark-theme .dean-header-notif-list::-webkit-scrollbar-thumb:hover { background:#385A86; }
 .dean-header-notif-list li {
+    flex:0 0 auto;   /* never squash items when the list is taller than its panel */
     display:flex;
     align-items:flex-start;
     gap:9px;
@@ -302,7 +317,7 @@ html.dark-theme .dean-portal-topbar .dean-header-period { color:var(--dean-accen
     bell.dataset.initialized = '1';
 
     const STORE_KEY = 'pbiDeanPersistentNotifications';
-    const MAX_ITEMS = 40;
+    const MAX_ITEMS = 1000;   // storage safety ceiling only; the list shows everything and scrolls
     let stored = [];
     try {
         const raw = localStorage.getItem(STORE_KEY);
@@ -355,7 +370,7 @@ html.dark-theme .dean-portal-topbar .dean-header-period { color:var(--dean-accen
     }
     function render() {
         list.innerHTML = '';
-        const visible = stored.slice(0, 12);
+        const visible = stored;   // show every notification; the list scrolls instead of truncating
         if (!visible.length) {
             const empty = document.createElement('li');
             empty.className = 'dean-header-notif-empty';

@@ -66,6 +66,10 @@ if (!function_exists('principal_sidebar_assets')) {
 #pbiPrincipalTopbar .pbi-topbar-mark-read{border:0!important;background:transparent!important;color:#A16207!important;font-family:inherit!important;font-size:11px!important;font-weight:700!important;cursor:pointer!important;white-space:nowrap!important;}
 #pbiPrincipalTopbar .pbi-topbar-list{list-style:none!important;margin:0!important;padding:8px!important;max-height:350px!important;overflow:auto!important;}
 #pbiPrincipalTopbar .pbi-topbar-list li{display:flex!important;align-items:stretch!important;gap:0!important;margin:0 0 5px!important;padding:0!important;border-radius:9px!important;background:#F8FAFC!important;color:#334155!important;font-size:12px!important;line-height:1.45!important;overflow:hidden!important;}
+#pbiPrincipalTopbar .pbi-topbar-list{overscroll-behavior:contain!important;overflow-x:hidden!important;}
+#pbiPrincipalTopbar .pbi-topbar-list{overflow-y:scroll!important;scrollbar-width:thin!important;scrollbar-color:#CBD5E1 transparent!important;}
+#pbiPrincipalTopbar .pbi-topbar-list::-webkit-scrollbar{width:8px!important;}
+#pbiPrincipalTopbar .pbi-topbar-list::-webkit-scrollbar-thumb{background:#CBD5E1!important;border-radius:8px!important;}
 #pbiPrincipalTopbar .pbi-topbar-list li.unseen{background:rgba(217,154,43,.10)!important;}
 #pbiPrincipalTopbar .pbi-topbar-list li a.pbi-topbar-notification-link{display:flex!important;align-items:flex-start!important;gap:10px!important;width:100%!important;min-width:0!important;padding:10px!important;border-radius:9px!important;color:inherit!important;text-decoration:none!important;cursor:pointer!important;}
 #pbiPrincipalTopbar .pbi-topbar-list li a.pbi-topbar-notification-link:hover span{text-decoration:underline!important;text-underline-offset:2px!important;}
@@ -443,8 +447,8 @@ if (!function_exists('render_principal_sidebar')) {
             <?php endif; ?>
         </div>
         <div class="portal-profile-name"><?= htmlspecialchars($fullName) ?></div>
-        <div class="portal-profile-role">PRINCIPAL</div>
-        <div class="portal-profile-scope"><?= htmlspecialchars($scopeLabel) ?></div>
+        <?php $sidebarDesignation = trim((string)($me['designation'] ?? '')); ?>
+        <div class="portal-profile-role"><?= htmlspecialchars($sidebarDesignation !== '' ? $sidebarDesignation : 'Principal') ?></div>
     </div>
 
     <nav class="sidebar-nav portal-sidebar-nav" aria-label="Principal navigation">
@@ -517,13 +521,17 @@ if (!function_exists('render_principal_sidebar')) {
     const endpoint = 'principal_notifications.php';
     const storeKey = 'pbi_principal_notifications_<?= $headerUserId ?>';
     const iconMap = { warn: 'fa-triangle-exclamation', good: 'fa-circle-check', info: 'fa-circle-info' };
+    // Notifications are kept permanently in this browser (read or unread) and the
+    // list simply scrolls. This ceiling only exists to protect localStorage.
+    const MAX_STORED = 5000;
     let stored = [];
+    let lastSig = '';
     try {
         const saved = JSON.parse(localStorage.getItem(storeKey) || '[]');
         if (Array.isArray(saved)) stored = saved.filter(n => n && n.id && n.text);
     } catch (e) {}
 
-    function save(){ try { localStorage.setItem(storeKey, JSON.stringify(stored.slice(0, 40))); } catch (e) {} }
+    function save(){ try { localStorage.setItem(storeKey, JSON.stringify(stored.slice(0, MAX_STORED))); } catch (e) {} }
     // Only same-site Principal pages are followed (e.g. principal_reports.php?...).
     function safeHref(u){
         u = typeof u === 'string' ? u.trim() : '';
@@ -553,8 +561,14 @@ if (!function_exists('render_principal_sidebar')) {
             const prior = byId.get(id);
             byId.set(id, { id, text: String(raw.text), level, icon: /^fa-[a-z0-9-]+$/.test(raw.icon || '') ? raw.icon : '', url: safeHref(raw.url) || (prior && prior.url) || '', created_at: raw.created_at || (prior && prior.created_at) || new Date().toISOString(), read: prior ? !!prior.read : false });
         });
-        stored = Array.from(byId.values()).sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)).slice(0, 40);
+        stored = Array.from(byId.values()).sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)).slice(0, MAX_STORED);
         save();
+        // Skip the rebuild when nothing changed, so the 2-second refresh never resets the scroll
+        // position or swallows a click.
+        const sig = JSON.stringify(stored.map(n => [n.id, n.text, n.read ? 1 : 0, n.url, n.icon, n.level]));
+        if (sig === lastSig) { updateCount(); return; }
+        lastSig = sig;
+        const prevTop = bellList.scrollTop;
         bellList.innerHTML = '';
         if (!stored.length) {
             const empty = document.createElement('li');
@@ -581,6 +595,7 @@ if (!function_exists('render_principal_sidebar')) {
                 bellList.appendChild(li);
             });
         }
+        bellList.scrollTop = prevTop;
         updateCount();
     }
     async function poll(){
@@ -637,7 +652,7 @@ if (!function_exists('render_principal_sidebar')) {
     });
     render(stored);
     poll();
-    setInterval(function(){ if (!document.hidden) poll(); }, 10000);
+    setInterval(function(){ if (!document.hidden) poll(); }, 2000);
     document.addEventListener('visibilitychange', function(){ if (!document.hidden) poll(); });
 })();
 </script>
@@ -666,7 +681,7 @@ if (!function_exists('render_principal_sidebar')) {
 <div id="principalLogoutModal" role="dialog" aria-modal="true" aria-labelledby="plmTitle">
     <div class="plm-box">
         <h3 class="plm-title" id="plmTitle">Log out</h3>
-        <p class="plm-text">Log out of your principal session?</p>
+        <p class="plm-text">Are you sure you want to log out?</p>
         <div class="plm-actions">
             <button type="button" class="plm-cancel" id="plmCancel">Cancel</button>
             <button type="button" class="plm-ok" id="plmOk">Log Out</button>

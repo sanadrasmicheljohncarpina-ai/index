@@ -348,9 +348,9 @@ html[data-theme="dark"] .btn-action.view{background:transparent}
 }
 
 /* Evaluate / View popup (the form itself is ea_evaluate.php?embed=1) */
-.eval-overlay{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(9,17,30,.64);backdrop-filter:blur(4px)}
+.eval-overlay{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;padding:10px 20px;background:rgba(9,17,30,.64);backdrop-filter:blur(4px)}
 .eval-overlay.open{display:flex}
-.eval-frame-wrap{width:100%;max-width:780px;height:92vh}
+.eval-frame-wrap{width:100%;max-width:780px;height:96vh;max-height:calc(100vh - 20px)}
 .eval-frame-wrap iframe{width:100%;height:100%;border:0;background:transparent;border-radius:18px;color-scheme:normal}
 @media(max-width:700px){.eval-overlay{padding:10px}}
 </style>
@@ -363,7 +363,7 @@ html[data-theme="dark"] .btn-action.view{background:transparent}
 <body class="feature-compact">
 <main class="wrap">
   <section class="evaluation-panel">
-    <h1 class="panel-title"><i class="fa-solid fa-clipboard-check"></i> Choose category</h1>
+    <h1 class="panel-title"><i class="fa-solid fa-clipboard-check"></i>Your Evaluation</h1>
 
     <div class="group-grid">
       <?php foreach ($categories as $type => $people):
@@ -482,8 +482,20 @@ html[data-theme="dark"] .btn-action.view{background:transparent}
     } catch (err) {}
     open(url);
   });
-  overlay.addEventListener('click', function(ev){ if (ev.target === overlay) window.closeEvalModal(); });
-  document.addEventListener('keydown', function(ev){ if (ev.key === 'Escape' && overlay.classList.contains('open')) window.closeEvalModal(); });
+  /* Ask before discarding a half-filled evaluation (form exposes window.isEvalDirty) */
+  function evalIsDirty(){
+    try { return !!(frame.contentWindow && frame.contentWindow.isEvalDirty && frame.contentWindow.isEvalDirty()); }
+    catch (err) { return false; }
+  }
+  window.requestCloseEvalModal = function(){
+    // use the form's own styled dialog (askEvalLeave resolves true when it's safe to leave)
+    var w = frame.contentWindow, ask = null;
+    try { ask = (w && typeof w.askEvalLeave === 'function') ? w.askEvalLeave() : null; } catch (err) {}
+    if (!ask) { window.closeEvalModal(); return; }
+    ask.then(function(ok){ if (ok) window.closeEvalModal(); });
+  };
+  overlay.addEventListener('click', function(ev){ if (ev.target === overlay) window.requestCloseEvalModal(); });
+  document.addEventListener('keydown', function(ev){ if (ev.key === 'Escape' && overlay.classList.contains('open')) window.requestCloseEvalModal(); });
 })();
 </script>
 </body>

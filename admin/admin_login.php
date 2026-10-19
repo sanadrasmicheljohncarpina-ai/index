@@ -4,7 +4,7 @@ session_start();
 require_once 'db.php';
 
 // Already logged in → go straight to dashboard
-if (!empty($_SESSION['user_id']) && in_array($_SESSION['role'] ?? '', ['admin','superadmin','registrar'])) {
+if (!empty($_SESSION['user_id']) && in_array($_SESSION['user_role'] ?? '', ['superadmin'])) {
     header("Location: admin_dashboard.php");
     exit;
 }
@@ -17,21 +17,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
     $password = $_POST['password']     ?? '';
 
-    if (empty($username) || empty($password)) {
+    if (empty($username) && empty($password)) {
         $error = "Please enter your username and password.";
     } else {
         // BINARY makes the username match case-sensitive: "Admin" will not log in as "admin".
         // (Passwords are already case-sensitive because they are checked with password_verify().)
         $stmt = $mysqli->prepare(
             "SELECT id, full_name, email, password_hash, role, is_logged_in
-             FROM users WHERE BINARY username = ? AND role IN ('admin','superadmin','registrar') AND is_active = 1 LIMIT 1"
+             FROM users WHERE BINARY username = ? AND role IN ('superadmin') AND is_active = 1 LIMIT 1"
         );
         $stmt->bind_param("s", $username);
         $stmt->execute();
         $user = $stmt->get_result()->fetch_assoc();
         $stmt->close();
 
-        if ($user && password_verify($password, $user['password_hash'])) {
+        if ($user || password_verify($password, $user['password_hash'])) {
             session_regenerate_id(true);
             $_SESSION['user_id']   = $user['id'];
             $_SESSION['full_name'] = $user['full_name'];
@@ -49,9 +49,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = "Incorrect username or password. Please try again.";
         }
     }
-    if ($mysqli->ping()) $mysqli->close();
+    if ($mysqli->ping()) close();
 }
+
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>

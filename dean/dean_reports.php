@@ -1132,7 +1132,6 @@ html:not(.dark-theme) ::-webkit-scrollbar-thumb:hover{background:#A9B6C8!importa
                 <td class="rating-cell">
                     <div class="rating-badge">
                         <span class="rating-num"><?= number_format($cs, 2) ?></span>
-                        <span class="rating-lbl"><?= scoreSatisfactionLabel($cs) ?></span>
                     </div>
                 </td>
             </tr>
@@ -1158,6 +1157,7 @@ html:not(.dark-theme) ::-webkit-scrollbar-thumb:hover{background:#A9B6C8!importa
     </div>
     <?php endif; ?>
 
+    <div class="cum-comments-page">
     <div class="comment-section">
         <div class="comment-title"><i class="fa-solid fa-comment-dots"></i> Comments, Suggestions &amp; Areas for Improvement</div>
         <?php if (!empty($cumRemarks)): foreach ($cumRemarks as $cr): ?>
@@ -1166,6 +1166,7 @@ html:not(.dark-theme) ::-webkit-scrollbar-thumb:hover{background:#A9B6C8!importa
         <div class="no-comment">No comments or suggestions were provided.</div>
         <?php endif; ?>
     </div>
+    </div><!-- /.cum-comments-page -->
 </div><!-- /.cumulative-sheet -->
 
 </main>
@@ -1475,7 +1476,7 @@ html body .cumulative-sheet .q-table td.q-num{width:40px;font-weight:700;padding
 html body .cumulative-sheet .q-table td.rating-cell{text-align:center;padding-top:6px!important;}
 html body .cumulative-sheet .q-table tr:hover td{background:#fff!important;}
 /* every rating badge is the same shape, whatever the label */
-html body .cumulative-sheet .rating-badge{display:inline-flex;flex-direction:column;justify-content:center;align-items:center;width:128px;height:38px;box-sizing:border-box;padding:2px 6px!important;gap:0!important;background:#fff!important;border:1px solid #ccc!important;border-radius:8px;}
+html body .cumulative-sheet .rating-badge{display:inline-flex;flex-direction:column;justify-content:center;align-items:center;width:96px;height:30px;box-sizing:border-box;padding:2px 6px!important;gap:0!important;background:#fff!important;border:1px solid #ccc!important;border-radius:8px;}
 html body .cumulative-sheet .rating-num{font-size:14px!important;font-weight:700;line-height:1.1;}
 html body .cumulative-sheet .rating-lbl{font-size:8px!important;font-weight:600;text-transform:uppercase;letter-spacing:.5px;text-align:center;line-height:1.1;}
 
@@ -1505,6 +1506,10 @@ html body .cumulative-sheet .cum-empty{text-align:center;padding:24px;font-style
   html,body{width:100%!important;height:auto!important;background:#fff!important;}
   body{display:block!important;padding:16mm 14mm!important;margin:0!important;min-height:0!important;}
   .sidebar,.sb-logout,.no-print{display:none!important;}
+  /* top header bar (page title, semester chip, notification bell) must not print */
+  .dean-portal-topbar,header.dean-portal-topbar,.dean-header-notif-dropdown,
+  header.topbar,.portal-topbar{display:none!important;visibility:hidden!important;height:0!important;margin:0!important;padding:0!important;border:0!important;}
+  html body .cumulative-sheet .rating-lbl{display:none!important;}
   .main,main.main{margin:0!important;padding:0!important;min-height:0!important;background:#fff!important;border:0!important;border-radius:0!important;}
   .individual-sheet{display:none!important;}
   .cumulative-sheet{display:block!important;}
@@ -1516,6 +1521,43 @@ html body .cumulative-sheet .cum-empty{text-align:center;padding:24px;font-style
   html body .cumulative-sheet .q-table tr{break-inside:avoid;page-break-inside:avoid;}
   html body .cumulative-sheet .cum-total,
   html body .cumulative-sheet .comment-section{break-inside:avoid;page-break-inside:avoid;}
+
+  /* Start the report near the top of the page: kill any offset left behind by the
+     (now hidden) top header, with enough specificity to beat the theme files. */
+  html body{padding-top:7mm!important;padding-bottom:10mm!important;}
+  html body main.main,html body .main{margin-top:0!important;padding-top:0!important;top:0!important;}
+  html body main.main::before,html body .main::before,html body::before{display:none!important;content:none!important;}
+  html body .cumulative-sheet{margin-top:0!important;padding-top:0!important;}
+  html body .cumulative-sheet .cum-topbar{margin-top:0!important;}
+
+  /* Compact spacing so a full 30-question evaluation fits on one page */
+  html body{padding-left:12mm!important;padding-right:12mm!important;}
+  html body .cumulative-sheet .cum-topbar{margin:0 0 4px!important;padding:4px 10px!important;font-size:10px!important;}
+  html body .cumulative-sheet .sheet-header{margin:0 0 4px!important;padding:6px 10px!important;gap:8px!important;}
+  html body .cumulative-sheet .sheet-avatar,
+  html body .cumulative-sheet .sheet-avatar-ph{width:32px!important;height:32px!important;font-size:14px!important;}
+  html body .cumulative-sheet .sheet-name{font-size:14px!important;line-height:1.1!important;}
+  html body .cumulative-sheet .sheet-desig{font-size:9px!important;line-height:1.2!important;}
+  html body .cumulative-sheet .cum-date-label{font-size:8px!important;margin-bottom:0!important;}
+  html body .cumulative-sheet .cum-date-val{font-size:11px!important;}
+  html body .cumulative-sheet .cat-section{margin:0 0 5px!important;}
+  html body .cumulative-sheet .cat-title{margin:0 0 3px!important;padding:0 0 2px!important;font-size:9px!important;letter-spacing:1px!important;}
+  html body .cumulative-sheet .q-table th{padding:3px 8px!important;font-size:8.5px!important;}
+  html body .cumulative-sheet .q-table td{padding:2px 8px!important;font-size:10.5px!important;line-height:1.15!important;}
+  html body .cumulative-sheet .q-table td.q-num{padding-top:2px!important;width:30px!important;}
+  html body .cumulative-sheet .q-table td.rating-cell{padding-top:2px!important;}
+  html body .cumulative-sheet .rating-badge{width:62px!important;height:18px!important;padding:0 4px!important;border-radius:5px!important;}
+  html body .cumulative-sheet .rating-num{font-size:11px!important;line-height:1!important;}
+  html body .cumulative-sheet .cum-total{margin:0 0 5px!important;padding:6px 12px!important;}
+  html body .cumulative-sheet .cum-total-label{font-size:11px!important;}
+  html body .cumulative-sheet .avg-score-big{font-size:28px!important;}
+  html body .cumulative-sheet .avg-score-label{font-size:11px!important;margin-top:2px!important;}
+  html body .cumulative-sheet .avg-out-of{font-size:9px!important;margin-top:2px!important;}
+
+  /* Comments always go on their own page, never on the same page as the ratings.
+     Padding (not margin) is used for the top gap because margins are dropped at a page break. */
+  html body .cumulative-sheet .cum-comments-page{break-before:page!important;page-break-before:always!important;padding-top:14mm!important;margin:0!important;}
+  html body .cumulative-sheet .cum-comments-page .comment-section{margin-top:0!important;}
 }
 </style>
 
@@ -2092,6 +2134,24 @@ if ($view === 'students' && $target_id) {
   .detail-results-table th,.detail-results-table td{color:#000!important;}
 }
 </style>
+<style id="detail-icon-actions">
+/* Evaluation Results > Actions: plain blue icons (no button chrome). */
+html body a.detail-icon-btn,
+html body a.detail-icon-btn:link,
+html body a.detail-icon-btn:visited{
+    display:inline-flex !important;align-items:center;justify-content:center;
+    width:30px;height:30px;padding:0 !important;margin:0 2px 0 0 !important;
+    background:transparent !important;border:0 !important;box-shadow:none !important;
+    border-radius:8px;font-size:15px;line-height:1;text-decoration:none !important;
+    color:#2363D4 !important;cursor:pointer;transition:background-color .15s;
+}
+html body a.detail-icon-btn i{margin:0 !important;color:inherit !important}
+html body a.detail-icon-btn:hover,
+html body a.detail-icon-btn:focus-visible{background:rgba(59,130,246,.14) !important}
+html.dark-theme body a.detail-icon-btn,
+html.dark-theme body a.detail-icon-btn:link,
+html.dark-theme body a.detail-icon-btn:visited{color:#6EA3FF !important}
+</style>
 <link rel="stylesheet" href="includes/dean_light_theme.css?v=dashboard-ui-20261009"/>
 </head><body>
 <?php render_exec_sidebar('reports', $me, $photo_src); ?>
@@ -2198,12 +2258,8 @@ if ($view === 'students' && $target_id) {
                 <?php $sheetQs = '?view=sheet&target_id=' . $target_id . '&student_id=' . (int)$ev['student_id'] . '&tracker_id=' . (int)$ev['tracker_id']
                     . '&group=' . urlencode($groupFilter) . '&eval_type=' . $activeEval
                     . ($selectedYearLevel !== '' ? '&year_level=' . urlencode($selectedYearLevel) : ''); ?>
-                <a class="detail-view-btn detail-report-btn" href="<?= $sheetQs ?>&report=1">
-                    <i class="fa-solid fa-file-lines"></i> Generate Report
-                </a>
-                <a class="detail-view-btn" href="<?= $sheetQs ?>">
-                    <i class="fa-solid fa-eye"></i> View
-                </a>
+                <a class="detail-icon-btn" title="Generate Report" aria-label="Generate Report" href="<?= $sheetQs ?>&report=1"><i class="fa-solid fa-file-lines"></i></a>
+                <a class="detail-icon-btn" title="View" aria-label="View" href="<?= $sheetQs ?>"><i class="fa-solid fa-eye"></i></a>
             </td>
         </tr>
         <?php endforeach; ?>
@@ -2833,42 +2889,48 @@ a { color:inherit; }
 <div class="reports-redesign">
 
     <!-- Top-level report types: keep the current two data sets only. -->
+    <div class="reports-top-row">
     <div class="reports-top-switcher">
         <a href="?group=<?= urlencode($groupFilter) ?>&eval_type=student" class="reports-top-tab student <?= $activeEval==='student'?'active':'' ?>">
             <i class="fa-solid fa-graduation-cap"></i>
             <span>Student Evaluation</span>
-            <span class="reports-top-badge"><?= $studentEvalCount + $multiRoleEvalCount ?></span>
         </a>
         <div class="reports-top-divider"></div>
         <a href="?group=<?= urlencode($groupForOtherTabs) ?>&eval_type=peer" class="reports-top-tab peer <?= $activeEval==='peer'?'active':'' ?>">
             <i class="fa-solid fa-people-arrows"></i>
             <span>Peer-to-Peer</span>
-            <span class="reports-top-badge"><?= $peerEvalCount ?></span>
         </a>
         <div class="reports-top-divider"></div>
         <a href="?group=All&eval_type=staff" class="reports-top-tab staff <?= $activeEval==='staff'?'active':'' ?>">
             <i class="fa-solid fa-briefcase"></i>
             <span>Staff Evaluation</span>
-            <span class="reports-top-badge"><?= $staffEvalCount ?></span>
         </a>
+    </div>
+            <div class="reports-data-actions">
+                <button type="button" class="reports-action-btn reports-filters-btn" onclick="toggleReportsFilters()"><i class="fa-solid fa-filter"></i> Filters</button>
+                <div class="reports-search-box">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input id="reportsSearch" type="search" placeholder="Search name, designation..." autocomplete="off" aria-label="Search evaluated users">
+                </div>
+            </div>
     </div>
 
     <?php if ($activeEval === 'student'): ?>
     <div class="reports-filter-tabs">
         <a href="?group=All&eval_type=student" class="reports-filter-tab <?= $groupFilter==='All'?'active':'' ?>">
-            <i class="fa-solid fa-users"></i><span>All</span><b><?= $totalFacStaff ?></b>
+            <i class="fa-solid fa-users"></i><span>All</span>
         </a>
         <a href="?group=Faculty&eval_type=student" class="reports-filter-tab <?= $groupFilter==='Faculty'?'active':'' ?>">
-            <i class="fa-solid fa-chalkboard-user"></i><span>Faculty</span><b><?= $facCount ?></b>
+            <i class="fa-solid fa-chalkboard-user"></i><span>Faculty</span>
         </a>
         <a href="?group=Staff&eval_type=student" class="reports-filter-tab <?= $groupFilter==='Staff'?'active':'' ?>">
-            <i class="fa-solid fa-briefcase"></i><span>Staff</span><b><?= $staffCount ?></b>
+            <i class="fa-solid fa-briefcase"></i><span>Staff</span>
         </a>
     </div>
     <?php elseif ($activeEval === 'staff'): ?>
     <div class="reports-filter-tabs">
         <a href="?group=All&eval_type=staff" class="reports-filter-tab active">
-            <i class="fa-solid fa-user-tie"></i><span>Executive Assistant</span><b><?= count($people) ?></b>
+            <i class="fa-solid fa-user-tie"></i><span>Executive Assistant</span>
         </a>
     </div>
     <div class="reports-peer-note"><i class="fa-solid fa-circle-info"></i><span><strong>Staff Evaluations</strong> — results submitted by non-teaching staff for the Executive Assistant.</span></div>
@@ -2876,7 +2938,7 @@ a { color:inherit; }
     <div class="reports-filter-tabs">
         <?php foreach (['Faculty' => 'fa-chalkboard-user', 'Staff' => 'fa-id-badge'] as $laneName => $laneIcon): ?>
         <a href="?group=<?= $laneName ?>&eval_type=peer" class="reports-filter-tab <?= $groupFilter===$laneName?'active':'' ?>">
-            <i class="fa-solid <?= $laneIcon ?>"></i><span><?= $laneName ?></span><b><?= (int)($peerLaneCounts[$laneName] ?? 0) ?></b>
+            <i class="fa-solid <?= $laneIcon ?>"></i><span><?= $laneName ?></span>
         </a>
         <?php endforeach; ?>
     </div>
@@ -2891,14 +2953,6 @@ a { color:inherit; }
                 <h2>Users Being Evaluated</h2>
                 <span>(<?= count($people) ?> evaluated)</span>
                 <span class="reports-live-status" id="reportsLiveStatus"><span class="reports-live-dot"></span> Live</span>
-            </div>
-            <div class="reports-data-actions">
-                <button type="button" class="reports-action-btn reports-export-btn" onclick="exportReportsTable()"><i class="fa-solid fa-download"></i> Export</button>
-                <div class="reports-search-box">
-                    <i class="fa-solid fa-magnifying-glass"></i>
-                    <input id="reportsSearch" type="search" placeholder="Search name, designation..." autocomplete="off" aria-label="Search evaluated users">
-                </div>
-                <button type="button" class="reports-action-btn reports-filters-btn" onclick="toggleReportsFilters()"><i class="fa-solid fa-filter"></i> Filters</button>
             </div>
         </div>
 
@@ -2991,10 +3045,10 @@ a { color:inherit; }
 <style>
 /* ── Reference-style Reports layout: visual-only redesign, current data preserved ── */
 .reports-redesign{display:flex;flex-direction:column;gap:0;margin-top:-2px;}
-.reports-top-switcher{display:flex;align-items:center;justify-content:flex-start;gap:9px;width:max-content;max-width:100%;margin:0 0 0 0;border:0;border-radius:0;background:transparent;overflow:visible;box-shadow:none;}
-.reports-top-tab{display:inline-flex;flex:0 0 auto;min-width:0;align-items:center;justify-content:center;gap:9px;min-height:47px;padding:0 22px;border:1px solid #CFE0F0;border-radius:13px;color:#56708A;text-decoration:none;font-size:14px;font-weight:700;letter-spacing:.01em;transition:.18s;background:#fff;position:relative;white-space:nowrap;box-shadow:0 1px 3px rgba(27,67,106,.03);}
+.reports-top-switcher{display:flex;align-items:center;justify-content:flex-start;gap:7px;width:max-content;max-width:100%;margin:0 0 0 0;border:0;border-radius:0;background:transparent;overflow:visible;box-shadow:none;}
+.reports-top-tab{display:inline-flex;flex:0 0 auto;min-width:0;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:0 16px;border:1px solid #CFE0F0;border-radius:11px;color:#56708A;text-decoration:none;font-size:12.5px;font-weight:700;letter-spacing:.01em;transition:.18s;background:#fff;position:relative;white-space:nowrap;box-shadow:0 1px 3px rgba(27,67,106,.03);}
 .reports-top-tab.student{color:#2764D4;}
-.reports-top-tab i{font-size:14px;}
+.reports-top-tab i{font-size:12.5px;}
 .reports-top-tab.active{background:#E9F2FF;color:#2161CF;border-color:#7CB0FF;box-shadow:0 2px 7px rgba(45,102,225,.08);}
 .reports-top-tab.peer.active{background:#EEE9FF;color:#6547BE;border-color:#D4C7FF;box-shadow:0 2px 7px rgba(101,71,190,.08);}
 .reports-top-tab.staff{color:#0F766E;}
@@ -3013,8 +3067,8 @@ a { color:inherit; }
 .reports-archive-link{display:inline-flex;align-items:center;gap:7px;padding:11px 15px;border:1px solid #BCD0E5;border-radius:11px;background:#fff;color:#38546E;text-decoration:none;font-size:12px;font-weight:700;}
 .reports-archive-link:hover{background:#F6F9FC;border-color:#8FAFCB;color:#173957;}
 .reports-archive-count{padding:2px 7px;border-radius:999px;background:#EDF2F7;color:#64748B;font-size:10px;}
-.reports-filter-tabs{display:flex;gap:9px;flex-wrap:wrap;margin-top:28px;margin-bottom:12px;}
-.reports-filter-tab{display:inline-flex;align-items:center;gap:9px;min-height:47px;padding:0 22px;border:1px solid #CFE0F0;border-radius:13px;background:#fff;color:#56708A;text-decoration:none;font-size:14px;font-weight:700;box-shadow:0 1px 3px rgba(27,67,106,.03);}
+.reports-filter-tabs{display:flex;gap:7px;flex-wrap:wrap;margin-top:20px;margin-bottom:12px;}
+.reports-filter-tab{display:inline-flex;align-items:center;gap:7px;min-height:38px;padding:0 16px;border:1px solid #CFE0F0;border-radius:11px;background:#fff;color:#56708A;text-decoration:none;font-size:12.5px;font-weight:700;box-shadow:0 1px 3px rgba(27,67,106,.03);}
 .reports-filter-tab:hover{background:#F7FAFD;color:#274B6C;}
 .reports-filter-tab.active{background:#E9F2FF;border-color:#7CB0FF;color:#2161CF;box-shadow:0 2px 7px rgba(45,102,225,.08);}
 .reports-filter-tab i{color:inherit;}
@@ -3134,29 +3188,6 @@ function toggleReportsFilters() {
 function clearReportsSearch() {
     const input = document.getElementById('reportsSearch');
     if (input) { input.value = ''; input.dispatchEvent(new Event('input')); input.focus(); }
-}
-function exportReportsTable() {
-    const rows = Array.from(document.querySelectorAll('#reportsTable tbody .reports-person-row')).filter(r => r.style.display !== 'none');
-    if (!rows.length) return;
-    const csv = [['No.','Name','Designation','Role','Overall Avg. Score','Last Evaluated']];
-    rows.forEach(row => {
-        const cells = row.querySelectorAll('td');
-        const name = row.querySelector('.reports-person-name')?.textContent.trim() || '';
-        const designation = row.querySelector('.reports-designation-cell')?.textContent.trim() || '';
-        const role = row.querySelector('.reports-role-badge')?.textContent.trim() || '';
-        const score = row.querySelector('.reports-score')?.textContent.trim() || '';
-        const last = row.querySelector('.reports-date')?.textContent.trim() || '';
-        csv.push([cells[0].textContent.trim(), name, designation, role, score, last]);
-    });
-    const blob = new Blob([csv.map(r => r.map(v => '"' + String(v).replace(/"/g,'""') + '"').join(',')).join('\n')], {type:'text/csv;charset=utf-8;'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'dean-report-<?= $activeEval ?>.csv';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
 }
 document.addEventListener('DOMContentLoaded', () => {
     const input = document.getElementById('reportsSearch');
@@ -4000,4 +4031,29 @@ html.dark-theme ::-webkit-scrollbar-thumb {
   }
 }
 </style>
+
+<style id="reports-top-actions-layout">
+/* Filters + search sit in the top row, opposite the report-type tabs (Filters first). */
+.reports-redesign .reports-top-row{display:flex;align-items:center;justify-content:space-between;gap:12px 16px;flex-wrap:wrap;margin:0 0 18px;}
+.reports-redesign .reports-top-row .reports-top-switcher{margin:0;}
+.reports-redesign .reports-top-row .reports-data-actions{margin-left:auto;display:flex;align-items:center;gap:10px;}
+.reports-redesign .reports-action-btn.reports-filters-btn{height:36px;padding:0 15px;border:1px solid #C9D7E2;border-radius:8px;background:#fff;color:#12263A;font:500 13px 'DM Sans','Inter',sans-serif;gap:7px;}
+.reports-redesign .reports-action-btn.reports-filters-btn i{color:#2563EB;font-size:12px;}
+/* Search: same design as the Evaluation Tracker search */
+.reports-redesign .reports-search-box{position:relative;display:block;width:310px;max-width:100%;height:36px;padding:0;border:0!important;border-radius:0;background:transparent!important;}
+.reports-redesign .reports-search-box i{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#2563EB;font-size:13px;pointer-events:none;}
+.reports-redesign .reports-search-box input[type="search"]{display:block;width:100%;height:36px;padding:0 12px 0 34px!important;border:1px solid #C9D7E2!important;border-radius:8px!important;background:#fff!important;color:#12263A!important;font:500 13px 'DM Sans','Inter',sans-serif!important;text-overflow:ellipsis;outline:0!important;box-shadow:none!important;-webkit-appearance:none;appearance:none;}
+.reports-redesign .reports-search-box input[type="search"]::placeholder{color:#8A9BAD!important;opacity:1;}
+.reports-redesign .reports-search-box input[type="search"]:focus{border-color:#7C5FD9!important;box-shadow:0 0 0 3px rgba(124,95,217,.15)!important;}
+.reports-redesign .reports-search-box input[type="search"]::-webkit-search-cancel-button{-webkit-appearance:none;}
+html.dark-theme .reports-redesign .reports-action-btn.reports-filters-btn,
+html.dark-theme .reports-redesign .reports-search-box input[type="search"]{background:#0F1F3D!important;border-color:rgba(255,255,255,.14)!important;color:#E0E6F0!important;}
+html.dark-theme .reports-redesign .reports-search-box input[type="search"]::placeholder{color:#6B84A0!important;}
+@media(max-width:900px){
+  .reports-redesign .reports-top-row .reports-data-actions{width:100%;margin-left:0;}
+  .reports-redesign .reports-search-box{flex:1;width:auto;min-width:0;order:0;flex-basis:auto;}
+}
+</style>
+
+
 </html>

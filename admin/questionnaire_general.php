@@ -49,12 +49,16 @@ function qxm_selected_user_scope(string $scope, int $userId): ?string {
         : ($scope === 'ea' ? 'EA' : null));
 }
 
+function qxm_cat_label($c): string {
+    $c = trim((string)$c);
+    return strcasecmp($c, 'General') === 0 ? '' : $c; // legacy "General" shows as uncategorized
+}
 function qxm_category_options(array $cats, ?string $selected = null): void {
     $names = [];
     foreach ($cats as $c) $names[(string)$c['category_name']] = true;
     $names = array_keys($names);
-    if (!in_array('General', $names, true)) $names[] = 'General'; // fallback only if no General category exists
     foreach ($names as $n) {
+        if (strcasecmp($n, 'General') === 0) continue; // General category is no longer offered
         echo '<option value="' . qxm_e($n) . '"' . ($selected !== null && $n === $selected ? ' selected' : '') . '>' . qxm_e($n) . '</option>';
     }
 }
@@ -65,6 +69,7 @@ function qxm_render_filterbar(string $targetId, array $cats, string $scope, int 
     echo '<button type="button" class="filter-pill active" data-filter="all">All</button>';
     foreach ($cats as $cat) {
         $name = (string)$cat['category_name'];
+        if (strcasecmp($name, 'General') === 0) continue; // hide General from the filter bar
         $id = (int)$cat['id'];
         echo '<span class="pill-group" data-cat-id="' . $id . '" data-cat-name="' . qxm_e($name) . '">';
         echo '<button type="button" class="filter-pill" data-filter="' . qxm_e($name) . '">' . qxm_e($name) . '</button>';
@@ -135,20 +140,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->bind_param('i', $id); $stmt->execute(); $old = $stmt->get_result()->fetch_assoc(); $stmt->close();
             if ($old) {
                 $oldName = $old['category_name'];
-                $stmt = $mysqli->prepare("UPDATE evaluation_questions SET category='General' WHERE target_type='Faculty' AND eval_type='general' AND evaluator_role='shared' AND category=?");
+                $stmt = $mysqli->prepare("UPDATE evaluation_questions SET category='' WHERE target_type='Faculty' AND eval_type='general' AND evaluator_role='shared' AND category=?");
                 $stmt->bind_param('s', $oldName); $stmt->execute(); $stmt->close();
                 $stmt = $mysqli->prepare("DELETE FROM question_categories WHERE id=?");
                 $stmt->bind_param('i', $id); $stmt->execute(); $stmt->close();
-                qn_ensure_shared_category($mysqli, 'Faculty', 'General', 0);
             }
-            qxm_redirect($scope, null, 'Category removed; questions moved to General.');
+            qxm_redirect($scope, null, 'Category removed; its questions are now uncategorized.');
         }
     }
 
     if ($action === 'add_question') {
-        $category = trim($_POST['category'] ?? 'General') ?: 'General';
+        $category = trim($_POST['category'] ?? '');
         $text = trim($_POST['question_text'] ?? '');
         if ($text === '') qxm_redirect($scope, $selectedUser, 'Question text is required.');
+        if ($category === '' || strcasecmp($category, 'General') === 0) qxm_redirect($scope, $selectedUser, 'Please select a category.');
 
         if ($scope === 'faculty') {
             qn_ensure_shared_question($mysqli, 'Faculty', $category, $text, 0);
@@ -169,9 +174,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'update_question') {
         $qid = (int)($_POST['question_id'] ?? 0);
-        $category = trim($_POST['category'] ?? 'General') ?: 'General';
+        $category = trim($_POST['category'] ?? '');
         $text = trim($_POST['question_text'] ?? '');
         if ($qid <= 0 || $text === '') qxm_redirect($scope, $selectedUser, 'Invalid question update.');
+        if ($category === '' || strcasecmp($category, 'General') === 0) qxm_redirect($scope, $selectedUser, 'Please select a category.');
 
         if ($scope === 'faculty') {
             $stmt = $mysqli->prepare("UPDATE evaluation_questions SET question_text=?, category=? WHERE id=? AND target_type='Faculty' AND eval_type='general' AND evaluator_role='shared'");
@@ -254,14 +260,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->bind_param('iis', $catId, $selectedUser, $targetType);
             $stmt->execute(); $old = $stmt->get_result()->fetch_assoc(); $stmt->close();
             if ($old) {
-                $stmt = $mysqli->prepare("UPDATE user_questions SET category='General' WHERE user_id=? AND target_type=? AND eval_type='general' AND category=?");
+                $stmt = $mysqli->prepare("UPDATE user_questions SET category='' WHERE user_id=? AND target_type=? AND eval_type='general' AND category=?");
                 $stmt->bind_param('iss', $selectedUser, $targetType, $old['category_name']); $stmt->execute(); $stmt->close();
                 $stmt = $mysqli->prepare("DELETE FROM user_question_categories WHERE id=?");
                 $stmt->bind_param('i', $catId); $stmt->execute(); $stmt->close();
-                qn_ensure_user_category($mysqli, $selectedUser, $targetType, 'General', 0);
             }
         }
-        qxm_redirect($scope, $selectedUser, 'Category removed; questions moved to General.');
+        qxm_redirect($scope, $selectedUser, 'Category removed; its questions are now uncategorized.');
     }
 
     if ($action === 'add_user_category') {
@@ -390,7 +395,7 @@ $selectedPersonName = $selectedPerson['full_name'] ?? '';
 :root{--bg:#f8fafc;--card:#fff;--line:#e2e8f0;--text:#0f172a;--muted:#64748b;--accent:#d99a2b;--blue:#2563eb;--green:#059669;--danger:#dc2626;--navy:#0a192f}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif}.wrap{padding:24px 28px 40px;max-width:1400px;margin:auto}.landing-center{min-height:100vh;display:flex;align-items:center;justify-content:center}.landing-center .wrap{width:100%;padding-top:24px;padding-bottom:24px}
 .header{display:flex;justify-content:space-between;gap:16px;align-items:flex-end;margin-bottom:18px}.title h1{margin:0;font-size:28px}.title p{margin:6px 0 0;color:var(--muted);font-size:13px}
-.tabs{display:flex;gap:6px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);padding:6px;border-radius:12px;box-shadow:0 4px 16px rgba(15,23,42,.05);margin-bottom:18px}.back-link{display:inline-flex;align-items:center;gap:7px;padding:9px 12px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;color:#334155;text-decoration:none;font-size:12px;font-weight:800}.back-link:hover{background:#f8fafc}.tab{display:flex;align-items:center;gap:9px;padding:10px 15px;border-radius:9px;color:var(--muted);text-decoration:none;font-weight:700;font-size:13px}.tab.active{background:var(--navy);color:#fff}.tab .count{font-size:11px;opacity:.8}.grid{display:grid;grid-template-columns:340px 1fr;gap:18px}.card{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 4px 16px rgba(15,23,42,.05)}.card h2{font-size:16px;margin:0}.cardhead{padding:16px 18px;border-bottom:1px solid var(--line)}.cardbody{padding:16px 18px}.person{display:flex;justify-content:space-between;gap:10px;padding:11px 10px;border-radius:10px;text-decoration:none;color:var(--text);border:1px solid transparent;margin-bottom:6px}.person:hover,.person.active{background:#f8fafc;border-color:#cbd5e1}.person-main{display:flex;align-items:center;gap:10px;min-width:0}.avatar{width:40px;height:40px;border-radius:50%;background:#eef2f7;display:flex;align-items:center;justify-content:center;overflow:hidden;color:#94a3b8;border:1px solid #e2e8f0;flex-shrink:0}.avatar img{width:100%;height:100%;object-fit:cover;object-position:top center}.person-name{font-weight:700;font-size:13px}.person-meta{font-size:11px;color:var(--muted);margin-top:2px}.badge{font-size:11px;font-weight:800;padding:4px 8px;border-radius:999px;background:#f1f5f9;color:#475569;white-space:nowrap}.badge.has{background:#ecfdf5;color:#047857}.empty{padding:30px 10px;text-align:center;color:var(--muted)}.empty i{font-size:28px;margin-bottom:10px;opacity:.35}.toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}.subtle{color:var(--muted);font-size:12px}.list{display:grid;gap:10px}.qrow{border:1px solid var(--line);border-radius:12px;padding:12px}.qtop{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.qtext{font-size:13.5px;line-height:1.45}.qcat{font-size:11px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:999px;padding:3px 8px;white-space:nowrap}.actions{display:flex;gap:6px}.btn{border:1px solid #cbd5e1;background:#fff;color:#334155;padding:8px 11px;border-radius:8px;text-decoration:none;font-size:12px;font-weight:700;cursor:pointer}.btn.primary{background:var(--accent);border-color:var(--accent);color:#0a192f}.btn.danger{border-color:#fecaca;color:#b91c1c;background:#fff}.btn.small{padding:6px 9px;font-size:11px}.form{display:grid;gap:8px;margin-top:12px}.manage-actions{display:grid;grid-template-columns:minmax(250px,.7fr) minmax(0,1.3fr);gap:12px;margin:14px 0 16px}.manage-action{border:1px solid var(--line);border-radius:12px;background:#f8fafc;padding:12px}.manage-action-title{font-size:12px;font-weight:800;color:#334155;margin-bottom:8px}.manage-action .form{margin-top:0}.manage-action .question-add-fields{display:grid;grid-template-columns:180px minmax(0,1fr) auto;gap:8px;align-items:start}.manage-action textarea.field{min-height:42px}.manage-action .question-add-fields .btn{height:42px;white-space:nowrap}@media(max-width:900px){.manage-actions{grid-template-columns:1fr}.manage-action .question-add-fields{grid-template-columns:1fr}.manage-action .question-add-fields .btn{width:100%}}.field,.select{width:100%;padding:10px 11px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:var(--text)}textarea.field{min-height:80px;resize:vertical}.catbar{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px}.chip{display:flex;align-items:center;gap:6px;border:1px solid #cbd5e1;border-radius:999px;padding:5px 9px;background:#fff;font-size:11px}.chip form{display:inline}.notice{padding:10px 12px;border-radius:10px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;font-size:12px;margin-bottom:12px}.success{background:#ecfdf5;border-color:#a7f3d0;color:#047857}.dangerbox{background:#fef2f2;border-color:#fecaca;color:#b91c1c}.questionnaire-landing{padding-top:8px}.landing-head{display:flex;justify-content:space-between;gap:20px;align-items:flex-end;margin-bottom:18px}.landing-kicker{font-size:11px;letter-spacing:.18em;font-weight:800;color:#64748b;margin-bottom:6px}.landing-head h2{margin:0;font-size:25px;letter-spacing:-.02em}.landing-head p{margin:7px 0 0;color:var(--muted);font-size:13px}.questionnaire-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.questionnaire-card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 24px rgba(15,23,42,.06);padding:22px 24px;min-height:180px;display:flex;flex-direction:column;justify-content:space-between;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}.questionnaire-card:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(15,23,42,.1);border-color:#cbd5e1}.questionnaire-card-top{display:flex;align-items:center;gap:15px}.questionnaire-icon{width:54px;height:54px;border-radius:50%;display:grid;place-items:center;background:#eef4ff;font-size:21px}.card-faculty .questionnaire-icon{color:#2563eb}.card-staff .questionnaire-icon{color:#7c3aed}.card-leadership .questionnaire-icon{color:#d97706}.card-ea .questionnaire-icon{color:#059669}.questionnaire-card h3{margin:0;font-size:20px}.questionnaire-card p{margin:6px 0 0;color:var(--muted);font-size:12.5px}.questionnaire-card-bottom{display:flex;justify-content:flex-end;align-items:center;gap:14px;margin-top:24px}.question-count{font-size:14px;color:#475569}.question-count strong{font-size:17px;color:#2563eb}.manage-card{display:inline-flex;align-items:center;gap:8px;text-decoration:none;font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;background:#eef4ff;color:#2563eb;padding:10px 14px;border-radius:9px}.manage-card:hover{filter:brightness(.97)}@media(max-width:900px){.grid{grid-template-columns:1fr}.questionnaire-cards{grid-template-columns:1fr}.wrap{padding:18px}.tabs{overflow:auto;flex-wrap:nowrap}.tab{white-space:nowrap}}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);padding:6px;border-radius:12px;box-shadow:0 4px 16px rgba(15,23,42,.05);margin-bottom:18px}.back-link{display:inline-flex;align-items:center;gap:7px;padding:9px 12px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;color:#334155;text-decoration:none;font-size:12px;font-weight:800}.back-link:hover{background:#f8fafc}.tab{display:flex;align-items:center;gap:9px;padding:10px 15px;border-radius:9px;color:var(--muted);text-decoration:none;font-weight:700;font-size:13px}.tab.active{background:var(--navy);color:#fff}.tab .count{font-size:11px;opacity:.8}.grid{display:grid;grid-template-columns:340px 1fr;gap:18px}.card{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 4px 16px rgba(15,23,42,.05)}.card h2{font-size:16px;margin:0}.cardhead{padding:16px 18px;border-bottom:1px solid var(--line)}.cardbody{padding:16px 18px}.person{display:flex;justify-content:space-between;gap:10px;padding:11px 10px;border-radius:10px;text-decoration:none;color:var(--text);border:1px solid transparent;margin-bottom:6px}.person:hover,.person.active{background:#f8fafc;border-color:#cbd5e1}.person-main{display:flex;align-items:center;gap:10px;min-width:0}.avatar{width:40px;height:40px;border-radius:50%;background:#eef2f7;display:flex;align-items:center;justify-content:center;overflow:hidden;color:#94a3b8;border:1px solid #e2e8f0;flex-shrink:0}.avatar img{width:100%;height:100%;object-fit:cover;object-position:top center}.person-name{display:block;font-weight:700;font-size:13px}.person-meta{display:block;font-size:11px;color:var(--muted);margin-top:2px}.badge{font-size:11px;font-weight:800;padding:4px 8px;border-radius:999px;background:#f1f5f9;color:#475569;white-space:nowrap}.badge.has{background:#ecfdf5;color:#047857}.empty{padding:30px 10px;text-align:center;color:var(--muted)}.empty i{font-size:28px;margin-bottom:10px;opacity:.35}.toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}.subtle{color:var(--muted);font-size:12px}.list{display:grid;gap:10px}.qrow{border:1px solid var(--line);border-radius:12px;padding:12px}.qtop{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.qtext{font-size:13.5px;line-height:1.45}.qcat{font-size:11px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:999px;padding:3px 8px;white-space:nowrap}.actions{display:flex;gap:6px}.btn{border:1px solid #cbd5e1;background:#fff;color:#334155;padding:8px 11px;border-radius:8px;text-decoration:none;font-size:12px;font-weight:700;cursor:pointer}.btn.primary{background:var(--accent);border-color:var(--accent);color:#0a192f}.btn.danger{border-color:#fecaca;color:#b91c1c;background:#fff}.btn.small{padding:6px 9px;font-size:11px}.form{display:grid;gap:8px;margin-top:12px}.manage-actions{display:grid;grid-template-columns:minmax(250px,.7fr) minmax(0,1.3fr);gap:12px;margin:14px 0 16px}.manage-action{border:1px solid var(--line);border-radius:12px;background:#f8fafc;padding:12px}.manage-action-title{font-size:12px;font-weight:800;color:#334155;margin-bottom:8px}.manage-action .form{margin-top:0}.manage-action .question-add-fields{display:grid;grid-template-columns:180px minmax(0,1fr) auto;gap:8px;align-items:start}.manage-action textarea.field{min-height:42px}.manage-action .question-add-fields .btn{height:42px;white-space:nowrap}@media(max-width:900px){.manage-actions{grid-template-columns:1fr}.manage-action .question-add-fields{grid-template-columns:1fr}.manage-action .question-add-fields .btn{width:100%}}.field,.select{width:100%;padding:10px 11px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:var(--text)}textarea.field{min-height:80px;resize:vertical}.catbar{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px}.chip{display:flex;align-items:center;gap:6px;border:1px solid #cbd5e1;border-radius:999px;padding:5px 9px;background:#fff;font-size:11px}.chip form{display:inline}.notice{padding:10px 12px;border-radius:10px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;font-size:12px;margin-bottom:12px}.success{background:#ecfdf5;border-color:#a7f3d0;color:#047857}.dangerbox{background:#fef2f2;border-color:#fecaca;color:#b91c1c}.questionnaire-landing{padding-top:8px}.landing-head{display:flex;justify-content:space-between;gap:20px;align-items:flex-end;margin-bottom:18px}.landing-kicker{font-size:11px;letter-spacing:.18em;font-weight:800;color:#64748b;margin-bottom:6px}.landing-head h2{margin:0;font-size:25px;letter-spacing:-.02em}.landing-head p{margin:7px 0 0;color:var(--muted);font-size:13px}.questionnaire-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.questionnaire-card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 24px rgba(15,23,42,.06);padding:22px 24px;min-height:180px;display:flex;flex-direction:column;justify-content:space-between;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}.questionnaire-card:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(15,23,42,.1);border-color:#cbd5e1}.questionnaire-card-top{display:flex;align-items:center;gap:15px}.questionnaire-icon{width:54px;height:54px;border-radius:50%;display:grid;place-items:center;background:#eef4ff;font-size:21px}.card-faculty .questionnaire-icon{color:#2563eb}.card-staff .questionnaire-icon{color:#7c3aed}.card-leadership .questionnaire-icon{color:#d97706}.card-ea .questionnaire-icon{color:#059669}.questionnaire-card h3{margin:0;font-size:20px}.questionnaire-card p{margin:6px 0 0;color:var(--muted);font-size:12.5px}.questionnaire-card-bottom{display:flex;justify-content:flex-end;align-items:center;gap:14px;margin-top:24px}.question-count{font-size:14px;color:#475569}.question-count strong{font-size:17px;color:#2563eb}.manage-card{display:inline-flex;align-items:center;gap:8px;text-decoration:none;font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;background:#eef4ff;color:#2563eb;padding:10px 14px;border-radius:9px}.manage-card:hover{filter:brightness(.97)}@media(max-width:900px){.grid{grid-template-columns:1fr}.questionnaire-cards{grid-template-columns:1fr}.wrap{padding:18px}.tabs{overflow:auto;flex-wrap:nowrap}.tab{white-space:nowrap}}
 .filterbar{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px}.filter-pill{border:1px solid #cbd5e1;background:#fff;color:#475569;padding:6px 12px;border-radius:999px;font-size:11px;font-weight:700;cursor:pointer}.filter-pill:hover{background:#f8fafc}.filter-pill.active{background:var(--navy);border-color:var(--navy);color:#fff}
 .qxm-modal-backdrop{position:fixed;inset:0;background:rgba(10,25,47,.55);display:none;align-items:center;justify-content:center;z-index:1000;padding:20px}
 .qxm-modal-backdrop.open{display:flex}
@@ -405,6 +410,7 @@ $selectedPersonName = $selectedPerson['full_name'] ?? '';
 .pill-group:hover .pill-icon,.pill-group:focus-within .pill-icon{display:inline-flex}
 .pill-icon:hover{background:#f1f5f9;color:#334155}.pill-del:hover{background:#fef2f2;color:var(--danger)}
 @media(hover:none){.pill-icon{display:inline-flex}}
+.qxm-modal.edit{max-width:460px}.qxm-modal.edit .qxm-modal-icon{background:#eff6ff;color:var(--blue)}.qxm-modal.edit .select,.qxm-modal.edit .field{margin-bottom:12px}.qxm-modal.edit .field{min-height:90px}
 .qxm-modal.rename{max-width:400px}.qxm-modal.rename .qxm-modal-icon{background:#eff6ff;color:var(--blue)}.qxm-modal.rename .field{margin-bottom:16px}
 </style>
 
@@ -482,7 +488,7 @@ html[data-theme="dark"] .qx-title,html[data-theme="dark"] .qx-group-name{color:v
     ?>
     <section class="qx-panel">
       <h1 class="qx-title"><i class="fa-solid fa-clipboard-question"></i> Questionnaire</h1>
-      <div class="qx-step"><i class="fa-solid fa-bolt"></i> Step 1: Select questionnaire target</div>
+      <div class="qx-step"><i class="fa-solid fa-bolt"></i>Assign Questions</div>
       <div class="qx-groups">
         <?php foreach ($questionnaireCards as $key => $card): ?>
           <?php $n = (int)$card['count']; ?>
@@ -524,17 +530,10 @@ html[data-theme="dark"] .qx-title,html[data-theme="dark"] .qx-group-name{color:v
           <div class="list" id="faculty-question-list">
           <?php if (!$facultyQuestions): ?><div class="empty"><i class="fa-regular fa-clipboard"></i><div>No Faculty questions yet.</div></div><?php endif; ?>
           <?php foreach ($facultyQuestions as $q): ?>
-            <div class="qrow" data-category="<?= qxm_e($q['category'] ?: 'General') ?>">
-              <div class="qtop"><div class="qtext"><?= qxm_e($q['question_text']) ?></div><span class="qcat"><?= qxm_e($q['category'] ?: 'General') ?></span></div>
+            <div class="qrow" data-category="<?= qxm_e(qxm_cat_label($q['category'])) ?>">
+              <div class="qtop"><div class="qtext"><?= qxm_e($q['question_text']) ?></div><?php if (qxm_cat_label($q['category']) !== ''): ?><span class="qcat"><?= qxm_e(qxm_cat_label($q['category'])) ?></span><?php endif; ?></div>
               <div class="actions" style="margin-top:9px">
-                <details><summary class="btn small" style="display:inline-block">Edit</summary>
-                  <form method="post" class="form" style="width:min(700px,100%)">
-                    <input type="hidden" name="csrf_token" value="<?= qxm_e($csrf) ?>"><input type="hidden" name="scope" value="faculty"><input type="hidden" name="action" value="update_question"><input type="hidden" name="question_id" value="<?= (int)$q['id'] ?>">
-                    <select class="select" name="category"><?php qxm_category_options($facultyCategories, $q['category'] ?: 'General'); ?></select>
-                    <textarea class="field" name="question_text" required><?= qxm_e($q['question_text']) ?></textarea>
-                    <button class="btn primary" type="submit">Save</button>
-                  </form>
-                </details>
+                <button type="button" class="btn small qxm-edit-btn" data-qid="<?= (int)$q['id'] ?>" data-text="<?= qxm_e($q['question_text']) ?>" data-cat="<?= qxm_e(qxm_cat_label($q['category'])) ?>">Edit</button>
                 <form method="post" onsubmit="return qxmConfirm(this,'Remove this question?','It will be taken out of the active Faculty questionnaire.');">
                   <input type="hidden" name="csrf_token" value="<?= qxm_e($csrf) ?>"><input type="hidden" name="scope" value="faculty"><input type="hidden" name="action" value="delete_question"><input type="hidden" name="question_id" value="<?= (int)$q['id'] ?>">
                   <button class="btn small danger" type="submit">Remove</button>
@@ -605,17 +604,10 @@ html[data-theme="dark"] .qx-title,html[data-theme="dark"] .qx-group-name{color:v
               <div class="list" id="person-question-list">
               <?php if (!$personQuestions): ?><div class="empty"><i class="fa-regular fa-clipboard"></i><div>No questions assigned yet.</div></div><?php endif; ?>
               <?php foreach($personQuestions as $q): ?>
-                <div class="qrow" data-category="<?= qxm_e($q['category'] ?: 'General') ?>">
-                  <div class="qtop"><div class="qtext"><?= qxm_e($q['question_text']) ?></div><span class="qcat"><?= qxm_e($q['category'] ?: 'General') ?></span></div>
+                <div class="qrow" data-category="<?= qxm_e(qxm_cat_label($q['category'])) ?>">
+                  <div class="qtop"><div class="qtext"><?= qxm_e($q['question_text']) ?></div><?php if (qxm_cat_label($q['category']) !== ''): ?><span class="qcat"><?= qxm_e(qxm_cat_label($q['category'])) ?></span><?php endif; ?></div>
                   <div class="actions" style="margin-top:9px">
-                    <details><summary class="btn small" style="display:inline-block">Edit</summary>
-                      <form method="post" class="form" style="width:min(700px,100%)">
-                        <input type="hidden" name="csrf_token" value="<?= qxm_e($csrf) ?>"><input type="hidden" name="scope" value="<?= qxm_e($scope) ?>"><input type="hidden" name="user_id" value="<?= (int)$selectedUser ?>"><input type="hidden" name="action" value="update_question"><input type="hidden" name="question_id" value="<?= (int)$q['id'] ?>">
-                        <select class="select" name="category"><?php qxm_category_options($personCategories, $q['category'] ?: 'General'); ?></select>
-                        <textarea class="field" name="question_text" required><?= qxm_e($q['question_text']) ?></textarea>
-                        <button class="btn primary" type="submit">Save</button>
-                      </form>
-                    </details>
+                    <button type="button" class="btn small qxm-edit-btn" data-qid="<?= (int)$q['id'] ?>" data-text="<?= qxm_e($q['question_text']) ?>" data-cat="<?= qxm_e(qxm_cat_label($q['category'])) ?>">Edit</button>
                     <form method="post" onsubmit="return qxmConfirm(this,'Remove this question?','It will be taken out of this target\'s questionnaire.');">
                       <input type="hidden" name="csrf_token" value="<?= qxm_e($csrf) ?>"><input type="hidden" name="scope" value="<?= qxm_e($scope) ?>"><input type="hidden" name="user_id" value="<?= (int)$selectedUser ?>"><input type="hidden" name="action" value="delete_question"><input type="hidden" name="question_id" value="<?= (int)$q['id'] ?>">
                       <button class="btn small danger" type="submit">Remove</button>
@@ -659,6 +651,24 @@ html[data-theme="dark"] .qx-title,html[data-theme="dark"] .qx-group-name{color:v
     </div>
   </form>
 </div>
+<div class="qxm-modal-backdrop" id="qxm-edit-backdrop">
+  <form class="qxm-modal edit" method="post" id="qxm-edit-form">
+    <div class="qxm-modal-icon"><i class="fa-solid fa-pen"></i></div>
+    <h3>Edit this question</h3>
+    <p>Changes apply to the active questionnaire.</p>
+    <input type="hidden" name="csrf_token" value="<?= qxm_e($csrf) ?>">
+    <input type="hidden" name="scope" value="<?= qxm_e($scope) ?>">
+    <input type="hidden" name="user_id" value="<?= (int)$selectedUser ?>">
+    <input type="hidden" name="action" value="update_question">
+    <input type="hidden" name="question_id" value="">
+    <select class="select" name="category" id="qxm-edit-cat" required></select>
+    <textarea class="field" name="question_text" id="qxm-edit-text" required></textarea>
+    <div class="qxm-modal-actions">
+      <button type="button" class="btn small" id="qxm-edit-cancel">Cancel</button>
+      <button type="submit" class="btn small primary">Save</button>
+    </div>
+  </form>
+</div>
 <form method="post" id="qxm-delcat-form" style="display:none">
   <input type="hidden" name="csrf_token" value="">
   <input type="hidden" name="scope" value="">
@@ -666,6 +676,40 @@ html[data-theme="dark"] .qx-title,html[data-theme="dark"] .qx-group-name{color:v
   <input type="hidden" name="category_id" value="">
   <input type="hidden" name="action" value="">
 </form>
+<script>
+var qxmEditCats = <?= json_encode(array_values(array_filter(array_map(fn($c) => (string)$c['category_name'], $scope === 'faculty' ? $facultyCategories : $personCategories), fn($n) => strcasecmp($n, 'General') !== 0)), JSON_UNESCAPED_UNICODE) ?>;
+document.addEventListener('click', function (e) {
+  var b = e.target.closest('.qxm-edit-btn');
+  if (!b) return;
+  var f = document.getElementById('qxm-edit-form');
+  var sel = document.getElementById('qxm-edit-cat');
+  var cur = b.getAttribute('data-cat') || '';
+  sel.innerHTML = '';
+  if (!cur) {
+    var ph = document.createElement('option');
+    ph.value = ''; ph.textContent = 'Select category'; ph.disabled = true; ph.selected = true;
+    sel.appendChild(ph);
+  }
+  qxmEditCats.forEach(function (n) {
+    var o = document.createElement('option');
+    o.value = n; o.textContent = n; if (n === cur) o.selected = true;
+    sel.appendChild(o);
+  });
+  f.elements['question_id'].value = b.getAttribute('data-qid');
+  document.getElementById('qxm-edit-text').value = b.getAttribute('data-text');
+  document.getElementById('qxm-edit-backdrop').classList.add('open');
+  document.getElementById('qxm-edit-text').focus();
+});
+document.getElementById('qxm-edit-cancel').addEventListener('click', function () {
+  document.getElementById('qxm-edit-backdrop').classList.remove('open');
+});
+document.getElementById('qxm-edit-backdrop').addEventListener('click', function (e) {
+  if (e.target === this) this.classList.remove('open');
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') document.getElementById('qxm-edit-backdrop').classList.remove('open');
+});
+</script>
 <script>
 var qxmPendingForm = null;
 function qxmConfirm(form, title, text) {
@@ -694,6 +738,25 @@ document.getElementById('qxm-modal-backdrop').addEventListener('click', function
 document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape') { document.getElementById('qxm-modal-backdrop').classList.remove('open'); qxmPendingForm = null; }
 });
+// Tell the admin dashboard (parent window) when a modal is open so it can dim the
+// sidebar and top bar too, instead of only this frame.
+(function () {
+  if (window.parent === window) return;
+  var last = null;
+  function notify() {
+    var open = !!document.querySelector('.qxm-modal-backdrop.open');
+    if (open === last) return;
+    last = open;
+    try { window.parent.postMessage({ type: 'pbi-modal-dim', open: open }, location.origin); } catch (e) {}
+  }
+  var mo = new MutationObserver(notify);
+  document.querySelectorAll('.qxm-modal-backdrop').forEach(function (b) {
+    mo.observe(b, { attributes: true, attributeFilter: ['class'] });
+  });
+  window.addEventListener('pagehide', function () {
+    try { window.parent.postMessage({ type: 'pbi-modal-dim', open: false }, location.origin); } catch (e) {}
+  });
+})();
 document.querySelectorAll('.filterbar').forEach(function (bar) {
   var list = document.getElementById(bar.getAttribute('data-filter-target'));
   if (!list) return;
@@ -736,7 +799,7 @@ document.querySelectorAll('.filterbar').forEach(function (bar) {
       var d = document.getElementById('qxm-delcat-form');
       qxmFill(d, ctx, id);
       d.elements['action'].value = ctx.delete;
-      qxmConfirm(d, 'Delete "' + name + '"?', 'Questions in it will move to General.');
+      qxmConfirm(d, 'Delete "' + name + '"?', 'Questions in it will become uncategorized.');
     }
   });
 });

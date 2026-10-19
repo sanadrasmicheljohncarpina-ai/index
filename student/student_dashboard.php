@@ -1772,18 +1772,19 @@ body .sidebar .side-nav-item.side-nav-logout:hover i{color:#FCA5A5!important;}
 body .sidebar .side-nav-item.side-nav-logout:focus-visible{outline:2px solid #F87171;outline-offset:2px;}
 
 /* ── Log Out confirmation modal ── */
-.logout-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:400;display:none;align-items:center;justify-content:center;padding:20px;}
+.logout-modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:400;display:none;align-items:center;justify-content:center;padding:20px;}
 .logout-modal-overlay.open{display:flex;}
-.logout-modal{background:var(--mid);border:1px solid var(--border);border-radius:18px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,.6);padding:28px 26px 22px;text-align:center;}
-.logout-modal-icon{width:56px;height:56px;margin:0 auto 14px;border-radius:50%;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);display:flex;align-items:center;justify-content:center;color:#f87171;font-size:22px;}
-.logout-modal-title{font-family:'Rajdhani',sans-serif;font-size:22px;font-weight:700;color:#fff;margin-bottom:6px;}
-.logout-modal-text{font-size:13.5px;color:var(--muted);line-height:1.5;margin-bottom:22px;}
-.logout-modal-actions{display:flex;gap:10px;}
-.logout-modal-actions .btn-logout-cancel{flex:1;padding:11px;background:var(--inner);border:1px solid var(--border);border-radius:var(--radius);color:var(--light);font-size:14px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;}
-.logout-modal-actions .btn-logout-cancel:hover{background:rgba(255,255,255,.06);}
-.logout-modal-actions .btn-logout-confirm{flex:1;padding:11px;background:#dc2626;border:none;border-radius:var(--radius);color:#fff;font-size:14px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-family:'DM Sans',sans-serif;}
-.logout-modal-actions .btn-logout-confirm:hover{background:#b91c1c;}
-body.light-theme .logout-modal-title{color:#0f172a!important;}
+/* Same confirm dialog as the Executive Assistant portal: white card, bold question, Cancel + amber OK. Stays white in both themes. */
+.logout-modal{background:#fff;border:0;border-radius:18px;width:100%;max-width:475px;box-shadow:0 20px 60px rgba(15,23,42,.30);padding:32px 30px 28px;text-align:left;}
+.logout-modal-title{font-family:'DM Sans',sans-serif;font-size:17px;font-weight:700;color:#0f172a!important;line-height:1.4;margin:0 0 24px;}
+.logout-modal-actions{display:flex;gap:12px;}
+.logout-modal-actions .btn-logout-cancel,.logout-modal-actions .btn-logout-confirm{flex:1;height:46px;padding:0 16px;border-radius:10px;font-family:'DM Sans',sans-serif;font-size:15.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;transition:background .15s,border-color .15s;}
+.logout-modal-actions .btn-logout-cancel{background:#fff;border:1px solid #e2e8f0;color:#0f172a;}
+.logout-modal-actions .btn-logout-cancel:hover{background:#f8fafc;border-color:#cbd5e1;}
+.logout-modal-actions .btn-logout-confirm{background:#D97706;border:1px solid #D97706;color:#fff;}
+.logout-modal-actions .btn-logout-confirm:hover{background:#B45309;border-color:#B45309;}
+.logout-modal-actions .btn-logout-cancel:focus-visible,.logout-modal-actions .btn-logout-confirm:focus-visible{outline:2px solid #D97706;outline-offset:2px;}
+@media(max-width:480px){.logout-modal{padding:26px 22px 22px;}}
 
 /* ── Sidebar: fixed in place on desktop (never scrolls with the page) ── */
 @media(min-width:901px){
@@ -2212,18 +2213,134 @@ body:not(.light-theme) .notif-dd-list li.unseen{background:rgba(217,154,43,.12);
 @media(max-width:600px){.notif-dropdown{position:fixed;top:64px;left:14px;right:14px;width:auto;max-width:none;}}
 @media print{.student-topbar{display:none!important;}body:has(.app-shell) .main,body.light-theme:has(.app-shell) .main{margin-top:18px!important;}}
 </style>
+
+<style id="student-settings-principal-match">
+/* ================================================================
+   Student settings — interface matched to the Principal settings page:
+   coloured top-bar cards with icon tiles, full-width Theme card with
+   Light/Dark/System, Interface spacing + Accessibility side by side,
+   inline Profile Photo uploader, SVG password eye toggles.
+   ================================================================ */
+#view-settings{--ap-card:#FFFFFF;--ap-soft:#F8FAFC;--ap-line:#E2E8F0;--ap-text:#0F172A;--ap-muted:#64748B;--ap-accent:#D97706;--ap-accent-bg:rgba(217,119,6,.10);--ap-ring:rgba(217,119,6,.14);--ap-input-bg:#FFFFFF;--ap-input-line:#CBD5E1;--ap-track:#CBD5E1;}
+body:not(.light-theme) #view-settings{--ap-card:rgba(10,25,47,.55);--ap-soft:rgba(10,25,47,.45);--ap-line:rgba(255,255,255,.10);--ap-text:#E0E6F0;--ap-muted:#A0B3C6;--ap-accent-bg:rgba(217,119,6,.16);--ap-input-bg:#0F1F3D;--ap-input-line:rgba(255,255,255,.14);--ap-track:#334766;}
+
+/* Section cards */
+#view-settings .ac-card{position:relative;overflow:hidden;background:var(--ap-card);border:1px solid var(--ap-line);border-radius:15px;padding:22px 24px 24px;margin-bottom:20px;box-shadow:0 1px 5px rgba(15,23,42,.035);}
+#view-settings .ac-card::before{content:'';position:absolute;left:0;right:0;top:0;height:3px;background:var(--ac-c);}
+#view-settings .ac-c1{--ac-c:#D97706;}
+#view-settings .ac-c2{--ac-c:#10B981;}
+#view-settings .ac-c3{--ac-c:#D88900;}
+#view-settings .ac-c4{--ac-c:#3B82F6;}
+#view-settings .ac-head{display:flex;align-items:flex-start;gap:14px;margin-bottom:18px;}
+#view-settings .ac-icon{width:42px;height:42px;flex:0 0 42px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;font-size:17px;background:color-mix(in srgb,var(--ac-c) 14%,transparent);color:var(--ac-c);}
+#view-settings .ac-icon i{font-size:17px;color:var(--ac-c);}
+#view-settings .ac-head h2{display:block;margin:0 0 4px;font-family:'Rajdhani',sans-serif;font-size:21px;font-weight:800;line-height:1.15;letter-spacing:0;color:var(--ap-text);}
+#view-settings .ac-head .ac-sub{margin:0;font-size:13px;line-height:1.5;color:var(--ap-muted);}
+#view-settings .ac-head.appearance-heading-row .appearance-device-badge{margin-left:auto;display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font-size:11.5px;font-weight:600;white-space:nowrap;background:var(--ap-soft);border:1px solid var(--ap-line);color:var(--ap-muted);}
+
+/* Appearance grid */
+#view-settings .appearance-feature-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;}
+#view-settings .appearance-theme-card{grid-column:1 / -1;}
+#view-settings .appearance-control-card{display:block;background:var(--ap-soft);border:1px solid var(--ap-line);border-radius:14px;padding:18px;}
+#view-settings .appearance-control-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:14px;}
+#view-settings .appearance-control-icon{width:34px;height:34px;flex:0 0 34px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;background:var(--ap-accent-bg);color:var(--ap-accent);font-size:14px;}
+#view-settings .appearance-control-head h3{font-family:'DM Sans',sans-serif;font-size:15px;font-weight:700;color:var(--ap-text);margin:0 0 2px;}
+#view-settings .appearance-control-head p{font-size:12.5px;color:var(--ap-muted);margin:0;line-height:1.45;}
+
+/* Theme options (3 wide horizontal cards) */
+#view-settings .appearance-theme-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
+#view-settings .appearance-choice{position:relative;display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:12px;width:auto;height:auto;min-height:0;padding:14px;text-align:left;border-radius:12px;border:1.5px solid var(--ap-line);background:var(--ap-card);color:var(--ap-text);font-family:'DM Sans',sans-serif;cursor:pointer;box-shadow:none;transition:.18s ease;}
+#view-settings .appearance-choice:hover{border-color:var(--ap-accent);color:var(--ap-text);}
+#view-settings .appearance-choice-icon{width:36px;height:36px;flex:0 0 36px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;background:var(--ap-soft);color:var(--ap-muted);font-size:15px;}
+#view-settings .appearance-choice-copy{display:block;min-width:0;}
+#view-settings .appearance-choice-copy strong,#view-settings .appearance-density-choice strong,#view-settings .appearance-motion-copy strong{display:block;font-size:13.5px;font-weight:700;color:var(--ap-text);}
+#view-settings .appearance-choice-copy small,#view-settings .appearance-density-choice small,#view-settings .appearance-motion-copy small{display:block;font-size:11.5px;font-weight:400;color:var(--ap-muted);margin-top:1px;}
+#view-settings .appearance-choice-check{margin-left:auto;width:20px;height:20px;flex:0 0 20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;background:var(--ap-accent);color:#fff;opacity:0;transform:scale(.6);transition:.2s;}
+#view-settings .appearance-choice[aria-pressed="true"]{border-color:var(--ap-accent);background:var(--ap-accent-bg);box-shadow:0 0 0 3px var(--ap-ring);}
+#view-settings .appearance-choice[aria-pressed="true"] .appearance-choice-icon{background:var(--ap-accent);color:#fff;}
+#view-settings .appearance-choice[aria-pressed="true"] .appearance-choice-check{opacity:1;transform:scale(1);}
+#view-settings .appearance-inline-status{margin-top:14px;font-size:12.5px;color:var(--ap-muted);display:flex;align-items:center;gap:7px;}
+#view-settings .appearance-inline-status i{color:var(--ap-accent);}
+#view-settings .appearance-inline-status strong{color:var(--ap-text);}
+
+/* Interface spacing */
+#view-settings .appearance-density-options{display:grid;grid-template-columns:1fr;gap:10px;}
+#view-settings .appearance-density-choice{display:flex;align-items:center;gap:12px;width:auto;padding:12px 14px;text-align:left;border-radius:12px;border:1.5px solid var(--ap-line);background:var(--ap-card);color:var(--ap-muted);font-family:'DM Sans',sans-serif;cursor:pointer;transition:.18s ease;}
+#view-settings .appearance-density-choice:hover{border-color:var(--ap-accent);}
+#view-settings .appearance-density-choice > i{width:20px;flex:0 0 20px;font-size:15px;text-align:center;color:var(--ap-muted);}
+#view-settings .appearance-density-choice[aria-pressed="true"]{border-color:var(--ap-accent);background:var(--ap-accent-bg);}
+#view-settings .appearance-density-choice[aria-pressed="true"] > i{color:var(--ap-accent);}
+
+/* Accessibility toggle */
+#view-settings .appearance-motion-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 14px;text-align:left;border-radius:12px;border:1.5px solid var(--ap-line);background:var(--ap-card);font-family:'DM Sans',sans-serif;cursor:pointer;transition:.18s ease;}
+#view-settings .appearance-motion-toggle:hover{border-color:var(--ap-accent);}
+#view-settings .appearance-motion-toggle[aria-pressed="true"]{border-color:var(--ap-accent);background:var(--ap-accent-bg);}
+#view-settings .appearance-switch-track{width:44px;height:24px;flex:0 0 44px;border-radius:999px;background:var(--ap-track);position:relative;transition:background .2s;}
+#view-settings .appearance-switch-thumb{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .2s;}
+#view-settings .appearance-motion-toggle[aria-pressed="true"] .appearance-switch-track{background:var(--ap-accent);}
+#view-settings .appearance-motion-toggle[aria-pressed="true"] .appearance-switch-thumb{transform:translateX(20px);}
+#view-settings .appearance-accessibility-note{margin-top:12px;font-size:11.5px;color:var(--ap-muted);display:flex;gap:7px;align-items:flex-start;line-height:1.5;}
+#view-settings .appearance-accessibility-note i{color:var(--ap-accent);margin-top:2px;}
+
+/* Profile photo */
+#view-settings .profile-card{display:flex;align-items:center;gap:24px;}
+#view-settings .profile-photo-lg{width:96px;height:96px;border-radius:50%;object-fit:cover;border:3px solid var(--ap-accent);flex:0 0 96px;background:var(--ap-soft);}
+#view-settings .photo-form-wrap input[type="file"]{font:13px 'DM Sans',sans-serif;color:var(--ap-text);padding:2px 4px;width:auto;max-width:100%;border:1px solid var(--ap-input-line);border-radius:6px;background:var(--ap-input-bg);}
+#view-settings .photo-help{font-size:12px;color:var(--ap-muted);margin-top:8px;line-height:1.5;}
+
+/* Forms */
+#view-settings .form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:17px 20px;margin-bottom:20px;}
+#view-settings .form-group{display:flex;flex-direction:column;gap:7px;}
+#view-settings .form-group label{font-size:11px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--ap-muted);margin:0;}
+#view-settings .form-group input,#view-settings .form-group select{width:100%;padding:12px 13px;font:14px 'DM Sans',sans-serif;border-radius:9px;background:var(--ap-input-bg);color:var(--ap-text);border:1px solid var(--ap-input-line);}
+#view-settings .form-group input:focus,#view-settings .form-group select:focus{outline:none;border-color:var(--ap-accent);box-shadow:0 0 0 3px var(--ap-ring);}
+#view-settings .form-group input[readonly],#view-settings .form-group select:disabled{background:var(--ap-soft);color:var(--ap-muted);cursor:not-allowed;opacity:.85;}
+#view-settings .alert{border-radius:10px;padding:12px 15px;font-size:13px;margin-bottom:18px;display:flex;align-items:center;gap:9px;}
+
+/* Buttons */
+#view-settings .ac-btn{display:inline-flex;align-items:center;gap:8px;padding:11px 17px;border:0;border-radius:9px;font:600 14px 'DM Sans',sans-serif;color:#fff;background:var(--ap-accent);box-shadow:0 4px 14px rgba(217,119,6,.25);cursor:pointer;transition:.18s ease;}
+#view-settings .ac-btn:hover{background:#F59E0B;color:#fff;transform:translateY(-1px);}
+#view-settings .ac-btn:disabled{opacity:.6;cursor:not-allowed;transform:none;}
+
+/* Password eye toggle */
+#view-settings .pw-wrap{position:relative;display:block;}
+#view-settings .pw-wrap input{width:100%;padding-right:46px;}
+#view-settings .pw-toggle{position:absolute;top:50%;right:8px;transform:translateY(-50%);width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:0;border-radius:8px;background:transparent;color:var(--ap-muted);cursor:pointer;padding:0;}
+#view-settings .pw-toggle .pw-eye{display:none;}
+#view-settings .pw-toggle .pw-eye-off{display:block;}
+#view-settings .pw-toggle[aria-pressed="true"] .pw-eye{display:block;}
+#view-settings .pw-toggle[aria-pressed="true"] .pw-eye-off{display:none;}
+#view-settings .pw-toggle:hover{color:#B45309;background:rgba(217,154,43,.12);}
+#view-settings .pw-toggle:focus-visible{outline:2px solid #D99A2B;outline-offset:1px;}
+
+/* Interface spacing = Compact (applies across the student portal) */
+body.density-compact .sd-shell{padding:16px 22px 20px;}
+body.density-compact #view-settings .ac-card{padding:16px 18px 18px;margin-bottom:14px;}
+body.density-compact #view-settings .ac-head{margin-bottom:12px;}
+body.density-compact #view-settings .form-grid{gap:12px 16px;margin-bottom:14px;}
+body.density-compact #view-settings .appearance-feature-grid{gap:12px;}
+body.density-compact .sd-shell .gl-card,body.density-compact .sd-shell .history-card{padding-top:10px;padding-bottom:10px;margin-bottom:8px;}
+body.density-compact .sd-shell .ev-row{padding-top:7px;padding-bottom:7px;}
+body.density-compact .sd-shell .ev-grid{gap:7px 10px;}
+body.density-compact .sd-shell .sd-stats,body.density-compact .sd-shell .sd-shortcuts{gap:10px;}
+
+/* Accessibility = Reduce animations */
+body.reduce-motion *,body.reduce-motion *::before,body.reduce-motion *::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important;}
+
+@media (max-width:900px){#view-settings .appearance-theme-options{grid-template-columns:1fr;}#view-settings .form-grid{grid-template-columns:1fr;}}
+@media (max-width:768px){#view-settings .appearance-feature-grid{grid-template-columns:1fr;}#view-settings .appearance-device-badge{display:none;}}
+@media (max-width:650px){#view-settings .profile-card{align-items:flex-start;flex-direction:column;}#view-settings .ac-card{padding:18px 18px 20px;}}
+</style>
 </head>
 <body class="light-theme">
 
 <!-- LOG OUT CONFIRMATION MODAL -->
 <div class="logout-modal-overlay" id="logoutModal" role="dialog" aria-modal="true" aria-labelledby="logoutModalTitle" onclick="if(event.target===this)closeLogoutConfirm()">
     <div class="logout-modal">
-        <div class="logout-modal-icon"><i class="fa-solid fa-right-from-bracket"></i></div>
-        <div class="logout-modal-title" id="logoutModalTitle">Log out?</div>
-        <div class="logout-modal-text">Are you sure you want to log out? You'll need to sign in again to access your dashboard.</div>
+        <div class="logout-modal-title" id="logoutModalTitle">Are you sure you want to log out?</div>
         <div class="logout-modal-actions">
             <button type="button" class="btn-logout-cancel" id="logoutCancelBtn" onclick="closeLogoutConfirm()">Cancel</button>
-            <a href="../logout.php" class="btn-logout-confirm"><i class="fa-solid fa-right-from-bracket"></i> Log Out</a>
+            <a href="../logout.php" class="btn-logout-confirm">OK</a>
         </div>
     </div>
 </div>
@@ -2640,36 +2757,109 @@ body:not(.light-theme) .notif-dd-list li.unseen{background:rgba(217,154,43,.12);
             <div class="sd-page-sub">Manage your profile and account.</div>
 
 
-            <div class="gl-card">
-                <h3><i class="fa-solid fa-user"></i> Profile</h3>
-                <div class="settings-row">
-                    <?php if ($student_photo): ?>
-                    <img class="profile-dd-avatar" src="../image/<?= htmlspecialchars($student_photo) ?>" alt=""
-                         onerror="this.onerror=null;this.src='../image/pbi_logo';this.classList.remove('profile-dd-avatar');this.classList.add('profile-dd-avatar-logo');"/>
-                    <?php else: ?>
-                    <img class="profile-dd-avatar-logo" src="../image/pbi_logo" alt="PBI" onerror="this.outerHTML='&lt;div class=&quot;profile-dd-avatar-ph&quot;&gt;&lt;i class=&quot;fa-solid fa-user&quot;&gt;&lt;/i&gt;&lt;/div&gt;'"/>
-                    <?php endif; ?>
-                    <div class="settings-info">
-                        <div class="profile-dd-name"><?= htmlspecialchars($student_name) ?></div>
-                        <div class="profile-dd-role">Student<?= $student_year_level ? ' · ' . htmlspecialchars($student_year_level) : '' ?></div>
+            <div class="ac-card ac-c1" id="student-appearance-settings">
+                <div class="ac-head appearance-heading-row">
+                    <span class="ac-icon"><i class="fa-solid fa-palette"></i></span>
+                    <div>
+                        <h2>Appearance</h2>
+                        <p class="ac-sub">Choose your theme, content spacing, and motion preferences.</p>
                     </div>
-                    <button class="btn-primary-cta" onclick="openPhotoModal()">
-                        <i class="fa-solid fa-camera"></i> Update Profile Photo
-                    </button>
+                    <span class="appearance-device-badge"><i class="fa-solid fa-laptop"></i> Saved on this device</span>
+                </div>
+
+                <div class="appearance-feature-grid">
+                    <section class="appearance-control-card appearance-theme-card" aria-labelledby="appearanceThemeHeading">
+                        <div class="appearance-control-head">
+                            <span class="appearance-control-icon"><i class="fa-solid fa-circle-half-stroke"></i></span>
+                            <div>
+                                <h3 id="appearanceThemeHeading">Theme mode</h3>
+                                <p>Choose a look that suits your environment.</p>
+                            </div>
+                        </div>
+                        <div class="appearance-theme-options" role="group" aria-label="Theme mode">
+                            <button type="button" class="appearance-choice" id="appearanceLightBtn" data-theme-choice="light" aria-pressed="false" onclick="setAppearance('light')">
+                                <span class="appearance-choice-icon"><i class="fa-solid fa-sun"></i></span>
+                                <span class="appearance-choice-copy"><strong>Light</strong><small>Bright and clean</small></span>
+                                <span class="appearance-choice-check"><i class="fa-solid fa-check"></i></span>
+                            </button>
+                            <button type="button" class="appearance-choice" id="appearanceDarkBtn" data-theme-choice="dark" aria-pressed="false" onclick="setAppearance('dark')">
+                                <span class="appearance-choice-icon"><i class="fa-solid fa-moon"></i></span>
+                                <span class="appearance-choice-copy"><strong>Dark</strong><small>Low-light friendly</small></span>
+                                <span class="appearance-choice-check"><i class="fa-solid fa-check"></i></span>
+                            </button>
+                            <button type="button" class="appearance-choice" id="appearanceSystemBtn" data-theme-choice="system" aria-pressed="false" onclick="setAppearance('system')">
+                                <span class="appearance-choice-icon"><i class="fa-solid fa-desktop"></i></span>
+                                <span class="appearance-choice-copy"><strong>System</strong><small>Follow device setting</small></span>
+                                <span class="appearance-choice-check"><i class="fa-solid fa-check"></i></span>
+                            </button>
+                        </div>
+                        <div class="appearance-inline-status"><i class="fa-solid fa-circle-info"></i> Current mode: <strong id="appearanceCurrentMode">Light</strong></div>
+                    </section>
+
+                    <section class="appearance-control-card" aria-labelledby="appearanceLayoutHeading">
+                        <div class="appearance-control-head">
+                            <span class="appearance-control-icon"><i class="fa-solid fa-sliders"></i></span>
+                            <div>
+                                <h3 id="appearanceLayoutHeading">Interface spacing</h3>
+                                <p>Choose how much space appears around cards and content.</p>
+                            </div>
+                        </div>
+                        <div class="appearance-density-options" role="group" aria-label="Interface spacing">
+                            <button type="button" class="appearance-density-choice" data-density-choice="comfortable" aria-pressed="false" onclick="setStudentDensity('comfortable')"><i class="fa-solid fa-expand"></i><span><strong>Comfortable</strong><small>More breathing room</small></span></button>
+                            <button type="button" class="appearance-density-choice" data-density-choice="compact" aria-pressed="false" onclick="setStudentDensity('compact')"><i class="fa-solid fa-compress"></i><span><strong>Compact</strong><small>More content on screen</small></span></button>
+                        </div>
+                    </section>
+
+                    <section class="appearance-control-card appearance-accessibility-card" aria-labelledby="appearanceAccessibilityHeading">
+                        <div class="appearance-control-head">
+                            <span class="appearance-control-icon"><i class="fa-solid fa-universal-access"></i></span>
+                            <div>
+                                <h3 id="appearanceAccessibilityHeading">Accessibility</h3>
+                                <p>Reduce interface movement for a calmer experience.</p>
+                            </div>
+                        </div>
+                        <button type="button" class="appearance-motion-toggle" id="appearanceMotionBtn" aria-pressed="false" onclick="toggleStudentReducedMotion()">
+                            <span class="appearance-motion-copy"><strong>Reduce animations</strong><small>Minimize transitions and motion effects</small></span>
+                            <span class="appearance-switch-track" aria-hidden="true"><span class="appearance-switch-thumb"></span></span>
+                        </button>
+                        <div class="appearance-accessibility-note"><i class="fa-solid fa-shield-heart"></i> Your settings stay in this browser and do not change other users' views.</div>
+                    </section>
                 </div>
             </div>
 
-            <div class="gl-card">
-                <h3><i class="fa-solid fa-palette"></i> Appearance</h3>
-                <div class="settings-hint" style="margin-bottom:12px;">Choose how the portal is displayed on this device.</div>
-                <div class="appearance-choice-row">
-                    <button type="button" class="appearance-choice" id="appearanceLightBtn" onclick="setAppearance('light')"><i class="fa-solid fa-sun"></i> Light</button>
-                    <button type="button" class="appearance-choice" id="appearanceDarkBtn" onclick="setAppearance('dark')"><i class="fa-solid fa-moon"></i> Dark</button>
+            <div class="ac-card ac-c2">
+                <div class="ac-head">
+                    <span class="ac-icon"><i class="fa-solid fa-id-badge"></i></span>
+                    <div>
+                        <h2>Profile Photo</h2>
+                        <p class="ac-sub">Update the photo shown in your sidebar and profile.</p>
+                    </div>
+                </div>
+                <div class="profile-card">
+                    <?php if ($student_photo): ?>
+                    <img class="profile-photo-lg" id="settingsPhotoPreview" src="../image/<?= htmlspecialchars($student_photo) ?>" alt="Student profile photo"
+                         onerror="this.onerror=null;this.src='../image/pbi_logo';"/>
+                    <?php else: ?>
+                    <img class="profile-photo-lg" id="settingsPhotoPreview" src="../image/pbi_logo" alt="Student profile photo"/>
+                    <?php endif; ?>
+                    <div class="photo-form-wrap">
+                        <form method="POST" action="update_photo.php" enctype="multipart/form-data" style="display:flex;flex-direction:column;gap:10px;">
+                            <input type="file" name="photo" id="settingsPhotoInput" accept="image/jpeg,image/png,image/webp,image/gif" required/>
+                            <button class="ac-btn" type="submit" style="width:fit-content;"><i class="fa-solid fa-upload"></i> Upload New Photo</button>
+                        </form>
+                        <div class="photo-help">JPG, PNG, or WEBP only. Maximum file size: 10MB.</div>
+                    </div>
                 </div>
             </div>
 
-            <div class="gl-card">
-                <h3><i class="fa-solid fa-id-card"></i> Profile Details</h3>
+            <div class="ac-card ac-c3">
+                <div class="ac-head">
+                    <span class="ac-icon"><i class="fa-solid fa-user-pen"></i></span>
+                    <div>
+                        <h2>Profile Details</h2>
+                        <p class="ac-sub">Update your name, username, and year level.</p>
+                    </div>
+                </div>
                 <?php if ($profile_success): ?>
                 <div class="alert alert-success"><i class="fa-solid fa-circle-check"></i> <?= htmlspecialchars($profile_success) ?></div>
                 <?php endif; ?>
@@ -2679,16 +2869,16 @@ body:not(.light-theme) .notif-dd-list li.unseen{background:rgba(217,154,43,.12);
                 <form method="POST" action="student_dashboard.php">
                     <?= csrf_field() ?>
                     <input type="hidden" name="update_profile" value="1"/>
-                    <div class="settings-grid">
-                        <div class="settings-field">
+                    <div class="form-grid">
+                        <div class="form-group">
                             <label for="set_fullname">Full Name</label>
                             <input type="text" id="set_fullname" name="full_name" maxlength="100" required value="<?= htmlspecialchars($student_name) ?>"/>
                         </div>
-                        <div class="settings-field">
+                        <div class="form-group">
                             <label for="set_username">Username</label>
                             <input type="text" id="set_username" name="username" maxlength="50" required autocomplete="username" value="<?= htmlspecialchars($student_username) ?>"/>
                         </div>
-                        <div class="settings-field">
+                        <div class="form-group">
                             <label for="set_yearlevel">Year Level</label>
                             <?php if (!empty($year_level_options)): ?>
                             <?php if (!$year_level_editable): ?>
@@ -2711,17 +2901,23 @@ body:not(.light-theme) .notif-dd-list li.unseen{background:rgba(217,154,43,.12);
                             <input type="text" id="set_yearlevel" name="year_level" maxlength="30"<?= !$year_level_editable ? ' readonly' : '' ?> value="<?= htmlspecialchars($student_year_level ?? '') ?>"/>
                             <?php endif; ?>
                             <?php if (!$year_level_editable): ?>
-                            <div class="settings-field-note"><i class="fa-solid fa-lock"></i> <?= htmlspecialchars($year_level_locked_reason) ?></div>
+                            <div class="photo-help"><i class="fa-solid fa-lock" style="color:var(--ap-accent);"></i> <?= htmlspecialchars($year_level_locked_reason) ?></div>
                             <?php endif; ?>
                         </div>
                     </div>
-                    <div class="settings-hint">Changing your Username changes what you sign in with. Changing your Year Level changes which faculty &amp; staff you're eligible to evaluate.</div>
-                    <button type="submit" class="btn-primary-cta"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button>
+                    <div class="photo-help" style="margin:-6px 0 16px;">Changing your Username changes what you sign in with. Changing your Year Level changes which faculty &amp; staff you're eligible to evaluate.</div>
+                    <button class="ac-btn" type="submit"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button>
                 </form>
             </div>
 
-            <div class="gl-card">
-                <h3><i class="fa-solid fa-lock"></i> Change Password</h3>
+            <div class="ac-card ac-c4">
+                <div class="ac-head">
+                    <span class="ac-icon"><i class="fa-solid fa-lock"></i></span>
+                    <div>
+                        <h2>Change Password</h2>
+                        <p class="ac-sub">Your new password must be at least 8 characters and different from your current password.</p>
+                    </div>
+                </div>
                 <?php if ($password_success): ?>
                 <div class="alert alert-success"><i class="fa-solid fa-circle-check"></i> <?= htmlspecialchars($password_success) ?></div>
                 <?php endif; ?>
@@ -2731,33 +2927,14 @@ body:not(.light-theme) .notif-dd-list li.unseen{background:rgba(217,154,43,.12);
                 <form method="POST" action="student_dashboard.php" id="changePwForm" autocomplete="off">
                     <?= csrf_field() ?>
                     <input type="hidden" name="change_password" value="1"/>
-                    <div class="settings-grid">
-                        <div class="settings-field">
-                            <label for="cur_pw">Current Password</label>
-                            <div class="pw-wrap">
-                                <input type="password" id="cur_pw" name="current_password" required autocomplete="current-password"/>
-                                <button type="button" class="pw-toggle" onclick="togglePw('cur_pw','ic1')"><i class="fa-solid fa-eye-slash" id="ic1"></i></button>
-                            </div>
-                        </div>
-                        <div></div>
-                        <div class="settings-field">
-                            <label for="new_pw">New Password</label>
-                            <div class="pw-wrap">
-                                <input type="password" id="new_pw" name="new_password" required minlength="8" maxlength="72" autocomplete="new-password"/>
-                                <button type="button" class="pw-toggle" onclick="togglePw('new_pw','ic2')"><i class="fa-solid fa-eye-slash" id="ic2"></i></button>
-                            </div>
-                        </div>
-                        <div class="settings-field">
-                            <label for="confirm_pw">Confirm New Password</label>
-                            <div class="pw-wrap">
-                                <input type="password" id="confirm_pw" name="confirm_password" required minlength="8" maxlength="72" autocomplete="new-password"/>
-                                <button type="button" class="pw-toggle" onclick="togglePw('confirm_pw','ic3')"><i class="fa-solid fa-eye-slash" id="ic3"></i></button>
-                            </div>
-                        </div>
+                    <div class="form-grid">
+                        <div class="form-group"><label for="cur_pw">Current Password</label><div class="pw-wrap"><input type="password" id="cur_pw" name="current_password" required autocomplete="current-password"/><button type="button" class="pw-toggle" aria-label="Show password" aria-pressed="false" tabindex="0"><svg class="pw-eye" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="pw-eye-off" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19C5 19 1 12 1 12a18.5 18.5 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12A3 3 0 1 1 9.88 9.88"/><line x1="1" y1="1" x2="23" y2="23"/></svg></button></div></div>
+                        <div class="form-group"></div>
+                        <div class="form-group"><label for="new_pw">New Password</label><div class="pw-wrap"><input type="password" id="new_pw" name="new_password" required minlength="8" maxlength="72" autocomplete="new-password"/><button type="button" class="pw-toggle" aria-label="Show password" aria-pressed="false" tabindex="0"><svg class="pw-eye" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="pw-eye-off" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19C5 19 1 12 1 12a18.5 18.5 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12A3 3 0 1 1 9.88 9.88"/><line x1="1" y1="1" x2="23" y2="23"/></svg></button></div></div>
+                        <div class="form-group"><label for="confirm_pw">Confirm New Password</label><div class="pw-wrap"><input type="password" id="confirm_pw" name="confirm_password" required minlength="8" maxlength="72" autocomplete="new-password"/><button type="button" class="pw-toggle" aria-label="Show password" aria-pressed="false" tabindex="0"><svg class="pw-eye" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="pw-eye-off" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19C5 19 1 12 1 12a18.5 18.5 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12A3 3 0 1 1 9.88 9.88"/><line x1="1" y1="1" x2="23" y2="23"/></svg></button></div></div>
                     </div>
-                    <div class="settings-hint">Minimum 8 characters. Use something you don't use anywhere else.</div>
                     <div class="alert alert-error" id="pwMismatch" style="display:none;"><i class="fa-solid fa-circle-exclamation"></i> New passwords do not match.</div>
-                    <button type="submit" class="btn-primary-cta" id="updatePwBtn"><i class="fa-solid fa-key"></i> Update Password</button>
+                    <button class="ac-btn" type="submit" id="updatePwBtn"><i class="fa-solid fa-key"></i> Update Password</button>
                 </form>
             </div>
           </div>
@@ -2827,13 +3004,6 @@ function switchView(view) {
     closeSidebarMobile();
     document.querySelectorAll('.sd-shell').forEach(e => { e.scrollTop = 0; });
     window.scrollTo({top: 0, behavior: 'smooth'});
-}
-
-// ── Settings: show/hide password ──
-function togglePw(inputId, iconId) {
-    const input = document.getElementById(inputId), icon = document.getElementById(iconId);
-    input.type = input.type === 'password' ? 'text' : 'password';
-    icon.className = input.type === 'password' ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye';
 }
 
 // ── Settings: change password form guard ──
@@ -3129,27 +3299,93 @@ if (evalForm) {
 switchView('evaluate');
 <?php endif; ?>
 
-// ── Appearance toggle (Dark / Light) ──
-// Same mechanism as the Faculty portal: a plain localStorage-backed,
-// per-device preference toggled via body.classList('light-theme').
-function applyAppearance(mode) {
-    const normalized = mode === 'dark' ? 'dark' : 'light';
-    document.body.classList.toggle('light-theme', normalized === 'light');
-    const lightBtn = document.getElementById('appearanceLightBtn');
-    const darkBtn  = document.getElementById('appearanceDarkBtn');
-    if (lightBtn) lightBtn.classList.toggle('active', normalized === 'light');
-    if (darkBtn) darkBtn.classList.toggle('active', normalized === 'dark');
+// ── Appearance: theme (Light / Dark / System), spacing, reduced motion ──
+// Per-device preferences, stored in localStorage and applied as body classes.
+const PBI_THEME_KEY = 'pbi_theme', PBI_DENSITY_KEY = 'pbi_density', PBI_MOTION_KEY = 'pbi_reduce_motion';
+function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+const systemDarkMQ = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+
+function getThemeChoice() {
+    const v = lsGet(PBI_THEME_KEY);
+    return (v === 'dark' || v === 'system') ? v : 'light';
+}
+function applyAppearance(choice) {
+    const resolved = choice === 'system' ? ((systemDarkMQ && systemDarkMQ.matches) ? 'dark' : 'light') : choice;
+    document.body.classList.toggle('light-theme', resolved === 'light');
+    document.querySelectorAll('[data-theme-choice]').forEach(function (b) {
+        b.setAttribute('aria-pressed', b.dataset.themeChoice === choice ? 'true' : 'false');
+    });
+    const label = document.getElementById('appearanceCurrentMode');
+    if (label) {
+        const name = resolved === 'dark' ? 'Dark' : 'Light';
+        label.textContent = choice === 'system' ? 'System (' + name + ')' : name;
+    }
 }
 function setAppearance(mode) {
-    const normalized = mode === 'dark' ? 'dark' : 'light';
-    localStorage.setItem('pbi_theme', normalized);
-    applyAppearance(normalized);
+    const choice = (mode === 'dark' || mode === 'system') ? mode : 'light';
+    lsSet(PBI_THEME_KEY, choice);
+    applyAppearance(choice);
 }
-document.addEventListener('DOMContentLoaded', function() {
-    const savedTheme = localStorage.getItem('pbi_theme');
-    const theme = savedTheme === 'dark' ? 'dark' : 'light';
-    localStorage.setItem('pbi_theme', theme);
-    applyAppearance(theme);
+function applyStudentDensity(d) {
+    const density = d === 'compact' ? 'compact' : 'comfortable';
+    document.body.classList.toggle('density-compact', density === 'compact');
+    document.querySelectorAll('[data-density-choice]').forEach(function (b) {
+        b.setAttribute('aria-pressed', b.dataset.densityChoice === density ? 'true' : 'false');
+    });
+}
+function setStudentDensity(d) {
+    const density = d === 'compact' ? 'compact' : 'comfortable';
+    lsSet(PBI_DENSITY_KEY, density);
+    applyStudentDensity(density);
+}
+function applyStudentReducedMotion(on) {
+    document.body.classList.toggle('reduce-motion', !!on);
+    const btn = document.getElementById('appearanceMotionBtn');
+    if (btn) btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+function toggleStudentReducedMotion() {
+    const on = !document.body.classList.contains('reduce-motion');
+    lsSet(PBI_MOTION_KEY, on ? '1' : '0');
+    applyStudentReducedMotion(on);
+}
+document.addEventListener('DOMContentLoaded', function () {
+    const choice = getThemeChoice();
+    lsSet(PBI_THEME_KEY, choice);
+    applyAppearance(choice);
+    applyStudentDensity(lsGet(PBI_DENSITY_KEY) === 'compact' ? 'compact' : 'comfortable');
+    applyStudentReducedMotion(lsGet(PBI_MOTION_KEY) === '1');
+
+    // Follow the device setting live while "System" is selected.
+    if (systemDarkMQ) {
+        const onChange = function () { if (getThemeChoice() === 'system') applyAppearance('system'); };
+        if (systemDarkMQ.addEventListener) systemDarkMQ.addEventListener('change', onChange);
+        else if (systemDarkMQ.addListener) systemDarkMQ.addListener(onChange);
+    }
+
+    // Password show/hide (SVG eye toggles)
+    document.querySelectorAll('#view-settings .pw-toggle').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            const input = btn.parentElement.querySelector('input');
+            const show = input.type === 'password';
+            input.type = show ? 'text' : 'password';
+            btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+            btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+        });
+    });
+
+    // Live preview of the chosen profile photo
+    const photoInput = document.getElementById('settingsPhotoInput');
+    const photoPrev  = document.getElementById('settingsPhotoPreview');
+    if (photoInput && photoPrev) {
+        photoInput.addEventListener('change', function () {
+            if (photoInput.files && photoInput.files[0]) {
+                const r = new FileReader();
+                r.onload = function (e) { photoPrev.src = e.target.result; };
+                r.readAsDataURL(photoInput.files[0]);
+            }
+        });
+    }
 });
 </script>
 <script>

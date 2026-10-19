@@ -955,7 +955,7 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
                     <div class="principal-shortcuts-eyebrow">Workspace Shortcuts</div>
                     <h2 id="principal-shortcuts-title">Continue where you need to be</h2>
                 </div>
-                <p>Your most-used school tools</p>
+                <p></p>
             </div>
             <div class="principal-shortcuts-grid">
                 <a class="principal-shortcut" href="principal_results.php">
@@ -966,19 +966,19 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
                     </span>
                     <i class="fa-solid fa-arrow-right principal-shortcut-arrow" aria-hidden="true"></i>
                 </a>
-                <a class="principal-shortcut" href="#principalSchedule">
+                <a class="principal-shortcut" href="principal_evaluation_tracker.php">
                     <span class="principal-shortcut-icon"><i class="fa-solid fa-calendar-days" aria-hidden="true"></i></span>
                     <span class="principal-shortcut-copy">
-                        <strong>Evaluation Schedule</strong>
-                        <small>Check the current evaluation period and dates.</small>
+                        <strong>Evaluation Tracker</strong>
+                        <small>Monitor the live evaluation period and progress.</small>
                     </span>
                     <i class="fa-solid fa-arrow-right principal-shortcut-arrow" aria-hidden="true"></i>
                 </a>
-                <a class="principal-shortcut" href="#principalPerformanceSummary">
+                <a class="principal-shortcut" href="principal_reports.php">
                     <span class="principal-shortcut-icon"><i class="fa-solid fa-award" aria-hidden="true"></i></span>
                     <span class="principal-shortcut-copy">
-                        <strong>Performance Summary</strong>
-                        <small>View your evaluation completion and overview.</small>
+                        <strong>Reports</strong>
+                        <small>Generate reports and view grade-level analytics.</small>
                     </span>
                     <i class="fa-solid fa-arrow-right principal-shortcut-arrow" aria-hidden="true"></i>
                 </a>
@@ -1794,4 +1794,3 @@ html.principal-theme-dark #principalDashboard .principal-shortcut-arrow { color:
   #principalDashboard .principal-shortcuts-grid { grid-template-columns:1fr !important; }
 }
 </style>
-
