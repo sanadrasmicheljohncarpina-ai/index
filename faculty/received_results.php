@@ -60,6 +60,13 @@ if (!function_exists('render_received_results')) {
     }
 
     function render_received_results(mysqli $db, int $userId): void {
+        // Generate Report is drawn INSIDE the normal dashboard layout (sidebar + header),
+        // in place of the list - same behaviour as the Dean's Evaluation Received page.
+        if (($_GET['report'] ?? '') === '1') {
+            $rrRole = (stripos(basename((string)($_SERVER['SCRIPT_NAME'] ?? '')), 'staff') !== false) ? 'Staff' : 'Faculty';
+            render_received_report($db, $userId, $rrRole);
+            return;
+        }
         $h = static fn($v) => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
 
         // Current term (the dashboards already loaded the active period into $period).
@@ -297,8 +304,13 @@ if (!function_exists('render_received_results')) {
 .rr-detail-btn{background:var(--rr-soft);border:1px solid color-mix(in srgb,var(--teal) 30%,transparent);color:var(--teal);font:700 11px 'DM Sans',sans-serif;padding:6px 12px;border-radius:18px;cursor:pointer}
 .rr-detail-btn:hover{border-color:var(--teal)}
 .rr-empty{margin:0;color:var(--muted);font-size:13px}
+.rr-head-right{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.rr-report-btn,.rr-report-btn:link,.rr-report-btn:visited{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:10px;background:var(--teal);color:#fff;font:700 13px 'DM Sans',Inter,Segoe UI,Arial,sans-serif;text-decoration:none;border:1px solid var(--teal);white-space:nowrap}
+.rr-report-btn:hover{opacity:.88}
+.rr-report-btn i{color:#fff}
 
 @media(max-width:640px){
+  .rr-head-right{flex-direction:column;align-items:stretch;width:100%}
   .rr-picker{flex-direction:column;align-items:stretch;gap:5px;width:100%}
   .rr-picker .sel-wrap{width:100%}.rr-picker select{width:100%;min-width:0}
   .rr-item{flex-direction:column;align-items:flex-start;gap:12px}
@@ -356,6 +368,10 @@ if (!function_exists('render_received_results')) {
     <section class="rr-panel" aria-label="Evaluations received">
         <div class="rr-head">
             <h2><i class="fa-solid fa-clock-rotate-left"></i> Evaluations Received <span class="rr-count"><?= (int)$respCount ?></span></h2>
+            <div class="rr-head-right">
+            <?php if ($history): ?>
+            <a class="rr-report-btn" href="?page=my_results&amp;report=1&amp;period=<?= $allSel ? 'all' : (int)$sel ?>"><i class="fa-solid fa-file-lines"></i> Generate Report</a>
+            <?php endif; ?>
             <?php if ($terms): ?>
             <form method="get" class="rr-picker">
                 <input type="hidden" name="page" value="my_results">
@@ -371,6 +387,7 @@ if (!function_exists('render_received_results')) {
                 </span>
             </form>
             <?php endif; ?>
+            </div>
         </div>
 
         <?php if (!$history): ?>
@@ -391,6 +408,7 @@ if (!function_exists('render_received_results')) {
         <div id="rrList">
             <?php foreach ($displayList as $e): $cls = rr_score_class($e['score']); $open = 'openEvalDetails(' . $e['arg'] . ')'; ?>
             <div class="rr-item" role="button" tabindex="0"
+                 data-arg="<?= $h(trim((string)$e['arg'], "'")) ?>"
                  data-ts="<?= (int)$e['ts'] ?>" data-idx="<?= (int)$e['idx'] ?>"
                  data-score="<?= $e['score'] !== null ? $h((string)$e['score']) : '-1' ?>"
                  data-comment="<?= $e['comment'] !== '' ? '1' : '0' ?>"
@@ -441,6 +459,338 @@ function rrApply(){
     document.getElementById('rrNoMatch').style.display=shown?'none':'block';
 }
 </script>
+<?php
+    }
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * GENERATE REPORT (Faculty + Staff)
+ * Same cumulative, fully anonymous report as the Executive Assistant's
+ * Evaluation Received page: every question's average across ALL evaluators for
+ * the selected term (or all terms), each evaluator's overall as "Anonymous
+ * Evaluator n", the Total Score, and every written comment.
+ * Called from render_received_results() (inside the dashboard layout):
+ *     if ($page === 'my_results' && ($_GET['report'] ?? '') === '1') render_received_report($mysqli, (int)$user_id, 'Faculty');
+ * Evaluator identity is never selected, joined or shown.
+ * ════════════════════════════════════════════════════════════════════════════ */
+if (!function_exists('render_received_report')) {
+
+    function render_received_report(mysqli $db, int $userId, string $roleLabel): void {
+        $h = static fn($v) => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
+
+        $me = rr_rows($db, "SELECT full_name, designation, photo FROM users WHERE id=? LIMIT 1", 'i', [$userId])[0] ?? [];
+
+        $curPeriodId = (int)($GLOBALS['period']['id'] ?? 0);
+        if ($curPeriodId <= 0) {
+            $r = rr_rows($db, "SELECT id FROM evaluation_periods WHERE is_active=1 LIMIT 1");
+            $curPeriodId = (int)($r[0]['id'] ?? 0);
+        }
+
+        // Live + kept responses (identity-free) — same eligibility as the page itself.
+        $items = [];
+        foreach (rr_rows($db, "
+            SELECT et.id, et.period_id, et.remarks AS comment, et.submitted_at,
+                   (SELECT SUM(qa.answer_score)   FROM questionnaire_answers qa WHERE qa.tracker_id = et.id) AS score_sum,
+                   (SELECT COUNT(qa.answer_score) FROM questionnaire_answers qa WHERE qa.tracker_id = et.id) AS score_count
+            FROM evaluation_tracker et
+            WHERE et.target_user_id = ? AND et.status NOT IN ('draft','in_progress')", 'i', [$userId]) as $r) {
+            $items[] = ['live_id' => (int)$r['id'], 'pid' => (int)$r['period_id'], 'comment' => (string)($r['comment'] ?? ''),
+                'submitted_at' => $r['submitted_at'], 'sum' => (float)($r['score_sum'] ?? 0), 'cnt' => (int)($r['score_count'] ?? 0)];
+        }
+        foreach (kept_feedback_rows($db, $userId, true) as $r) {
+            $items[] = ['answers_json' => (string)($r['answers_json'] ?? ''), 'pid' => (int)($r['period_id'] ?? 0), 'comment' => (string)($r['remarks'] ?? ''),
+                'submitted_at' => $r['submitted_at'], 'sum' => (float)$r['score_sum'], 'cnt' => (int)$r['score_count'], 'kept' => true];
+        }
+
+        // Term labels (only needed for the report subtitle).
+        $termIds = [];
+        if ($curPeriodId > 0) $termIds[$curPeriodId] = true;
+        foreach ($items as $it) { if ($it['pid'] > 0) $termIds[$it['pid']] = true; }
+        $terms = [];
+        if ($termIds) {
+            $in = implode(',', array_map('intval', array_keys($termIds)));
+            foreach (rr_rows($db, "SELECT * FROM evaluation_periods WHERE id IN ($in)") as $ep) {
+                $sy = (string)($ep['school_year'] ?? ''); $pl = (string)($ep['period_label'] ?? ($ep['semester'] ?? ''));
+                $terms[(int)$ep['id']] = ($sy !== '' && $pl !== '') ? $sy . ' — ' . $pl : ($pl !== '' ? $pl : ($sy !== '' ? $sy : 'Period #' . (int)$ep['id']));
+            }
+        }
+
+        $req    = $_GET['period'] ?? 'all';
+        $allSel = !is_string($req) || $req === '' || strtolower(trim($req)) === 'all';
+        $sel    = $allSel ? 0 : (int)$req;
+        if (!$allSel && !isset($terms[$sel]) && !array_filter($items, fn($it) => $it['pid'] === $sel)) { $allSel = true; $sel = 0; }
+        if (!$allSel) $items = array_values(array_filter($items, fn($it) => $it['pid'] === $sel));
+
+        usort($items, function ($a, $b) {
+            $ta = $a['submitted_at'] ? strtotime($a['submitted_at']) : 0;
+            $tb = $b['submitted_at'] ? strtotime($b['submitted_at']) : 0;
+            return $ta <=> $tb;
+        });
+
+        // Only evaluations with at least one scored answer count (so "Evaluators" matches the averages).
+        $repEvals = []; $repDates = []; $repComments = []; $repLive = []; $repKeptJson = [];
+        foreach ($items as $it) {
+            if ($it['cnt'] < 1) continue;
+            $repEvals[] = ['ts' => $it['submitted_at'] ? (int)strtotime($it['submitted_at']) : 0, 'score' => round($it['sum'] / $it['cnt'], 2)];
+            if (!empty($it['kept'])) { $repKeptJson[] = $it['answers_json'] ?? ''; }
+            elseif (!empty($it['live_id'])) { $repLive[] = (int)$it['live_id']; }
+            if ($it['submitted_at']) $repDates[] = (int)strtotime($it['submitted_at']);
+            $c = rr_clean_comment($it['comment']);
+            if ($c !== '') $repComments[] = $c;
+        }
+        $repCount = count($repEvals);
+
+        // Per-question aggregation, merging identical wording (old + new question ids).
+        $qAgg = []; $qOrd = 0;
+        $qAdd = function ($cat, $text, $sum, $cnt) use (&$qAgg, &$qOrd) {
+            $cat  = trim((string)$cat) !== '' ? trim((string)$cat) : 'General';
+            $text = trim((string)$text) !== '' ? trim((string)$text) : 'Question';
+            $key  = mb_strtolower($text);
+            if (!isset($qAgg[$key])) { $qAgg[$key] = ['cat' => $cat, 'text' => $text, 'sum' => 0.0, 'cnt' => 0, 'ord' => $qOrd++]; }
+            $qAgg[$key]['sum'] += (float)$sum;
+            $qAgg[$key]['cnt'] += (int)$cnt;
+        };
+        if ($repLive) {
+            $inRep = implode(',', array_map('intval', $repLive));
+            foreach (rr_rows($db, "
+                SELECT COALESCE(eq.category, uq.category, 'General') AS category,
+                       COALESCE(eq.question_text, uq.question_text,
+                                CONCAT('Question #', COALESCE(qa.question_id, qa.user_question_id, qa.id))) AS question_text,
+                       MIN(COALESCE(qa.question_id, qa.user_question_id, qa.id)) AS q_id,
+                       SUM(qa.answer_score) AS s, COUNT(qa.answer_score) AS c
+                FROM questionnaire_answers qa
+                JOIN evaluation_tracker et ON et.id = qa.tracker_id AND et.target_user_id = ?
+                LEFT JOIN evaluation_questions eq ON qa.question_source='evaluation' AND eq.id=qa.question_id
+                LEFT JOIN user_questions uq ON qa.question_source='user' AND uq.id=COALESCE(qa.user_question_id, qa.question_id)
+                WHERE qa.tracker_id IN ($inRep) AND qa.answer_score IS NOT NULL
+                GROUP BY 1, 2
+                ORDER BY 1, q_id", 'i', [$userId]) as $r) {
+                $qAdd($r['category'], $r['question_text'], $r['s'], $r['c']);
+            }
+        }
+        foreach ($repKeptJson as $json) {
+            $list = json_decode($json, true);
+            if (!is_array($list)) continue;
+            foreach ($list as $a) {
+                if (!isset($a['score']) || $a['score'] === null) continue;
+                $qAdd($a['category'] ?? 'General', $a['question_text'] ?? 'Question', (float)$a['score'], 1);
+            }
+        }
+
+        $repByCat = []; $repSum = 0.0; $repN = 0;
+        uasort($qAgg, fn($a, $b) => $a['ord'] <=> $b['ord']);
+        foreach ($qAgg as $q) {
+            if ($q['cnt'] < 1) continue;
+            $repByCat[$q['cat']][] = ['text' => $q['text'], 'avg' => round($q['sum'] / $q['cnt'], 2)];
+            $repSum += $q['sum']; $repN += $q['cnt'];
+        }
+        // Overall = flat average of every individual answer (same method as the page's Overall Average).
+        $repOverall = $repN > 0 ? round($repSum / $repN, 2) : null;
+
+        $repTermLabel = (!$allSel && isset($terms[$sel])) ? $terms[$sel] : 'All Evaluation Terms';
+        if ($repDates) {
+            $dFrom = min($repDates); $dTo = max($repDates);
+            $repDateText = date('Y-m-d', $dFrom) === date('Y-m-d', $dTo) ? date('F d, Y', $dTo) : date('M d, Y', $dFrom) . ' – ' . date('M d, Y', $dTo);
+        } else { $repDateText = '—'; }
+
+        $scoreColor = static function ($s) {
+            if ($s === null) return '#6b7280';
+            if ($s >= 4.5) return '#32B98A';
+            if ($s >= 3.5) return '#6BCFA9';
+            if ($s >= 2.5) return '#facc15';
+            if ($s >= 1.5) return '#fb923c';
+            return '#E6788A';
+        };
+        $satLabel = static function ($s) {
+            if ($s === null) return '—';
+            if ($s >= 4.5) return 'Very Satisfied';
+            if ($s >= 3.5) return 'Satisfied';
+            if ($s >= 2.5) return 'Neither Satisfied nor Dissatisfied';
+            if ($s >= 1.5) return 'Dissatisfied';
+            return 'Very Dissatisfied';
+        };
+        $script   = basename((string)($_SERVER['SCRIPT_NAME'] ?? 'dashboard.php'));
+        $backHref = $script . '?page=my_results' . ($allSel ? '' : '&period=' . (int)$sel);
+        $photoUrl = !empty($me['photo']) && defined('UPLOAD_URL') ? UPLOAD_URL . $me['photo'] : '';
+        $desig    = trim((string)($me['designation'] ?? '')) !== '' ? $me['designation'] : $roleLabel;
+        ?>
+<style id="rep-wrap-css">
+.rep-wrap{--panel:#fff;--border:#D7E3EF;--text:#0B1F3A;--muted:#647B96;--inner:#F4F8FF;--accent:#2563EB;color:var(--text);font-family:Inter,'DM Sans',Segoe UI,Arial,sans-serif;max-width:1500px}
+body:not(.light-theme) .rep-wrap{--panel:#172A45;--border:#24395A;--text:#E7ECF3;--muted:#93A5BE;--inner:#1E314F}
+.rep-wrap *{box-sizing:border-box}
+.rep-wrap .top-actions{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.rep-wrap .back-btn,.rep-wrap .btn-print{display:inline-flex;align-items:center;gap:8px;padding:9px 18px;border-radius:10px;font:700 13px Inter,sans-serif;text-decoration:none;cursor:pointer}
+.rep-wrap .back-btn{background:var(--panel);border:1px solid var(--border);color:var(--text)}
+.rep-wrap .btn-print{background:var(--accent);border:0;color:#fff}
+.rep-wrap .cum-topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;font-size:12px;margin-bottom:10px;padding:8px 14px;border:1px solid var(--border);background:var(--inner)}
+.rep-wrap .cum-type{font-weight:700;text-transform:uppercase;letter-spacing:.8px}
+.rep-wrap .sheet-header{background:var(--panel);border:1px solid var(--border);padding:14px 18px;margin-bottom:12px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.rep-wrap .sheet-avatar{width:56px;height:56px;border-radius:50%;object-fit:cover;border:2px solid var(--border)}
+.rep-wrap .sheet-avatar-ph{width:56px;height:56px;border-radius:50%;background:var(--inner);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:22px}
+.rep-wrap .sheet-name{font-family:Rajdhani,sans-serif;font-size:22px;font-weight:700}
+.rep-wrap .sheet-desig{font-size:12.5px;color:var(--muted);margin-top:2px}
+.rep-wrap .cum-date{margin-left:auto;text-align:right}
+.rep-wrap .cum-date-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:2px}
+.rep-wrap .cum-date-val{font-size:14px;font-weight:700}
+.rep-wrap .cat-section{margin-bottom:16px}
+.rep-wrap .cat-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:7px}
+.rep-wrap table.q-table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--border)}
+.rep-wrap .q-table thead tr{background:var(--inner)}
+.rep-wrap .q-table th{padding:9px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);text-align:left}
+.rep-wrap .q-table th.rating-col{text-align:center;width:150px}
+.rep-wrap .q-table td{padding:10px 14px;border-top:1px solid var(--border);font-size:13px;line-height:1.45;vertical-align:middle}
+.rep-wrap .q-table td.q-num{width:44px;font-weight:700;color:var(--muted)}
+.rep-wrap .q-table td.rating-cell{text-align:center}
+.rep-wrap .rating-badge{display:inline-flex;align-items:center;justify-content:center;width:110px;height:36px;border-radius:8px;background:var(--inner)}
+.rep-wrap .rating-num{font-size:15px;font-weight:700}
+.rep-wrap .avg-summary{background:var(--panel);border:1px solid var(--border);padding:16px 22px;display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:14px}
+.rep-wrap .cum-total-label{font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:1px}
+.rep-wrap .cum-total-result{text-align:right}
+.rep-wrap .avg-score-big{font-family:Rajdhani,sans-serif;font-size:46px;font-weight:700;line-height:1}
+.rep-wrap .avg-score-label{font-size:13px;font-weight:700;margin-top:4px}
+.rep-wrap .avg-out-of{font-size:12px;color:var(--muted);margin-top:4px}
+.rep-wrap .cum-legend-rows{display:flex;flex-direction:column;gap:5px;min-width:340px}
+.rep-wrap .cum-legend-row{display:flex;align-items:center;gap:10px;font-size:13px}
+.rep-wrap .cum-legend-dot{width:12px;height:12px;border-radius:3px;flex-shrink:0;background-color:var(--c);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.rep-wrap .cum-legend-range{font-weight:700;width:92px;flex-shrink:0}
+.rep-wrap .cum-legend-text{flex:1;text-align:right}
+.rep-wrap .comment-section{background:var(--panel);border:1px solid var(--border);padding:16px 20px;margin-bottom:20px}
+.rep-wrap .comment-title{font-size:13px;font-weight:700;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.rep-wrap .cum-remark{font-size:13.5px;line-height:1.55;font-style:italic;margin-bottom:8px;white-space:pre-wrap}
+.rep-wrap .no-comment{font-size:13px;color:var(--muted);font-style:italic}
+.rep-wrap .anon-note{font-size:11px;color:var(--muted);font-style:italic;margin-top:6px}
+.rep-wrap .empty-rep{text-align:center;padding:30px;border:1px solid var(--border);background:var(--panel);font-style:italic}
+.rep-wrap .back-btn,.rep-wrap .back-btn:link,.rep-wrap .back-btn:visited{color:var(--text)}
+@media print{
+  html,body{height:auto!important;overflow:visible!important;display:block!important;background:#fff!important}
+  .sidebar,.top-nav{display:none!important}
+  .main{margin:0!important;padding:6mm 10mm!important;min-height:0!important;background:#fff!important}
+  .rep-wrap,.rep-wrap *{color:#000!important;background-color:transparent!important;border-color:#ddd!important}
+  .rep-wrap .no-print{display:none!important}
+  .rep-wrap .cum-topbar{background:#f5f5f5!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .rep-wrap .cat-section{break-inside:auto}.rep-wrap .cat-title{break-after:avoid}
+  .rep-wrap .q-table thead{display:table-header-group}.rep-wrap .q-table tr{break-inside:avoid}
+  .rep-wrap .q-table td{padding:5px 12px!important}
+  .rep-wrap .rating-badge{height:26px!important;width:70px!important;border:1px solid #ccc}
+  .rep-wrap .cum-legend-rows{gap:1px!important;min-width:300px!important}
+  .rep-wrap .cum-legend-row{font-size:11px!important;gap:6px!important}
+  .rep-wrap .cum-legend-dot{width:9px!important;height:9px!important;background-color:var(--c)!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .rep-wrap .cum-legend-range{width:74px!important}
+  .rep-wrap .cum-comments-page{break-before:page;padding-top:14mm}
+}
+</style>
+<div class="rep-wrap">
+<div class="top-actions no-print">
+    <a href="<?= $h($backHref) ?>" class="back-btn"><i class="fa-solid fa-arrow-left"></i> Back to Evaluation Received</a>
+</div>
+
+<div class="cum-topbar">
+    <span class="cum-type"><?= $h($roleLabel) ?> Evaluation</span>
+    <span>Evaluated by: <strong><?= (int)$repCount ?> Evaluator<?= $repCount === 1 ? '' : 's' ?></strong> · <?= $h($repTermLabel) ?></span>
+</div>
+
+<div class="sheet-header">
+    <?php if ($photoUrl !== ''): ?><img class="sheet-avatar" src="<?= $h($photoUrl) ?>" alt=""/>
+    <?php else: ?><div class="sheet-avatar-ph"><i class="fa-solid fa-user"></i></div><?php endif; ?>
+    <div>
+        <div class="sheet-name"><?= $h($me['full_name'] ?? '') ?></div>
+        <div class="sheet-desig"><?= $h($desig) ?></div>
+    </div>
+    <div class="cum-date">
+        <div class="cum-date-label">Date Evaluated</div>
+        <div class="cum-date-val"><?= $h($repDateText) ?></div>
+    </div>
+</div>
+
+<?php $repNum = 1; foreach ($repByCat as $cat => $rows): ?>
+<div class="cat-section">
+    <div class="cat-title"><i class="fa-solid fa-layer-group" style="font-size:10px"></i> <?= $h($cat) ?></div>
+    <table class="q-table">
+        <thead><tr><th style="width:44px">No.</th><th>Statement / Question</th><th class="rating-col">Avg. Rating</th></tr></thead>
+        <tbody>
+        <?php foreach ($rows as $row): $c = $scoreColor($row['avg']); ?>
+        <tr>
+            <td class="q-num"><?= $repNum++ ?></td>
+            <td><?= $h($row['text']) ?></td>
+            <td class="rating-cell"><div class="rating-badge" style="border:1px solid <?= $c ?>33"><span class="rating-num" style="color:<?= $c ?>"><?= number_format($row['avg'], 2) ?></span></div></td>
+        </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+</div>
+<?php endforeach; ?>
+
+<?php if (!$repByCat): ?><div class="empty-rep">No scored answers found for this selection.</div><?php endif; ?>
+
+<?php if ($repEvals): ?>
+<div class="cat-section">
+    <div class="cat-title"><i class="fa-solid fa-users" style="font-size:10px"></i> Overall Average per Evaluator</div>
+    <table class="q-table">
+        <thead><tr><th style="width:44px">No.</th><th>Evaluator</th><th>Date Evaluated</th><th class="rating-col">Overall Average</th></tr></thead>
+        <tbody>
+        <?php foreach ($repEvals as $ei => $ev): $ec = $scoreColor($ev['score']); ?>
+        <tr>
+            <td class="q-num"><?= $ei + 1 ?></td>
+            <td>Anonymous Evaluator <?= $ei + 1 ?></td>
+            <td><?= $ev['ts'] ? $h(date('M d, Y', $ev['ts'])) : '—' ?></td>
+            <td class="rating-cell"><div class="rating-badge" style="border:1px solid <?= $ec ?>33"><span class="rating-num" style="color:<?= $ec ?>"><?= number_format($ev['score'], 2) ?></span></div></td>
+        </tr>
+        <?php endforeach; ?>
+        <?php if ($repOverall !== null): $oc = $scoreColor($repOverall); ?>
+        <tr style="background:var(--inner)">
+            <td></td>
+            <td colspan="2" style="font-weight:700;text-transform:uppercase;letter-spacing:.6px;font-size:12px">Combined Overall Average (all <?= count($repEvals) ?> evaluators)</td>
+            <td class="rating-cell"><div class="rating-badge" style="border:1px solid <?= $oc ?>55"><span class="rating-num" style="color:<?= $oc ?>"><?= number_format($repOverall, 2) ?></span></div></td>
+        </tr>
+        <?php endif; ?>
+        </tbody>
+    </table>
+</div>
+<?php endif; ?>
+
+<?php if ($repOverall !== null): ?>
+<!-- RATING LEGEND: same card style as Total Score, placed right before it (satisfaction wording) -->
+<div class="avg-summary cum-legend">
+    <div class="cum-total-label">Rating Legend</div>
+    <div class="cum-legend-rows">
+        <?php foreach ([
+            ['4.50 &ndash; 5.00', 'Very Satisfied',                     '#32B98A'],
+            ['3.50 &ndash; 4.49', 'Satisfied',                          '#6BCFA9'],
+            ['2.50 &ndash; 3.49', 'Neither Satisfied nor Dissatisfied', '#facc15'],
+            ['1.50 &ndash; 2.49', 'Dissatisfied',                       '#fb923c'],
+            ['1.00 &ndash; 1.49', 'Very Dissatisfied',                  '#E6788A'],
+        ] as $lg): ?>
+        <div class="cum-legend-row">
+            <span class="cum-legend-dot" style="--c:<?= $lg[2] ?>"></span>
+            <span class="cum-legend-range"><?= $lg[0] ?></span>
+            <span class="cum-legend-text"><?= $lg[1] ?></span>
+        </div>
+        <?php endforeach; ?>
+    </div>
+</div>
+
+<div class="avg-summary">
+    <div class="cum-total-label">Total Score</div>
+    <div class="cum-total-result">
+        <div class="avg-score-big" style="color:<?= $scoreColor($repOverall) ?>"><?= number_format($repOverall, 2) ?></div>
+        <div class="avg-score-label" style="color:<?= $scoreColor($repOverall) ?>"><?= $h($satLabel($repOverall)) ?></div>
+        <div class="avg-out-of">Overall cumulative rating · out of 5.00</div>
+    </div>
+</div>
+<?php endif; ?>
+
+<div class="cum-comments-page">
+    <div class="comment-section">
+        <div class="comment-title"><i class="fa-solid fa-comment-dots"></i> Comments, Suggestions &amp; Areas for Improvement</div>
+        <?php if ($repComments): foreach ($repComments as $rc): ?>
+        <div class="cum-remark">&ldquo;<?= $h($rc) ?>&rdquo;</div>
+        <?php endforeach; else: ?>
+        <div class="no-comment">No comments or suggestions were provided.</div>
+        <?php endif; ?>
+        <div class="anon-note">Evaluator identities are kept confidential in this report.</div>
+    </div>
+</div>
+</div>
 <?php
     }
 }

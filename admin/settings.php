@@ -7,7 +7,7 @@ require_once 'db.php';
 $role = strtolower(trim((string)($_SESSION['role'] ?? '')));
 $isSuperAdmin = in_array($role, ['superadmin','super admin'], true);
 $defaultTab = $_GET['tab'] ?? 'system';
-$allowedTabs = ['system','archive','appearance'];
+$allowedTabs = ['system','archive','profile','appearance'];
 if (!in_array($defaultTab, $allowedTabs, true)) $defaultTab = 'system';
 ?>
 <!doctype html>
@@ -66,7 +66,7 @@ html body.settings-page:not(.report-mode){height:100vh;overflow:hidden;box-sizin
 .settings-page .panel{flex:1;min-height:0}
 .settings-page .panel-card.section-panel{height:100%}
 .settings-page .panel-card.section-panel > .frame{height:100%!important;min-height:0}
-#section-system,#section-archive{border:0;box-shadow:none;border-radius:0;background:transparent}
+#section-system,#section-archive,#section-profile{border:0;box-shadow:none;border-radius:0;background:transparent}
 .unsaved-banner{position:fixed;top:0;left:0;right:0;z-index:9999;display:flex;align-items:center;justify-content:center;gap:14px;padding:12px 20px;background:#FFF3D6;border-bottom:2px solid #F0B429;color:#7A5A0A;font:700 12.5px Inter;box-shadow:0 6px 16px rgba(122,90,10,.15);transform:translateY(-100%);opacity:0;transition:transform .22s ease,opacity .22s ease;pointer-events:none}
 .unsaved-banner.show{transform:translateY(0);opacity:1;pointer-events:auto}
 .unsaved-banner i{color:#D97706}
@@ -133,6 +133,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
     <aside class="side" aria-label="Settings sections">
       <button class="tab-btn" data-tab="system"><i class="fa-solid fa-sliders" style="color:#3B82F6"></i><span>System &amp; Period</span></button>
       <button class="tab-btn" data-tab="archive"><i class="fa-solid fa-box-archive" style="color:#F59E0B"></i><span>System Archive</span></button>
+      <button class="tab-btn" data-tab="profile"><i class="fa-solid fa-user-shield" style="color:#8B5CF6"></i><span>Profile &amp; Security</span></button>
       <button class="tab-btn" data-tab="appearance"><i class="fa-solid fa-palette" style="color:#EC4899"></i><span>Appearance</span></button>
     </aside>
     <div class="side-actions" id="sideActions" style="display:none">
@@ -146,6 +147,9 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
       </section>
       <section class="panel-card section-panel" id="section-archive" style="display:none">
         <iframe class="frame" title="System Archive" src="system_archive.php" scrolling="yes" frameborder="0"></iframe>
+      </section>
+      <section class="panel-card section-panel" id="section-profile" style="display:none">
+        <iframe class="frame" title="Profile and Security" src="profile_security.php" scrolling="yes" frameborder="0"></iframe>
       </section>
       <section class="panel-card section-panel" id="section-appearance" style="display:none">
         <div class="panel-bar"><div><h2>Appearance</h2><p>Adjust the admin interface to your preferred working style.</p></div><div style="display:flex;align-items:center;gap:12px"><span class="panel-note">Preferences are saved in this browser.</span><button class="reset-link" id="resetAppearance" type="button">Reset to defaults</button></div></div>
@@ -228,6 +232,97 @@ function triggerSystemSettingsSave(){
 }
 document.getElementById('sideSaveBtn').addEventListener('click', triggerSystemSettingsSave);
 document.getElementById('bannerSaveBtn').addEventListener('click', triggerSystemSettingsSave);
+function enhanceSecurityQuestionsFrame(iframe){
+  // The EA Profile & Security screen is loaded in a same-origin iframe.
+  // Style only its existing Security Questions card; keep its form and save actions intact.
+  const src=(iframe.getAttribute('src')||'').toLowerCase();
+  if(!src.includes('profile_security.php')) return;
+  let doc;
+  try{ doc=iframe.contentDocument; }catch(e){ return; }
+  if(!doc || !doc.body || !doc.head) return;
+  if(!doc.getElementById('ea-sq-style')){
+    const style=doc.createElement('style');
+    style.id='ea-sq-style';
+    style.textContent=`
+      .ea-sq-card{box-sizing:border-box!important;padding:12px!important;border:1px solid var(--panel-border,var(--border-color,#dce8f5))!important;border-radius:15px!important;background:var(--panel-bg,var(--card-bg,#fff))!important;box-shadow:0 4px 16px rgba(32,73,120,.07)!important;overflow:hidden!important}
+      .ea-sq-banner{box-sizing:border-box!important;width:100%!important;min-height:92px!important;display:flex!important;align-items:center!important;justify-content:space-between!important;gap:16px!important;padding:17px 19px!important;border:0!important;border-radius:10px!important;background:color-mix(in srgb,var(--accent,var(--primary-color,#2f6ee2)) 7%,var(--panel-bg,#fff))!important;color:var(--text,var(--text-color,#10243f))!important;text-align:left!important;font:inherit!important;cursor:pointer!important}
+      .ea-sq-banner:focus-visible{outline:3px solid color-mix(in srgb,var(--accent,var(--primary-color,#2f6ee2)) 38%,transparent)!important;outline-offset:3px!important}
+      .ea-sq-left{display:flex!important;align-items:center!important;gap:16px!important;min-width:0!important;flex:1 1 auto!important}
+      .ea-sq-icon{width:60px!important;height:60px!important;flex:0 0 60px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;border-radius:15px!important;background:var(--accent,var(--primary-color,#2f6ee2))!important;color:#fff!important;box-shadow:0 6px 15px color-mix(in srgb,var(--accent,var(--primary-color,#2f6ee2)) 24%,transparent)!important}
+      .ea-sq-icon svg{width:25px!important;height:25px!important;display:block!important;fill:currentColor!important}
+      .ea-sq-meta{display:block!important;min-width:0!important}
+      .ea-sq-title-row{display:flex!important;align-items:center!important;gap:11px!important;flex-wrap:wrap!important}
+      .ea-sq-title{margin:0!important;padding:0!important;border:0!important;background:none!important;color:var(--text,var(--text-color,#10243f))!important;font-size:23px!important;font-weight:800!important;line-height:1.15!important;letter-spacing:-.02em!important}
+      .ea-sq-status{display:inline-flex!important;align-items:center!important;gap:7px!important;padding:5px 10px!important;border:1px solid color-mix(in srgb,var(--accent,var(--primary-color,#2f6ee2)) 32%,transparent)!important;border-radius:999px!important;background:color-mix(in srgb,var(--accent,var(--primary-color,#2f6ee2)) 8%,transparent)!important;color:var(--accent,var(--primary-color,#2f6ee2))!important;font-size:10px!important;font-weight:800!important;letter-spacing:.045em!important;white-space:nowrap!important}
+      .ea-sq-status:before{content:'';width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:currentColor;display:inline-block}
+      .ea-sq-description{display:block!important;margin-top:5px!important;color:var(--muted,var(--text-muted,#66809c))!important;font-size:13px!important;line-height:1.45!important;font-weight:400!important}
+      .ea-sq-manage{display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:10px!important;flex:0 0 auto!important;padding:12px 17px!important;border:0!important;border-radius:11px!important;background:var(--accent,var(--primary-color,#2f6ee2))!important;color:#fff!important;font-size:13px!important;font-weight:800!important;white-space:nowrap!important;box-shadow:0 5px 13px color-mix(in srgb,var(--accent,var(--primary-color,#2f6ee2)) 20%,transparent)!important}
+      .ea-sq-manage svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2.4;transition:transform .18s ease}
+      .ea-sq-banner[aria-expanded="true"] .ea-sq-manage svg{transform:rotate(180deg)}
+      .ea-sq-original-title{display:none!important}
+      .ea-sq-card.ea-sq-collapsed>:not(.ea-sq-banner){display:none!important}
+      @media(max-width:560px){.ea-sq-card{padding:8px!important}.ea-sq-banner{min-height:0!important;padding:13px!important;gap:11px!important;flex-wrap:wrap!important}.ea-sq-left{gap:11px!important;flex:1 1 210px!important}.ea-sq-icon{width:48px!important;height:48px!important;flex-basis:48px!important;border-radius:12px!important}.ea-sq-icon svg{width:21px!important;height:21px!important}.ea-sq-title{font-size:20px!important}.ea-sq-status{font-size:9px!important;padding:4px 8px!important}.ea-sq-description{font-size:12px!important}.ea-sq-manage{margin-left:auto!important;padding:10px 13px!important;font-size:12px!important}}
+      @media(prefers-reduced-motion:reduce){.ea-sq-manage svg{transition:none!important}}
+    `;
+    doc.head.appendChild(style);
+  }
+
+  function findAndStyle(){
+    if(doc.querySelector('.ea-sq-card')) return true;
+    const normalize=s=>(s||'').replace(/\s+/g,' ').trim().replace(/[:：]$/,'');
+    const titleCandidates=[...doc.querySelectorAll('h1,h2,h3,h4,h5,h6,legend,[role="heading"],.card-title,.section-title,label,strong,p,div,span')]
+      .filter(el=>!el.closest('.ea-sq-banner') && /^security questions?$/i.test(normalize(el.innerText||el.textContent)));
+    if(!titleCandidates.length) return false;
+    titleCandidates.sort((a,b)=>normalize(a.innerText||a.textContent).length-normalize(b.innerText||b.textContent).length);
+    const title=titleCandidates[0];
+    let card=null, node=title.parentElement;
+    for(let depth=0;node && node!==doc.body && depth<9;depth++,node=node.parentElement){
+      const className=typeof node.className==='string'?node.className:'';
+      const hasFields=!!node.querySelector('form,input,select,textarea,button[type="submit"]');
+      const isCardLike=/(card|panel|section|security|profile|settings|form|box)/i.test(className) || ['SECTION','FIELDSET','ARTICLE','FORM'].includes(node.tagName);
+      if(hasFields && isCardLike){ card=node; break; }
+    }
+    if(!card){
+      node=title.parentElement;
+      for(let depth=0;node && node!==doc.body && depth<7;depth++,node=node.parentElement){
+        if(node.querySelector('form,input,select,textarea,button[type="submit"]')){card=node;break;}
+      }
+    }
+    if(!card || card===doc.body || card===doc.documentElement) return false;
+
+    card.classList.add('ea-sq-card','ea-sq-collapsed');
+    title.classList.add('ea-sq-original-title');
+    const selects=[...card.querySelectorAll('select')].filter(s=>!s.disabled);
+    const selectedCount=selects.filter(s=>s.value && s.selectedIndex>0).length;
+    const status=selects.length===0 || selectedCount===0 ? 'SET UP' : (selectedCount===selects.length && selectedCount>=2 ? 'READY' : 'REVIEW');
+    const banner=doc.createElement('button');
+    banner.type='button';
+    banner.className='ea-sq-banner';
+    banner.setAttribute('aria-expanded','false');
+    banner.setAttribute('aria-label','Manage Security Questions');
+    banner.innerHTML=`
+      <span class="ea-sq-left">
+        <span class="ea-sq-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2.1 3.5 5.3v5.2c0 5.2 3.5 9.6 8.5 11.4 5-1.8 8.5-6.2 8.5-11.4V5.3L12 2.1zm0 3.1 5.6 2.1v3.2c0 3.7-2.3 7-5.6 8.5-3.3-1.5-5.6-4.8-5.6-8.5V7.3L12 5.2z"/></svg></span>
+        <span class="ea-sq-meta"><span class="ea-sq-title-row"><span class="ea-sq-title">Security Questions</span><span class="ea-sq-status">${status}</span></span><span class="ea-sq-description">Used for password recovery. Click to view or change your questions.</span></span>
+      </span>
+      <span class="ea-sq-manage"><span>Manage</span><svg viewBox="0 0 12 12" aria-hidden="true"><path d="m2 4 4 4 4-4"/></svg></span>`;
+    card.insertBefore(banner,card.firstChild);
+    banner.addEventListener('click',()=>{
+      const isExpanded=banner.getAttribute('aria-expanded')==='true';
+      banner.setAttribute('aria-expanded',isExpanded?'false':'true');
+      card.classList.toggle('ea-sq-collapsed',isExpanded);
+    });
+    return true;
+  }
+
+  if(findAndStyle()) return;
+  // Some profile pages render their cards after the iframe load event.
+  if(!iframe.__eaSqObserver && doc.body){
+    const observer=new MutationObserver(()=>{if(findAndStyle()){observer.disconnect();iframe.__eaSqObserver=null;}});
+    observer.observe(doc.body,{childList:true,subtree:true});
+    iframe.__eaSqObserver=observer;
+  }
+}
 function prepareFrame(iframe){
   // Keep a fixed viewport so long Settings forms scroll INSIDE the feature frame.
   // Do not redirect wheel events to window: Settings is itself commonly embedded
@@ -235,8 +330,9 @@ function prepareFrame(iframe){
   /* height is handled by CSS (flex fill) so the page doesn't get a second scrollbar */
 }
 document.querySelectorAll('iframe.frame').forEach(f=>{
-  f.addEventListener('load',()=>prepareFrame(f));
+  f.addEventListener('load',()=>{prepareFrame(f);enhanceSecurityQuestionsFrame(f);});
   prepareFrame(f);
+  enhanceSecurityQuestionsFrame(f);
 });
 buttons.forEach(b=>b.addEventListener('click',async ()=>{
   const current=buttons.find(x=>x.classList.contains('active'));

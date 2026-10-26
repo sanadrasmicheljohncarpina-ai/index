@@ -81,6 +81,35 @@ function notif_sync_received_evaluations(mysqli $db, int $userId): void {
     }
 }
 
+// ── Live stamp of received evaluations ───────────────────────────────────
+// Read straight from evaluation_tracker (not from notification rows), so an
+// evaluation submitted directly by another portal changes the stamp the moment
+// it is saved. The dashboards compare it between polls and refresh in place.
+// Only counts/ids/times are returned - never who evaluated.
+function notif_received_stamp(mysqli $db, int $userId): array {
+    $out = ['count' => 0, 'latest_id' => 0, 'latest_at' => 0, 'stamp' => '0-0-0'];
+    try {
+        $st = $db->prepare("SELECT COUNT(*) AS c, COALESCE(MAX(id),0) AS m,
+                                   COALESCE(MAX(UNIX_TIMESTAMP(submitted_at)),0) AS t
+                            FROM evaluation_tracker
+                            WHERE target_user_id = ?
+                              AND status NOT IN ('draft','in_progress')");
+        if ($st) {
+            $st->bind_param('i', $userId);
+            $st->execute();
+            $r = $st->get_result()->fetch_assoc() ?: [];
+            $st->close();
+            $out['count']     = (int)($r['c'] ?? 0);
+            $out['latest_id'] = (int)($r['m'] ?? 0);
+            $out['latest_at'] = (int)($r['t'] ?? 0);
+            $out['stamp']     = $out['count'] . '-' . $out['latest_id'] . '-' . $out['latest_at'];
+        }
+    } catch (Throwable $e) {
+        error_log('[notifications_api] received stamp failed for user=' . $userId . ': ' . $e->getMessage());
+    }
+    return $out;
+}
+
 $prefs = [];
 try {
     $pst = $mysqli->prepare('SELECT * FROM user_preferences WHERE user_id=? LIMIT 1');
@@ -148,9 +177,13 @@ if ($stmt) {
     $stmt->close();
 }
 
+$received = notif_received_stamp($mysqli, $user_id);
+
 $mysqli->close();
 echo json_encode([
     'success' => true,
     'unread_count' => $unread_count,
     'notifications' => $notifications,
+    'received' => $received,
+    'server_time' => time(),
 ], JSON_UNESCAPED_SLASHES);

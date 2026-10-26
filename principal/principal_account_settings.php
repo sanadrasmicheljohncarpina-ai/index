@@ -14,6 +14,11 @@ if (empty($_SESSION['principal_settings_csrf'])) {
 }
 $csrfToken = $_SESSION['principal_settings_csrf'];
 
+require_once 'security.php';   // security-question helpers: sq_questions(), sq_validate(), sq_save()
+security_ensure_tables($mysqli);
+$sq_all = sq_questions();
+$sqOpen = false;   // keeps the Security Questions dropdown open after a failed save
+
 $errors = [];
 $success = null;
 $userId = (int)$_SESSION['user_id'];
@@ -206,8 +211,88 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $success = 'Password changed successfully.';
             }
         }
+
+        // ── SECURITY QUESTIONS (only the account password is required) ──
+        if ($action === 'update_security_questions') {
+            $sqOpen = true;
+            $sqPassword = (string)($_POST['sq_password'] ?? '');
+
+            // Same tolerant password lookup as the password form above.
+            $sqStored = null;
+            foreach (['password', 'password_hash'] as $col) {
+                try {
+                    $stmt = $mysqli->prepare("SELECT `$col` AS pw FROM users WHERE id = ? LIMIT 1");
+                    $stmt->bind_param('i', $userId);
+                    $stmt->execute();
+                    $res = $stmt->get_result()->fetch_assoc();
+                    $stmt->close();
+                    if ($res && isset($res['pw']) && (string)$res['pw'] !== '') { $sqStored = (string)$res['pw']; break; }
+                } catch (Throwable $e) {
+                    // Column doesn't exist; try the next candidate.
+                }
+            }
+            $sqPwOk = false;
+            if ($sqStored !== null) {
+                $sqPwOk = !empty(password_get_info($sqStored)['algo'])
+                    ? password_verify($sqPassword, $sqStored)
+                    : hash_equals($sqStored, $sqPassword);
+            }
+
+            if ($sqStored === null) {
+                $errors[] = 'Could not verify your password. Please contact the administrator.';
+            } elseif ($sqPassword === '') {
+                $errors[] = 'Enter your password to change your security questions.';
+            } elseif (!$sqPwOk) {
+                $errors[] = 'Incorrect password.';
+            } else {
+                // Same validation the registration pages use (3 distinct questions + answers).
+                [$sqErr, $sqRows] = sq_validate($_POST['sq_question'] ?? [], $_POST['sq_answer'] ?? [], (string)($me['username'] ?? ''));
+                if ($sqErr !== null) {
+                    $errors[] = $sqErr;
+                } else {
+                    try {
+                        $mysqli->begin_transaction();
+                        sq_save($mysqli, $userId, $sqRows);
+                        $mysqli->commit();
+                        $success = 'Security questions updated successfully.';
+                        $sqOpen = false;
+                    } catch (Throwable $e) {
+                        try { $mysqli->rollback(); } catch (Throwable $ignored) {}
+                        error_log('principal_account_settings.php sq_save failed: ' . $e->getMessage());
+                        $errors[] = 'Could not save your security questions. Please try again.';
+                    }
+                }
+            }
+        }
     }
 }
+
+// ── SECURITY QUESTIONS STATUS (drives the "Set up" / "Not set" pill) ──
+// true = this account has saved questions, false = none yet, null = could not
+// be determined (the pill is then simply hidden rather than guessing).
+// Looks for the security-questions table created by security_ensure_tables().
+$sqStatus = null;
+try {
+    foreach (['%security%question%', '%question%security%'] as $like) {
+        $tr = $mysqli->query("SHOW TABLES LIKE '" . $mysqli->real_escape_string($like) . "'");
+        while ($tr && ($trow = $tr->fetch_row())) {
+            $tbl = str_replace('`', '``', $trow[0]);
+            $hasCol = $mysqli->query("SHOW COLUMNS FROM `$tbl` LIKE 'user_id'");
+            if (!$hasCol || $hasCol->num_rows === 0) continue;
+            $stmt = $mysqli->prepare("SELECT COUNT(*) FROM `$tbl` WHERE user_id = ?");
+            $stmt->bind_param('i', $userId);
+            $stmt->execute();
+            $cnt = (int)($stmt->get_result()->fetch_row()[0] ?? 0);
+            $stmt->close();
+            $sqStatus = $cnt > 0;
+            break 2;
+        }
+    }
+} catch (Throwable $e) {
+    error_log('principal_account_settings.php sq status check failed: ' . $e->getMessage());
+    $sqStatus = null;
+}
+if (!empty($success) && ($action ?? '') === 'update_security_questions') { $sqStatus = true; }
 
 html_head_open('PBI — Account Settings');
 render_principal_sidebar('settings', $me, $scopeLabel, $photo_src);
@@ -442,6 +527,73 @@ main.main::before {
             <button class="btn-primary" type="submit"><i class="fa-solid fa-key"></i> Update Password</button>
         </form>
     </div>
+
+    <!-- SECURITY QUESTIONS: hidden behind a dropdown button until clicked -->
+    <div class="section ac-card ac-c5 sq-card" id="principal-security-questions">
+        <button type="button" class="sq-toggle" id="sqToggle" aria-expanded="<?= $sqOpen ? 'true' : 'false' ?>" aria-controls="sqBody">
+            <span class="sq-lead">
+                <span class="sq-icon"><i class="fa-solid fa-shield-halved"></i></span>
+                <span class="sq-text">
+                    <span class="sq-title-row">
+                        <span class="sq-title">Security Questions</span>
+                        <?php if ($sqStatus !== null): ?>
+                        <span class="sq-pill <?= $sqStatus ? 'is-set' : 'is-unset' ?>"><span class="sq-dot"></span><?= $sqStatus ? 'Set up' : 'Not set' ?></span>
+                        <?php endif; ?>
+                    </span>
+                    <span class="sq-sub">Used for password recovery. Click to view or change your questions.</span>
+                </span>
+            </span>
+            <span class="sq-manage">Manage <i class="fa-solid fa-chevron-down sq-chev"></i></span>
+        </button>
+        <div class="sq-body" id="sqBody"<?= $sqOpen ? '' : ' hidden' ?>>
+            <p class="sq-note">Choose 3 different questions. Your password is required to save any change.</p>
+            <form method="post" autocomplete="off">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
+                <input type="hidden" name="action" value="update_security_questions">
+                <div class="sq-list">
+                    <?php for ($n = 1; $n <= 3; $n++): ?>
+                    <div class="form-group sq-item">
+                        <label for="sq_q<?= $n ?>">Question <?= $n ?></label>
+                        <select name="sq_question[<?= $n ?>]" id="sq_q<?= $n ?>" required>
+                            <option value="" disabled<?= empty($_POST['sq_question'][$n]) ? ' selected' : '' ?>>Choose a question</option>
+                            <?php foreach ($sq_all as $k => $q): ?>
+                            <option value="<?= htmlspecialchars($k) ?>"<?= (($_POST['sq_question'][$n] ?? '') === $k) ? ' selected' : '' ?>><?= htmlspecialchars($q) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <input type="text" name="sq_answer[<?= $n ?>]" id="sq_a<?= $n ?>" maxlength="100" placeholder="Your answer" autocomplete="off" required>
+                    </div>
+                    <?php endfor; ?>
+                </div>
+                <div class="form-grid" style="margin-top:6px;">
+                    <div class="form-group"><label for="sq_password">Your Password</label><div class="pw-wrap"><input type="password" name="sq_password" id="sq_password" required autocomplete="current-password" placeholder="Required to save changes"><button type="button" class="pw-toggle" aria-label="Show password" aria-pressed="false" tabindex="0"><svg class="pw-eye" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="pw-eye-off" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19C5 19 1 12 1 12a18.5 18.5 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12A3 3 0 1 1 9.88 9.88"/><line x1="1" y1="1" x2="23" y2="23"/></svg></button></div></div>
+                </div>
+                <button class="btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Update Security Questions</button>
+            </form>
+        </div>
+    </div>
+    <script>
+    /* Security questions: open/close the dropdown, and stop the three questions repeating. */
+    (function(){
+        var t = document.getElementById('sqToggle'), b = document.getElementById('sqBody');
+        if (!t || !b) return;
+        t.addEventListener('click', function(){
+            var open = t.getAttribute('aria-expanded') === 'true';
+            t.setAttribute('aria-expanded', open ? 'false' : 'true');
+            b.hidden = open;
+        });
+        var sel = [1,2,3].map(function(n){ return document.getElementById('sq_q' + n); });
+        function sync(){
+            var chosen = sel.map(function(s){ return s.value; }).filter(Boolean);
+            sel.forEach(function(s){
+                Array.prototype.forEach.call(s.options, function(o){
+                    o.disabled = o.value === '' || (chosen.indexOf(o.value) !== -1 && o.value !== s.value);
+                });
+            });
+        }
+        sel.forEach(function(s){ s.addEventListener('change', sync); });
+        sync();
+    })();
+    </script>
     </div>
 
     <div class="settings-tabpanel" role="tabpanel" id="tabPanelAppearance" aria-labelledby="tabBtnAppearance" data-panel="appearance" hidden>
@@ -905,6 +1057,50 @@ textarea,
 }
 </style>
 
+<style id="principal-sq-style">
+/* ── Security questions dropdown ─────────────────────────────── */
+/* Card: orange accent + tinted band (icon tile, title, status pill, Manage button) */
+main.main .ac-card.sq-card{--ac-c:#D99A2B;--sq-band:#FCF3EB;--sq-title:#0F172A;--sq-sub:#64748B;--sq-pill-bg:#FEF1E2;--sq-pill-bd:#F3C99B;--sq-pill-tx:#B8801F;padding:16px !important;}
+html.dark-theme main.main .ac-card.sq-card{--sq-band:rgba(217,154,43,.12);--sq-title:#E7ECF3;--sq-sub:#A0B3C6;--sq-pill-bg:rgba(217,154,43,.16);--sq-pill-bd:rgba(217,154,43,.4);--sq-pill-tx:#F5A54A;}
+main.main .sq-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:16px;text-align:left;background:var(--sq-band);border:0;border-radius:6px;padding:20px 22px;cursor:pointer;color:inherit;font-family:inherit;transition:filter .15s;}
+main.main .sq-toggle:hover{filter:brightness(.98);}
+main.main .sq-toggle:focus-visible{outline:2px solid #D99A2B;outline-offset:2px;}
+main.main .sq-lead{display:flex;align-items:center;gap:16px;min-width:0;flex:1;}
+main.main .sq-icon{width:60px;height:60px;flex:0 0 60px;border-radius:14px;display:inline-flex;align-items:center;justify-content:center;background:#D99A2B;color:#fff;font-size:22px;box-shadow:0 6px 14px rgba(217,154,43,.32);}
+main.main .sq-icon i{color:#fff !important;font-size:22px;}
+main.main .sq-text{min-width:0;display:flex;flex-direction:column;gap:5px;}
+main.main .sq-title-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+main.main .sq-title{font-family:'Rajdhani',sans-serif;font-size:26px;font-weight:800;line-height:1.1;color:var(--sq-title);}
+main.main .sq-pill{display:inline-flex;align-items:center;gap:7px;padding:4px 12px;border-radius:999px;border:1px solid var(--sq-pill-bd);background:var(--sq-pill-bg);color:var(--sq-pill-tx);font:700 11px 'DM Sans',sans-serif;letter-spacing:.08em;text-transform:uppercase;}
+main.main .sq-pill .sq-dot{width:8px;height:8px;border-radius:50%;background:currentColor;}
+main.main .sq-pill.is-unset{--sq-pill-bg:rgba(100,116,139,.12);--sq-pill-bd:rgba(100,116,139,.35);--sq-pill-tx:#64748B;}
+main.main .sq-sub{font-size:14px;line-height:1.45;color:var(--sq-sub);}
+main.main .sq-manage{display:inline-flex;align-items:center;gap:9px;flex-shrink:0;padding:11px 22px;border-radius:10px;background:#D99A2B;color:#fff;font:700 15px 'DM Sans',sans-serif;box-shadow:0 6px 14px rgba(217,154,43,.32);transition:filter .15s,transform .15s;}
+main.main .sq-toggle:hover .sq-manage{filter:brightness(1.06);}
+main.main .sq-chev{font-size:12px;color:#fff !important;transition:transform .2s;}
+main.main .sq-toggle[aria-expanded="true"] .sq-chev{transform:rotate(180deg);}
+@media(max-width:640px){
+  main.main .sq-toggle{flex-direction:column;align-items:stretch;padding:16px;}
+  main.main .sq-icon{width:48px;height:48px;flex-basis:48px;font-size:19px;}
+  main.main .sq-title{font-size:22px;}
+  main.main .sq-manage{justify-content:center;}
+}
+main.main .sq-body{padding:6px 8px 8px;border-top:0;}
+main.main .sq-body[hidden]{display:none !important;}
+main.main .sq-note{font-size:12px;color:var(--ap-muted,#64748B);margin:14px 0 16px;}
+main.main .sq-list{display:grid;gap:16px;margin-bottom:16px;}
+main.main .sq-item{gap:9px;}
+main.main .form-group select{width:100%;padding:12px 13px !important;border-radius:9px !important;font:14px 'DM Sans',sans-serif !important;outline:none;cursor:pointer;transition:.2s;background:#FFFFFF !important;color:#172033 !important;border:1px solid #CBD5E1 !important;}
+main.main .form-group select:focus{border-color:#D99A2B !important;box-shadow:0 0 0 3px rgba(217,154,43,.16) !important;}
+main.main .form-group select option{background:#FFFFFF;color:#172033;}
+main.main .form-group select option:disabled{color:#94A3B8;}
+html.dark-theme main.main .form-group select{background:rgba(10,25,47,.72) !important;color:#E0E6F0 !important;border-color:rgba(255,255,255,.12) !important;}
+html.dark-theme main.main .form-group select option{background:#0F1F3D;color:#E0E6F0;}
+html.dark-theme main.main .form-group select option:disabled{color:#7b8ea3;}
+html.principal-density-compact main.main .sq-toggle,html.dean-density-compact main.main .sq-toggle{padding:14px 16px;}
+html.principal-density-compact main.main .sq-body,html.dean-density-compact main.main .sq-body{padding:2px 6px 6px;}
+</style>
+
 </body></html>
 <?php $mysqli->close(); ?>
 <style id="white-theme-override">
@@ -1063,16 +1259,14 @@ main.main > .page-header{
 }
 </style>
 
-<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20261011.4" id="principal-dark-repairs"/>
+<link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20261026.1" id="principal-dark-repairs"/>
 <style id="ac-faculty-style">
 /* ── Account Settings — same card language as the Faculty portal ──
    Coloured top bar, icon tile, title + description. Surface/text colours are left to the
    existing theme so light and dark mode keep working; only structure + accents change. */
-main.main{--ac:#D97706;}
+main.main{--ac:#D99A2B;}
 main.main .ac-c1{--ac-c:var(--ac);}
-main.main .ac-c2,main.main .ac-c5{--ac-c:#10B981;}
-main.main .ac-c3{--ac-c:#D88900;}
-main.main .ac-c4{--ac-c:#3B82F6;}
+main.main .ac-c2,main.main .ac-c3,main.main .ac-c4,main.main .ac-c5{--ac-c:var(--ac);}
 main.main .ac-card{position:relative !important;overflow:hidden !important;border-radius:15px !important;padding:22px 24px 24px !important;margin-bottom:20px !important;}
 main.main .ac-card::before{content:'';position:absolute;left:0;right:0;top:0;height:3px;background:var(--ac-c);}
 main.main .ac-head{display:flex;align-items:flex-start;gap:14px;margin-bottom:18px;}
@@ -1125,8 +1319,8 @@ html.dark-theme main.main.principal-internal-scroll::-webkit-scrollbar-thumb{bac
    Accessibility side by side, dark headings, check badge at the right,
    same photo/button sizing. Principal keeps its amber accent.
    ================================================================ */
-main.main{--ap-card:#FFFFFF;--ap-soft:#F8FAFC;--ap-line:#E2E8F0;--ap-text:#0F172A;--ap-muted:#64748B;--ap-accent:#D97706;--ap-accent-bg:rgba(217,119,6,.10);--ap-ring:rgba(217,119,6,.14);}
-html.dark-theme main.main{--ap-card:rgba(10,25,47,.55);--ap-soft:rgba(10,25,47,.45);--ap-line:rgba(255,255,255,.10);--ap-text:#E0E6F0;--ap-muted:#A0B3C6;--ap-accent-bg:rgba(217,119,6,.16);}
+main.main{--ap-card:#FFFFFF;--ap-soft:#F8FAFC;--ap-line:#E2E8F0;--ap-text:#0F172A;--ap-muted:#64748B;--ap-accent:#D99A2B;--ap-accent-bg:rgba(217,154,43,.10);--ap-ring:rgba(217,154,43,.14);}
+html.dark-theme main.main{--ap-card:rgba(10,25,47,.55);--ap-soft:rgba(10,25,47,.45);--ap-line:rgba(255,255,255,.10);--ap-text:#E0E6F0;--ap-muted:#A0B3C6;--ap-accent-bg:rgba(217,154,43,.16);}
 
 /* Headings: dark, not accent-coloured */
 html:not(.dark-theme) main.main .ac-head h2{color:#0F172A !important;}
@@ -1180,8 +1374,8 @@ main.main .appearance-accessibility-note i{color:var(--ap-accent) !important;mar
 /* Profile photo row + buttons, same sizing as Dean */
 main.main .profile-photo-lg{width:96px !important;height:96px !important;border-radius:50% !important;object-fit:cover;border:3px solid var(--ap-accent) !important;}
 main.main .photo-form-wrap input[type="file"]{font:13px 'DM Sans',sans-serif !important;padding:2px 4px !important;width:auto !important;max-width:100%;border:1px solid #CBD5E1 !important;border-radius:6px !important;background:#fff !important;}
-main.main .btn-primary{padding:11px 17px !important;border:0 !important;border-radius:9px !important;font:600 14px 'DM Sans',sans-serif !important;color:#fff !important;background:var(--ap-accent) !important;box-shadow:0 4px 14px rgba(217,119,6,.25) !important;cursor:pointer;}
-main.main .btn-primary:hover{background:#F59E0B !important;color:#fff !important;transform:translateY(-1px);}
+main.main .btn-primary{padding:11px 17px !important;border:0 !important;border-radius:9px !important;font:600 14px 'DM Sans',sans-serif !important;color:#fff !important;background:var(--ap-accent) !important;box-shadow:0 4px 14px rgba(217,154,43,.25) !important;cursor:pointer;}
+main.main .btn-primary:hover{background:#F0B84D !important;color:#fff !important;transform:translateY(-1px);}
 main.main .form-group input{padding:12px 13px !important;font:14px 'DM Sans',sans-serif !important;border-radius:9px !important;}
 
 @media (max-width:900px){main.main .appearance-theme-options{grid-template-columns:1fr !important;}}
@@ -1196,13 +1390,14 @@ main.main .pw-toggle .pw-eye{display:none;}
 main.main .pw-toggle .pw-eye-off{display:block;}
 main.main .pw-toggle[aria-pressed="true"] .pw-eye{display:block;}
 main.main .pw-toggle[aria-pressed="true"] .pw-eye-off{display:none;}
-main.main .pw-toggle:hover{color:#B45309;background:rgba(217,154,43,.12);}
+main.main .pw-toggle:hover{color:#B8801F;background:rgba(217,154,43,.12);}
 main.main .pw-toggle:focus-visible{outline:2px solid #D99A2B;outline-offset:1px;}
 </style>
 <style id="principal-settings-tabs">
-.settings-tabs{display:flex;gap:6px;margin:0 0 18px;padding:5px;border:1px solid #D9E4EF;border-radius:12px;background:#F4F8FF;width:fit-content;max-width:100%;overflow-x:auto;}
-.settings-tab{appearance:none;border:0;background:transparent;color:#64748B;font:inherit;font-size:13.5px;font-weight:600;padding:9px 18px;border-radius:9px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;white-space:nowrap;transition:background .2s,color .2s,box-shadow .2s;}
-.settings-tab i{color:#D99A2B;}
+/* Compact section tabs: keep the same look and behavior, with slightly less bulk. */
+.settings-tabs{display:flex;gap:5px;margin:0 0 16px;padding:4px;border:1px solid #D9E4EF;border-radius:10px;background:#F4F8FF;width:fit-content;max-width:100%;overflow-x:auto;}
+.settings-tab{appearance:none;border:0;background:transparent;color:#64748B;font:inherit;font-size:12.5px;font-weight:600;padding:7px 14px;border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;transition:background .2s,color .2s,box-shadow .2s;}
+.settings-tab i{color:#D99A2B;font-size:12px;}
 .settings-tab:hover{color:#172033;background:rgba(217,154,43,.12);}
 .settings-tab[aria-selected="true"]{background:#FFFFFF;color:#172033;box-shadow:0 1px 5px rgba(15,23,42,.10);}
 .settings-tab:focus-visible{outline:2px solid #D99A2B;outline-offset:2px;}

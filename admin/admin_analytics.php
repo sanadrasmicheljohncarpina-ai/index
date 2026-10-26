@@ -441,7 +441,9 @@ function schoolheadTargetLabel($role) {
 //     (target_type='School', eval_type='peer' in the question bank) --
 //     entirely separate from the top-level School Head Evaluation tab, where
 //     the EA/students evaluate the Dean/Principal instead.
-//   - Faculty: exactly questionnaire.php's own has_teacher rule --
+//   - Faculty: exactly questionnaire.php's own has_teacher rule, plus the same
+//     year-level rule the Faculty/Staff dashboards use (a Staff account with >= 1
+//     user_year_levels row is Teaching Staff -> Faculty) --
 //     is_teaching_staff (Teacher role, an explicit secondary Teacher role, a
 //     Teacher sector, or an actual teaching_assignments row) OR
 //     ec_has_teacher_function($u). That second half matters: it's an
@@ -472,7 +474,8 @@ function ec_resolve_peer_group_full($p, $mysqli) {
         "SELECT id, full_name, designation, photo, source, role, sector,
                 EXISTS(SELECT 1 FROM teaching_assignments ta WHERE ta.user_id=u.id) AS has_teaching_assignment,
                 (u.role='teacher' OR u.sector='Teacher'
-                 OR EXISTS(SELECT 1 FROM teaching_assignments ta2 WHERE ta2.user_id=u.id)) AS is_teaching_staff,
+                 OR EXISTS(SELECT 1 FROM teaching_assignments ta2 WHERE ta2.user_id=u.id)
+                 OR EXISTS(SELECT 1 FROM user_year_levels yl2 WHERE yl2.user_id=u.id)) AS is_teaching_staff,
                 EXISTS(SELECT 1 FROM user_year_levels yl WHERE yl.user_id=u.id) AS has_year_level
          FROM users u WHERE u.id=? LIMIT 1"
     );
@@ -1086,6 +1089,11 @@ if ($view === 'sheet' && $target_id && ($tracker_id || ($_GET['report'] ?? '') =
 .cum-total{margin-bottom:12px;justify-content:space-between;}
 .cum-total-label{font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:1px;align-self:center;}
 .cum-total-result{text-align:right;margin-right:-2px;}
+.cum-legend-rows{display:flex;flex-direction:column;gap:5px;min-width:340px;}
+.cum-legend-row{display:flex;align-items:center;gap:10px;font-size:13px;}
+.cum-legend-dot{width:12px;height:12px;border-radius:3px;flex-shrink:0;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+.cum-legend-range{font-weight:700;width:92px;flex-shrink:0;}
+.cum-legend-text{flex:1;text-align:right;}
 .cum-remark{font-size:13px;line-height:1.4;font-style:italic;margin-bottom:5px;}
 @media print{
   .individual-sheet{display:none!important;}
@@ -1513,6 +1521,10 @@ html[data-theme="dark"] .avg-summary{background:#fff!important;border-color:#ddd
   body .cumulative-sheet .rating-num{font-size:11px!important;line-height:1!important;}
   body .cumulative-sheet .cum-total{margin:0 0 5px!important;padding:6px 12px!important;}
   body .cumulative-sheet .cum-total-label{font-size:11px!important;}
+  body .cumulative-sheet .cum-legend-rows{gap:1px!important;min-width:300px!important;}
+  body .cumulative-sheet .cum-legend-row{font-size:9.5px!important;gap:6px!important;}
+  body .cumulative-sheet .cum-legend-dot{width:8px!important;height:8px!important;}
+  body .cumulative-sheet .cum-legend-range{width:70px!important;}
   body .cumulative-sheet .avg-score-big{font-size:28px!important;}
   body .cumulative-sheet .avg-score-label{font-size:11px!important;margin-top:2px!important;}
   body .cumulative-sheet .avg-out-of{font-size:9px!important;margin-top:2px!important;}
@@ -1792,7 +1804,28 @@ function confirmNav(link, message, opts){
     <?php endif; ?>
 
     <?php if ($cumOverall !== null): ?>
-    <!-- TOTAL SCORE: sits directly under the last question -->
+    <!-- RATING LEGEND: same card style as Total Score, placed right before it.
+         Uses the satisfaction wording (same bands as scoreSatisfactionLabel()). -->
+    <div class="avg-summary cum-total cum-legend">
+        <div class="cum-total-label">Rating Legend</div>
+        <div class="cum-legend-rows">
+            <?php foreach ([
+                ['4.50 – 5.00', 'Very Satisfied',                    '#32B98A'],
+                ['3.50 – 4.49', 'Satisfied',                         '#6BCFA9'],
+                ['2.50 – 3.49', 'Neither Satisfied nor Dissatisfied','#facc15'],
+                ['1.50 – 2.49', 'Dissatisfied',                      '#fb923c'],
+                ['1.00 – 1.49', 'Very Dissatisfied',                 '#E6788A'],
+            ] as $lg): ?>
+            <div class="cum-legend-row">
+                <span class="cum-legend-dot" style="background:<?= $lg[2] ?>"></span>
+                <span class="cum-legend-range"><?= $lg[0] ?></span>
+                <span class="cum-legend-text"><?= $lg[1] ?></span>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+
+    <!-- TOTAL SCORE: sits directly under the legend -->
     <div class="avg-summary cum-total">
         <div class="cum-total-label">Total Score</div>
         <div class="cum-total-result">
@@ -2166,11 +2199,11 @@ function confirmNav(link, message, opts){
     </div>
     <div class="score-legend no-print">
         <div class="score-legend-title">Rating Legend</div>
-        <div class="score-legend-row"><span style="color:#32B98A">4.50 - 5.00</span> Always</div>
-        <div class="score-legend-row"><span style="color:#6BCFA9">3.50 - 4.49</span> Often</div>
-        <div class="score-legend-row"><span style="color:#facc15">2.50 - 3.49</span> Sometimes</div>
-        <div class="score-legend-row"><span style="color:#fb923c">1.50 - 2.49</span> Rarely</div>
-        <div class="score-legend-row"><span style="color:#E6788A">1.00 - 1.49</span> Never</div>
+        <div class="score-legend-row"><span style="color:#32B98A">4.50 - 5.00</span> Very Satisfied</div>
+        <div class="score-legend-row"><span style="color:#6BCFA9">3.50 - 4.49</span> Satisfied</div>
+        <div class="score-legend-row"><span style="color:#facc15">2.50 - 3.49</span> Neither Satisfied nor Dissatisfied</div>
+        <div class="score-legend-row"><span style="color:#fb923c">1.50 - 2.49</span> Dissatisfied</div>
+        <div class="score-legend-row"><span style="color:#E6788A">1.00 - 1.49</span> Very Dissatisfied</div>
     </div>
 </div>
 
@@ -2254,7 +2287,7 @@ function confirmNav(link, message, opts){
             <td><?= htmlspecialchars($row['label']) ?></td>
             <td><?= htmlspecialchars($row['role']) ?></td>
             <td style="font-weight:700;color:<?= $rc ?>"><?= $row['avg'] !== null ? number_format($row['avg'],2) : '—' ?></td>
-            <td><span class="rt-rating-pill" style="background:<?= $rc ?>1A;color:<?= $rc ?>"><?= scoreLabel($row['avg']) ?></span></td>
+            <td><span class="rt-rating-pill" style="background:<?= $rc ?>1A;color:<?= $rc ?>"><?= scoreSatisfactionLabel($row['avg']) ?></span></td>
             <td><?= !empty($row['date']) ? date('M d, Y', strtotime($row['date'])) : '—' ?></td>
             <td class="no-print" style="white-space:nowrap;">
                 <a class="rt-icon-btn rt-icon-view" title="View" aria-label="View" href="?view=sheet&target_id=<?= $target_id ?>&student_id=<?= $row['student_id'] ?>&tracker_id=<?= $row['tracker_id'] ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>&evaluator=<?= urlencode($evaluatorFilter) ?>"><i class="fa-solid fa-eye"></i></a>

@@ -10,6 +10,7 @@
         ]);
         session_start();
         require_once 'db.php';
+require_once __DIR__ . '/security.php';   // security-question helpers (sq_*, auth_*)
         require_once '../shared/eligibility.php';
         require_once '../shared/ea_personnel_service.php';
 require_once '../shared/system_settings_service.php';
@@ -512,6 +513,50 @@ $up->bind_param('iiii', $user_id, $n1, $n2, $n3); $up->execute(); $up->close();
                 $_SESSION['toast_error'] = "Failed to update teaching levels. Please try again.";
             }
             header("Location: staff_dashboard.php?page=profile"); exit;
+        }
+
+        // ── SECURITY QUESTIONS (Settings → Profile & Security; only the account password is required) ──
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_security_questions'])) {
+            $sqRole = 'staff';
+            $sqKind = 'sqchange_' . $sqRole;
+            $sqUid  = (int)$user_id;
+            security_ensure_tables($mysqli);
+            $_SESSION['sq_open'] = 1;   // reopen the dropdown after the redirect if something needs fixing
+            if (!csrf_check()) {
+                $_SESSION['toast_error'] = 'Your session expired. Please try again.';
+            } elseif (auth_is_locked($mysqli, $sqKind, (string)$sqUid)) {
+                $_SESSION['toast_error'] = AUTH_LOCK_MESSAGE;
+            } else {
+                $sqPw = (string)($_POST['sq_password'] ?? '');
+                $sqStmt = $mysqli->prepare("SELECT username, password_hash FROM users WHERE id = ? AND role = ? AND is_active = 1 LIMIT 1");
+                $sqStmt->bind_param('is', $sqUid, $sqRole);
+                $sqStmt->execute();
+                $sqRow = $sqStmt->get_result()->fetch_assoc();
+                $sqStmt->close();
+                if (!$sqRow || $sqPw === '' || !password_verify($sqPw, (string)$sqRow['password_hash'])) {
+                    auth_record($mysqli, $sqKind, (string)$sqUid, false);
+                    $_SESSION['toast_error'] = 'Incorrect password.';
+                } else {
+                    [$sqErr, $sqRows] = sq_validate($_POST['sq_question'] ?? [], $_POST['sq_answer'] ?? [], (string)$sqRow['username']);
+                    if ($sqErr !== null) {
+                        $_SESSION['toast_error'] = $sqErr;
+                    } else {
+                        try {
+                            $mysqli->begin_transaction();
+                            sq_save($mysqli, $sqUid, $sqRows);
+                            $mysqli->commit();
+                            auth_clear($mysqli, $sqKind, (string)$sqUid);
+                            unset($_SESSION['sq_open']);
+                            $_SESSION['toast'] = 'Security questions updated successfully.';
+                        } catch (Throwable $sqEx) {
+                            try { $mysqli->rollback(); } catch (Throwable $sqIgnored) {}
+                            error_log('[settings] security questions save failed: ' . $sqEx->getMessage());
+                            $_SESSION['toast_error'] = 'Could not save your security questions. Please try again.';
+                        }
+                    }
+                }
+            }
+            header('Location: staff_dashboard.php?page=settings'); exit;
         }
 
         // ── CHANGE PASSWORD ─────────────────────────────────────────────
@@ -3283,15 +3328,68 @@ body .dashboard-shell.role-shell{display:block !important;padding:24px 28px !imp
                 </div>
             </form>
 
-            <div class="info-note">
-                <i class="fa-solid fa-circle-info"></i>
-                <span>Your role change is logged and sent to the admin automatically so they can confirm or reassign you if needed.</span>
-            </div>
+
         </div>
 
         </div><!-- /role-shell -->
 
         <?php elseif ($page === 'settings'): ?>
+<?php
+// Security questions shown on Settings → Profile & Security (questions only, never answers).
+$sqSaved  = sq_load($mysqli, (int)$user_id);
+$sqLabels = sq_all_questions();
+$sqActive = sq_questions();
+$sqNeeds  = sq_needs_update($sqSaved);
+$sqOpen   = !empty($_SESSION['sq_open']);
+unset($_SESSION['sq_open']);
+?>
+<style id="sq-settings-style">
+/* Security questions summary card follows each portal's own accent theme. */
+.settings-shell.principal-settings-layout .settings-card.ac-card.sq-card{padding:14px !important;border-radius:16px !important;}
+.settings-shell.principal-settings-layout .settings-card.ac-card.sq-card .sq-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:16px;text-align:left;background:rgba(var(--ap-accent-rgb),.075);border:0;padding:19px 21px;cursor:pointer;color:var(--ap-text);font-family:inherit;border-radius:11px;box-shadow:none;transition:background .18s ease;}
+.settings-shell.principal-settings-layout .settings-card.ac-card.sq-card .sq-toggle:hover{background:rgba(var(--ap-accent-rgb),.12);}
+.settings-shell.principal-settings-layout .settings-card.ac-card.sq-card .sq-toggle:focus-visible{outline:3px solid var(--ap-ring);outline-offset:3px;}
+.settings-shell.principal-settings-layout .sq-head{display:flex;align-items:center;gap:16px;min-width:0;flex:1 1 auto;}
+.settings-shell.principal-settings-layout .settings-card.ac-card.sq-card .sq-icon{width:60px !important;height:60px !important;flex:0 0 60px;border-radius:15px !important;display:inline-flex;align-items:center;justify-content:center;font-size:23px !important;background:var(--ap-accent) !important;color:#fff !important;box-shadow:0 7px 16px rgba(var(--ap-accent-rgb),.18);}
+.settings-shell.principal-settings-layout .sq-meta{min-width:0;display:block;}
+.settings-shell.principal-settings-layout .sq-title-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.settings-shell.principal-settings-layout .sq-title{display:block;margin:0;font-family:'Rajdhani',sans-serif;font-size:24px;font-weight:800;line-height:1.12;color:var(--ap-text);}
+.settings-shell.principal-settings-layout .sq-status{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:999px;border:1px solid rgba(var(--ap-accent-rgb),.30);background:rgba(var(--ap-accent-rgb),.07);color:var(--ap-accent-dark);font-family:'DM Sans',sans-serif;font-size:10.5px;line-height:1.2;font-weight:800;letter-spacing:.045em;white-space:nowrap;}
+.settings-shell.principal-settings-layout .sq-status::before{content:'';display:block;width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:var(--ap-accent);}
+.settings-shell.principal-settings-layout .sq-sub{display:block;margin-top:5px;font-size:13.5px;line-height:1.45;color:var(--ap-muted);}
+.settings-shell.principal-settings-layout .sq-manage{display:inline-flex;align-items:center;justify-content:center;gap:10px;flex:0 0 auto;padding:12px 17px;border-radius:12px;background:var(--ap-accent);color:#fff;font-family:'DM Sans',sans-serif;font-size:13.5px;font-weight:800;white-space:nowrap;box-shadow:0 6px 14px rgba(var(--ap-accent-rgb),.18);transition:background .18s ease,transform .18s ease;}
+.settings-shell.principal-settings-layout .sq-toggle:hover .sq-manage{background:var(--ap-accent-strong);}
+.settings-shell.principal-settings-layout .sq-manage i{font-size:12px;transition:transform .2s ease;}
+.settings-shell.principal-settings-layout .sq-toggle[aria-expanded="true"] .sq-manage i{transform:rotate(180deg);}
+.settings-shell.principal-settings-layout .sq-body{padding:16px 6px 8px;margin-top:14px;border-top:1px solid var(--ap-line);}
+.settings-shell.principal-settings-layout .sq-body[hidden]{display:none;}
+.settings-shell.principal-settings-layout .sq-note{margin:14px 0;padding:11px 13px;border-radius:10px;background:var(--ap-soft);border:1px solid var(--ap-line);color:var(--ap-muted);font-size:12.5px;line-height:1.55;}
+.settings-shell.principal-settings-layout .sq-note strong{color:var(--ap-text);}
+.settings-shell.principal-settings-layout .sq-current{margin:8px 0 0;padding:0;list-style:none;}
+.settings-shell.principal-settings-layout .sq-current li{padding:3px 0;color:var(--ap-text);}
+.settings-shell.principal-settings-layout .sq-current li::before{content:'\f058';font-family:'Font Awesome 6 Free';font-weight:900;color:var(--ap-accent);margin-right:8px;}
+.settings-shell.principal-settings-layout .sq-list{display:grid;gap:16px;margin:0 0 18px;}
+.settings-shell.principal-settings-layout .sq-item{gap:9px;}
+.settings-shell.principal-settings-layout .form-group select{width:100%;box-sizing:border-box;padding:12px 13px;font:14px 'DM Sans',sans-serif;border-radius:9px;border:1px solid var(--ap-line);background:var(--ap-card);color:var(--ap-text);outline:none;cursor:pointer;}
+.settings-shell.principal-settings-layout .form-group select:focus{border-color:var(--ap-accent);box-shadow:0 0 0 3px var(--ap-ring);}
+.settings-shell.principal-settings-layout .form-group select option{background:var(--ap-card);color:var(--ap-text);}
+.settings-shell.principal-settings-layout .form-group select option:disabled{color:var(--ap-muted);}
+body.compact-density .settings-shell.principal-settings-layout .settings-card.ac-card.sq-card .sq-toggle{padding:15px 17px;}
+body.compact-density .settings-shell.principal-settings-layout .sq-body{padding:14px 5px 6px;}
+@media(max-width:560px){
+ .settings-shell.principal-settings-layout .settings-card.ac-card.sq-card{padding:9px !important;}
+ .settings-shell.principal-settings-layout .settings-card.ac-card.sq-card .sq-toggle{padding:14px 13px;gap:12px;flex-wrap:wrap;}
+ .settings-shell.principal-settings-layout .sq-head{gap:11px;flex:1 1 220px;}
+ .settings-shell.principal-settings-layout .settings-card.ac-card.sq-card .sq-icon{width:49px !important;height:49px !important;flex-basis:49px;font-size:19px !important;border-radius:12px !important;}
+ .settings-shell.principal-settings-layout .sq-title{font-size:21px;}
+ .settings-shell.principal-settings-layout .sq-title-row{gap:8px;}
+ .settings-shell.principal-settings-layout .sq-sub{font-size:12.5px;}
+ .settings-shell.principal-settings-layout .sq-status{font-size:9.5px;padding:4px 8px;}
+ .settings-shell.principal-settings-layout .sq-manage{padding:10px 13px;font-size:12.5px;margin-left:auto;}
+ .settings-shell.principal-settings-layout .sq-body{padding:13px 4px 5px;}
+}
+</style>
+
 
 <div class="dashboard-shell settings-shell principal-settings-layout" style="--ap-accent:#16A34A;--ap-accent-strong:#15803D;--ap-accent-dark:#4ADE80;--ap-accent-rgb:22,163,74;">
     <div class="settings-tabs" role="tablist" aria-label="Settings sections">
@@ -3305,6 +3403,81 @@ body .dashboard-shell.role-shell{display:block !important;padding:24px 28px !imp
         <section class="settings-card full ac-card ac-c3"><div class="ac-head"><span class="ac-icon"><i class="fa-solid fa-user-pen"></i></span><div><h2>Profile Details</h2><p class="ac-sub">Update your name, username, and designation.</p></div></div><form method="post" action="staff_dashboard.php?page=settings" class="profile-details-form"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>"><input type="hidden" name="update_account_name" value="1"><div class="form-grid"><div class="form-group"><label for="staffSettingsName">Full Name</label><input id="staffSettingsName" type="text" name="full_name" maxlength="150" required value="<?= htmlspecialchars($full_name) ?>" autocomplete="name"></div><div class="form-group"><label for="staffSettingsUsername">Username</label><input id="staffSettingsUsername" type="text" name="username" maxlength="50" pattern="\S+" title="Username cannot contain spaces" required value="<?= htmlspecialchars($account_username) ?>" autocomplete="username"></div><div class="form-group"><label for="staffSettingsDesignation">Designation</label><input id="staffSettingsDesignation" type="text" name="designation" maxlength="100" required value="<?= htmlspecialchars($designation) ?>"></div></div><button class="btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button></form></section>
 
         <section class="settings-card full ac-card ac-c4"><div class="ac-head"><span class="ac-icon"><i class="fa-solid fa-lock"></i></span><div><h2>Change Password</h2><p class="ac-sub">Your new password must be at least 8 characters and different from your current password.</p></div></div><form method="post" action="staff_dashboard.php?page=settings" class="profile-details-form" id="staffSettingsPasswordForm" autocomplete="off"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>"><input type="hidden" name="update_password" value="1"><div class="form-grid"><div class="form-group"><label for="staffCurrentPassword">Current Password</label><input id="staffCurrentPassword" type="password" name="current_password" required autocomplete="current-password"></div><div class="form-group"></div><div class="form-group"><label for="staffNewPassword">New Password</label><input id="staffNewPassword" type="password" name="new_password" minlength="8" required autocomplete="new-password"></div><div class="form-group"><label for="staffConfirmPassword">Confirm New Password</label><input id="staffConfirmPassword" type="password" name="confirm_password" minlength="8" required autocomplete="new-password"></div></div><button class="btn-primary" type="submit"><i class="fa-solid fa-key"></i> Update Password</button></form></section>
+    
+        <section class="settings-card full ac-card ac-c4 sq-card" id="sqCard">
+            <button type="button" class="sq-toggle" id="sqToggle" aria-expanded="<?= $sqOpen ? 'true' : 'false' ?>" aria-controls="sqBody">
+                <span class="sq-head">
+                    <span class="ac-icon sq-icon"><i class="fa-solid fa-shield-halved"></i></span>
+                    <span class="sq-meta">
+                        <span class="sq-title-row">
+                            <span class="sq-title">Security Questions</span>
+                            <span class="sq-status"><?= count($sqSaved) === 0 ? 'SET UP' : ($sqNeeds ? 'REVIEW' : 'READY') ?></span>
+                        </span>
+                        <span class="sq-sub"><?= count($sqSaved) === 0 ? 'Used for password recovery. Set up your questions to recover a forgotten password.' : 'Used for password recovery. Click to view or change your questions.' ?></span>
+                    </span>
+                </span>
+                <span class="sq-manage"><span>Manage</span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></span>
+            </button>
+            <div class="sq-body" id="sqBody"<?= $sqOpen ? '' : ' hidden' ?>>
+                <?php if (count($sqSaved) === 0): ?>
+                <div class="sq-note"><strong>You have not set up your security questions yet.</strong> Without them you cannot recover a forgotten password yourself.</div>
+                <?php else: ?>
+                <div class="sq-note"><strong><?= $sqNeeds ? 'Your questions need an update.' : 'Your current questions' ?></strong><?= $sqNeeds ? ' You have fewer than 3, or one is no longer offered. Please choose three new ones below.' : '' ?>
+                    <ul class="sq-current">
+                        <?php for ($s = 1; $s <= 3; $s++): if (!isset($sqSaved[$s])) continue; ?>
+                        <li><?= htmlspecialchars($sqLabels[$sqSaved[$s]['question_key']] ?? '') ?></li>
+                        <?php endfor; ?>
+                    </ul>
+                    Saving new questions replaces these.
+                </div>
+                <?php endif; ?>
+                <p class="sq-note" style="margin-top:0">Choose 3 different questions. If you forget your password you will answer all three to reset it. Use short answers you will type the same way every time (not case-sensitive). Your password is required to save.</p>
+                <form method="post" action="staff_dashboard.php?page=settings" class="profile-details-form" id="sqForm" autocomplete="off">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>"><input type="hidden" name="update_security_questions" value="1">
+                    <div class="sq-list">
+                        <?php for ($n = 1; $n <= 3; $n++): ?>
+                        <div class="form-group sq-item">
+                            <label for="sq_q<?= $n ?>">Question <?= $n ?></label>
+                            <select name="sq_question[<?= $n ?>]" id="sq_q<?= $n ?>" required>
+                                <option value="" disabled selected>Choose a question</option>
+                                <?php foreach ($sqActive as $k => $q): ?>
+                                <option value="<?= htmlspecialchars($k) ?>"><?= htmlspecialchars($q) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <input type="text" name="sq_answer[<?= $n ?>]" id="sq_a<?= $n ?>" maxlength="100" placeholder="Your answer" autocomplete="off" required>
+                        </div>
+                        <?php endfor; ?>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group"><label for="sqPassword">Your Password</label><input id="sqPassword" type="password" name="sq_password" required autocomplete="current-password" placeholder="Required to save changes"></div>
+                    </div>
+                    <button class="btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Update Security Questions</button>
+                </form>
+            </div>
+        </section>
+        <script>
+        /* Security questions: open/close the dropdown, and stop the three questions repeating. */
+        (function(){
+            var t = document.getElementById('sqToggle'), b = document.getElementById('sqBody');
+            if (!t || !b) return;
+            t.addEventListener('click', function(){
+                var open = t.getAttribute('aria-expanded') === 'true';
+                t.setAttribute('aria-expanded', open ? 'false' : 'true');
+                b.hidden = open;
+            });
+            var sel = [1,2,3].map(function(n){ return document.getElementById('sq_q' + n); });
+            function sync(){
+                var chosen = sel.map(function(s){ return s.value; }).filter(Boolean);
+                sel.forEach(function(s){
+                    Array.prototype.forEach.call(s.options, function(o){
+                        o.disabled = o.value === '' || (chosen.indexOf(o.value) !== -1 && o.value !== s.value);
+                    });
+                });
+            }
+            sel.forEach(function(s){ s.addEventListener('change', sync); });
+            sync();
+        })();
+        </script>
     </div>
 
     <div class="settings-layout-grid settings-tab-panel" id="settingsPanelAppearance" role="tabpanel" aria-labelledby="settingsTabAppearance" hidden>
@@ -4299,25 +4472,19 @@ if (window.matchMedia) {
                 if (!data.success) throw new Error(data.message || 'Notification request failed');
 
                 const incoming = Array.isArray(data.notifications) ? data.notifications : [];
-                if (!notificationFirstRefresh && showNewToast) {
-                    const newUnread = incoming.filter(n => Number(n.is_read) === 0 && !notificationKnownIds.has(Number(n.id)));
-                    // Auto-refresh read-only pages when something relevant changes (never on forms, never every 2s blindly).
-                    const pageName = new URLSearchParams(window.location.search).get('page') || 'dashboard';
-                    const refreshTypes = pageName === 'my_results' ? ['evaluation_received']
-                                       : pageName === 'dashboard'  ? ['evaluation_received', 'evaluation_schedule', 'academic_period']
-                                       : [];
-                    const needsRefresh = newUnread.some(n => refreshTypes.includes(n.type));
-                    const ae = document.activeElement;
-                    const busyTyping = ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName);
-                    const modalOpen = document.querySelector('[class*="modal"].open, [class*="overlay"].open, [class*="modal"].show');
-                    if (needsRefresh && !busyTyping && !modalOpen) { window.location.reload(); return; }
-                    if (newUnread.length) showLiveNotificationToast(newUnread[0]);
+                // New unread items since the previous poll (empty on the very first poll).
+                let newUnread = [];
+                if (!notificationFirstRefresh) {
+                    newUnread = incoming.filter(n => Number(n.is_read) === 0 && !notificationKnownIds.has(Number(n.id)));
+                    if (showNewToast && newUnread.length) showLiveNotificationToast(newUnread[0]);
                 }
 
                 notificationKnownIds = new Set(incoming.map(n => Number(n.id)));
                 notificationFirstRefresh = false;
                 renderLiveNotifications(incoming);
                 updateNotificationBadge(data.unread_count);
+                // Shared Faculty/Staff live layer (live_updates.js) refreshes the page in place.
+                document.dispatchEvent(new CustomEvent('portal:notifications', { detail: { data: data, newUnread: newUnread } }));
             } catch (err) {
                 console.debug('Notification polling:', err.message);
             } finally {
@@ -4649,19 +4816,20 @@ body.compact-density .settings-shell.principal-settings-layout .appearance-contr
 body.compact-density .settings-shell.principal-settings-layout .setting-row{padding:9px 0;}
 
 /* ── Settings tabs (Profile & Security / Appearance) — uses each portal's own accent ── */
-.settings-shell.principal-settings-layout .settings-tabs{display:inline-flex;gap:6px;padding:6px;margin:0 0 20px;background:var(--ap-card);border:1px solid var(--ap-line);border-radius:16px;box-shadow:0 2px 10px rgba(15,23,42,.045);max-width:100%;}
-.settings-shell.principal-settings-layout .settings-tab{display:inline-flex;align-items:center;justify-content:center;gap:9px;padding:11px 22px;border:0;border-radius:11px;background:transparent;color:var(--ap-muted);font:700 14px 'DM Sans',sans-serif;cursor:pointer;white-space:nowrap;transition:background .18s,color .18s,box-shadow .18s;}
-.settings-shell.principal-settings-layout .settings-tab i{font-size:15px;}
+.settings-shell.principal-settings-layout .settings-tabs{display:inline-flex;gap:5px;padding:5px;margin:0 0 20px;background:var(--ap-card);border:1px solid var(--ap-line);border-radius:16px;box-shadow:0 2px 10px rgba(15,23,42,.045);max-width:100%;}
+.settings-shell.principal-settings-layout .settings-tab{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:9px 16px;border:0;border-radius:10px;background:transparent;color:var(--ap-muted);font:700 13px 'DM Sans',sans-serif;cursor:pointer;white-space:nowrap;transition:background .18s,color .18s,box-shadow .18s;}
+.settings-shell.principal-settings-layout .settings-tab i{font-size:14px;}
 .settings-shell.principal-settings-layout .settings-tab:hover{color:var(--ap-text);background:var(--ap-accent-bg);}
 .settings-shell.principal-settings-layout .settings-tab.active{background:var(--ap-accent);color:#fff;box-shadow:0 6px 16px rgba(var(--ap-accent-rgb),.28);}
 .settings-shell.principal-settings-layout .settings-tab:focus-visible{outline:3px solid rgba(var(--ap-accent-rgb),.30);outline-offset:2px;}
 .settings-shell.principal-settings-layout .settings-tab-panel[hidden]{display:none !important;}
-@media(max-width:560px){.settings-shell.principal-settings-layout .settings-tabs{display:flex;width:100%;box-sizing:border-box;}.settings-shell.principal-settings-layout .settings-tab{flex:1;padding:11px 10px;font-size:13px;}}
+@media(max-width:560px){.settings-shell.principal-settings-layout .settings-tabs{display:flex;width:100%;box-sizing:border-box;}.settings-shell.principal-settings-layout .settings-tab{flex:1;padding:9px 8px;font-size:12px;}}
 body.reduce-motion *,body.reduce-motion *::before,body.reduce-motion *::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;scroll-behavior:auto !important;transition-duration:.01ms !important;}
 @media(max-width:900px){.settings-shell.principal-settings-layout .appearance-theme-options{grid-template-columns:1fr;}.settings-shell.principal-settings-layout .settings-layout-grid{grid-template-columns:1fr;}.settings-shell.principal-settings-layout .settings-card.ac-card.full{grid-column:auto;}.settings-shell.principal-settings-layout .appearance-feature-grid{grid-template-columns:1fr;}.settings-shell.principal-settings-layout .appearance-theme-card{grid-column:auto;}}
 @media(max-width:760px){.settings-shell.principal-settings-layout .settings-page-head{align-items:flex-start;flex-direction:column;}.settings-shell.principal-settings-layout .appearance-device-badge{display:none;}.settings-shell.principal-settings-layout .account-facts{grid-template-columns:1fr;}.settings-shell.principal-settings-layout .form-grid{grid-template-columns:1fr;}}
 @media(max-width:560px){.settings-shell.principal-settings-layout .settings-card.ac-card{padding:18px 17px 20px !important;}.settings-shell.principal-settings-layout .profile-card{align-items:flex-start;flex-direction:column;}.settings-shell.principal-settings-layout .ac-head{gap:11px;}.settings-shell.principal-settings-layout .ac-icon{width:38px;height:38px;flex-basis:38px;}.settings-shell.principal-settings-layout .setting-row{align-items:flex-start;}}
 </style>
 
+<script src="live_updates.js?v=1"></script>
 </body>
         </html>

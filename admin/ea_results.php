@@ -518,6 +518,11 @@ table.q-table{width:100%;border-collapse:collapse;background:var(--panel);border
 .avg-summary{background:var(--panel);border:1px solid var(--border);padding:16px 22px;display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:14px}
 .cum-total-label{font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:1px}
 .cum-total-result{text-align:right}
+.cum-legend-rows{display:flex;flex-direction:column;gap:5px;min-width:340px}
+.cum-legend-row{display:flex;align-items:center;gap:10px;font-size:13px}
+.cum-legend-dot{width:12px;height:12px;border-radius:3px;flex-shrink:0;background-color:var(--c);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.cum-legend-range{font-weight:700;width:92px;flex-shrink:0}
+.cum-legend-text{flex:1;text-align:right}
 .avg-score-big{font-family:Rajdhani,sans-serif;font-size:46px;font-weight:700;line-height:1}
 .avg-score-label{font-size:13px;font-weight:700;margin-top:4px}
 .avg-out-of{font-size:12px;color:var(--muted);margin-top:4px}
@@ -541,6 +546,10 @@ table.q-table{width:100%;border-collapse:collapse;background:var(--panel);border
   .q-table tr{break-inside:avoid}
   .q-table td{padding:5px 12px!important}
   .rating-badge{height:26px!important;width:70px!important;border:1px solid #ccc}
+  .cum-legend-rows{gap:1px!important;min-width:300px!important}
+  .cum-legend-row{font-size:11px!important;gap:6px!important}
+  body .cum-legend-dot{width:9px!important;height:9px!important;background-color:var(--c)!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .cum-legend-range{width:74px!important}
   .cum-comments-page{break-before:page;padding-top:14mm}
 }
 </style>
@@ -615,6 +624,26 @@ table.q-table{width:100%;border-collapse:collapse;background:var(--panel);border
 <?php endif; ?>
 
 <?php if ($repOverall !== null): ?>
+<!-- RATING LEGEND: same card style as Total Score, placed right before it (satisfaction wording) -->
+<div class="avg-summary cum-legend">
+    <div class="cum-total-label">Rating Legend</div>
+    <div class="cum-legend-rows">
+        <?php foreach ([
+            ['4.50 &ndash; 5.00', 'Very Satisfied',                     '#32B98A'],
+            ['3.50 &ndash; 4.49', 'Satisfied',                          '#6BCFA9'],
+            ['2.50 &ndash; 3.49', 'Neither Satisfied nor Dissatisfied', '#facc15'],
+            ['1.50 &ndash; 2.49', 'Dissatisfied',                       '#fb923c'],
+            ['1.00 &ndash; 1.49', 'Very Dissatisfied',                  '#E6788A'],
+        ] as $lg): ?>
+        <div class="cum-legend-row">
+            <span class="cum-legend-dot" style="--c:<?= $lg[2] ?>"></span>
+            <span class="cum-legend-range"><?= $lg[0] ?></span>
+            <span class="cum-legend-text"><?= $lg[1] ?></span>
+        </div>
+        <?php endforeach; ?>
+    </div>
+</div>
+
 <div class="avg-summary">
     <div class="cum-total-label">Total Score</div>
     <div class="cum-total-result">

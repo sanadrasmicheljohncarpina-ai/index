@@ -121,6 +121,22 @@ $mysqli->query("
     )
 ");
 
+// ── ENSURE year_level_requests TABLE EXISTS ─────────────────────
+// Students no longer change their own year level directly: they file a
+// request here and the Executive Assistant approves or blocks it.
+$mysqli->query("CREATE TABLE IF NOT EXISTS year_level_requests (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT UNSIGNED NOT NULL,
+        current_year_level VARCHAR(30) NULL,
+        requested_year_level VARCHAR(30) NOT NULL,
+        status VARCHAR(10) NOT NULL DEFAULT 'pending',
+        requested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        decided_at DATETIME NULL,
+        decided_by INT UNSIGNED NULL,
+        KEY idx_ylr_user_status (user_id, status),
+        KEY idx_ylr_status (status)
+    )");
+
 $valid_roles = ['principal', 'dean', 'teacher', 'staff', 'student'];
 
 $role_labels = [
@@ -228,6 +244,7 @@ if (!in_array($viewStatus, $valid_statuses, true)) $viewStatus = 'pending';
 $ylFilter = trim($_GET['yl'] ?? '');
 if ($ylFilter !== '' && !in_array($ylFilter, $year_levels, true)) $ylFilter = '';
 
+$ylrFilter = (($_GET['ylr'] ?? '') === '1');
 $levelFilter = trim($_GET['level'] ?? '');
 if ($levelFilter !== '' && !array_key_exists($levelFilter, $school_levels)) $levelFilter = '';
 
@@ -315,7 +332,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
     $uid       = intval($_POST['user_id'] ?? 0);
     $full_name = trim($_POST['full_name'] ?? '');
 
-$rowStmt = $mysqli->prepare("SELECT role FROM users WHERE id=? AND role IN ('principal','dean','teacher','staff','student') LIMIT 1");
+$rowStmt = $mysqli->prepare("SELECT role, year_level FROM users WHERE id=? AND role IN ('principal','dean','teacher','staff','student') LIMIT 1");
     $rowStmt->bind_param("i", $uid);
     $rowStmt->execute();
     $rowChk = $rowStmt->get_result()->fetch_assoc();
@@ -339,6 +356,11 @@ $rowStmt = $mysqli->prepare("SELECT role FROM users WHERE id=? AND role IN ('pri
         }
         $stmt->execute();
         $stmt->close();
+        // An EA edit of a student's year level supersedes any open request from them.
+        if ($isStudentRow && (string)normalize_year_level($year_level ?? null) !== (string)normalize_year_level($rowChk['year_level'] ?? null)) {
+            $sup = $mysqli->prepare("UPDATE year_level_requests SET status='cancelled', decided_at=NOW(), decided_by=? WHERE user_id=? AND status='pending'");
+            if ($sup) { $adm = (int)$_SESSION['user_id']; $sup->bind_param("ii", $adm, $uid); $sup->execute(); $sup->close(); }
+        }
         $_SESSION['toast'] = "Account updated.";
     }
     redirect_back($viewRole, $viewStatus, $ylFilter, $levelFilter);
@@ -399,6 +421,81 @@ function pbi_current_year_levels(mysqli $mysqli, array $uids): array {
     while ($res && ($r = $res->fetch_assoc())) $out[(int)$r['user_id']][] = $r['year_level'];
     $stmt->close();
     return $out;
+}
+
+// ── YEAR LEVEL CHANGE REQUESTS (student-initiated, EA decides) ─────
+function ylr_redirect(string $viewRole, string $viewStatus, string $ylFilter, string $levelFilter, bool $ylrFilter): void {
+    $url = "manage_privileged_accounts.php?role=" . urlencode($viewRole) . "&status=" . urlencode($viewStatus);
+    if ($ylFilter !== '') $url .= "&yl=" . urlencode($ylFilter);
+    if ($levelFilter !== '') $url .= "&level=" . urlencode($levelFilter);
+    if ($ylrFilter) $url .= "&ylr=1";
+    header("Location: $url");
+    exit;
+}
+
+// APPROVE: applies the requested year level to the student, then closes the request.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'approve_yl_request') {
+    if (!verify_csrf()) reject_csrf($viewRole, $viewStatus);
+    $rid     = intval($_POST['request_id'] ?? 0);
+    $adminId = (int)$_SESSION['user_id'];
+    try {
+        $mysqli->begin_transaction();
+        $q = $mysqli->prepare("SELECT r.id, r.user_id, r.requested_year_level, u.full_name
+            FROM year_level_requests r JOIN users u ON u.id = r.user_id
+            WHERE r.id = ? AND r.status = 'pending' AND u.role = 'student' AND COALESCE(u.is_archived,0) = 0
+            LIMIT 1 FOR UPDATE");
+        if (!$q) throw new RuntimeException('prepare failed');
+        $q->bind_param("i", $rid);
+        $q->execute();
+        $req = $q->get_result()->fetch_assoc();
+        $q->close();
+
+        if (!$req) {
+            $mysqli->rollback();
+            $_SESSION['toast_error'] = "That request was already handled, withdrawn, or replaced.";
+        } elseif (!in_array($req['requested_year_level'], $year_levels, true)) {
+            $mysqli->rollback();
+            $_SESSION['toast_error'] = "That request asks for an unrecognised year level, so it was not applied.";
+        } else {
+            $u1 = $mysqli->prepare("UPDATE users SET year_level = ? WHERE id = ? AND role = 'student'");
+            $u1->bind_param("si", $req['requested_year_level'], $req['user_id']);
+            $u1->execute();
+            $u1->close();
+            $u2 = $mysqli->prepare("UPDATE year_level_requests SET status = 'approved', decided_at = NOW(), decided_by = ? WHERE id = ? AND status = 'pending'");
+            $u2->bind_param("ii", $adminId, $rid);
+            $u2->execute();
+            $u2->close();
+            $mysqli->commit();
+            $_SESSION['toast'] = "Year level change approved. " . $req['full_name'] . " is now in " . $req['requested_year_level'] . ".";
+        }
+    } catch (Throwable $e) {
+        try { $mysqli->rollback(); } catch (Throwable $ignored) {}
+        error_log('approve_yl_request failed: ' . $e->getMessage());
+        $_SESSION['toast_error'] = "Could not approve the request. Please try again.";
+    }
+    ylr_redirect($viewRole, $viewStatus, $ylFilter, $levelFilter, $ylrFilter);
+}
+
+// BLOCK: rejects the request; the student keeps their current year level.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'block_yl_request') {
+    if (!verify_csrf()) reject_csrf($viewRole, $viewStatus);
+    $rid     = intval($_POST['request_id'] ?? 0);
+    $adminId = (int)$_SESSION['user_id'];
+    try {
+        $b = $mysqli->prepare("UPDATE year_level_requests r JOIN users u ON u.id = r.user_id
+            SET r.status = 'blocked', r.decided_at = NOW(), r.decided_by = ?
+            WHERE r.id = ? AND r.status = 'pending' AND u.role = 'student'");
+        $b->bind_param("ii", $adminId, $rid);
+        $b->execute();
+        $done = $b->affected_rows > 0;
+        $b->close();
+        if ($done) $_SESSION['toast'] = "Year level change blocked. The student keeps their current year level.";
+        else       $_SESSION['toast_error'] = "That request was already handled, withdrawn, or replaced.";
+    } catch (Throwable $e) {
+        error_log('block_yl_request failed: ' . $e->getMessage());
+        $_SESSION['toast_error'] = "Could not block the request. Please try again.";
+    }
+    ylr_redirect($viewRole, $viewStatus, $ylFilter, $levelFilter, $ylrFilter);
 }
 
 // ── ASSIGN YEAR LEVELS (single, Teacher/Staff only) ──────────────
@@ -665,6 +762,34 @@ if (($viewRole === 'teacher' || $viewRole === 'staff') && $entries) {
 // year_level is stored as "4th Year" (not "4th Year College") still count.
 if ($viewRole === 'student' && $entries && $levelFilter !== '') {
     $entries = array_values(array_filter($entries, fn($u) => classify_student_level($u['year_level']) === $levelFilter));
+}
+
+// Year level change requests: attach each student's open request (if any) so the
+// row can show it under their name with Approve / Block.
+$ylrPendingTotal = 0;
+if ($viewRole === 'student' && !$viewArchived) {
+    if ($entries) {
+        $ids = array_map('intval', array_column($entries, 'id'));
+        $ph  = implode(',', array_fill(0, count($ids), '?'));
+        $rq  = $mysqli->prepare("SELECT id, user_id, current_year_level, requested_year_level, requested_at FROM year_level_requests WHERE status = 'pending' AND user_id IN ($ph) ORDER BY id DESC");
+        $reqByUser = [];
+        if ($rq) {
+            $rq->bind_param(str_repeat('i', count($ids)), ...$ids);
+            $rq->execute();
+            foreach ($rq->get_result()->fetch_all(MYSQLI_ASSOC) as $r) {
+                if (!isset($reqByUser[$r['user_id']])) $reqByUser[$r['user_id']] = $r; // newest wins
+            }
+            $rq->close();
+        }
+        foreach ($entries as &$u) { $u['yl_request'] = $reqByUser[$u['id']] ?? null; }
+        unset($u);
+        if ($ylrFilter) {
+            $entries = array_values(array_filter($entries, fn($u) => !empty($u['yl_request'])));
+        }
+    }
+    $pc = $mysqli->query("SELECT COUNT(*) c FROM year_level_requests r JOIN users u ON u.id = r.user_id
+        WHERE r.status = 'pending' AND u.role = 'student' AND u.account_status = 'approved' AND COALESCE(u.is_archived,0) = 0");
+    if ($pc) { $ylrPendingTotal = (int)($pc->fetch_assoc()['c'] ?? 0); }
 }
 
 // Counts: role x status grid, in one query. The tab a person appears under
@@ -1046,6 +1171,24 @@ html body .sector-tabs,html body .status-tabs,
 html[data-theme="dark"] body .sector-tabs,html[data-theme="dark"] body .status-tabs,
 html.dark-theme body .sector-tabs,html.dark-theme body .status-tabs{background:transparent !important;border:0 !important;box-shadow:none !important;padding:0 !important;border-radius:0 !important;gap:8px !important;}
 </style>
+<style id="pbi-ylr-style">
+.ylr-chip{margin-top:8px;padding:10px 12px;border-radius:10px;border:1px solid var(--amber-border);background:var(--amber-bg);max-width:340px;}
+.ylr-chip-title{font-size:10.5px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--amber);display:flex;align-items:center;gap:6px;margin-bottom:5px;}
+.ylr-chip-change{display:flex;align-items:center;flex-wrap:wrap;gap:7px;font-size:12.5px;color:var(--text-dim);}
+.ylr-chip-change b{color:var(--text-dark);}
+.ylr-chip-change i{font-size:10px;color:var(--amber);}
+.ylr-chip-meta{font-size:11px;color:var(--text-dim);margin-top:3px;}
+.ylr-chip-actions{display:flex;gap:6px;margin-top:9px;}
+.ylr-btn{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;background:var(--card-bg);border:1px solid var(--card-border);transition:all .18s;}
+.ylr-btn.approve{border-color:var(--success-border);color:var(--success);}
+.ylr-btn.approve:hover{background:var(--success-bg);}
+.ylr-btn.block{border-color:var(--danger-border);color:var(--danger);}
+.ylr-btn.block:hover{background:var(--danger-bg);}
+.ylr-notice{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;padding:11px 14px;border-radius:10px;border:1px solid var(--amber-border);background:var(--amber-bg);font-size:13px;color:var(--text-dark);}
+.ylr-notice i{color:var(--amber);}
+.ylr-notice a{margin-left:auto;font-weight:700;font-size:12.5px;color:var(--accent);text-decoration:none;}
+.ylr-notice a:hover{text-decoration:underline;}
+</style>
 </head>
 <body class="feature-compact">
 
@@ -1116,6 +1259,18 @@ html.dark-theme body .sector-tabs,html.dark-theme body .status-tabs{background:t
     <div class="stat-card amber-card"><div class="stat-label">Pending</div><div class="stat-value amber"><?= $viewCounts['pending'] ?></div></div>
     <div class="stat-card green-card"><div class="stat-label">Approved</div><div class="stat-value green"><?= $viewCounts['approved'] ?></div></div>
     <div class="stat-card red-card"><div class="stat-label">Blocked</div><div class="stat-value red"><?= $viewCounts['blocked'] ?></div></div>
+</div>
+<?php endif; ?>
+
+<?php if ($viewRole === 'student' && !$viewArchived && ($ylrPendingTotal > 0 || $ylrFilter)): ?>
+<div class="ylr-notice">
+    <i class="fa-solid fa-right-left"></i>
+    <span><b><?= (int)$ylrPendingTotal ?></b> year level change request<?= $ylrPendingTotal === 1 ? '' : 's' ?> waiting for your review.</span>
+    <?php if ($ylrFilter): ?>
+    <a href="manage_privileged_accounts.php?role=student&status=<?= htmlspecialchars($viewStatus) ?>">Show all students</a>
+    <?php else: ?>
+    <a href="manage_privileged_accounts.php?role=student&status=approved&ylr=1">Review requests</a>
+    <?php endif; ?>
 </div>
 <?php endif; ?>
 
@@ -1197,7 +1352,30 @@ html.dark-theme body .sector-tabs,html.dark-theme body .status-tabs{background:t
             <input type="checkbox" class="rowCb" value="<?= $u['id'] ?>" onchange="updateBulkBar()" <?= $viewArchived ? 'disabled' : '' ?>/>
         </td>
         <td style="color:var(--text-dim);font-size:13px;"><?= $i+1 ?></td>
-        <td><div class="user-name"><?= htmlspecialchars($u['full_name']) ?></div></td>
+        <td>
+            <div class="user-name"><?= htmlspecialchars($u['full_name']) ?></div>
+            <?php if (!empty($u['yl_request'])): $yr = $u['yl_request']; ?>
+            <div class="ylr-chip">
+                <div class="ylr-chip-title"><i class="fa-solid fa-right-left"></i> Year level change request</div>
+                <div class="ylr-chip-change">
+                    <span><?= htmlspecialchars(($yr['current_year_level'] ?? '') !== '' ? normalize_year_level($yr['current_year_level']) : 'No year level') ?></span>
+                    <i class="fa-solid fa-arrow-right"></i>
+                    <b><?= htmlspecialchars($yr['requested_year_level']) ?></b>
+                </div>
+                <div class="ylr-chip-meta">Requested <?= htmlspecialchars(date('M d, Y g:i A', strtotime($yr['requested_at']))) ?></div>
+                <div class="ylr-chip-actions">
+                    <button type="button" class="ylr-btn approve"
+                        onclick='openConfirmModal("approve_yl_request", [<?= (int)$yr["id"] ?>], <?= json_encode("Approve " . $u["full_name"] . "'s change to " . $yr["requested_year_level"] . "? Their year level updates immediately, and they can then evaluate the faculty and staff for that level.", JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
+                        <i class="fa-solid fa-check"></i> Approve
+                    </button>
+                    <button type="button" class="ylr-btn block"
+                        onclick='openConfirmModal("block_yl_request", [<?= (int)$yr["id"] ?>], <?= json_encode("Block " . $u["full_name"] . "'s change to " . $yr["requested_year_level"] . "? They will stay in " . (($yr["current_year_level"] ?? "") !== "" ? normalize_year_level($yr["current_year_level"]) : "their current level") . ".", JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
+                        <i class="fa-solid fa-ban"></i> Block
+                    </button>
+                </div>
+            </div>
+            <?php endif; ?>
+        </td>
         <td><span class="user-username">@<?= htmlspecialchars($u['username']) ?></span></td>
         <?php if ($viewRole === 'all'): ?>
         <td><span class="role-pill role-<?= htmlspecialchars($u['role'], ENT_QUOTES, 'UTF-8') ?>"><i class="fa-solid <?= $role_icons[$u['role']] ?? 'fa-user' ?>"></i> <?= htmlspecialchars($role_labels[$u['role']] ?? ucfirst($u['role'])) ?></span></td>
@@ -1452,6 +1630,7 @@ html.dark-theme body .sector-tabs,html.dark-theme body .status-tabs{background:t
         <input type="hidden" name="action" id="confirmActionInput"/>
         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>"/>
         <input type="hidden" name="user_id" id="confirmSingleUserId"/>
+        <input type="hidden" name="request_id" id="confirmRequestId"/>
         <div id="confirmBulkIdsContainer"></div>
         <div class="modal-actions">
             <button type="button" class="btn-cancel" onclick="closeModal('confirmModal')">Cancel</button>
@@ -1626,7 +1805,7 @@ function openPeriodModal(u){
 
 // ── SINGLE / BULK approve & block confirmation ─────────────────
 function openConfirmModal(action, ids, message){
-    const titles = {approve_account:'Approve Account', bulk_approve:'Approve Accounts', block_account:'Block Account', bulk_block:'Block Accounts'};
+    const titles = {approve_account:'Approve Account', bulk_approve:'Approve Accounts', block_account:'Block Account', bulk_block:'Block Accounts', approve_yl_request:'Approve Year Level Change', block_yl_request:'Block Year Level Change'};
     document.getElementById('confirmTitle').textContent = titles[action] || 'Confirm';
     document.getElementById('confirmText').textContent = message;
     document.getElementById('confirmActionInput').value = action;
@@ -1634,7 +1813,8 @@ function openConfirmModal(action, ids, message){
     const btn = document.getElementById('confirmSubmitBtn');
     const btnStyles = {
         approve_account:['btn-confirm-approve','Yes, Approve'], bulk_approve:['btn-confirm-approve','Yes, Approve'],
-        block_account:['btn-confirm-del','Yes, Block'], bulk_block:['btn-confirm-del','Yes, Block']
+        block_account:['btn-confirm-del','Yes, Block'], bulk_block:['btn-confirm-del','Yes, Block'],
+        approve_yl_request:['btn-confirm-approve','Yes, Approve'], block_yl_request:['btn-confirm-del','Yes, Block']
     };
     const [cls, label] = btnStyles[action] || ['btn-confirm-approve','Yes, Confirm'];
     btn.className = cls;
@@ -1644,8 +1824,11 @@ function openConfirmModal(action, ids, message){
     const bulkContainer = document.getElementById('confirmBulkIdsContainer');
     bulkContainer.innerHTML = '';
     singleField.value = '';
+    document.getElementById('confirmRequestId').value = '';
 
-    if (action === 'approve_account' || action === 'block_account') {
+    if (action === 'approve_yl_request' || action === 'block_yl_request') {
+        document.getElementById('confirmRequestId').value = ids[0];
+    } else if (action === 'approve_account' || action === 'block_account') {
         singleField.value = ids[0];
     } else {
         ids.forEach(id => {
@@ -1785,7 +1968,48 @@ function openBulkYlModal(){
     row.scrollIntoView({ behavior: 'smooth', block: 'center' });
     row.classList.add('row-highlight');
     row.addEventListener('animationend', () => row.classList.remove('row-highlight'), { once: true });
+    // Drop ?highlight= so the 2-second auto reload below doesn't re-flash/re-scroll every cycle.
+    try {
+        const clean = new URL(window.location.href);
+        clean.searchParams.delete('highlight');
+        history.replaceState(null, '', clean.toString());
+    } catch (e) {}
 })();
+
+// ── AUTO RELOAD (every 2 seconds) ─────────────────────────────────
+// Keeps the list fresh as new registrations come in. The reload is skipped
+// whenever it would wipe out something the admin is doing:
+//   - a modal is open          - any row checkbox is ticked (bulk selection)
+//   - a field/select is focused - a toast is still showing
+//   - the tab is hidden        - the Period dropdown in the bulk bar is in use
+// The scroll position is restored after each reload.
+const PBI_AUTO_RELOAD_MS = 2000;
+
+document.querySelectorAll('.toast').forEach(t =>
+    t.addEventListener('animationend', e => { if (e.animationName === 'fadeOut') t.remove(); })
+);
+
+function pbiCanAutoReload(){
+    if (document.hidden) return false;
+    if (document.querySelector('.modal-overlay.open')) return false;
+    if (document.querySelector('.rowCb:checked')) return false;
+    if (document.querySelector('.toast')) return false;
+    const a = document.activeElement;
+    if (a && ['INPUT','SELECT','TEXTAREA'].includes(a.tagName)) return false;
+    return true;
+}
+
+try {
+    const y = sessionStorage.getItem('pbiScrollY');
+    if (y !== null) { sessionStorage.removeItem('pbiScrollY'); window.scrollTo(0, parseInt(y, 10) || 0); }
+} catch (e) {}
+
+// AUTO RELOAD DISABLED (temporarily). To turn it back on, uncomment below.
+// setInterval(() => {
+//     if (!pbiCanAutoReload()) return;
+//     try { sessionStorage.setItem('pbiScrollY', String(window.scrollY)); } catch (e) {}
+//     window.location.reload();
+// }, PBI_AUTO_RELOAD_MS);
 </script>
 
 <?php $mysqli->close(); ?>

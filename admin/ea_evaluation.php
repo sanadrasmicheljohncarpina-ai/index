@@ -256,6 +256,9 @@ a{color:inherit}
 .group-icon{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:25px;margin-bottom:15px}
 .group-card h3{margin:0;color:var(--ea-text);font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;letter-spacing:.1px}
 .group-count{margin-top:3px;color:var(--ea-muted);font-size:13.5px}
+.group-done{margin-top:12px;display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:999px;font-size:12px;font-weight:700;background:rgba(52,211,153,.12);color:#11805f;border:1px solid rgba(52,211,153,.28)}
+.group-done i{font-size:10px}
+html[data-theme="dark"] .group-done{color:#6EE7B7}
 .group-principal .group-icon{background:var(--blue-soft);color:#3D8BFF}
 .group-principal::after{background:#3B82F6}
 .group-dean .group-icon{background:var(--gold-soft);color:#F59E0B}
@@ -351,7 +354,7 @@ html[data-theme="dark"] .btn-action.view{background:transparent}
 .eval-overlay{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;padding:10px 20px;background:rgba(9,17,30,.64);backdrop-filter:blur(4px)}
 .eval-overlay.open{display:flex}
 .eval-frame-wrap{width:100%;max-width:780px;height:96vh;max-height:calc(100vh - 20px)}
-.eval-frame-wrap iframe{width:100%;height:100%;border:0;background:transparent;border-radius:18px;color-scheme:normal}
+.eval-frame-wrap iframe{width:100%;height:100%;border:0;background:transparent;border-radius:22px;color-scheme:normal}
 @media(max-width:700px){.eval-overlay{padding:10px}}
 </style>
 <link rel="stylesheet" href="admin_unified_ui.css?v=<?= (int)@filemtime(__DIR__ . '/admin_unified_ui.css') ?>">
@@ -370,11 +373,16 @@ html[data-theme="dark"] .btn-action.view{background:transparent}
           $meta = $groupMeta[$type];
           $isSelected = $selectedType === $type;
           $count = count($people);
+          $groupDone = 0;
+          foreach ($people as $gp) { if (isset($done[(int) $gp['id']])) $groupDone++; }
       ?>
         <a class="group-card <?= e($meta['class']) ?> <?= $isSelected ? 'selected' : '' ?>" href="<?= $isSelected ? '?' : '?type=' . urlencode($type) . '#roster' ?>" aria-label="<?= $isSelected ? 'Deselect' : 'Select' ?> <?= e($type) ?>"<?= $isSelected ? ' aria-current="true"' : '' ?>>
           <div class="group-icon"><i class="fa-solid <?= e($meta['icon']) ?>"></i></div>
           <h3><?= e($type) ?></h3>
           <div class="group-count"><?= $count ?> <?= $count === 1 ? 'member' : 'members' ?></div>
+          <?php if ($count > 0): ?>
+          <div class="group-done"><i class="fa-solid fa-check"></i> <?= $groupDone ?>/<?= $count ?> done</div>
+          <?php endif; ?>
         </a>
       <?php endforeach; ?>
     </div>

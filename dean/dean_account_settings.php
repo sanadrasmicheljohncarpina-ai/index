@@ -24,6 +24,11 @@ if (empty($_SESSION['dean_settings_csrf'])) {
 }
 $csrfToken = $_SESSION['dean_settings_csrf'];
 
+require_once 'security.php';   // security-question helpers: sq_questions(), sq_validate(), sq_save()
+security_ensure_tables($mysqli);
+$sq_all  = sq_questions();
+$sqOpen  = false;   // keeps the Security Questions dropdown open after a failed save
+
 $errors = [];
 $success = null;
 $userId = (int)$_SESSION['user_id'];
@@ -205,11 +210,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $success = 'Password changed successfully.';
             }
         }
+
+        // ── SECURITY QUESTIONS (only the account password is required) ──
+        if ($action === 'update_security_questions') {
+            $sqOpen = true;
+            $sqPassword = (string)($_POST['sq_password'] ?? '');
+
+            $stmt = $mysqli->prepare("SELECT password_hash FROM users WHERE id = ? AND role = 'dean' LIMIT 1");
+            $stmt->bind_param('i', $userId);
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+
+            if (!$row || empty($row['password_hash']) || $row['password_hash'] === 'NOT NULL') {
+                $errors[] = 'Could not verify your password. Please contact the administrator.';
+            } elseif ($sqPassword === '') {
+                $errors[] = 'Enter your password to change your security questions.';
+            } elseif (!password_verify($sqPassword, $row['password_hash'])) {
+                $errors[] = 'Incorrect password.';
+            } else {
+                // Same validation the registration pages use (3 distinct questions + answers).
+                [$sqErr, $sqRows] = sq_validate($_POST['sq_question'] ?? [], $_POST['sq_answer'] ?? [], (string)($me['username'] ?? ''));
+                if ($sqErr !== null) {
+                    $errors[] = $sqErr;
+                } else {
+                    try {
+                        $mysqli->begin_transaction();
+                        sq_save($mysqli, $userId, $sqRows);
+                        $mysqli->commit();
+                        $success = 'Security questions updated successfully.';
+                        $sqOpen = false;
+                    } catch (Throwable $e) {
+                        try { $mysqli->rollback(); } catch (Throwable $ignored) {}
+                        error_log('dean_account_settings.php sq_save failed: ' . $e->getMessage());
+                        $errors[] = 'Could not save your security questions. Please try again.';
+                    }
+                }
+            }
+        }
     }
 }
 
 $photoUrl = !empty($me['photo']) ? UPLOAD_URL . $me['photo'] : UPLOAD_URL . 'pbi_logo';
 $displayDesignation = trim((string)($me['designation'] ?? '')) !== '' ? $me['designation'] : 'Dean';
+
+// Security Questions card status: Set up / Update needed / Not set up.
+$sqStored = sq_load($mysqli, $userId);
+if (count($sqStored) < 1)            { $sqStatus = 'none'; $sqStatusLabel = 'Not set up'; }
+elseif (sq_needs_update($sqStored))  { $sqStatus = 'warn'; $sqStatusLabel = 'Update needed'; }
+else                                 { $sqStatus = 'ok';   $sqStatusLabel = 'Set up'; }
 
 // Which tab to show: after saving anything on the Profile tab, stay on it.
 $activeTab = ($_SERVER['REQUEST_METHOD'] !== 'POST' && ($_GET['tab'] ?? '') === 'appearance')
@@ -479,6 +528,45 @@ if(localStorage.getItem('dean_reduce_motion')==='1')d.classList.add('dean-reduce
             <button class="btn-primary" type="submit"><i class="fa-solid fa-key"></i> Update Password</button>
         </form>
     </div>
+
+    <!-- SECURITY QUESTIONS: hidden behind a dropdown button until clicked -->
+    <div class="section ac-card ac-c6 sq-card" id="dean-security-questions">
+        <button type="button" class="sq-toggle" id="sqToggle" aria-expanded="<?= $sqOpen ? 'true' : 'false' ?>" aria-controls="sqBody">
+            <span class="ac-head" style="margin:0;">
+                <span class="ac-icon"><i class="fa-solid fa-shield-halved"></i></span>
+                <span>
+                    <h2>Security Questions <span class="sq-status sq-status-<?= $sqStatus ?>"><span class="sq-status-dot"></span><?= htmlspecialchars($sqStatusLabel) ?></span></h2>
+                    <span class="ac-sub" style="display:block;">Used for password recovery. Click to view or change your questions.</span>
+                </span>
+            </span>
+            <span class="sq-manage"><span class="sq-manage-text"><?= $sqStatus === 'none' ? 'Set up' : 'Manage' ?></span> <i class="fa-solid fa-chevron-down"></i></span>
+        </button>
+        <div class="sq-body" id="sqBody"<?= $sqOpen ? '' : ' hidden' ?>>
+            <p class="password-note" style="margin-top:6px;">Choose 3 different questions. Your password is required to save any change.</p>
+            <form method="post" autocomplete="off">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
+                <input type="hidden" name="action" value="update_security_questions">
+                <div class="sq-list">
+                    <?php for ($n = 1; $n <= 3; $n++): ?>
+                    <div class="form-group sq-item">
+                        <label for="sq_q<?= $n ?>">Question <?= $n ?></label>
+                        <select name="sq_question[<?= $n ?>]" id="sq_q<?= $n ?>" required>
+                            <option value="" disabled<?= empty($_POST['sq_question'][$n]) ? ' selected' : '' ?>>Choose a question</option>
+                            <?php foreach ($sq_all as $k => $q): ?>
+                            <option value="<?= htmlspecialchars($k) ?>"<?= (($_POST['sq_question'][$n] ?? '') === $k) ? ' selected' : '' ?>><?= htmlspecialchars($q) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <input type="text" name="sq_answer[<?= $n ?>]" id="sq_a<?= $n ?>" maxlength="100" placeholder="Your answer" autocomplete="off" required>
+                    </div>
+                    <?php endfor; ?>
+                </div>
+                <div class="form-grid" style="margin-top:6px;">
+                    <div class="form-group"><label for="sq_password">Your Password</label><div class="pw-wrap"><input type="password" name="sq_password" id="sq_password" required autocomplete="current-password" placeholder="Required to save changes"><button type="button" class="pw-toggle" aria-label="Show password" aria-pressed="false"><svg class="pw-eye" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="pw-eye-off" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19C5 19 1 12 1 12a18.5 18.5 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12A3 3 0 1 1 9.88 9.88"/><line x1="1" y1="1" x2="23" y2="23"/></svg></button></div></div>
+                </div>
+                <button class="btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Update Security Questions</button>
+            </form>
+        </div>
+    </div>
     </div><!-- /#tab-profile -->
 </main>
 <script>
@@ -597,6 +685,29 @@ document.querySelectorAll('.pw-toggle').forEach(function(btn){
     });
 });
 </script>
+<script>
+/* Security questions: open/close the dropdown, and stop the three questions repeating. */
+(function(){
+    var t = document.getElementById('sqToggle'), b = document.getElementById('sqBody');
+    if (!t || !b) return;
+    t.addEventListener('click', function(){
+        var open = t.getAttribute('aria-expanded') === 'true';
+        t.setAttribute('aria-expanded', open ? 'false' : 'true');
+        b.hidden = open;
+    });
+    var sel = [1,2,3].map(function(n){ return document.getElementById('sq_q' + n); });
+    function sync(){
+        var chosen = sel.map(function(s){ return s.value; }).filter(Boolean);
+        sel.forEach(function(s){
+            Array.prototype.forEach.call(s.options, function(o){
+                o.disabled = o.value === '' || (chosen.indexOf(o.value) !== -1 && o.value !== s.value);
+            });
+        });
+    }
+    sel.forEach(function(s){ s.addEventListener('change', sync); });
+    sync();
+})();
+</script>
 <script id="dean-rename-settings-label">
 /* Sidebar/header label: "Account Settings" -> "Settings" (stopgap until includes/dean_sidebar.php is edited). */
 (function(){
@@ -622,6 +733,7 @@ document.querySelectorAll('.pw-toggle').forEach(function(btn){
 main.main{--ac:#7C5FD9;}
 main.main .ac-c1{--ac-c:var(--ac);}
 main.main .ac-c2,main.main .ac-c5{--ac-c:#10B981;}
+main.main .ac-c6{--ac-c:#7C5FD9;}
 main.main .ac-c3{--ac-c:#D88900;}
 main.main .ac-c4{--ac-c:#3B82F6;}
 main.main .ac-card{position:relative !important;overflow:hidden !important;border-radius:15px !important;padding:22px 24px 24px !important;margin-bottom:20px !important;}
@@ -738,6 +850,42 @@ html.dean-reduce-motion *,html.dean-reduce-motion *::before,html.dean-reduce-mot
   .appearance-device-badge{display:none;}
 }
 @media print{html:not(.dark-theme) main.main{margin:0 !important;background:#fff !important;}}
+
+/* ── Security questions dropdown ─────────────────────────────── */
+main.main .sq-card{padding:0 !important;}
+main.main .sq-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:14px;text-align:left;background:transparent;border:0;padding:22px 24px;cursor:pointer;color:inherit;font-family:inherit;}
+main.main .sq-toggle:hover{background:rgba(124,95,217,.05);}
+main.main .sq-toggle:focus-visible{outline:2px solid #7C5FD9;outline-offset:-2px;}
+main.main .sq-toggle .ac-head{flex:1;min-width:0;margin-bottom:0;align-items:center;}
+main.main .sq-toggle .ac-icon{width:60px;height:60px;flex:0 0 60px;border-radius:14px;background:#7C5FD9 !important;color:#fff !important;box-shadow:0 8px 18px rgba(124,95,217,.28);}
+main.main .sq-toggle .ac-icon i{font-size:24px;color:#fff !important;}
+main.main .sq-toggle .ac-head h2{display:flex !important;align-items:center;flex-wrap:wrap;gap:10px;margin:0 0 3px !important;}
+main.main .sq-status{display:inline-flex;align-items:center;gap:7px;padding:4px 12px;border-radius:999px;font:700 11.5px 'DM Sans',sans-serif;letter-spacing:.06em;text-transform:uppercase;border:1px solid transparent;}
+main.main .sq-status-dot{width:7px;height:7px;border-radius:50%;background:currentColor;}
+main.main .sq-status-ok{background:rgba(124,95,217,.10);color:#6B4FCB;border-color:rgba(124,95,217,.35);}
+main.main .sq-status-warn{background:rgba(217,119,6,.10);color:#B45309;border-color:rgba(217,119,6,.35);}
+main.main .sq-status-none{background:rgba(100,116,139,.10);color:#64748B;border-color:rgba(100,116,139,.30);}
+html.dark-theme main.main .sq-status-ok{color:#B9A8F5;}
+html.dark-theme main.main .sq-status-warn{color:#FBBF24;}
+html.dark-theme main.main .sq-status-none{color:#A0B3C6;}
+main.main .sq-manage{display:inline-flex;align-items:center;gap:9px;flex-shrink:0;padding:11px 20px;border-radius:10px;background:#7C5FD9;color:#fff;font:700 14px 'DM Sans',sans-serif;box-shadow:0 6px 16px rgba(124,95,217,.30);transition:background .2s,transform .2s;}
+main.main .sq-manage i{font-size:12px;transition:transform .2s;}
+main.main .sq-toggle:hover .sq-manage{background:#9C85F0;transform:translateY(-1px);}
+main.main .sq-toggle[aria-expanded="true"] .sq-manage i{transform:rotate(180deg);}
+@media(max-width:600px){main.main .sq-toggle{flex-wrap:wrap;}main.main .sq-toggle .ac-icon{width:48px;height:48px;flex-basis:48px;}main.main .sq-manage{width:100%;justify-content:center;}}
+main.main .sq-body{padding:4px 24px 24px;border-top:1px solid var(--ap-line,#E2E8F0);}
+main.main .sq-body[hidden]{display:none !important;}
+main.main .sq-list{display:grid;gap:16px;margin-bottom:16px;}
+main.main .sq-item{gap:9px;}
+.form-group select{width:100%;padding:12px 13px;background:rgba(10,25,47,.72);border:1px solid rgba(255,255,255,.1);border-radius:9px;color:var(--light);font:14px 'DM Sans',sans-serif;outline:none;cursor:pointer;transition:.2s;}
+.form-group select:focus{border-color:#7C5FD9;box-shadow:0 0 0 3px rgba(124,95,217,.12);}
+.form-group select option{background:#0F1F3D;color:#E0E6F0;}
+.form-group select option:disabled{color:#7b8ea3;}
+html:not(.dark-theme) .form-group select{background:#FFFFFF !important;color:#172033 !important;border-color:#CBD5E1 !important;}
+html:not(.dark-theme) .form-group select option{background:#FFFFFF;color:#172033;}
+html.dean-density-compact main.main .sq-toggle{padding:16px 18px;}
+html.dean-density-compact main.main .sq-toggle .ac-icon{width:48px;height:48px;flex-basis:48px;}
+html.dean-density-compact main.main .sq-body{padding:2px 18px 18px;}
 
 /* ── Settings tabs ───────────────────────────────────────────── */
 .ac-tabs{display:flex;gap:6px;margin:0 0 22px;padding:5px;width:fit-content;max-width:100%;overflow-x:auto;border-radius:14px;background:var(--ap-card,#fff);border:1px solid var(--ap-line,#E2E8F0);}
