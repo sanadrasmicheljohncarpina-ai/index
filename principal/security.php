@@ -188,9 +188,12 @@ function sq_needs_update(array $rows): bool {
     return false;
 }
 
-// Lowercase, strip accents, punctuation and spaces: "Sto. Niño" and "sto nino" become the same answer.
+// CASE-SENSITIVE: capital and small letters are kept, so "Blue" and "blue" are different answers.
+// Accents, punctuation and spaces are still ignored: "Sto. Niño" and "Sto Nino" are the same answer.
+// NOTE: answers saved before this change were stored in lowercase, so those accounts must re-save
+// their security questions (Settings) before capital letters will match.
 function sq_normalize(string $a): string {
-    $a = mb_strtolower(trim($a), 'UTF-8');
+    $a = trim($a);
     if (class_exists('Normalizer')) {
         $d = Normalizer::normalize($a, Normalizer::FORM_D);
         if ($d !== false) $a = preg_replace('/\p{Mn}+/u', '', $d);
@@ -201,7 +204,9 @@ function sq_normalize(string $a): string {
 function sq_is_weak(string $normalized, string $username): bool {
     static $bad = ['none','nothing','idk','unknown','yes','no','na','secret','password','test',
                    '123','1234','12345','abc','abcd','qwerty','asdf','dog','cat','mother','father'];
-    return in_array($normalized, $bad, true) || $normalized === sq_normalize($username);
+    // Weak-answer checks are not case-sensitive ("None" is as weak as "none").
+    $lower = mb_strtolower($normalized, 'UTF-8');
+    return in_array($lower, $bad, true) || $lower === mb_strtolower(sq_normalize($username), 'UTF-8');
 }
 
 // Validate the 3 submitted question/answer pairs. Returns [errorOrNull, rowsToStore].
@@ -219,8 +224,9 @@ function sq_validate($qs, $as, string $username): array {
         $n = sq_normalize($raw);
         if (mb_strlen($n) < 3)           return ["Answer $slot is too short. Use at least 3 letters or numbers.", []];
         if (sq_is_weak($n, $username))   return ["Answer $slot is too easy to guess. Please be more specific.", []];
-        if (isset($seenA[$n]))           return ['Each answer must be different.', []];
-        $seenQ[$k] = 1; $seenA[$n] = 1;
+        $nKey = mb_strtolower($n, 'UTF-8');   // "Blue" and "blue" still count as the same answer twice
+        if (isset($seenA[$nKey]))        return ['Each answer must be different.', []];
+        $seenQ[$k] = 1; $seenA[$nKey] = 1;
         $rows[] = ['slot' => $slot, 'key' => $k, 'hash' => password_hash($n, PASSWORD_DEFAULT)];
     }
     return [null, $rows];

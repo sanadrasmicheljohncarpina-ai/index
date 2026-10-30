@@ -1,49 +1,161 @@
 <?php
 // admin/forgot_password.php
-session_start();
+// Password recovery for Admin-portal accounts ONLY (admin, superadmin, registrar).
+// Uses the 3 security questions set at registration (no email / reset link).
+// Flow: 1) username  ->  2) answer the 3 security questions  ->  3) choose a new password.
+require_once 'security.php';
+if (function_exists('secure_session_start')) { secure_session_start(); }
+elseif (session_status() !== PHP_SESSION_ACTIVE) { session_start(); }
 require_once 'db.php';
+security_ensure_tables($mysqli);
 
-$error   = '';
-$success = '';
+const REC_ROLES  = "'admin','superadmin','registrar'";   // roles allowed to recover here
+const REC_KIND   = 'admin_recover';     // throttle bucket, separate from the other portals
+const REC_LOGIN  = 'admin_login.php';
+const REC_SKEY   = 'rec_admin';         // session key holding the in-progress recovery
+const REC_TTL    = 900;                 // whole recovery expires after 15 minutes
+const REC_RESET_TTL = 600;              // after correct answers: 10 minutes to choose the new password
+
+$error = '';
+$state = $_SESSION[REC_SKEY] ?? null;
+if ($state && (time() - ($state['ts'] ?? 0)) > REC_TTL) { unset($_SESSION[REC_SKEY]); $state = null; }
+
+if (($_GET['restart'] ?? '') === '1') {
+    unset($_SESSION[REC_SKEY]);
+    header('Location: forgot_password.php');
+    exit;
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = trim($_POST['email'] ?? '');
+    $action = $_POST['action'] ?? '';
 
-    if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $error = "Please enter a valid email address.";
-    } else {
-        $stmt = $mysqli->prepare(
-            "SELECT id, full_name FROM users WHERE email = ? AND role IN ('admin','superadmin','registrar') AND is_active = 1 LIMIT 1"
-        );
-        $stmt->bind_param("s", $email);
-        $stmt->execute();
-        $user = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
+    if (!csrf_valid($_POST['csrf_token'] ?? '')) {
+        $error = 'Your session expired. Please try again.';
 
-if ($user) {
-    $token   = bin2hex(random_bytes(32));
-$expires = date('Y-m-d H:i:s', strtotime('+1 hour'));
-    $ins = $mysqli->prepare(
-        "INSERT INTO password_resets (user_id, token, expires_at) VALUES (?, ?, ?)
-         ON DUPLICATE KEY UPDATE token = VALUES(token), expires_at = VALUES(expires_at)"
-    );
-    $ins->bind_param("iss", $user['id'], $token, $expires);
-    $ins->execute();
-    $ins->close();
+    // ── Step 1: username only. The questions are not shown until this passes. ──
+    } elseif ($action === 'lookup') {
+        $username = trim((string)($_POST['username'] ?? ''));
+        if ($username === '') {
+            $error = 'Please enter your username.';
+        } elseif (mb_strlen($username) > 100) {
+            $error = 'That username is too long.';
+        } elseif (auth_is_locked($mysqli, REC_KIND, $username)) {
+            $error = AUTH_LOCK_MESSAGE;
+        } else {
+            // BINARY = case-sensitive, same as the admin login.
+            $st = $mysqli->prepare("SELECT id FROM users WHERE BINARY username = ? AND role IN (" . REC_ROLES . ") AND is_active = 1 LIMIT 1");
+            $st->bind_param('s', $username);
+            $st->execute();
+            $u = $st->get_result()->fetch_assoc();
+            $st->close();
 
-    $reset_link = "http://localhost/index/admin/reset_password.php?token=" . $token;
+            $uid = 0; $keys = [];
+            if ($u) {
+                $rows = sq_load($mysqli, (int)$u['id']);
+                if (count($rows) === 3) {
+                    $uid = (int)$u['id'];
+                    foreach ($rows as $slot => $r) $keys[$slot] = $r['question_key'];
+                }
+            }
+            if ($uid === 0) {
+                // Unknown name (or no questions yet): show a believable made-up set so nobody can tell the difference.
+                $fake = sq_fake_keys($username);
+                $keys = [1 => $fake[0], 2 => $fake[1], 3 => $fake[2]];
+            }
+            session_regenerate_id(true);
+            $_SESSION[REC_SKEY] = ['uid' => $uid, 'username' => $username, 'keys' => $keys, 'ts' => time(), 'verified' => 0];
+            $state = $_SESSION[REC_SKEY];
+        }
 
-    @mail($email, 'PBI Admin — Password Reset', "Reset link: $reset_link", "From: no-reply@pandanbay.edu.ph");
+    // ── Step 2: check the 3 answers ─────────────────────────────────────
+    } elseif ($action === 'answers' && $state && empty($state['verified'])) {
+        $username = $state['username'];
+        $answers  = is_array($_POST['sq_answer'] ?? null) ? $_POST['sq_answer'] : [];
 
-    // TEMP: show link directly (remove in production!)
-    $success = "Reset link (dev only): <a href='$reset_link' style='color:#32B98A'>Click here to reset</a>";
+        if (auth_is_locked($mysqli, REC_KIND, $username)) {
+            $error = AUTH_LOCK_MESSAGE;
+        } else {
+            $ok = false;
+            if ($state['uid'] > 0) {
+                $rows = sq_load($mysqli, $state['uid']);
+                $ok = count($rows) === 3;
+                for ($slot = 1; $slot <= 3; $slot++) {
+                    $raw   = (string)($answers[$slot] ?? '');
+                    $given = mb_strlen($raw) <= 100 ? sq_normalize($raw) : '';
+                    $hash  = $rows[$slot]['answer_hash'] ?? DUMMY_HASH;
+                    // Always run every check so the response time does not reveal which answer was wrong.
+                    if ($given === '' || !password_verify($given, $hash)) $ok = false;
+                }
+                // The account must still be a valid, active Admin account.
+                if ($ok) {
+                    $st = $mysqli->prepare("SELECT id FROM users WHERE id = ? AND role IN (" . REC_ROLES . ") AND is_active = 1 LIMIT 1");
+                    $st->bind_param('i', $state['uid']);
+                    $st->execute();
+                    $ok = (bool)$st->get_result()->fetch_assoc();
+                    $st->close();
+                }
+            } else {
+                for ($i = 0; $i < 3; $i++) password_verify('x', DUMMY_HASH);   // same timing as a real account
+            }
 
-} else {
-    $success = "If that email is registered, a reset link has been sent.";
-}
+            if ($ok) {
+                auth_clear($mysqli, REC_KIND, $username);
+                session_regenerate_id(true);
+                $_SESSION[REC_SKEY]['verified'] = time();
+                $state = $_SESSION[REC_SKEY];
+            } else {
+                auth_record($mysqli, REC_KIND, $username, false);
+                $error = auth_is_locked($mysqli, REC_KIND, $username)
+                    ? AUTH_LOCK_MESSAGE
+                    : 'One or more answers are incorrect. Please try again.';
+            }
+        }
+
+    // ── Step 3: choose the new password (only after the answers were verified) ──
+    } elseif ($action === 'reset' && $state && !empty($state['verified'])) {
+        $pw  = (string)($_POST['password'] ?? '');
+        $pw2 = (string)($_POST['confirm_password'] ?? '');
+
+        if ((time() - (int)$state['verified']) > REC_RESET_TTL || (int)$state['uid'] <= 0) {
+            unset($_SESSION[REC_SKEY]);
+            $state = null;
+            $error = 'Verification expired. Please start again.';
+        } elseif (strlen($pw) < 8) {
+            $error = 'Password must be at least 8 characters.';
+        } elseif (strlen($pw) > 72) {
+            $error = 'Password must be 72 characters or fewer.';
+        } elseif ($pw !== $pw2) {
+            $error = 'Passwords do not match.';
+        } else {
+            $newHash = password_hash($pw, PASSWORD_DEFAULT);
+            $uid = (int)$state['uid'];
+            $up = $mysqli->prepare("UPDATE users SET password_hash = ? WHERE id = ? AND role IN (" . REC_ROLES . ") AND is_active = 1");
+            $up->bind_param('si', $newHash, $uid);
+            $done = $up->execute();
+            $up->close();
+            if ($done) {
+                auth_clear($mysqli, REC_KIND, $state['username']);
+                unset($_SESSION[REC_SKEY]);
+                session_regenerate_id(true);
+                $_SESSION['reg_success'] = 'Password reset successfully. Please sign in.';
+                header('Location: ' . REC_LOGIN);
+                exit;
+            }
+            $error = 'Could not update the password. Please try again.';
+        }
     }
-    if ($mysqli->ping()) $mysqli->close();
 }
+
+// Which step to show
+$step = 1;
+if ($state) { $step = empty($state['verified']) ? 2 : 3; }
+// admin_register.php uses sq_questions(); the faculty copy of security.php uses sq_all_questions().
+$questions = function_exists('sq_all_questions') ? sq_all_questions() : sq_questions();
+$subtitles = [
+    1 => 'Enter your username and we will ask you the security questions you chose at registration.',
+    2 => 'Answer your 3 security questions to verify it is you.',
+    3 => 'Identity verified. Choose a new password.',
+];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -54,76 +166,169 @@ $expires = date('Y-m-d H:i:s', strtotime('+1 hour'));
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 <style>
-:root{--dark-blue:#0A192F;--blue-mid:#172A45;--blue-inner:#0F1F3D;--blue-accent:#2F6FE4;--blue-hover:#4B82F1;--light:#E0E6F0;--muted:#A0B3C6;--radius:10px;--shadow:0 8px 32px rgba(0,0,0,.45);}
+:root{
+    --navy-deep:#091727;--navy:#0F1E33;--navy-input:#0B1B2E;--border:#29405A;
+    --text:#E7EEF7;--muted:#9AAFC5;--gold:#F2C94C;--gold-hover:#FFD866;
+    --blue:#2F6EE2;--blue-hover:#3D7BF0;--blue-light:#8DB4FF;--radius:10px;--rgb:47,110,226;
+}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-body{min-height:100vh;background:#0A192F;font-family:'DM Sans',sans-serif;color:var(--light);display:flex;align-items:center;justify-content:center;padding:24px;overflow-x:hidden;position:relative;}
-.bg-grid{position:fixed;inset:0;z-index:0;background-image:repeating-linear-gradient(45deg,rgba(74,130,241,.08) 0px,rgba(74,130,241,.08) 1px,transparent 1px,transparent 26px),repeating-linear-gradient(-45deg,rgba(74,130,241,.05) 0px,rgba(74,130,241,.05) 1px,transparent 1px,transparent 26px);}
-.orb{position:fixed;border-radius:50%;filter:blur(85px);z-index:0;pointer-events:none;}
-.orb-1{width:420px;height:420px;background:radial-gradient(circle,rgba(47,111,228,.16) 0%,transparent 70%);top:-100px;left:-100px;}
-.orb-2{width:320px;height:320px;background:radial-gradient(circle,rgba(75,130,241,.13) 0%,transparent 70%);bottom:-80px;right:-80px;}
-.card{position:relative;z-index:10;background:rgba(23,42,69,.92);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.09);border-radius:18px;padding:40px 40px 32px;width:100%;max-width:420px;box-shadow:var(--shadow);animation:cardIn .7s cubic-bezier(.22,1,.36,1) both;}
+body{
+    min-height:100vh;color:var(--text);font-family:'DM Sans',sans-serif;
+    display:flex;align-items:center;justify-content:center;padding:24px;overflow-x:hidden;position:relative;
+    background:
+        radial-gradient(circle at 10% 8%,rgba(47,110,226,.13),transparent 30%),
+        radial-gradient(circle at 90% 90%,rgba(242,201,76,.08),transparent 28%),
+        var(--navy-deep);
+    background-attachment:fixed;
+}
+.bg-grid{position:fixed;inset:0;z-index:0;pointer-events:none;background-image:
+    repeating-linear-gradient(45deg,rgba(79,129,184,.055) 0,rgba(79,129,184,.055) 1px,transparent 1px,transparent 26px),
+    repeating-linear-gradient(-45deg,rgba(79,129,184,.04) 0,rgba(79,129,184,.04) 1px,transparent 1px,transparent 26px);}
+.card{
+    position:relative;z-index:10;width:100%;max-width:460px;padding:36px 36px 28px;
+    background:rgba(15,30,51,.96);border:1px solid rgba(152,178,207,.18);border-radius:18px;
+    box-shadow:0 24px 70px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.025),0 0 80px rgba(var(--rgb),.07);
+    animation:cardIn .7s cubic-bezier(.22,1,.36,1) both;
+}
 @keyframes cardIn{from{opacity:0;transform:translateY(32px) scale(.97)}to{opacity:1;transform:none}}
-.card-header{text-align:center;margin-bottom:24px;}
-.icon-wrap{width:64px;height:64px;border-radius:50%;background:rgba(47,111,228,.12);border:2px solid var(--blue-accent);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:26px;color:#9CC0FF;box-shadow:0 0 20px rgba(47,111,228,.20);}
-.card-title{font-family:'Rajdhani',sans-serif;font-size:24px;font-weight:700;letter-spacing:2px;color:#fff;text-transform:uppercase;}
-.card-subtitle{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.6;}
-.divider{height:1px;background:linear-gradient(90deg,transparent,rgba(47,111,228,.35),transparent);margin-bottom:22px;}
+.card-header{text-align:center;margin-bottom:20px;}
+.logo-img{width:72px;height:72px;border-radius:50%;object-fit:cover;display:block;border:2.5px solid #C9A227;box-shadow:0 0 22px rgba(201,162,39,.42);margin:0 auto 16px;}
+.card-title{font-family:'Rajdhani',sans-serif;font-size:24px;font-weight:700;letter-spacing:2px;color:#F3F7FB;text-transform:uppercase;}
+.role-pill{display:inline-flex;align-items:center;gap:6px;margin-top:10px;padding:4px 14px;border-radius:20px;background:rgba(var(--rgb),.14);border:1px solid rgba(98,144,230,.42);color:var(--blue-light);font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;}
+.card-subtitle{font-size:12.5px;color:var(--muted);margin-top:10px;line-height:1.6;}
+.divider{height:1px;background:linear-gradient(90deg,transparent,rgba(93,145,204,.4),transparent);margin-bottom:20px;}
 .form-group{margin-bottom:16px;}
-.form-label{display:block;font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
+.form-label{display:block;font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:#98ADC3;margin-bottom:6px;}
+.q-text{font-size:13.5px;line-height:1.5;color:#fff;margin-bottom:7px;}
 .input-wrap{position:relative;}
-.f-icon{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;pointer-events:none;}
-.form-input{width:100%;padding:12px 13px 12px 38px;background:rgba(10,25,47,.70);border:1px solid rgba(255,255,255,.10);border-radius:var(--radius);color:var(--light);font-size:14px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .25s,box-shadow .25s;}
-.form-input::placeholder{color:rgba(160,179,198,.45);}
-.form-input:focus{border-color:var(--blue-accent);box-shadow:0 0 0 3px rgba(47,111,228,.18);}
+.f-icon{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#92A7BF;font-size:13px;pointer-events:none;z-index:2;width:18px;text-align:center;}
+.form-input{width:100%;padding:12px 44px 12px 44px;min-height:48px;background:var(--navy-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font:500 14px 'DM Sans',sans-serif;outline:none;transition:border-color .25s,box-shadow .25s,background .25s;}
+.form-input.plain{padding-left:14px;padding-right:14px;}
+.form-input::placeholder{color:rgba(154,175,197,.5);}
+.form-input:hover:not(:focus){background:#0D2035;border-color:#345473;}
+.form-input:focus{background:#0D2035;border-color:var(--blue);box-shadow:0 0 0 3px rgba(var(--rgb),.2);}
+.input-wrap:focus-within .f-icon{color:#B7C9DB;}
+.toggle-pw{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;color:#92A7BF;cursor:pointer;font-size:13px;width:26px;height:30px;display:flex;align-items:center;justify-content:center;z-index:3;}
+.toggle-pw:hover{color:#fff;}
 .alert{border-radius:8px;padding:10px 13px;font-size:13px;margin-bottom:16px;display:flex;align-items:flex-start;gap:8px;line-height:1.45;}
-.alert-error{background:rgba(240,84,84,.12);border:1px solid rgba(240,84,84,.35);color:#fca5a5;}
-.alert-success{background:rgba(74,222,128,.10);border:1px solid rgba(74,222,128,.30);color:#86efac;}
-.btn-main{width:100%;padding:13px;background:#2F6FE4;border:none;border-radius:var(--radius);color:#fff;font-size:15px;font-weight:600;font-family:'DM Sans',sans-serif;cursor:pointer;transition:background .2s,transform .15s;box-shadow:0 4px 16px rgba(47,111,228,.32);display:flex;align-items:center;justify-content:center;gap:8px;}
-.btn-main:hover{background:#4B82F1;transform:translateY(-1px);}
+.alert i{margin-top:2px;}
+.alert-error{background:rgba(248,113,113,.10);border:1px solid rgba(248,113,113,.28);color:#FCA5A5;}
+.help{font-size:11.5px;color:var(--muted);line-height:1.55;margin-top:14px;text-align:center;}
+.section-label{font-size:10.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--blue-light);margin:20px 0 12px;display:flex;align-items:center;gap:8px;}
+.section-label::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,rgba(var(--rgb),.4),transparent);}
+.btn-main{width:100%;min-height:50px;padding:13px;background:var(--blue);border:none;border-radius:var(--radius);color:#fff;font:600 15px 'DM Sans',sans-serif;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 8px 22px rgba(var(--rgb),.3);transition:background .2s,transform .15s,box-shadow .2s;}
+.btn-main:hover{background:var(--blue-hover);transform:translateY(-1px);box-shadow:0 10px 28px rgba(var(--rgb),.38);}
+.btn-main:active{transform:translateY(1px);}
 .back-row{text-align:center;margin-top:18px;font-size:13px;color:var(--muted);}
-.back-row a{color:#8FB5FF;font-weight:600;text-decoration:none;}
-.back-row a:hover{text-decoration:underline;}
+.back-row a{color:var(--gold);font-weight:600;text-decoration:none;}
+.back-row a:hover{color:var(--gold-hover);text-decoration:underline;}
+button:focus-visible,a:focus-visible{outline:3px solid rgba(79,144,231,.35);outline-offset:2px;}
+@media(prefers-reduced-motion:reduce){.card{animation:none;}.btn-main{transition:none;}}
+@media(max-width:480px){.card{padding:28px 20px 22px;}}
+.steps{display:flex;align-items:center;justify-content:center;gap:8px;margin:0 0 20px;}
+.dot{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--muted);border:1px solid rgba(255,255,255,.15);}
+.dot.active{background:var(--blue);border-color:var(--blue);color:#fff;box-shadow:0 0 14px rgba(var(--rgb),.5);}
+.dot.done{background:rgba(74,222,128,.15);border-color:rgba(74,222,128,.5);color:#4ade80;}
+.bar{width:28px;height:1px;background:rgba(255,255,255,.15);}
+.back-row .restart{display:block;margin-bottom:8px;}
 </style>
-
-<link rel="stylesheet" href="admin_appearance.css">
-<script src="admin_appearance.js"></script>
 </head>
 <body>
-<div class="bg-grid"></div>
-<div class="orb orb-1"></div>
-<div class="orb orb-2"></div>
+<div class="bg-grid" aria-hidden="true"></div>
 
 <div class="card">
     <div class="card-header">
-        <div class="icon-wrap"><i class="fa-solid fa-key"></i></div>
+        <img class="logo-img" src="../image/pbi_logo" alt="PBI Logo" onerror="this.style.display='none'"/>
         <div class="card-title">Forgot Password</div>
-        <div class="card-subtitle">Enter your registered email and we'll send you a reset link.</div>
+        <div class="role-pill"><i class="fa-solid fa-user-shield"></i> Admin Access</div>
+        <div class="card-subtitle"><?= htmlspecialchars($subtitles[$step]) ?></div>
+    </div>
+
+    <div class="steps" aria-label="Recovery progress">
+        <div class="dot <?= $step === 1 ? 'active' : 'done' ?>"><?= $step > 1 ? '<i class="fa-solid fa-check"></i>' : '1' ?></div>
+        <div class="bar"></div>
+        <div class="dot <?= $step === 2 ? 'active' : ($step > 2 ? 'done' : '') ?>"><?= $step > 2 ? '<i class="fa-solid fa-check"></i>' : '2' ?></div>
+        <div class="bar"></div>
+        <div class="dot <?= $step === 3 ? 'active' : '' ?>">3</div>
     </div>
     <div class="divider"></div>
 
     <?php if ($error): ?>
-    <div class="alert alert-error"><i class="fa-solid fa-circle-exclamation"></i><?= $error ?></div>
-    <?php endif; ?>
-    <?php if ($success): ?>
-    <div class="alert alert-success"><i class="fa-solid fa-circle-check"></i><?= $success ?></div>
+    <div class="alert alert-error" role="alert"><i class="fa-solid fa-circle-exclamation"></i><span><?= htmlspecialchars($error) ?></span></div>
     <?php endif; ?>
 
-    <form method="POST" action="forgot_password.php">
+    <?php if ($step === 1): ?>
+    <form method="POST" action="forgot_password.php" autocomplete="off">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="lookup">
         <div class="form-group">
-            <label class="form-label">Email Address</label>
+            <label class="form-label" for="username">Username</label>
             <div class="input-wrap">
-                <i class="fa-solid fa-envelope f-icon"></i>
-                <input class="form-input" type="email" name="email" placeholder="Enter your registered email" required/>
+                <i class="fa-solid fa-user f-icon"></i>
+                <input class="form-input" type="text" id="username" name="username" placeholder="Enter admin username" maxlength="100" required autofocus/>
             </div>
         </div>
-        <button type="submit" class="btn-main">
-            <i class="fa-solid fa-paper-plane"></i> Send Reset Link
-        </button>
+        <button type="submit" class="btn-main"><i class="fa-solid fa-arrow-right"></i> Continue</button>
+    </form>
+    <p class="help">Usernames are case-sensitive. If you never set security questions, you will need to reset the password directly in the database.</p>
+
+    <?php elseif ($step === 2): ?>
+    <form method="POST" action="forgot_password.php" autocomplete="off">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="answers">
+        <?php foreach ($state['keys'] as $slot => $key): ?>
+        <div class="form-group">
+            <label class="form-label">Question <?= (int)$slot ?></label>
+            <div class="q-text"><?= htmlspecialchars($questions[$key] ?? 'Security question') ?></div>
+            <input class="form-input plain" type="text" name="sq_answer[<?= (int)$slot ?>]" maxlength="100" placeholder="Your answer" autocomplete="off" required <?= (int)$slot === 1 ? 'autofocus' : '' ?>/>
+        </div>
+        <?php endforeach; ?>
+        <button type="submit" class="btn-main"><i class="fa-solid fa-shield-halved"></i> Verify Answers</button>
+        <p class="help">Answers are not case-sensitive.</p>
     </form>
 
+    <?php else: ?>
+    <form method="POST" action="forgot_password.php" autocomplete="off" id="resetForm">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="reset">
+        <div class="form-group">
+            <label class="form-label" for="password">New Password</label>
+            <div class="input-wrap">
+                <i class="fa-solid fa-lock f-icon"></i>
+                <input class="form-input" type="password" id="password" name="password" placeholder="Min. 8 characters" autocomplete="new-password" required autofocus/>
+                <button type="button" class="toggle-pw" onclick="togglePw('password','e1')" aria-label="Show password"><i class="fa-solid fa-eye-slash" id="e1"></i></button>
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="confirm_password">Confirm Password</label>
+            <div class="input-wrap">
+                <i class="fa-solid fa-lock f-icon"></i>
+                <input class="form-input" type="password" id="confirm_password" name="confirm_password" placeholder="Re-enter password" autocomplete="new-password" required/>
+                <button type="button" class="toggle-pw" onclick="togglePw('confirm_password','e2')" aria-label="Show password"><i class="fa-solid fa-eye-slash" id="e2"></i></button>
+            </div>
+        </div>
+        <button type="submit" class="btn-main"><i class="fa-solid fa-rotate"></i> Reset Password</button>
+    </form>
+    <?php endif; ?>
+
     <div class="back-row">
-        <a href="admin_login.php"><i class="fa-solid fa-arrow-left"></i> Back to Login</a>
+        <?php if ($step > 1): ?><a class="restart" href="forgot_password.php?restart=1">Use a different username</a><?php endif; ?>
+        <a href="<?= REC_LOGIN ?>"><i class="fa-solid fa-arrow-left"></i> Back to Login</a>
     </div>
 </div>
+<script>
+function togglePw(id, ic){
+    const e = document.getElementById(id), i = document.getElementById(ic);
+    const showing = e.type === 'password';
+    e.type = showing ? 'text' : 'password';
+    i.className = showing ? 'fa-solid fa-eye' : 'fa-solid fa-eye-slash';
+}
+const rf = document.getElementById('resetForm');
+if (rf) rf.addEventListener('submit', function(e){
+    const p = document.getElementById('password'), c = document.getElementById('confirm_password');
+    if (p.value.length < 8) { e.preventDefault(); alert('Password must be at least 8 characters.'); p.focus(); }
+    else if (p.value !== c.value) { e.preventDefault(); alert('Passwords do not match.'); c.focus(); }
+});
+</script>
 </body>
 </html>

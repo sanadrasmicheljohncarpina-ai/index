@@ -13,9 +13,14 @@ const REC_LOGIN  = 'faculty_login.php';
 const REC_SKEY   = 'rec_faculty';          // session key holding the in-progress recovery
 const REC_TTL    = 900;                 // recovery step expires after 15 minutes
 
+const REC_RESET_TTL = 600;          // after correct answers: 10 minutes to choose the new password
+
 $error = '';
 $state = $_SESSION[REC_SKEY] ?? null;
 if ($state && (time() - ($state['ts'] ?? 0)) > REC_TTL) { unset($_SESSION[REC_SKEY]); $state = null; }
+// Opening this page (clicking "Forgot Password?", reloading, going back) always starts at the username step.
+// Questions are only shown after a username has been submitted in THIS visit.
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') { unset($_SESSION[REC_SKEY]); $state = null; }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
@@ -23,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_valid($_POST['csrf_token'] ?? '')) {
         $error = 'Your session expired. Please try again.';
 
-    // ── Step 1: find the account and show its questions ─────────────────
+    // ── Step 1: username only. The questions are not shown until this passes. ──
     } elseif ($action === 'lookup') {
         $username = trim((string)($_POST['username'] ?? ''));
         if ($username === '') {
@@ -54,35 +59,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $keys = [1 => $fake[0], 2 => $fake[1], 3 => $fake[2]];
             }
             session_regenerate_id(true);
-            $_SESSION[REC_SKEY] = ['uid' => $uid, 'username' => $username, 'keys' => $keys, 'ts' => time()];
+            $_SESSION[REC_SKEY] = ['uid' => $uid, 'username' => $username, 'keys' => $keys, 'ts' => time(), 'verified' => 0];
             $state = $_SESSION[REC_SKEY];
         }
 
-    // ── Step 2: check the answers and set the new password ──────────────
-    } elseif ($action === 'reset' && $state) {
+    // ── Step 2: check the 3 answers ─────────────────────────────────────
+    } elseif ($action === 'answers' && $state && empty($state['verified'])) {
         $username = $state['username'];
         $answers  = is_array($_POST['sq_answer'] ?? null) ? $_POST['sq_answer'] : [];
-        $pw       = (string)($_POST['password'] ?? '');
-        $pw2      = (string)($_POST['confirm_password'] ?? '');
 
         if (auth_is_locked($mysqli, REC_KIND, $username)) {
             $error = AUTH_LOCK_MESSAGE;
-        } elseif (strlen($pw) < 8) {
-            $error = 'Password must be at least 8 characters.';
-        } elseif (strlen($pw) > 72) {
-            $error = 'Password must be 72 characters or fewer.';
-        } elseif ($pw !== $pw2) {
-            $error = 'Passwords do not match.';
         } else {
             $ok = false;
             if ($state['uid'] > 0) {
                 $rows = sq_load($mysqli, $state['uid']);
                 $ok = count($rows) === 3;
                 for ($slot = 1; $slot <= 3; $slot++) {
-                    $given = sq_normalize((string)($answers[$slot] ?? ''));
+                    $raw   = (string)($answers[$slot] ?? '');
+                    $given = mb_strlen($raw) <= 100 ? sq_normalize($raw) : '';
                     $hash  = $rows[$slot]['answer_hash'] ?? DUMMY_HASH;
                     // Always run every check so the response time does not reveal which answer was wrong.
-                    if (!password_verify($given, $hash)) $ok = false;
+                    if ($given === '' || !password_verify($given, $hash)) $ok = false;
                 }
                 // The account must still be a valid, active, approved Faculty account.
                 if ($ok) {
@@ -98,27 +96,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             if ($ok) {
-                $newHash = password_hash($pw, PASSWORD_DEFAULT);
-                $up = $mysqli->prepare('UPDATE users SET password_hash = ? WHERE id = ? AND role = ?');
-                $role = REC_ROLE;
-                $up->bind_param('sis', $newHash, $state['uid'], $role);
-                $up->execute();
-                $up->close();
-                auth_record($mysqli, REC_KIND, $username, true);
                 auth_clear($mysqli, REC_KIND, $username);
+                session_regenerate_id(true);
+                $_SESSION[REC_SKEY]['verified'] = time();
+                $state = $_SESSION[REC_SKEY];
+            } else {
+                auth_record($mysqli, REC_KIND, $username, false);
+                $error = auth_is_locked($mysqli, REC_KIND, $username)
+                    ? AUTH_LOCK_MESSAGE
+                    : 'One or more answers are incorrect. Please try again.';
+            }
+        }
+
+    // ── Step 3: choose the new password (only after the answers were verified) ──
+    } elseif ($action === 'reset' && $state && !empty($state['verified'])) {
+        $pw  = (string)($_POST['password'] ?? '');
+        $pw2 = (string)($_POST['confirm_password'] ?? '');
+
+        if ((time() - (int)$state['verified']) > REC_RESET_TTL || (int)$state['uid'] <= 0) {
+            unset($_SESSION[REC_SKEY]);
+            $state = null;
+            $error = 'Verification expired. Please start again.';
+        } elseif (strlen($pw) < 8) {
+            $error = 'Password must be at least 8 characters.';
+        } elseif (strlen($pw) > 72) {
+            $error = 'Password must be 72 characters or fewer.';
+        } elseif ($pw !== $pw2) {
+            $error = 'Passwords do not match.';
+        } else {
+            $newHash = password_hash($pw, PASSWORD_DEFAULT);
+            $uid  = (int)$state['uid'];
+            $role = REC_ROLE;
+            $up = $mysqli->prepare("UPDATE users SET password_hash = ? WHERE id = ? AND role = ? AND is_active = 1 AND account_status = 'approved'");
+            $up->bind_param('sis', $newHash, $uid, $role);
+            $done = $up->execute();
+            $up->close();
+            if ($done) {
+                auth_clear($mysqli, REC_KIND, $state['username']);
                 unset($_SESSION[REC_SKEY]);
                 session_regenerate_id(true);
                 $_SESSION['reg_success'] = 'Password reset successfully. Please sign in.';
                 header('Location: ' . REC_LOGIN);
                 exit;
             }
-            auth_record($mysqli, REC_KIND, $username, false);
-            $error = auth_is_locked($mysqli, REC_KIND, $username)
-                ? AUTH_LOCK_MESSAGE
-                : 'One or more answers are incorrect. Please try again.';
+            $error = 'Could not update the password. Please try again.';
         }
     }
 }
+// Which step to show
+$step = 1;
+if ($state) { $step = empty($state['verified']) ? 2 : 3; }
+$subtitles = [
+    1 => 'Enter your username and we will ask you the security questions you chose at registration.',
+    2 => 'Answer your 3 security questions to verify it is you.',
+    3 => 'Identity verified. Choose a new password.',
+];
 $questions = sq_all_questions();
 ?>
 <!DOCTYPE html>
@@ -167,6 +199,12 @@ body{min-height:100vh;background:var(--dark-blue);font-family:'DM Sans',sans-ser
 .back-row{text-align:center;margin-top:18px;font-size:13px;color:var(--muted);}
 .back-row a{color:var(--teal-light);font-weight:600;text-decoration:none;}
 .back-row a:hover{text-decoration:underline;}
+.steps{display:flex;align-items:center;justify-content:center;gap:8px;margin:0 0 18px;}
+.dot{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--muted);border:1px solid rgba(255,255,255,.15);}
+.dot.active{background:var(--teal);border-color:var(--teal);color:#fff;box-shadow:0 0 14px rgba(var(--rgb),.5);}
+.dot.done{background:rgba(74,222,128,.15);border-color:rgba(74,222,128,.5);color:#4ade80;}
+.bar{width:28px;height:1px;background:rgba(255,255,255,.15);}
+.back-row .restart{display:block;margin-bottom:8px;}
 @media(max-width:480px){.card{padding:28px 20px 22px;}}
 </style>
 </head>
@@ -180,9 +218,14 @@ body{min-height:100vh;background:var(--dark-blue);font-family:'DM Sans',sans-ser
         <div class="icon-wrap"><i class="fa-solid fa-key"></i></div>
         <div class="card-title">Forgot Password</div>
         <div class="role-pill"><i class="fa-solid fa-id-badge"></i> Faculty Access</div>
-        <div class="card-subtitle">
-            <?= $state ? 'Answer your 3 security questions, then choose a new password.' : 'Enter your username and we will ask you the security questions you chose at registration.' ?>
-        </div>
+        <div class="card-subtitle"><?= htmlspecialchars($subtitles[$step]) ?></div>
+    </div>
+    <div class="steps" aria-label="Recovery progress">
+        <div class="dot <?= $step === 1 ? 'active' : 'done' ?>"><?= $step > 1 ? '<i class="fa-solid fa-check"></i>' : '1' ?></div>
+        <div class="bar"></div>
+        <div class="dot <?= $step === 2 ? 'active' : ($step > 2 ? 'done' : '') ?>"><?= $step > 2 ? '<i class="fa-solid fa-check"></i>' : '2' ?></div>
+        <div class="bar"></div>
+        <div class="dot <?= $step === 3 ? 'active' : '' ?>">3</div>
     </div>
     <div class="divider"></div>
 
@@ -190,7 +233,7 @@ body{min-height:100vh;background:var(--dark-blue);font-family:'DM Sans',sans-ser
     <div class="alert alert-error" role="alert"><i class="fa-solid fa-circle-exclamation"></i><span><?= htmlspecialchars($error) ?></span></div>
     <?php endif; ?>
 
-    <?php if (!$state): ?>
+    <?php if ($step === 1): ?>
     <form method="POST" action="faculty_forgot_password.php" autocomplete="off">
         <?= csrf_field() ?>
         <input type="hidden" name="action" value="lookup">
@@ -205,24 +248,30 @@ body{min-height:100vh;background:var(--dark-blue);font-family:'DM Sans',sans-ser
     </form>
     <p class="help">Registered before security questions existed? Sign in and set them under <strong>Settings → Security</strong>, or ask your administrator to reset your password.</p>
 
-    <?php else: ?>
-    <form method="POST" action="faculty_forgot_password.php" autocomplete="off" id="resetForm">
+    <?php elseif ($step === 2): ?>
+    <form method="POST" action="faculty_forgot_password.php" autocomplete="off">
         <?= csrf_field() ?>
-        <input type="hidden" name="action" value="reset">
+        <input type="hidden" name="action" value="answers">
         <?php foreach ($state['keys'] as $slot => $key): ?>
         <div class="form-group">
             <label class="form-label">Question <?= (int)$slot ?></label>
             <div class="q-text"><?= htmlspecialchars($questions[$key] ?? 'Security question') ?></div>
-            <input class="form-input plain" type="text" name="sq_answer[<?= (int)$slot ?>]" maxlength="100" placeholder="Your answer" autocomplete="off" required <?= $slot === 1 ? 'autofocus' : '' ?>/>
+            <input class="form-input plain" type="text" name="sq_answer[<?= (int)$slot ?>]" maxlength="100" placeholder="Your answer" autocomplete="off" required <?= (int)$slot === 1 ? 'autofocus' : '' ?>/>
         </div>
         <?php endforeach; ?>
+        <button type="submit" class="btn-main"><i class="fa-solid fa-shield-halved"></i> Verify Answers</button>
+        <p class="help">Answers are case-sensitive: type them exactly as you saved them. Having trouble? Contact your administrator.</p>
+    </form>
 
-        <div class="section-label"><i class="fa-solid fa-lock"></i> New password</div>
+    <?php else: ?>
+    <form method="POST" action="faculty_forgot_password.php" autocomplete="off" id="resetForm">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="reset">
         <div class="form-group">
             <label class="form-label" for="password">New Password</label>
             <div class="input-wrap">
                 <i class="fa-solid fa-lock f-icon"></i>
-                <input class="form-input" type="password" id="password" name="password" placeholder="Min. 8 characters" autocomplete="new-password" required/>
+                <input class="form-input" type="password" id="password" name="password" placeholder="Min. 8 characters" autocomplete="new-password" required autofocus/>
                 <button type="button" class="toggle-pw" onclick="togglePw('password','e1')" aria-label="Show password"><i class="fa-solid fa-eye-slash" id="e1"></i></button>
             </div>
         </div>
@@ -235,11 +284,11 @@ body{min-height:100vh;background:var(--dark-blue);font-family:'DM Sans',sans-ser
             </div>
         </div>
         <button type="submit" class="btn-main"><i class="fa-solid fa-rotate"></i> Reset Password</button>
-        <p class="help">Answers are not case-sensitive. Having trouble? Contact your administrator.</p>
     </form>
     <?php endif; ?>
 
     <div class="back-row">
+        <?php if ($step > 1): ?><a class="restart" href="<?= basename(__FILE__) ?>">Use a different username</a><?php endif; ?>
         <a href="<?= REC_LOGIN ?>"><i class="fa-solid fa-arrow-left"></i> Back to Login</a>
     </div>
 </div>

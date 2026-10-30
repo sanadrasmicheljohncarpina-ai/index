@@ -482,6 +482,34 @@ $period_closes_label = student_dashboard_format_period_dt(student_dashboard_pars
 
 $period_opens_short  = ($__dt = student_dashboard_parse_period_dt($periodSettings['eval_start'] ?? '', $period_tz)) ? $__dt->format('M j, Y g:i A') : 'Not set';
 $period_closes_short = ($__dt = student_dashboard_parse_period_dt($periodSettings['eval_end'] ?? '', $period_tz)) ? $__dt->format('M j, Y g:i A') : 'Not set';
+
+// ── Live countdown chip ───────────────────────────────────
+// Honours the "Show Countdown" switch in System & Period. Shown only when the status
+// really follows the schedule (Follow Schedule + Automatic Schedule on) and the active
+// period actually applies to this student's level, so it never promises an opening or
+// closing that an override or level gate would ignore.
+$cd_raw = [];
+$cdRes = $mysqli->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('rule_countdown','auto_schedule','maintenance')");
+if ($cdRes) { while ($row = $cdRes->fetch_assoc()) { $cd_raw[$row['setting_key']] = (string)($row['setting_value'] ?? ''); } $cdRes->free(); }
+$cd_level_ok = $activePeriodRow
+    && (isCollegeEducationLevel($student_level) !== (trim((string)$active_period_semester) === 'School Year'));
+$cd_show = !empty($cd_raw['rule_countdown'])
+    && $period_control_mode === 'schedule'
+    && !empty($cd_raw['auto_schedule'])
+    && empty($cd_raw['maintenance'])
+    && $cd_level_ok;
+$cd_now = time();
+$cd_dts = student_dashboard_parse_period_dt($periodSettings['eval_start'] ?? '', $period_tz);
+$cd_dte = student_dashboard_parse_period_dt($periodSettings['eval_end'] ?? '', $period_tz);
+$cd_s = $cd_dts ? $cd_dts->getTimestamp() : 0;
+$cd_e = $cd_dte ? $cd_dte->getTimestamp() : 0;
+$cd_open = (bool)$period_is_open;
+$cd_target = 0; $cd_label = '';
+if ($cd_show) {
+    if (!$cd_open && $cd_s > $cd_now)     { $cd_target = $cd_s; $cd_label = 'Opens in'; }
+    elseif ($cd_open && $cd_e > $cd_now)  { $cd_target = $cd_e; $cd_label = 'Closes in'; }
+}
+
 $edu_labels = ['elementary'=>'Elementary','junior_high'=>'Junior High School','senior_high'=>'Senior High School','college'=>'College'];
 $student_edu_label = $edu_labels[strtolower(trim((string)$student_level))] ?? 'Student';
 
@@ -2782,6 +2810,7 @@ body.reduce-motion *,body.reduce-motion *::before,body.reduce-motion *::after{an
             <div class="sd-open-pill <?= $period_is_open ? 'open' : 'closed' ?>">
                 <i class="fa-solid <?= $period_is_open ? 'fa-lock-open' : 'fa-lock' ?>"></i>
                 Evaluation period is currently <?= $period_is_open ? 'open' : 'closed' ?>
+                <?php if (($cd_target ?? 0) > 0): ?><span class="sched-countdown" id="schedCountdown" data-target="<?= (int)$cd_target ?>" data-label="<?= htmlspecialchars($cd_label, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($cd_label, ENT_QUOTES, 'UTF-8') ?> <b>…</b></span><?php endif; ?>
             </div>
 
             <div class="sd-period">
@@ -4000,6 +4029,41 @@ document.addEventListener('DOMContentLoaded', function () {
     });
     document.addEventListener('keydown', function(e){ if (e.key === 'Escape') { close(); render(); } });
     render();
+})();
+</script>
+<style>
+.sched-countdown{margin-left:6px;padding-left:10px;border-left:1px solid currentColor;font-weight:600;white-space:nowrap}
+.sched-countdown b{font-variant-numeric:tabular-nums;font-weight:800}
+@media(max-width:560px){.sched-countdown{border-left:0;padding-left:0;margin-left:0}}
+</style>
+<script>
+(function(){
+  var el=document.getElementById('schedCountdown'); if(!el) return;
+  var out=el.querySelector('b'), target=parseInt(el.dataset.target,10)*1000;
+  // Use the server clock so a wrong clock on this computer cannot skew the countdown.
+  var skew=<?= (int)($cd_now ?? time()) ?>*1000-Date.now();
+  // Never reload while the student has an evaluation form open (same rule the status poller uses).
+  var sc=document.querySelector('script[data-busy-selector]'), busy=sc?sc.getAttribute('data-busy-selector'):'';
+  function pad(n){return n<10?'0'+n:''+n;}
+  function fmt(ms){
+    var t=Math.floor(ms/1000), d=Math.floor(t/86400), h=Math.floor(t%86400/3600), m=Math.floor(t%3600/60), s=t%60;
+    if(d>0) return d+'d '+h+'h '+pad(m)+'m';
+    if(h>0) return h+'h '+pad(m)+'m '+pad(s)+'s';
+    return m+'m '+pad(s)+'s';
+  }
+  var timer;
+  function tick(){
+    var left=target-(Date.now()+skew);
+    if(left<=0){
+      out.textContent='now'; clearInterval(timer);
+      try{ if(busy && document.querySelector(busy)) return; }catch(e){}
+      // Refresh once so the status switches between Closed / Open.
+      try{ var k='pbiCdReload', last=+sessionStorage.getItem(k)||0; if(Date.now()-last>15000){ sessionStorage.setItem(k,Date.now()); setTimeout(function(){location.reload();},1500); } }catch(e){}
+      return;
+    }
+    out.textContent=fmt(left);
+  }
+  tick(); timer=setInterval(tick,1000);
 })();
 </script>
 <script src="../admin/eval_status_poll.js" data-busy-selector="#evalModal.open" defer></script>

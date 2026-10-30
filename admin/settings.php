@@ -204,6 +204,14 @@ window.addEventListener('message', (e) => {
   const banner = document.getElementById('unsavedBanner');
   if (banner) banner.classList.remove('show');
 });
+// The System & Period tab can ask to jump to System Archive, pre-selecting the periods to archive.
+window.addEventListener('message',(e)=>{
+  if(e.origin!==window.location.origin||!e.data||e.data.type!=='pbi-open-tab'||e.data.tab!=='archive') return;
+  const ids=(Array.isArray(e.data.preselect)?e.data.preselect:[]).map(Number).filter(n=>n>0);
+  const f=document.querySelector('#section-archive iframe.frame');
+  if(f) f.src='system_archive.php'+(ids.length?'?preselect='+encodeURIComponent(ids.join(',')):'');
+  setTab('archive');
+});
 // ---- Hooks used by the admin dashboard's sidebar (admin_dashboard.php) ----
 function systemFrameWin(){
   const f=document.querySelector('#section-system iframe.frame');

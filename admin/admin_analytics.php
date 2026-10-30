@@ -3221,6 +3221,14 @@ function confirmNav(link, message, opts){
 // that wouldn't apply.
 $groupForOtherTabs = $groupFilter;
 ?>
+<?php
+// Who is doing the evaluating on the active tab (used in the section captions).
+$raWho = ['student'=>'students','peer'=>'colleagues','schoolhead'=>'the Dean / Principal','ea'=>'the Executive Assistant','staff'=>'staff members'][$activeEval] ?? $evaluatorNounP;
+?>
+<div class="ra-role-label ra-role-evaluators no-print">
+    <span class="ra-role-badge"><i class="fa-solid fa-pen-to-square"></i> Evaluators</span>
+    <span class="ra-role-hint">Who submitted the evaluations &mdash; choose one to see its results</span>
+</div>
 <div class="ra-topbar">
 <div class="eval-switcher">
     <a href="?group=All&eval_type=student" class="eval-tab student <?= $activeEval==='student'?'active':'' ?>">
@@ -3233,10 +3241,6 @@ $groupForOtherTabs = $groupFilter;
     <div class="eval-divider"></div>
     <a href="?group=Faculty&eval_type=schoolhead&evaluator=All" class="eval-tab schoolhead <?= $activeEval==='schoolhead'?'active':'' ?>">
         <i class="fa-solid fa-user-tie"></i> Dean / Principal
-    </a>
-    <div class="eval-divider"></div>
-    <a href="?group=All&eval_type=staff" class="eval-tab staff-eval <?= $activeEval==='staff'?'active':'' ?>">
-        <i class="fa-solid fa-users"></i> Staff Evaluation
     </a>
 </div>
         <div class="ra-table-tools ra-top-tools no-print">
@@ -3291,6 +3295,10 @@ $groupForOtherTabs = $groupFilter;
 </div>
 
 <!-- GROUP TABS -->
+<div class="ra-role-label ra-role-evaluated no-print">
+    <span class="ra-role-badge"><i class="fa-solid fa-user-check"></i> Being evaluated</span>
+    <span class="ra-role-hint">Personnel rated by <?= htmlspecialchars($raWho) ?> &mdash; filter by group</span>
+</div>
 <?php if ($activeEval === 'schoolhead'): ?>
 <div class="group-tabs">
     <a href="?group=All&eval_type=schoolhead&evaluator=<?= urlencode($evaluatorFilter) ?>"
@@ -3440,6 +3448,63 @@ table.ra-table tbody tr:hover{background:var(--inner);}
 .ra-pager-btns button:disabled{opacity:.4;cursor:not-allowed;}
 </style>
 
+<style id="ra-roles">
+/* ------------------------------------------------------------------
+   Evaluators vs. evaluated personnel
+   Row 1 (indigo)  = EVALUATORS: who submitted the evaluations.
+   Row 2 + table (teal) = BEING EVALUATED: the people who were rated.
+   Presentation only; links, filters and queries are unchanged.
+   ------------------------------------------------------------------ */
+html body:not(#rap) .ra-role-label{display:flex;align-items:center;flex-wrap:wrap;gap:10px 12px;margin:0 0 10px;}
+html body:not(#rap) .ra-role-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 13px;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;border:1px solid transparent;}
+html body:not(#rap) .ra-role-hint{font-size:13px;font-weight:500;}
+html body:not(#rap) .ra-topbar{margin-bottom:22px!important;}
+html body:not(#rap) .ra-role-evaluated{margin-top:2px;}
+
+/* Evaluator tabs: one tinted strip, solid fill for the selected evaluator */
+html body:not(#rap) .eval-switcher{padding:5px!important;gap:4px!important;border-radius:14px!important;}
+html body:not(#rap) .eval-switcher .eval-divider{display:none!important;}
+html body:not(#rap) .eval-tab{padding:11px 20px!important;border-radius:10px!important;font-size:14px!important;font-weight:700!important;}
+html body:not(#rap) .eval-tab::after{display:none!important;}
+html body:not(#rap) .eval-tab.student{--tc:#2563EB;}
+html body:not(#rap) .eval-tab.peer{--tc:#4968C8;}
+html body:not(#rap) .eval-tab.schoolhead{--tc:#B8700A;}
+html body:not(#rap) .eval-tab.staff-eval{--tc:#0E7490;}
+html body:not(#rap) .eval-tab.active{background:var(--tc)!important;color:#fff!important;box-shadow:0 3px 10px rgba(11,31,58,.22);}
+html body:not(#rap) .eval-tab.active > i{color:#fff!important;}
+
+/* Target-group tabs: teal family */
+html body:not(#rap) .group-tab{padding:9px 20px!important;font-size:14px!important;font-weight:700!important;}
+html body:not(#rap) .group-tab[class*="active-"]{box-shadow:0 2px 8px rgba(15,118,110,.14);}
+
+/* Table card: teal accent + caption */
+html body:not(#rap) .ra-table-card{border-left:5px solid #0F766E!important;}
+html body:not(#rap) .ra-table-head{flex-direction:column!important;align-items:flex-start!important;gap:4px!important;margin-bottom:18px!important;}
+html body:not(#rap) .ra-table-sub{font-size:13px;font-weight:500;padding-left:2px;}
+html body:not(#rap) .ra-table th{font-size:12px!important;letter-spacing:.06em;}
+
+/* ── Light theme colours ── */
+html:not([data-theme="dark"]) body:not(#rap) .ra-role-evaluators .ra-role-badge{background:#E0E7FF;color:#3730A3;border-color:#B4C0F7;}
+html:not([data-theme="dark"]) body:not(#rap) .ra-role-evaluated .ra-role-badge{background:#D5F3EE;color:#0B5F57;border-color:#8CD5C9;}
+html:not([data-theme="dark"]) body:not(#rap) .ra-role-hint,html:not([data-theme="dark"]) body:not(#rap) .ra-table-sub{color:#475569;}
+html:not([data-theme="dark"]) body:not(#rap) .eval-switcher{background:#EEF2FF!important;border:1px solid #C7D2FE!important;box-shadow:none!important;}
+html:not([data-theme="dark"]) body:not(#rap) .eval-tab:not(.active){color:#3B4A63!important;}
+html:not([data-theme="dark"]) body:not(#rap) .eval-tab:not(.active):hover{background:#E0E7FF!important;color:#1E1B4B!important;}
+html:not([data-theme="dark"]) body:not(#rap) .group-tab{background:#fff!important;border-color:#C9D6E4!important;color:#334155!important;}
+html:not([data-theme="dark"]) body:not(#rap) .group-tab:hover{background:#F0FAF8!important;border-color:#8CD5C9!important;color:#0B5F57!important;}
+html:not([data-theme="dark"]) body:not(#rap) .group-tab[class*="active-"]{background:#DDF4F0!important;border-color:#5CBFB0!important;color:#0B5F57!important;}
+html:not([data-theme="dark"]) body:not(#rap) .ra-table-card{border-left-color:#0F766E!important;}
+
+/* ── Dark theme ── */
+html[data-theme="dark"] body:not(#rap) .ra-role-evaluators .ra-role-badge{background:rgba(129,140,248,.18);color:#C7D2FE;border-color:rgba(129,140,248,.4);}
+html[data-theme="dark"] body:not(#rap) .ra-role-evaluated .ra-role-badge{background:rgba(45,212,191,.15);color:#99F6E4;border-color:rgba(45,212,191,.38);}
+html[data-theme="dark"] body:not(#rap) .ra-role-hint,html[data-theme="dark"] body:not(#rap) .ra-table-sub{color:var(--muted);}
+html[data-theme="dark"] body:not(#rap) .eval-switcher{background:rgba(129,140,248,.08)!important;border:1px solid rgba(129,140,248,.28)!important;}
+html[data-theme="dark"] body:not(#rap) .ra-table-card{border-left-color:#2DD4BF!important;}
+
+@media(max-width:900px){html body:not(#rap) .eval-switcher{width:100%;overflow-x:auto;}html body:not(#rap) .eval-tab{padding:10px 14px!important;white-space:nowrap;}}
+@media print{.ra-role-label{display:none!important;}}
+</style>
 <div class="ra-table-card">
     <div class="ra-table-head">
         <div class="section-title">
@@ -3447,6 +3512,7 @@ table.ra-table tbody tr:hover{background:var(--inner);}
             <?= $activeEval==='student' ? 'Evaluated Personnel' : 'Evaluated Personnel' ?>
             <span style="font-size:13px;font-weight:400;color:var(--muted)">(<?= count($people) ?> evaluated)</span>
         </div>
+        <div class="ra-table-sub">Rated by <?= htmlspecialchars($raWho) ?> &middot; scores are the average of the ratings they gave</div>
     </div>
 
     <?php if (empty($people)): ?>

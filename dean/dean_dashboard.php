@@ -293,6 +293,25 @@ $deanPerformanceClass = $deanOverallAverage === null
 
 $pendingEvaluationsTotal = $facultyPending + $staffPending + $eaPending;
 
+// ── Live countdown chip ───────────────────────────────────
+// Honours the "Show Countdown" switch in System & Period. Shown only when the status
+// really follows the schedule (Follow Schedule + Automatic Schedule on), so it never
+// promises an opening/closing that a manual override would ignore.
+$cd_raw = function_exists('ss_raw') ? ss_raw($mysqli) : [];
+$cd_show = !empty($cd_raw['rule_countdown'])
+    && ($cd_raw['control_mode'] ?? 'schedule') === 'schedule'
+    && !empty($cd_raw['auto_schedule'])
+    && empty($cd_raw['maintenance'])
+    && ($structureActive && $hasCurrentEvaluationPeriod);
+$cd_now = time();
+$cd_s = (($d=ss_parse_datetime($settings['eval_start'] ?? '')) ? $d->getTimestamp() : 0); $cd_e = (($d=ss_parse_datetime($settings['eval_end'] ?? '')) ? $d->getTimestamp() : 0);
+$cd_open = (bool)($evalOpen);
+$cd_target = 0; $cd_label = '';
+if ($cd_show) {
+    if (!$cd_open && $cd_s > $cd_now)     { $cd_target = $cd_s; $cd_label = 'Opens in'; }
+    elseif ($cd_open && $cd_e > $cd_now)  { $cd_target = $cd_e; $cd_label = 'Closes in'; }
+}
+
 $mysqli->close();
 $photo_src = !empty($me['photo']) ? '../image/' . $me['photo'] : '../image/pbi_logo';
 ?>
@@ -820,6 +839,7 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
             <?php else: ?>
                 Evaluation period is currently closed
             <?php endif; ?>
+            <?php if (($cd_target ?? 0) > 0): ?><span class="sched-countdown" id="schedCountdown" data-target="<?= (int)$cd_target ?>" data-label="<?= htmlspecialchars($cd_label, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($cd_label, ENT_QUOTES, 'UTF-8') ?> <b>…</b></span><?php endif; ?>
         </span>
     </section>
 
@@ -964,6 +984,38 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
 </script>
 
 
+<style>
+.sched-countdown{margin-left:6px;padding-left:10px;border-left:1px solid currentColor;font-weight:600;white-space:nowrap}
+.sched-countdown b{font-variant-numeric:tabular-nums;font-weight:800}
+@media(max-width:560px){.sched-countdown{border-left:0;padding-left:0;margin-left:0}}
+</style>
+<script>
+(function(){
+  var el=document.getElementById('schedCountdown'); if(!el) return;
+  var out=el.querySelector('b'), target=parseInt(el.dataset.target,10)*1000;
+  // Use the server clock so a wrong clock on this computer cannot skew the countdown.
+  var skew=<?= (int)($cd_now ?? time()) ?>*1000-Date.now();
+  function pad(n){return n<10?'0'+n:''+n;}
+  function fmt(ms){
+    var t=Math.floor(ms/1000), d=Math.floor(t/86400), h=Math.floor(t%86400/3600), m=Math.floor(t%3600/60), s=t%60;
+    if(d>0) return d+'d '+h+'h '+pad(m)+'m';
+    if(h>0) return h+'h '+pad(m)+'m '+pad(s)+'s';
+    return m+'m '+pad(s)+'s';
+  }
+  var timer;
+  function tick(){
+    var left=target-(Date.now()+skew);
+    if(left<=0){
+      out.textContent='now'; clearInterval(timer);
+      // Refresh once so the status switches between Scheduled / Open / Closed.
+      try{ var k='pbiCdReload', last=+sessionStorage.getItem(k)||0; if(Date.now()-last>15000){ sessionStorage.setItem(k,Date.now()); setTimeout(function(){location.reload();},1500); } }catch(e){}
+      return;
+    }
+    out.textContent=fmt(left);
+  }
+  tick(); timer=setInterval(tick,1000);
+})();
+</script>
 <script src="../admin/eval_status_poll.js" defer></script>
 <script id="dean-rename-settings-label">
 /* Sidebar/header label: "Account Settings" -> "Settings" (stopgap until includes/dean_sidebar.php is edited). */

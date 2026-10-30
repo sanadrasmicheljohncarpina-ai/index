@@ -842,14 +842,16 @@ input,select,textarea{background:#FFFFFF !important;color:#172033 !important;bor
 // ══════════════════════════════════════════════════════════════
 // VIEW: EVALUATION SHEET
 // ══════════════════════════════════════════════════════════════
-if ($view === 'sheet' && $target_id && $tracker_id) {
+if ($view === 'sheet' && $target_id && ($tracker_id || ($_GET['report'] ?? '') === '1')) {
     $tgt = db_row($mysqli, "SELECT id,full_name,designation,photo,role FROM users u WHERE u.id=$target_id AND $viewScopeSql LIMIT 1");
     if (!$tgt) { http_response_code(404); exit('Personnel not found in this report scope.'); }
-    $trk = db_row($mysqli, "SELECT * FROM evaluation_tracker et WHERE et.id=$tracker_id AND et.target_user_id=$target_id AND $evalTypeSql LIMIT 1");
-    if (!$trk) { http_response_code(404); exit('Evaluation not found in this report scope.'); }
+    $trk = $tracker_id ? db_row($mysqli, "SELECT * FROM evaluation_tracker et WHERE et.id=$tracker_id AND et.target_user_id=$target_id AND $evalTypeSql LIMIT 1") : null;
+    // The single Generate Report button has no tracker_id (it pools every evaluator);
+    // only a per-row View link must resolve to an actual submission.
+    if (!$trk && $tracker_id) { http_response_code(404); exit('Evaluation not found in this report scope.'); }
     // Identify the evaluator from the tracker row itself so a hand-edited
     // ?student_id= can never show a name that doesn't match the evaluation.
-    $stu = db_row($mysqli, "SELECT id,full_name,photo FROM users WHERE id=" . (int)($trk['evaluator_id'] ?? 0) . " LIMIT 1");
+    $stu = $trk ? db_row($mysqli, "SELECT id,full_name,photo FROM users WHERE id=" . (int)($trk['evaluator_id'] ?? 0) . " LIMIT 1") : null;
 
     $answers = [];
     // Student Teacher/Multi-Role questionnaires come from evaluation_questions;
@@ -1962,6 +1964,26 @@ if ($view === 'students' && $target_id) {
         <h2>Evaluation Results</h2>
         <span>(<?= count($evaluators) ?>)</span>
     </div>
+    <div class="detail-head-actions no-print">
+    <?php if (!empty($evaluators)):
+        // One Generate Report button for the whole list (same as the admin page).
+        // Carries the exact tracker set + period shown in this list so the report matches it.
+        $topReportPeriodId = match ($activeEval) {
+            'peer' => (int)$peerPeriodId,
+            'staff' => (int)$staffPeriodId,
+            default => (int)$studentPeriodId,
+        };
+        $topReportHref = '?view=sheet&target_id=' . $target_id
+            . '&group=' . urlencode($groupFilter) . '&eval_type=' . $activeEval
+            . ($selectedYearLevel !== '' ? '&year_level=' . urlencode($selectedYearLevel) : '')
+            . '&report=1'
+            . ($reportTrackerIds !== ''
+                ? '&report_period_id=' . $topReportPeriodId . '&report_tracker_ids=' . urlencode($reportTrackerIds)
+                : ''); ?>
+    <a class="rt-generate-top" href="<?= htmlspecialchars($topReportHref, ENT_QUOTES, 'UTF-8') ?>">
+        <i class="fa-solid fa-file-lines"></i> Generate Report
+    </a>
+    <?php endif; ?>
     <?php if ($activeEval === 'student' && !empty($availableYearLevels)): ?>
     <form method="get" class="detail-year-filter no-print">
         <input type="hidden" name="view" value="students"/>
@@ -1977,7 +1999,18 @@ if ($view === 'students' && $target_id) {
         </select>
     </form>
     <?php endif; ?>
+    </div>
 </div>
+<style>
+.detail-head-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+html body a.rt-generate-top,html body a.rt-generate-top:link,html body a.rt-generate-top:visited{
+    display:inline-flex;align-items:center;gap:8px;padding:9px 18px;border-radius:8px;
+    background:#2563EB !important;color:#fff !important;-webkit-text-fill-color:#fff !important;
+    border:1px solid #2563EB;font-size:13px;font-weight:700;text-decoration:none !important;
+    font-family:'Inter',sans-serif;}
+html body a.rt-generate-top:hover{opacity:.88;}
+html body a.rt-generate-top i{color:#fff !important;margin:0 !important;}
+</style>
 
 <div class="detail-results-panel">
 <?php if (empty($evaluators)): ?>
@@ -2016,19 +2049,7 @@ if ($view === 'students' && $target_id) {
                     $sheetQs = '?view=sheet&target_id=' . $target_id . '&student_id=' . (int)$ev['student_id'] . '&tracker_id=' . (int)$ev['tracker_id']
                         . '&group=' . urlencode($groupFilter) . '&eval_type=' . $activeEval
                         . ($selectedYearLevel !== '' ? '&year_level=' . urlencode($selectedYearLevel) : '');
-                    $reportPeriodId = match ($activeEval) {
-                        'peer' => (int)$peerPeriodId,
-                        'staff' => (int)$staffPeriodId,
-                        default => (int)$studentPeriodId,
-                    };
-                    $sheetReportQs = $sheetQs . '&report=1'
-                        . ($reportTrackerIds !== ''
-                            ? '&report_period_id=' . $reportPeriodId . '&report_tracker_ids=' . urlencode($reportTrackerIds)
-                            : '');
                 ?>
-                <a class="detail-view-btn detail-report-btn" title="Generate Report" aria-label="Generate Report" href="<?= htmlspecialchars($sheetReportQs, ENT_QUOTES, 'UTF-8') ?>">
-                    <i class="fa-solid fa-file-lines"></i>
-                </a>
                 <a class="detail-view-btn" title="View" aria-label="View evaluation" href="<?= $sheetQs ?>">
                     <i class="fa-solid fa-eye"></i>
                 </a>
@@ -2481,9 +2502,61 @@ a { color:inherit; }
 <?php if ($toast): ?><div class="toast"><i class="fa-solid fa-circle-check"></i><?= htmlspecialchars($toast) ?></div><?php endif; ?>
 
 <!-- ── REPORTS REDESIGN ── -->
+<style id="rp-roles">
+/* ------------------------------------------------------------------
+   Evaluators vs. evaluated personnel (same treatment as Evaluation Reports)
+   Indigo = EVALUATORS (who submitted), teal = BEING EVALUATED (who was rated).
+   Presentation only; links, filters, search and queries are unchanged.
+   ------------------------------------------------------------------ */
+html body:not(#rap) .ra-role-label{display:flex;align-items:center;flex-wrap:wrap;gap:10px 12px;margin:0 0 10px;}
+html body:not(#rap) .ra-role-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 13px;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;border:1px solid transparent;}
+html body:not(#rap) .ra-role-hint{font-size:13px;font-weight:500;}
+html body:not(#rap) .ra-role-evaluated{margin-top:4px;}
+html body:not(#rap) .reports-redesign .reports-top-row{margin-bottom:22px!important;}
+html body:not(#rap) .reports-redesign .reports-top-switcher{padding:5px!important;gap:4px!important;border-radius:16px!important;}
+html body:not(#rap) .reports-redesign .reports-top-tab{min-height:44px!important;border-radius:12px!important;}
+html body:not(#rap) .reports-redesign .reports-filter-tabs{margin-bottom:16px!important;}
+html body:not(#rap) .reports-redesign .reports-filter-tab{min-height:44px!important;}
+html body:not(#rap) .reports-redesign .reports-data-panel{border-left:5px solid #0F766E!important;}
+html body:not(#rap) .reports-redesign .reports-data-sub{margin:-8px 28px 16px;padding-left:29px;font-size:13px;font-weight:500;}
+
+/* Light */
+html:not(.dark-theme) body:not(#rap)  .ra-role-evaluators .ra-role-badge{background:#E0E7FF;color:#3730A3;border-color:#B4C0F7;}
+html:not(.dark-theme) body:not(#rap)  .ra-role-evaluated .ra-role-badge{background:#D5F3EE;color:#0B5F57;border-color:#8CD5C9;}
+html:not(.dark-theme) body:not(#rap)  .ra-role-hint{color:#475569;}
+html:not(.dark-theme) body:not(#rap) .reports-redesign .reports-data-sub{color:#475569;}
+html:not(.dark-theme) body:not(#rap) .reports-redesign .reports-top-switcher{background:#EEF2FF!important;border:1px solid #C7D2FE!important;}
+html:not(.dark-theme) body:not(#rap) .reports-redesign .reports-top-tab:not(.active){background:transparent!important;border-color:transparent!important;box-shadow:none!important;}
+html:not(.dark-theme) body:not(#rap) .reports-redesign .reports-top-tab:not(.active):hover{background:rgba(255,255,255,.85)!important;}
+html:not(.dark-theme) body:not(#rap) .reports-redesign .reports-filter-tab:not(.active){border-color:#C9D6E4!important;color:#334155!important;}
+html:not(.dark-theme) body:not(#rap) .reports-redesign .reports-filter-tab:not(.active):hover{background:#F0FAF8!important;border-color:#8CD5C9!important;color:#0B5F57!important;}
+html:not(.dark-theme) body:not(#rap) .reports-redesign .reports-filter-tab.active{background:#DDF4F0!important;border-color:#5CBFB0!important;color:#0B5F57!important;box-shadow:0 2px 8px rgba(15,118,110,.14)!important;}
+html:not(.dark-theme) body:not(#rap) .reports-redesign .reports-filter-tab.active b{background:#BFE9E2!important;color:#0B5F57!important;}
+
+/* Dark */
+html.dark-theme body:not(#rap)  .ra-role-evaluators .ra-role-badge{background:rgba(129,140,248,.18);color:#C7D2FE;border-color:rgba(129,140,248,.4);}
+html.dark-theme body:not(#rap)  .ra-role-evaluated .ra-role-badge{background:rgba(45,212,191,.15);color:#99F6E4;border-color:rgba(45,212,191,.38);}
+html.dark-theme body:not(#rap)  .ra-role-hint{color:#A0B3C6;}
+html.dark-theme body:not(#rap) .reports-redesign .reports-data-sub{color:#A0B3C6;}
+html.dark-theme body:not(#rap) .reports-redesign .reports-top-switcher{background:rgba(129,140,248,.08)!important;border:1px solid rgba(129,140,248,.28)!important;}
+html.dark-theme body:not(#rap) .reports-redesign .reports-filter-tab.active{background:rgba(45,212,191,.14)!important;border-color:rgba(45,212,191,.4)!important;color:#99F6E4!important;box-shadow:none!important;}
+html.dark-theme body:not(#rap) .reports-redesign .reports-filter-tab.active b{background:rgba(45,212,191,.22)!important;color:#99F6E4!important;}
+html.dark-theme body:not(#rap) .reports-redesign .reports-data-panel{border-left-color:#2DD4BF!important;}
+
+@media(max-width:900px){html body:not(#rap) .reports-redesign .reports-top-switcher{width:100%;overflow-x:auto;}}
+@media print{.ra-role-label,.reports-data-sub{display:none!important;}}
+</style>
 <div class="reports-redesign">
 
     <!-- Top-level report types: keep the current two data sets only. -->
+    <?php
+// Who is doing the evaluating on the active tab (used in the section captions).
+$raWho = ['student'=>'students','peer'=>'colleagues','staff'=>'staff members'][$activeEval] ?? $evaluatorNounP;
+?>
+    <div class="ra-role-label ra-role-evaluators no-print">
+        <span class="ra-role-badge"><i class="fa-solid fa-pen-to-square"></i> Evaluators</span>
+        <span class="ra-role-hint">Who submitted the evaluations &mdash; choose one to see its results</span>
+    </div>
     <div class="reports-top-row">
     <div class="reports-top-switcher">
         <a href="?group=<?= urlencode($groupFilter) ?>&eval_type=student" class="reports-top-tab student <?= $activeEval==='student'?'active':'' ?>">
@@ -2510,6 +2583,10 @@ a { color:inherit; }
         </div>
     </div>
 
+    <div class="ra-role-label ra-role-evaluated no-print">
+        <span class="ra-role-badge"><i class="fa-solid fa-user-check"></i> Being evaluated</span>
+        <span class="ra-role-hint">Personnel rated by <?= htmlspecialchars($raWho) ?> &mdash; filter by group</span>
+    </div>
     <?php if ($activeEval === 'student'): ?>
     <div class="reports-filter-tabs">
         <a href="?group=All&eval_type=student" class="reports-filter-tab <?= $groupFilter==='All'?'active':'' ?>">
@@ -2550,6 +2627,7 @@ a { color:inherit; }
                 <span class="reports-live-status" id="reportsLiveStatus"><span class="reports-live-dot"></span> Live</span>
             </div>
         </div>
+        <div class="reports-data-sub">Rated by <?= htmlspecialchars($raWho) ?> &middot; scores are the average of the ratings they gave</div>
 
         <div class="reports-active-filter-note" id="reportsFilterNote" hidden>
             <span>Use the tabs above to narrow the current report.</span>

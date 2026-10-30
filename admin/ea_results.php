@@ -557,6 +557,7 @@ table.q-table{width:100%;border-collapse:collapse;background:var(--panel);border
 <body>
 <div class="top-actions no-print">
     <a href="<?= $escape($backHref) ?>" class="back-btn"><i class="fa-solid fa-arrow-left"></i> Back to Evaluation Received</a>
+    <button type="button" class="btn-print no-print" onclick="window.print()"><i class="fa-solid fa-print"></i> Print</button>
 </div>
 
 <div class="cum-topbar">
@@ -597,31 +598,7 @@ table.q-table{width:100%;border-collapse:collapse;background:var(--panel);border
 
 <?php if (!$repByCat): ?><div class="empty-rep">No scored answers found for this selection.</div><?php endif; ?>
 
-<?php if ($repEvals): ?>
-<div class="cat-section">
-    <div class="cat-title"><i class="fa-solid fa-users" style="font-size:10px"></i> Overall Average per Evaluator</div>
-    <table class="q-table">
-        <thead><tr><th style="width:44px">No.</th><th>Evaluator</th><th>Date Evaluated</th><th class="rating-col">Overall Average</th></tr></thead>
-        <tbody>
-        <?php foreach ($repEvals as $ei => $ev): $ec = $scoreColor($ev['score']); ?>
-        <tr>
-            <td class="q-num"><?= $ei + 1 ?></td>
-            <td>Anonymous Evaluator <?= $ei + 1 ?></td>
-            <td><?= $ev['ts'] ? $escape(date('M d, Y', $ev['ts'])) : '—' ?></td>
-            <td class="rating-cell"><div class="rating-badge" style="border:1px solid <?= $ec ?>33"><span class="rating-num" style="color:<?= $ec ?>"><?= number_format($ev['score'], 2) ?></span></div></td>
-        </tr>
-        <?php endforeach; ?>
-        <?php if ($repOverall !== null): $oc = $scoreColor($repOverall); ?>
-        <tr style="background:var(--inner)">
-            <td></td>
-            <td colspan="2" style="font-weight:700;text-transform:uppercase;letter-spacing:.6px;font-size:12px">Combined Overall Average (all <?= count($repEvals) ?> evaluators)</td>
-            <td class="rating-cell"><div class="rating-badge" style="border:1px solid <?= $oc ?>55"><span class="rating-num" style="color:<?= $oc ?>"><?= number_format($repOverall, 2) ?></span></div></td>
-        </tr>
-        <?php endif; ?>
-        </tbody>
-    </table>
-</div>
-<?php endif; ?>
+
 
 <?php if ($repOverall !== null): ?>
 <!-- RATING LEGEND: same card style as Total Score, placed right before it (satisfaction wording) -->
@@ -664,6 +641,9 @@ table.q-table{width:100%;border-collapse:collapse;background:var(--panel);border
         <?php endif; ?>
         <div class="anon-note">Evaluator identities are kept confidential in this report.</div>
     </div>
+</div>
+<div class="no-print" style="display:flex;justify-content:center;margin:28px 0 8px;">
+    <button type="button" class="btn-print" onclick="window.print()"><i class="fa-solid fa-print"></i> Print</button>
 </div>
 </body>
 </html>

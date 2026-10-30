@@ -4,6 +4,7 @@ session_start();
 require_once 'db.php';
 
 $error = '';
+$notice = (($_GET['reset'] ?? '') === '1') ? 'Password updated. You can now sign in with your new password.' : '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== ($_SESSION['csrf_token'] ?? '')) {
@@ -111,6 +112,9 @@ body{min-height:100vh;background:#0A192F url('../bacjground.png') center center 
 .alert-error{background:rgba(240,84,84,.12);border:1px solid rgba(240,84,84,.35);color:#ff8a8a;}
 .btn-login{width:100%;padding:13px;background:var(--amber);border:none;border-radius:var(--radius);color:#1a1204;font-size:15px;font-weight:600;font-family:'DM Sans',sans-serif;cursor:pointer;transition:background .2s,transform .15s;box-shadow:0 4px 16px rgba(217,154,43,.4);display:flex;align-items:center;justify-content:center;gap:8px;}
 .btn-login:hover{background:var(--amber-h);transform:translateY(-1px);}
+.forgot-row{margin:-6px 0 16px;text-align:right;font-size:12px;}
+.forgot-row a{color:#F0B84D;font-weight:600;text-decoration:none;}
+.forgot-row a:hover{text-decoration:underline;}
 .register-row{text-align:center;margin-top:14px;font-size:13px;color:var(--muted);}
 .register-row a{color:var(--amber-h);font-weight:600;text-decoration:none;}
 .register-row a:hover{text-decoration:underline;}
@@ -210,6 +214,13 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
     </div>
     <div class="divider"></div>
 
+    <?php if ($notice && !$error): ?>
+    <div class="alert alert-success" role="status">
+        <i class="fa-solid fa-circle-check"></i>
+        <?= htmlspecialchars($notice) ?>
+    </div>
+    <?php endif; ?>
+
     <?php if ($error): ?>
     <div class="alert alert-error">
         <i class="fa-solid fa-circle-exclamation"></i>
@@ -240,6 +251,7 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
                 </button>
             </div>
         </div>
+        <div class="forgot-row"><a href="principal_forgot_password.php"><i class="fa-solid fa-key"></i> Forgot password?</a></div>
         <button type="submit" class="btn-login">
             <i class="fa-solid fa-right-to-bracket"></i> Sign In as Principal
         </button>

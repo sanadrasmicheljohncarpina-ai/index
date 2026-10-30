@@ -128,6 +128,28 @@ $dashboardStatusHeadline = !$structureActive
         ? 'Evaluation is currently open.'
         : 'Evaluation is currently closed — waiting for the scheduled opening.');
 
+// ── Live countdown chip ───────────────────────────────────
+// Honours the "Show Countdown" switch in System & Period. It is shown only when the
+// status really follows the schedule (Follow Schedule + Automatic Schedule on), so it
+// never promises an opening/closing that a manual override would ignore.
+$ssRaw = function_exists('ss_raw') ? ss_raw($mysqli) : [];
+$showCountdown = !empty($ssRaw['rule_countdown'])
+    && ($ssRaw['control_mode'] ?? 'schedule') === 'schedule'
+    && !empty($ssRaw['auto_schedule'])
+    && empty($ssRaw['maintenance']);
+$tsOf = static function ($v) use ($displayTimezone): int {
+    if (empty($v)) return 0;
+    try { return (new DateTime((string)$v, $displayTimezone))->getTimestamp(); } catch (Throwable $e) { return 0; }
+};
+$tsOpen = $tsOf($settings['eval_start'] ?? null);
+$tsClose = $tsOf($settings['eval_end'] ?? null);
+$nowTs = time();
+$cdTarget = 0; $cdLabel = '';
+if ($showCountdown && $structureActive) {
+    if (!$evalOpen && $tsOpen > $nowTs)      { $cdTarget = $tsOpen;  $cdLabel = 'Opens in'; }
+    elseif ($evalOpen && $tsClose > $nowTs)  { $cdTarget = $tsClose; $cdLabel = 'Closes in'; }
+}
+
 // ── HEADLINE STATS ONLY ────────────────────────────────────
 // Six numbers, nothing per-person and nothing per-grade. The old page ran an
 // N+1 query per teacher and per grade here; all of that moved to the pages
@@ -882,6 +904,7 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
         <div class="schedule-status <?= htmlspecialchars($dashboardStatusClass, ENT_QUOTES, 'UTF-8') ?>">
             <i class="fa-solid <?= !$structureActive ? 'fa-circle-info' : ($evalOpen ? 'fa-lock-open' : 'fa-lock') ?>"></i>
             <strong><?= htmlspecialchars($dashboardStatusHeadline, ENT_QUOTES, 'UTF-8') ?></strong>
+            <?php if ($cdTarget > 0): ?><span class="sched-countdown" id="schedCountdown" data-target="<?= (int)$cdTarget ?>" data-label="<?= htmlspecialchars($cdLabel, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($cdLabel, ENT_QUOTES, 'UTF-8') ?> <b>…</b></span><?php endif; ?>
         </div>
 
         <section class="period-strip evaluation-schedule-strip" id="principalSchedule" aria-label="Evaluation schedule">
@@ -1172,6 +1195,38 @@ main, main.main, .main, .main-content, .content, .page-content {
   }
 }
 </style>
+<style>
+#principalDashboard .sched-countdown{margin-left:4px;padding-left:10px;border-left:1px solid currentColor;font-weight:600;white-space:nowrap}
+#principalDashboard .sched-countdown b{font-variant-numeric:tabular-nums;font-weight:800}
+@media(max-width:560px){#principalDashboard .schedule-status{flex-wrap:wrap}#principalDashboard .sched-countdown{border-left:0;padding-left:0;margin-left:0}}
+</style>
+<script>
+(function(){
+  var el=document.getElementById('schedCountdown'); if(!el) return;
+  var out=el.querySelector('b'), target=parseInt(el.dataset.target,10)*1000;
+  // Use the server clock so a wrong clock on this computer cannot skew the countdown.
+  var skew=<?= (int)$nowTs ?>*1000-Date.now();
+  function pad(n){return n<10?'0'+n:''+n;}
+  function fmt(ms){
+    var t=Math.floor(ms/1000), d=Math.floor(t/86400), h=Math.floor(t%86400/3600), m=Math.floor(t%3600/60), s=t%60;
+    if(d>0) return d+'d '+h+'h '+pad(m)+'m';
+    if(h>0) return h+'h '+pad(m)+'m '+pad(s)+'s';
+    return m+'m '+pad(s)+'s';
+  }
+  var timer;
+  function tick(){
+    var left=target-(Date.now()+skew);
+    if(left<=0){
+      out.textContent='now'; clearInterval(timer);
+      // Refresh once so the status switches between Scheduled / Open / Closed.
+      try{ var k='pbiCdReload', last=+sessionStorage.getItem(k)||0; if(Date.now()-last>15000){ sessionStorage.setItem(k,Date.now()); setTimeout(function(){location.reload();},1500); } }catch(e){}
+      return;
+    }
+    out.textContent=fmt(left);
+  }
+  tick(); timer=setInterval(tick,1000);
+})();
+</script>
 <script src="../admin/eval_status_poll.js" defer></script>
 </body>
 </html>

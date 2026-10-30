@@ -220,6 +220,12 @@ if ($st = $conn->prepare("SELECT " . implode(', ', $sel) . " FROM users WHERE id
     if ($row) $u = array_merge($u, $row);
     $st->close();
 }
+// Current security-question keys (answers are stored hashed, so only the questions can be shown).
+$curKeys = [];
+if (function_exists('sq_load')) {
+    try { foreach ((array)sq_load($conn, $uid) as $slot => $r) $curKeys[(int)$slot] = (string)($r['question_key'] ?? ''); } catch (Throwable $e) { $curKeys = []; }
+}
+$sqIsSet = count(array_filter($curKeys)) === 3;
 $pf = basename((string)$u['profile_photo']);
 $photoUrl = ($pf !== '' && is_file($photoDir . $pf)) ? $photoBase . $pf . '?v=' . filemtime($photoDir . $pf) : '';
 ?>
@@ -319,7 +325,29 @@ $photoUrl = ($pf !== '' && is_file($photoDir . $pf)) ? $photoBase . $pf . '?v=' 
 .photo-ctl input[type=file]::file-selector-button{border:1px solid #B9CDE5;background:#fff;color:var(--text);border-radius:8px;padding:6px 11px;font:600 12px Inter;margin-right:9px;cursor:pointer}
 .hint{font-size:11.5px;color:var(--muted)}
 .btn.in-row{margin-top:0}
-/* collapsible security questions */
+/* security questions panel (sqx-*) */
+.sqx-card{padding:14px}
+.sqx-head{display:flex;align-items:center;gap:14px;padding:11px;border-radius:12px;background:var(--blue-soft)}
+.sqx-ico{width:48px;height:48px;border-radius:12px;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;flex:0 0 auto}
+.sqx-txt{flex:1;min-width:0}
+.sqx-title{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font:800 18px Inter;color:var(--text);margin:0 0 2px}
+.sqx-badge{display:inline-flex;align-items:center;gap:6px;font:700 10px Inter;letter-spacing:.08em;text-transform:uppercase;padding:4px 10px;border-radius:999px;border:1px solid #B9CDE5;background:#fff;color:#405A76}
+.sqx-badge::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--blue)}
+.sqx-badge.unset{color:var(--amber);border-color:#F2D9A6;background:var(--amber-soft)}.sqx-badge.unset::before{background:var(--amber)}
+.sqx-desc{font-size:12.5px;color:var(--muted)}
+.sqx-manage{border:0;background:var(--blue);color:#fff;border-radius:10px;padding:11px 18px;font:700 13px Inter;cursor:pointer;display:inline-flex;align-items:center;gap:8px;flex:0 0 auto}
+.sqx-manage i{transition:transform .2s;font-size:11px}
+.sqx-manage[aria-expanded="true"] i{transform:rotate(180deg)}
+.sqx-manage:focus-visible{outline:3px solid rgba(37,99,235,.35);outline-offset:2px}
+.sqx-body{padding:4px 6px 6px}
+.sqx-body[hidden]{display:none!important}
+.sqx-msg{display:none;margin-top:12px;padding:9px 11px;border-radius:8px;font:600 12px Inter}
+.sqx-msg.ok{display:block;background:var(--green-soft);color:#08734F;border:1px solid #BDE9D4}
+.sqx-msg.err{display:block;background:var(--red-soft);color:var(--red);border:1px solid #F5C2CB}
+@media(max-width:640px){.sqx-head{flex-wrap:wrap}.sqx-manage{width:100%;justify-content:center}}
+html[data-theme="dark"] .sqx-head{background:#16243a}
+html[data-theme="dark"] .sqx-badge{background:#0f1c2e;border-color:#25374f;color:#9fb3cb}
+/* (legacy) collapsible security questions */
 .sq-card{padding:0;overflow:hidden}
 .sq-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:14px;text-align:left;background:none;border:0;padding:17px;cursor:pointer;color:inherit;font-family:Inter}
 .sq-toggle:hover{background:rgba(15,159,110,.05)}
@@ -416,22 +444,26 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
     </form>
   </section>
 
-  <!-- Security questions (hidden until the dropdown button is clicked) -->
-  <section class="card sq-card">
-    <button type="button" class="sq-toggle" id="sqToggle" aria-expanded="false" aria-controls="sqBody">
-      <span><h2>Security Questions</h2><span class="sub">Used for password recovery. Click to view or change your questions.</span></span>
-      <span class="sq-chev"><i class="fa-solid fa-chevron-down"></i></span>
-    </button>
-    <div class="sq-body" id="sqBody" hidden>
-      <div class="success" style="margin-top:14px"><i class="fa-solid fa-shield-halved" style="margin-top:2px"></i><span>Choose 3 different questions. Your password is required to save any change.</span></div>
+  <!-- Security questions (collapsed until "Manage" is clicked) -->
+  <section class="card sqx-card">
+    <div class="sqx-head">
+      <div class="sqx-ico"><i class="fa-solid fa-shield-halved"></i></div>
+      <div class="sqx-txt">
+        <h2 class="sqx-title">Security Questions <span class="sqx-badge<?= $sqIsSet ? '' : ' unset' ?>" id="sqBadge"><?= $sqIsSet ? 'Set up' : 'Not set' ?></span></h2>
+        <div class="sqx-desc">Used for password recovery. Click Manage to view or change your questions.</div>
+      </div>
+      <button type="button" class="sqx-manage" id="sqToggle" aria-expanded="false" aria-controls="sqBody">Manage <i class="fa-solid fa-chevron-down"></i></button>
+    </div>
+    <div class="sqx-body" id="sqBody" hidden>
+      <div class="success" style="margin-top:14px"><i class="fa-solid fa-shield-halved" style="margin-top:2px"></i><span>Choose 3 different questions and re-type all 3 answers (answers are stored securely and can't be shown). Your password is required to save.</span></div>
       <form id="sqForm" autocomplete="off">
-        <?php for ($n = 1; $n <= 3; $n++): ?>
+        <?php for ($n = 1; $n <= 3; $n++): $cur = $curKeys[$n] ?? ''; ?>
         <div class="sq-item">
           <label class="label" for="sq_q<?= $n ?>">Question <?= $n ?></label>
           <select class="select" name="sq_question[<?= $n ?>]" id="sq_q<?= $n ?>">
-            <option value="" disabled selected>Choose a question</option>
+            <option value="" disabled <?= $cur === '' ? 'selected' : '' ?>>Choose a question</option>
             <?php foreach ($sq_all as $k => $q): ?>
-            <option value="<?= ps_h($k) ?>"><?= ps_h($q) ?></option>
+            <option value="<?= ps_h($k) ?>" <?= ((string)$k === $cur) ? 'selected' : '' ?>><?= ps_h($q) ?></option>
             <?php endforeach; ?>
           </select>
           <input class="select" type="text" name="sq_answer[<?= $n ?>]" id="sq_a<?= $n ?>" maxlength="100" placeholder="Your answer" autocomplete="off">
@@ -440,6 +472,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
         <div class="half"><label class="label" for="sq_password">Your Password</label>
           <div class="pw"><input class="select" id="sq_password" name="sq_password" type="password" autocomplete="current-password" placeholder="Required to save changes"><button type="button" class="eye" aria-label="Show password"><i class="fa-regular fa-eye-slash"></i></button></div></div>
         <div class="actions"><button class="btn primary" type="submit" id="sqBtn"><i class="fa-solid fa-floppy-disk"></i> Update Security Questions</button></div>
+        <div class="sqx-msg" id="sqMsg" role="status" aria-live="polite"></div>
       </form>
     </div>
   </section>
@@ -457,7 +490,15 @@ async function send(action, form, btn){
   btn.disabled = true;
   try{
     const r = await fetch('profile_security.php', {method:'POST', body:fd, credentials:'same-origin'});
-    const j = await r.json();
+    const raw = await r.text();
+    let j;
+    try { j = JSON.parse(raw); }
+    catch(_){
+      // The server sent something that is not JSON (a PHP error/notice, or a redirect to the login page).
+      console.error('profile_security.php returned:', raw);
+      const m = 'The server returned an unexpected response (HTTP ' + r.status + '). Check the PHP error log for profile_security.php.';
+      toast(m, false); return {ok:false, message:m};
+    }
     toast(j.message || (j.ok ? 'Saved.' : 'Something went wrong.'), !!j.ok);
     return j;
   }catch(e){ toast('Network error. Please try again.', false); return {ok:false}; }
@@ -497,10 +538,14 @@ document.getElementById('pwForm').addEventListener('submit', async e=>{
   if(j.ok) e.target.reset();
 });
 
-// Security questions dropdown (collapsed by default)
+// Security questions panel (collapsed by default; "Manage" opens/closes it)
 (function(){
   const t=document.getElementById('sqToggle'), b=document.getElementById('sqBody');
-  t.addEventListener('click',()=>{ const open=t.getAttribute('aria-expanded')==='true'; t.setAttribute('aria-expanded',open?'false':'true'); b.hidden=open; });
+  t.addEventListener('click',()=>{
+    const open=t.getAttribute('aria-expanded')==='true';
+    t.setAttribute('aria-expanded',open?'false':'true');
+    b.hidden=open; b.style.display=open?'none':'block';
+  });
 })();
 
 // Security questions: keep the three dropdowns from repeating the same question
@@ -514,9 +559,20 @@ document.getElementById('pwForm').addEventListener('submit', async e=>{
 })();
 document.getElementById('sqForm').addEventListener('submit', async e=>{
   e.preventDefault();
-  if(!document.getElementById('sq_password').value){ toast('Enter your password to change your security questions.', false); return; }
+  const msg=document.getElementById('sqMsg'); msg.className='sqx-msg'; msg.textContent='';
+  const fail=m=>{ msg.className='sqx-msg err'; msg.textContent=m; toast(m,false); };
+  const qs=[1,2,3].map(n=>document.getElementById('sq_q'+n).value);
+  if(qs.some(v=>!v)) return fail('Please choose all 3 questions.');
+  if(new Set(qs).size<3) return fail('Please choose 3 different questions.');
+  if([1,2,3].some(n=>!document.getElementById('sq_a'+n).value.trim())) return fail('Please type an answer for each question.');
+  if(!document.getElementById('sq_password').value) return fail('Enter your password to change your security questions.');
   const j = await send('questions', e.target, document.getElementById('sqBtn'));
-  if(j.ok){ e.target.reset(); [1,2,3].forEach(n=>document.getElementById('sq_q'+n).dispatchEvent(new Event('change'))); }
+  msg.className = 'sqx-msg ' + (j.ok ? 'ok' : 'err'); msg.textContent = j.message || (j.ok ? 'Security questions updated.' : 'Could not save.');
+  if(j.ok){
+    [1,2,3].forEach(n=>{ document.getElementById('sq_a'+n).value=''; });
+    document.getElementById('sq_password').value='';
+    const bd=document.getElementById('sqBadge'); bd.textContent='Set up'; bd.classList.remove('unset');
+  }
 });
 
 // Show / hide password
