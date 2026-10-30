@@ -345,8 +345,8 @@ html[data-theme="dark"] .eval-validation strong{color:#ffd0d0;}
 .eval-form-table td:first-child{text-align:left;padding-left:14px;padding-right:10px;min-width:360px}
 .eval-form-qtext{font-size:12.5px;line-height:1.45;color:var(--light)}
 .eval-form-qno{color:var(--accent);font-weight:800;margin-right:6px}
-.eval-form-rating{display:flex;justify-content:center}
-.eval-form-rating input{position:absolute;opacity:0;pointer-events:none}
+.eval-form-rating{display:flex;justify-content:center;position:relative}
+.eval-form-rating input{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:1px;height:1px;margin:0;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0;opacity:0;pointer-events:none}
 .eval-form-rating label,.eval-form-static span{width:34px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:7px;border:1px solid var(--border);background:var(--inner);color:var(--muted);font-size:12px;font-weight:800;box-shadow:0 2px 5px rgba(15,23,42,.03)}
 .eval-form-rating label{cursor:pointer;transition:all .15s ease}
 .eval-form-rating label:hover{border-color:var(--accent);background:var(--accent-soft)}
@@ -387,9 +387,17 @@ html[data-theme="dark"] .comment-box.comment-missing .comment-hint{color:#ff9b9b
 html:has(body.embed),html:has(body.embed) body{overflow:hidden!important;height:100%!important;min-height:0!important;scrollbar-width:none!important;}
 html:has(body.embed)::-webkit-scrollbar,body.embed::-webkit-scrollbar{display:none!important;width:0!important;height:0!important;}
 .embed .modal-overlay{position:static;background:transparent;backdrop-filter:none;padding:0;height:100%;}
-.embed .modal{max-width:none;height:100%;max-height:none;overflow:hidden!important;}
+.embed .modal{max-width:none;height:100%;max-height:none;overflow:hidden!important;overflow:clip!important;}
 .embed .modal form{min-height:0;}
 .embed .modal-body{flex:1;min-height:0;overflow-y:auto;}
+/* Match the Dean evaluation popup: 22px card, larger photo/name, same header/body/footer spacing */
+.modal{border-radius:22px;}
+.modal-header{padding:24px 32px 20px;gap:16px;}
+.modal-avatar,.modal-avatar-ph{width:66px;height:66px;}
+.modal-name{font-size:24px;line-height:1.15;}
+.modal-desig{font-size:14px;}
+.modal-body{padding:24px 32px 18px;}
+.modal-footer{padding:18px 32px 22px;gap:14px;}
 @media(max-width:700px){
     .eval-progress{font-size:10.5px}.eval-validation{font-size:12px}
     .modal-body,.modal-header,.modal-footer{padding-left:18px;padding-right:18px}
@@ -443,7 +451,7 @@ $closeAttr = $embed ? ' onclick="parent.closeEvalModal();return false;"' : '';
       <div class="eval-form-cat"><i class="fa-solid fa-layer-group" style="margin-right:5px"></i><?= e($cat) ?></div>
       <div class="eval-form-wrap">
         <table class="eval-form-table">
-          <thead><tr><th>Question</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th></tr></thead>
+          <colgroup><col><col style="width:52px"><col style="width:52px"><col style="width:52px"><col style="width:52px"><col style="width:52px"></colgroup>
           <tbody>
           <?php foreach ($answers as $a): $qn++; $score = (int)$a['answer_score']; ?>
             <tr>
@@ -500,7 +508,7 @@ $closeAttr = $embed ? ' onclick="parent.closeEvalModal();return false;"' : '';
         <div class="eval-form-cat"><i class="fa-solid fa-layer-group" style="margin-right:5px"></i><?= e($cat) ?></div>
         <div class="eval-form-wrap">
           <table class="eval-form-table">
-            <thead><tr><th>Question</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th></tr></thead>
+            <colgroup><col><col style="width:52px"><col style="width:52px"><col style="width:52px"><col style="width:52px"><col style="width:52px"></colgroup>
             <tbody>
             <?php foreach ($qs as $q): $qn++; $qid = (int)$q['id']; ?>
               <tr data-question-number="<?= $qn ?>">

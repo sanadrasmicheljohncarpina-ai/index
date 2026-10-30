@@ -250,6 +250,32 @@ if ($allowed) {
     }
 }
 
+// After an archive is permanently erased, its evaluation period can be an empty shell that keeps
+// showing up under "Archive evaluations". Remove such a period only when it is provably empty:
+// not active, no live data in any evaluation table, and no archive / restorable deleted copy left.
+function remove_empty_periods(mysqli $db, array $periodIds): int {
+    $removed = 0;
+    foreach (array_unique(array_map('intval', $periodIds)) as $pid) {
+        if ($pid <= 0) continue;
+        try {
+            $r = $db->query("SELECT is_active FROM evaluation_periods WHERE id=$pid LIMIT 1");
+            $row = $r ? $r->fetch_assoc() : null;
+            if (!$row || (int)$row['is_active'] === 1) continue;
+            $r = $db->query("SELECT 1 FROM system_archives WHERE period_id=$pid LIMIT 1");
+            if (!$r || $r->fetch_row()) continue;
+            $r = $db->query("SELECT 1 FROM system_archive_deletions WHERE period_id=$pid AND recovered_at IS NULL AND purged_at IS NULL AND payload_json IS NOT NULL LIMIT 1");
+            if (!$r || $r->fetch_row()) continue;
+            $busy = false;
+            foreach (['evaluation_tracker','evaluation_submissions','peer_evaluation_submissions','evaluation_results','peer_evaluation_results','evaluation_reminders'] as $t) {
+                $r = $db->query("SELECT 1 FROM `$t` WHERE period_id=$pid LIMIT 1");
+                if (!$r || $r->fetch_row()) { $busy = true; break; }
+            }
+            if ($busy) continue;
+            if ($db->query("DELETE FROM evaluation_periods WHERE id=$pid") && $db->affected_rows > 0) $removed++;
+        } catch (Throwable $ex) { /* skip: keep the period if anything is unclear */ }
+    }
+    return $removed;
+}
 function e($v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 // "Aug 12 – Dec 18, 2026" (or with both years when the range crosses a year). '' when no dates are set.
 function eval_date_range($start, $end): string {
@@ -296,7 +322,7 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Destructive actions must come through the confirmation dialog (it adds confirmed=1).
     // This blocks any form that was submitted without the warning being shown and accepted.
-    if (in_array($action, ['archive', 'delete', 'purge', 'empty_trash'], true) && ($_POST['confirmed'] ?? '') !== '1') {
+    if (in_array($action, ['archive', 'delete', 'delete_selected', 'purge', 'purge_selected', 'empty_trash'], true) && ($_POST['confirmed'] ?? '') !== '1') {
         $flash = 'The action was not confirmed, so nothing was changed. Please try again and confirm the warning.';
         $flashType = 'err';
         $action = '';
@@ -708,8 +734,14 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    if ($action === 'recover') {
-        $histId = (int)($_POST['history_id'] ?? 0);
+    if ($action === 'recover' || $action === 'recover_selected') {
+      $histIdList = [];
+      if ($action === 'recover') { $histIdList[] = (int)($_POST['history_id'] ?? 0); }
+      else { foreach ((array)($_POST['history_ids'] ?? []) as $v) { $v = (int)$v; if ($v > 0) $histIdList[$v] = $v; } $histIdList = array_values($histIdList); }
+      $bulkOk = 0; $bulkErr = [];
+      if (!$histIdList) { $flash = 'No deleted archives were selected to restore.'; $flashType = 'err'; }
+      foreach ($histIdList as $histId) {
+        $flash = null; $flashType = 'ok';
         $stmt = $mysqli->prepare("SELECT * FROM system_archive_deletions WHERE id=? LIMIT 1");
         $stmt->bind_param('i', $histId);
         $stmt->execute();
@@ -781,16 +813,55 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         }
+        if ($flashType === 'ok') $bulkOk++; else $bulkErr[] = $flash;
+      } // end foreach history ids
+      if ($action === 'recover_selected' && $histIdList) {
+          $flash = ($bulkOk ? "$bulkOk archive" . ($bulkOk === 1 ? '' : 's') . ' restored to Archived Records.' : 'No archives were restored.')
+                 . ($bulkErr ? ' ' . count($bulkErr) . ' skipped: ' . implode(' ', $bulkErr) : '');
+          $flashType = $bulkOk ? 'ok' : 'err';
+          if ($bulkOk) $_SESSION['archive_jump'] = 'archivedRecords';
+      }
     }
 
-    if (($action === 'purge' || $action === 'empty_trash') && !$isSuperAdmin) {
+    if (($action === 'purge' || $action === 'purge_selected' || $action === 'empty_trash') && !$isSuperAdmin) {
         $flash = 'Only the Super Admin can permanently erase archives.';
         $flashType = 'err';
+    } elseif ($action === 'purge_selected') {
+        $byName = (string)($_SESSION['full_name'] ?? $_SESSION['username'] ?? 'Administrator');
+        $actor = $mysqli->real_escape_string($byName);
+        $hids = [];
+        foreach ((array)($_POST['history_ids'] ?? []) as $v) { $v = (int)$v; if ($v > 0) $hids[$v] = $v; }
+        $n = 0; $pidsToCheck = [];
+        if ($hids) {
+            $inIds = implode(',', array_map('intval', $hids));
+            $pr = $mysqli->query("SELECT period_id FROM system_archive_deletions WHERE id IN ($inIds) AND recovered_at IS NULL AND purged_at IS NULL AND payload_json IS NOT NULL");
+            if ($pr) while ($x = $pr->fetch_assoc()) $pidsToCheck[] = (int)$x['period_id'];
+            $stmt = $mysqli->prepare("UPDATE system_archive_deletions SET payload_json=NULL, summary_json=NULL, purged_at=NOW(), purge_reason='manual', purged_by_name=? WHERE id=? AND recovered_at IS NULL AND purged_at IS NULL AND payload_json IS NOT NULL");
+            foreach ($hids as $hid) {
+                $stmt->bind_param('si', $byName, $hid);
+                $stmt->execute();
+                $n += max(0, $stmt->affected_rows);
+            }
+            $stmt->close();
+        }
+        if ($n > 0) {
+            $mysqli->query("INSERT INTO activity_log (actor_name, actor_type, action_text, icon, color) VALUES ('$actor','admin','" . $mysqli->real_escape_string("Permanently erased $n deleted evaluation archive" . ($n === 1 ? '' : 's') . " (selected in Recently Deleted)") . "','fa-trash-can','#D6455D')");
+            $gone = remove_empty_periods($mysqli, $pidsToCheck);
+            $flash = "$n archive" . ($n === 1 ? ' was' : 's were') . ' permanently deleted.' . ($gone ? " $gone empty period" . ($gone === 1 ? ' was' : 's were') . ' also removed from Archive evaluations.' : '');
+            $flashType = 'ok';
+            $_SESSION['archive_jump'] = 'recentlyDeleted';
+        } else {
+            $flash = 'The selected items are no longer in Recently Deleted.';
+            $flashType = 'err';
+        }
     } elseif ($action === 'purge' || $action === 'empty_trash') {
         $byName = (string)($_SESSION['full_name'] ?? $_SESSION['username'] ?? 'Administrator');
         $actor = $mysqli->real_escape_string($byName);
+        $pidsToCheck = [];
         if ($action === 'purge') {
             $histId = (int)($_POST['history_id'] ?? 0);
+            $pr = $mysqli->query("SELECT period_id FROM system_archive_deletions WHERE id=$histId AND recovered_at IS NULL AND purged_at IS NULL AND payload_json IS NOT NULL");
+            if ($pr) while ($x = $pr->fetch_assoc()) $pidsToCheck[] = (int)$x['period_id'];
             $stmt = $mysqli->prepare("UPDATE system_archive_deletions SET payload_json=NULL, summary_json=NULL, purged_at=NOW(), purge_reason='manual', purged_by_name=? WHERE id=? AND recovered_at IS NULL AND purged_at IS NULL AND payload_json IS NOT NULL");
             $stmt->bind_param('si', $byName, $histId);
             $stmt->execute();
@@ -798,13 +869,16 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->close();
             if ($n > 0) {
                 $mysqli->query("INSERT INTO activity_log (actor_name, actor_type, action_text, icon, color) VALUES ('$actor','admin','" . $mysqli->real_escape_string("Permanently erased a deleted evaluation archive (Recently Deleted #$histId)") . "','fa-trash-can','#D6455D')");
-                $flash = 'The archive was permanently deleted.';
+                $gone = remove_empty_periods($mysqli, $pidsToCheck);
+                $flash = 'The archive was permanently deleted.' . ($gone ? " $gone empty period" . ($gone === 1 ? ' was' : 's were') . ' also removed from Archive evaluations.' : '');
                 $flashType = 'ok';
             } else {
                 $flash = 'That item is no longer in Recently Deleted.';
                 $flashType = 'err';
             }
         } else {
+            $pr = $mysqli->query("SELECT period_id FROM system_archive_deletions WHERE recovered_at IS NULL AND purged_at IS NULL AND payload_json IS NOT NULL");
+            if ($pr) while ($x = $pr->fetch_assoc()) $pidsToCheck[] = (int)$x['period_id'];
             $stmt = $mysqli->prepare("UPDATE system_archive_deletions SET payload_json=NULL, summary_json=NULL, purged_at=NOW(), purge_reason='manual', purged_by_name=? WHERE recovered_at IS NULL AND purged_at IS NULL AND payload_json IS NOT NULL");
             $stmt->bind_param('s', $byName);
             $stmt->execute();
@@ -812,10 +886,63 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->close();
             if ($n > 0) {
                 $mysqli->query("INSERT INTO activity_log (actor_name, actor_type, action_text, icon, color) VALUES ('$actor','admin','" . $mysqli->real_escape_string("Emptied Recently Deleted: permanently erased $n archive" . ($n === 1 ? '' : 's')) . "','fa-trash-can','#D6455D')");
-                $flash = "Recently Deleted was emptied ($n archive" . ($n === 1 ? '' : 's') . ' permanently deleted).';
+                $gone = remove_empty_periods($mysqli, $pidsToCheck);
+                $flash = "Recently Deleted was emptied ($n archive" . ($n === 1 ? '' : 's') . ' permanently deleted).' . ($gone ? " $gone empty period" . ($gone === 1 ? ' was' : 's were') . ' also removed from Archive evaluations.' : '');
                 $flashType = 'ok';
             } else {
                 $flash = 'Recently Deleted is already empty.';
+                $flashType = 'err';
+            }
+        }
+    }
+
+    // Bulk delete: moves every ticked archive to Recently Deleted (same as the single Delete button).
+    if ($action === 'delete_selected') {
+        $ids = [];
+        foreach ((array)($_POST['archive_ids'] ?? []) as $v) { $v = (int)$v; if ($v > 0) $ids[$v] = $v; }
+        $ids = array_values($ids);
+        if (!$ids) {
+            $flash = 'No archived records were selected for deletion.';
+            $flashType = 'err';
+        } else {
+            $delById = (int)($_SESSION['user_id'] ?? 0);
+            $delByName = (string)($_SESSION['full_name'] ?? $_SESSION['username'] ?? 'Administrator');
+            $moved = 0; $missing = 0;
+            try {
+                $mysqli->begin_transaction();
+                $sel = $mysqli->prepare("SELECT * FROM system_archives WHERE id=? LIMIT 1");
+                $hist = $mysqli->prepare("INSERT INTO system_archive_deletions (archive_id, period_id, period_label, school_year, status_at_delete, record_count, archived_at, archived_by, archived_by_name, restored_at, restored_by, summary_json, payload_json, deleted_by, deleted_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+                $del = $mysqli->prepare("DELETE FROM system_archives WHERE id=?");
+                if (!$sel || !$hist || !$del) throw new Exception($mysqli->error);
+                foreach ($ids as $archiveId) {
+                    $sel->bind_param('i', $archiveId);
+                    $sel->execute();
+                    $archive = $sel->get_result()->fetch_assoc();
+                    if (!$archive) { $missing++; continue; }
+                    $hPid = (int)$archive['period_id']; $hCnt = (int)$archive['record_count'];
+                    $hist->bind_param('iisssisississis', $archiveId, $hPid, $archive['period_label'], $archive['school_year'], $archive['status'], $hCnt, $archive['archived_at'], $archive['archived_by'], $archive['archived_by_name'], $archive['restored_at'], $archive['restored_by'], $archive['summary_json'], $archive['payload_json'], $delById, $delByName);
+                    if (!$hist->execute()) throw new Exception($hist->error ?: $mysqli->error);
+                    $del->bind_param('i', $archiveId);
+                    if (!$del->execute()) throw new Exception($del->error ?: $mysqli->error);
+                    $moved++;
+                }
+                $sel->close(); $hist->close(); $del->close();
+                $mysqli->commit();
+
+                if ($moved > 0) {
+                    $actor = $mysqli->real_escape_string($delByName);
+                    $txt = $mysqli->real_escape_string("Deleted $moved evaluation archive" . ($moved === 1 ? '' : 's') . " (moved to Recently Deleted)");
+                    $mysqli->query("INSERT INTO activity_log (actor_name, actor_type, action_text, icon, color) VALUES ('$actor','admin','$txt','fa-trash','#D6455D')");
+                    $flash = "$moved archive" . ($moved === 1 ? '' : 's') . ' moved to Recently Deleted. ' . ($moved === 1 ? 'It' : 'They') . ' can be restored for ' . (int)ARCHIVE_TRASH_DAYS . ' days.' . ($missing ? " $missing could not be found." : '');
+                    $flashType = 'ok';
+                    $_SESSION['archive_jump'] = 'recentlyDeleted';
+                } else {
+                    $flash = 'The selected archives could not be found.';
+                    $flashType = 'err';
+                }
+            } catch (Throwable $ex) {
+                $mysqli->rollback();
+                $flash = 'Delete cancelled, nothing was removed: ' . $ex->getMessage() . ' (If this mentions max_allowed_packet, raise it in XAMPP\'s my.ini, e.g. max_allowed_packet=64M, then restart MySQL.)';
                 $flashType = 'err';
             }
         }
@@ -868,6 +995,20 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+// Post/Redirect/Get: show the result on a fresh GET so Refresh or Back can never repeat an archive or delete.
+if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $_SESSION['archive_flash'] = ['msg' => $flash, 'type' => $flashType];
+    $jump = !empty($_SESSION['archive_jump']) ? '#' . preg_replace('/[^A-Za-z]/', '', (string)$_SESSION['archive_jump']) : '';
+    unset($_SESSION['archive_jump']);
+    header('Location: system_archive.php' . $jump, true, 303);
+    exit;
+}
+if ($allowed && !empty($_SESSION['archive_flash']) && is_array($_SESSION['archive_flash'])) {
+    $flash = $_SESSION['archive_flash']['msg'] ?? null;
+    $flashType = $_SESSION['archive_flash']['type'] ?? 'ok';
+    unset($_SESSION['archive_flash']);
+}
+
 // ── View one archive ───────────────────────────────────────────────────────
 if ($allowed && isset($_GET['view'])) {
     $id = (int)$_GET['view'];
@@ -887,19 +1028,18 @@ $trashItems = [];
 $deletionLog = [];
 $activePeriod = null;
 if ($allowed) {
-// Only show legitimate archive candidates: valid academic-year/term values,
-// at least one live evaluation record, and nothing already archived.
+// List EVERY evaluation period that is not already archived (even ones with 0 live
+// evaluations so far), so any specific period can be picked and archived.
 $res = $mysqli->query("
     SELECT ep.id, ep.period_label, ep.semester, ep.school_year, ep.is_active,
            ep.date_start, ep.date_end, COUNT(et.id) AS live_count
     FROM evaluation_periods ep
-    INNER JOIN evaluation_tracker et ON et.period_id = ep.id
+    LEFT JOIN evaluation_tracker et ON et.period_id = ep.id
     LEFT JOIN system_archives sa ON sa.period_id = ep.id AND sa.status = 'archived'
     WHERE sa.id IS NULL
-      AND ep.school_year REGEXP '^[0-9]{4}-[0-9]{4}$'
-      AND ep.semester IN ('1st Semester','2nd Semester','Summer','School Year')
+      AND NOT EXISTS (SELECT 1 FROM system_archive_deletions d
+                      WHERE d.period_id = ep.id AND d.recovered_at IS NULL AND d.purged_at IS NULL AND d.payload_json IS NOT NULL)
     GROUP BY ep.id, ep.period_label, ep.semester, ep.school_year, ep.is_active, ep.date_start, ep.date_end
-    HAVING COUNT(et.id) > 0
     ORDER BY ep.school_year DESC, FIELD(ep.semester,'1st Semester','2nd Semester','Summer','School Year'), ep.id DESC
 ");
 if ($res) while ($r = $res->fetch_assoc()) $periods[] = $r;
@@ -924,7 +1064,8 @@ if ($res) while ($r = $res->fetch_assoc()) {
     if ((int)$r['has_payload'] === 1 && empty($r['recovered_at']) && empty($r['purged_at'])) $trashItems[] = $r;
     else $deletionLog[] = $r;
 }
-foreach ($periods as $p) if ((int)$p['is_active'] === 1) { $activePeriod = $p; break; }
+$ap = $mysqli->query("SELECT school_year, semester FROM evaluation_periods WHERE is_active=1 ORDER BY id DESC LIMIT 1");
+if ($ap) $activePeriod = $ap->fetch_assoc();
 } // end if ($allowed)
 ?>
 <!doctype html>
@@ -938,7 +1079,7 @@ foreach ($periods as $p) if ((int)$p['is_active'] === 1) { $activePeriod = $p; b
 <link rel="stylesheet" href="admin_compact_ui.css">
 <style>
 :root{--bg:#F5F8FC;--card:#fff;--line:#D8E5F4;--text:#102746;--muted:#67819E;--blue:#2563EB;--blue-soft:#EEF4FF;--green:#0F9F6E;--green-soft:#EAF9F2;--amber:#C77A08;--amber-soft:#FFF7E6;--red:#D6455D;--red-soft:#FFF0F2;--shadow:0 3px 14px rgba(30,82,144,.08)}
-*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font:13px/1.5 Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}.wrap{max-width:1240px;margin:0 auto;padding:24px 28px 44px}.back{display:inline-flex;gap:8px;align-items:center;color:var(--muted);text-decoration:none;font-size:12px;font-weight:600;margin-bottom:15px}.hero{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:16px}.hero h1{font-size:25px;margin:0 0 3px;letter-spacing:-.025em}.hero p{margin:0;color:var(--muted);font-size:13px}.badge{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border-radius:999px;border:1px solid #C9D9EF;background:#fff;color:var(--blue);font-weight:700;font-size:11px}.grid{display:grid;grid-template-columns:1.25fr .75fr;gap:14px}.card{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:17px}.card h2{font-size:14px;margin:0 0 4px}.sub{color:var(--muted);font-size:11.5px}.label{display:block;font-size:11px;font-weight:700;color:#405A76;margin:14px 0 6px;text-transform:uppercase;letter-spacing:.04em}.select{width:100%;padding:9px 11px;border:1px solid #B9CDE5;border-radius:8px;background:#fff;color:var(--text);font:600 12px Inter}.actions{display:flex;gap:8px;align-items:center;margin-top:13px;flex-wrap:wrap}.btn{border:1px solid #B9CDE5;background:#fff;border-radius:8px;padding:9px 12px;font:700 12px Inter;color:var(--text);cursor:pointer}.btn.primary{border-color:var(--blue);background:var(--blue);color:#fff}.btn.danger{border-color:#F1B7C0;background:#FFF6F7;color:var(--red)}.btn:disabled{opacity:.45;cursor:not-allowed}.warn{display:flex;gap:8px;align-items:flex-start;margin-top:12px;padding:9px 10px;background:var(--amber-soft);border:1px solid #F5D48A;border-radius:8px;color:#8D5D00;font-size:11.5px}.success{display:flex;gap:8px;align-items:flex-start;padding:9px 10px;background:var(--green-soft);border:1px solid #BDE9D4;border-radius:8px;color:#08734F;font-size:11.5px}.archive-table{margin-top:14px;border:1px solid var(--line);border-radius:10px;overflow:auto;background:#fff}.archive-table table{width:100%;border-collapse:collapse;min-width:760px}.archive-table th,.archive-table td{padding:10px 11px;border-bottom:1px solid #EAF0F7;text-align:left;font-size:11.5px;white-space:nowrap}.archive-table th.select-col,.archive-table td.select-col{width:38px;text-align:center;padding-left:10px;padding-right:4px}.archive-table input.archive-check,.archive-table input#selectAllArchives{width:15px;height:15px;accent-color:var(--blue);cursor:pointer}.bulk-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.selection-count{font-size:11px;color:var(--muted);font-weight:600}.archive-table th{background:#F8FAFC;color:#49647F;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}.archive-table tr:last-child td{border-bottom:0}.status{display:inline-flex;padding:4px 8px;border-radius:999px;font-size:10px;font-weight:800}.status.archived{background:var(--green-soft);color:var(--green)}.status.left-warn{background:#FFF6E0;color:#8D5D00}.status.del-unrestored{background:#FFF0F2;color:var(--red)}.status.restored{background:var(--blue-soft);color:var(--blue)}.empty{padding:25px;text-align:center;color:var(--muted)}.detail{margin-top:14px}.detail-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.mini{padding:11px;border:1px solid var(--line);background:#FBFDFF;border-radius:8px}.mini b{display:block;font-size:16px}.mini span{color:var(--muted);font-size:10.5px}.notice{margin-bottom:14px;padding:10px 12px;border-radius:9px;border:1px solid #C9D9EF;background:var(--blue-soft);color:#2855A4;font-size:11.5px;display:flex;gap:8px}.restricted{max-width:620px;margin:60px auto;text-align:center}.restricted .icon{font-size:30px;color:var(--red);margin-bottom:8px}.multi-wrap{position:relative}.multi-trigger{display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:left;cursor:pointer}.multi-trigger i{font-size:10px;color:#49647F;transition:transform .15s}.multi-trigger[aria-expanded=true] i{transform:rotate(180deg)}.multi-box[hidden]{display:none}.multi-box{position:static;margin-top:6px;border:1px solid #B9CDE5;border-radius:8px;background:#fff;max-height:190px;overflow:auto}.multi-row{display:flex;align-items:center;gap:9px;margin:0;padding:8px 11px;min-height:0;height:auto;line-height:1.3;border-bottom:1px solid #EAF0F7;font-size:12px;font-weight:600;cursor:pointer}.multi-row:last-child{border-bottom:0}.multi-row:hover{background:#F5F9FF}.multi-row input{margin:0;padding:0;flex:0 0 15px;width:15px;height:15px;accent-color:var(--blue);cursor:pointer}.multi-row em{font-style:normal;color:var(--muted);font-weight:500}.multi-all{background:#F8FAFC;position:sticky;top:0;color:#405A76}@media(max-width:900px){.grid{grid-template-columns:1fr}.detail-grid{grid-template-columns:repeat(2,1fr)}}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font:13px/1.5 Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}.wrap{max-width:1240px;margin:0 auto;padding:24px 28px 44px}.back{display:inline-flex;gap:8px;align-items:center;color:var(--muted);text-decoration:none;font-size:12px;font-weight:600;margin-bottom:15px}.hero{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:16px}.hero h1{font-size:25px;margin:0 0 3px;letter-spacing:-.025em}.hero p{margin:0;color:var(--muted);font-size:13px}.badge{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border-radius:999px;border:1px solid #C9D9EF;background:#fff;color:var(--blue);font-weight:700;font-size:11px}.grid{display:grid;grid-template-columns:1.25fr .75fr;gap:14px}.card{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:17px}.card h2{font-size:14px;margin:0 0 4px}.sub{color:var(--muted);font-size:11.5px}.label{display:block;font-size:11px;font-weight:700;color:#405A76;margin:14px 0 6px;text-transform:uppercase;letter-spacing:.04em}.select{width:100%;padding:9px 11px;border:1px solid #B9CDE5;border-radius:8px;background:#fff;color:var(--text);font:600 12px Inter}.actions{display:flex;gap:8px;align-items:center;margin-top:13px;flex-wrap:wrap}.btn{border:1px solid #B9CDE5;background:#fff;border-radius:8px;padding:9px 12px;font:700 12px Inter;color:var(--text);cursor:pointer}.btn.primary{border-color:var(--blue);background:var(--blue);color:#fff}.btn.danger{border-color:#F1B7C0;background:#FFF6F7;color:var(--red)}.btn:disabled{opacity:.45;cursor:not-allowed}.warn{display:flex;gap:8px;align-items:flex-start;margin-top:12px;padding:9px 10px;background:var(--amber-soft);border:1px solid #F5D48A;border-radius:8px;color:#8D5D00;font-size:11.5px}.success{display:flex;gap:8px;align-items:flex-start;padding:9px 10px;background:var(--green-soft);border:1px solid #BDE9D4;border-radius:8px;color:#08734F;font-size:11.5px}.archive-table{margin-top:14px;border:1px solid var(--line);border-radius:10px;overflow:auto;background:#fff}.archive-table table{width:100%;border-collapse:collapse;min-width:760px}.archive-table th,.archive-table td{padding:10px 11px;border-bottom:1px solid #EAF0F7;text-align:left;font-size:11.5px;white-space:nowrap}.archive-table th.select-col,.archive-table td.select-col{width:38px;text-align:center;padding-left:10px;padding-right:4px}.archive-table input.archive-check,.archive-table input.trash-check,.archive-table input#selectAllArchives,.archive-table input#selectAllTrash{width:15px;height:15px;accent-color:var(--blue);cursor:pointer}.bulk-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.selection-count{font-size:11px;color:var(--muted);font-weight:600}.archive-table th{background:#F8FAFC;color:#49647F;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}.archive-table tr:last-child td{border-bottom:0}.status{display:inline-flex;padding:4px 8px;border-radius:999px;font-size:10px;font-weight:800}.status.archived{background:var(--green-soft);color:var(--green)}.status.left-warn{background:#FFF6E0;color:#8D5D00}.status.del-unrestored{background:#FFF0F2;color:var(--red)}.status.restored{background:var(--blue-soft);color:var(--blue)}.empty{padding:25px;text-align:center;color:var(--muted)}.detail{margin-top:14px}.detail-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.mini{padding:11px;border:1px solid var(--line);background:#FBFDFF;border-radius:8px}.mini b{display:block;font-size:16px}.mini span{color:var(--muted);font-size:10.5px}.notice{margin-bottom:14px;padding:10px 12px;border-radius:9px;border:1px solid #C9D9EF;background:var(--blue-soft);color:#2855A4;font-size:11.5px;display:flex;gap:8px}.restricted{max-width:620px;margin:60px auto;text-align:center}.restricted .icon{font-size:30px;color:var(--red);margin-bottom:8px}.multi-wrap{position:relative}.multi-trigger{display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:left;cursor:pointer}.multi-trigger i{font-size:10px;color:#49647F;transition:transform .15s}.multi-trigger[aria-expanded=true] i{transform:rotate(180deg)}.multi-box[hidden]{display:none}.multi-box{position:static;margin-top:6px;border:1px solid #B9CDE5;border-radius:8px;background:#fff;max-height:190px;overflow:auto}.multi-row{display:flex;align-items:center;gap:9px;margin:0;padding:8px 11px;min-height:0;height:auto;line-height:1.3;border-bottom:1px solid #EAF0F7;font-size:12px;font-weight:600;cursor:pointer}.multi-row:last-child{border-bottom:0}.multi-row:hover{background:#F5F9FF}.multi-row input{margin:0;padding:0;flex:0 0 15px;width:15px;height:15px;accent-color:var(--blue);cursor:pointer}.multi-row em{font-style:normal;color:var(--muted);font-weight:500}.multi-all{background:#F8FAFC;position:sticky;top:0;color:#405A76}@media(max-width:900px){.grid{grid-template-columns:1fr}.detail-grid{grid-template-columns:repeat(2,1fr)}}
 
 .archive-filter{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 0 4px}
 .archive-filter .af-field{display:flex;align-items:center;gap:8px}
@@ -948,6 +1089,45 @@ foreach ($periods as $p) if ((int)$p['is_active'] === 1) { $activePeriod = $p; b
 .archive-filter select:focus{outline:3px solid rgba(37,99,235,.25);outline-offset:1px;border-color:var(--blue)}
 .archive-filter .af-clear{border:0;background:none;color:var(--blue);font:700 12px Inter,system-ui,sans-serif;cursor:pointer;padding:6px 4px;display:none}
 .archive-filter .af-clear:hover{text-decoration:underline}
+</style>
+<style id="sa-friendly">
+.pick-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 2px 6px}
+.pick-all{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:#405A76;cursor:pointer;margin:0}
+.pick-all input{width:15px;height:15px;accent-color:var(--blue)}
+.pick-hint{font-size:11px;color:var(--muted);font-weight:600}
+.pick-list{border:1px solid var(--line);border-radius:10px;background:#fff;max-height:340px;overflow:auto;padding:4px 10px 10px}
+.pick-year{display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:1;background:#fff;padding:10px 2px 6px;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#49647F}
+.pick-year i{margin-right:5px;color:var(--blue)}
+.pick-year-btn{border:0;background:none;color:var(--blue);font:700 11.5px Inter,system-ui,sans-serif;cursor:pointer;padding:3px 6px;border-radius:6px;text-transform:none;letter-spacing:0}
+.pick-year-btn:hover{background:var(--blue-soft)}
+.pick-card{display:flex;align-items:center;gap:12px;margin:0 0 8px;padding:11px 13px;border:1.5px solid var(--line);border-radius:10px;background:#fff;cursor:pointer;text-transform:none;letter-spacing:0;transition:border-color .12s,background .12s,box-shadow .12s}
+.pick-card:hover{border-color:#9DBBE6;background:#F8FBFF}
+.pick-card.on{border-color:var(--blue);background:var(--blue-soft);box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+.pick-card input{width:17px;height:17px;flex:0 0 17px;margin:0;accent-color:var(--blue);cursor:pointer}
+.pick-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.pick-title{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:13px;color:var(--text)}
+.pick-main small{font-size:11px;color:var(--muted);font-weight:500}
+.pick-main small i{margin-right:3px}
+.pick-count{text-align:right;line-height:1.15}
+.pick-count b{display:block;font-size:17px;color:var(--text)}
+.pick-count small{font-size:10.5px;color:var(--muted)}
+.pick-card.is-empty .pick-count b{color:#9AA9BB}
+.chip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:800;letter-spacing:.02em}
+.chip-active{background:var(--green-soft);color:var(--green)}
+.chip-empty{background:#EEF2F7;color:#6D7F95}
+.pick-summary{display:flex;align-items:center;gap:8px;margin-top:12px;padding:9px 12px;border-radius:8px;background:#F4F7FB;color:var(--muted);font-size:12px;font-weight:600}
+.pick-summary.ready{background:var(--blue-soft);color:#1E4FBF}
+.pick-summary b{color:inherit}
+.pick-warn{margin-top:8px;padding:9px 12px;border-radius:8px;background:var(--amber-soft);border:1px solid #F5D48A;color:#8D5D00;font-size:11.5px;line-height:1.5}
+.pick-warn[hidden]{display:none}
+.pick-empty{display:flex;gap:12px;align-items:center;margin-top:10px;padding:18px;border:1.5px dashed #B9CDE5;border-radius:10px;color:var(--muted);font-size:12px}
+.pick-empty i{font-size:24px;color:#9DBBE6}
+.actions .btn.primary{padding:10px 18px;font-size:12.5px}
+.detail-grid .mini span+b+span{display:block;margin-top:2px}
+html[data-theme="dark"] .pick-list,html[data-theme="dark"] .pick-year,html[data-theme="dark"] .pick-card{background:#172A45}
+html[data-theme="dark"] .pick-card.on{background:#1B3A6B}
+html[data-theme="dark"] .pick-title,html[data-theme="dark"] .pick-count b{color:#E7ECF3}
+html[data-theme="dark"] .pick-summary{background:#0F1F3D}
 </style>
 <style id="pbi-feature-scrollbar">
 
@@ -975,6 +1155,47 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
 <link rel="stylesheet" href="admin_appearance.css">
 <script src="admin_appearance.js"></script>
 <link rel="stylesheet" href="admin_unified_ui.css?v=<?= (int)@filemtime(__DIR__ . '/admin_unified_ui.css') ?>">
+<style id="sa-clean">
+/* ── System Archive: calmer layout. Overrides the older rules above; element IDs are unchanged. ── */
+.wrap{padding:20px 24px 40px}
+.card h2{font-size:16px;letter-spacing:-.01em}
+
+/* status strip */
+.sa-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));padding:0;margin:0 0 14px;overflow:hidden}
+.sa-stat{padding:16px 20px;min-width:0}
+.sa-stat + .sa-stat{border-left:1px solid var(--line)}
+.sa-stat span{display:block;font:700 11px/1.2 Inter,system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.sa-stat b{display:block;margin:7px 0 2px;font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1.1;color:var(--text)}
+.sa-stat small{font-size:12px;color:var(--muted)}
+
+/* archive card */
+.sa-archive{padding:0;margin:0 0 14px;overflow:visible}
+.sa-head{padding:18px 22px 6px}
+.sa-head h2{margin:0}
+.sa-head p{margin:4px 0 0;max-width:780px;font-size:12.5px;line-height:1.55;color:var(--muted)}
+.sa-pad{padding:6px 22px 0}
+.sa-archive .pick-toolbar{padding:12px 22px 4px}
+.sa-archive .pick-list{border:0;border-radius:0;background:transparent;max-height:none;overflow:visible;padding:0 22px 8px}
+.sa-archive .pick-year{position:static;background:transparent;padding:14px 0 8px}
+.pick-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.pick-grid .pick-card{margin:0}
+.chip-round{background:#EEF4FF;color:#2563EB}
+@media(max-width:860px){.sa-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.sa-stat:nth-child(3){border-left:0}.sa-stat:nth-child(n+3){border-top:1px solid var(--line)}.pick-grid{grid-template-columns:1fr}}
+
+/* the summary and the Archive button stay in view while you scroll the list */
+.pick-footer{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:14px 22px;background:rgba(255,255,255,.97);border-top:1px solid var(--line);border-radius:0 0 12px 12px;box-shadow:0 -8px 18px rgba(30,82,144,.06)}
+.pick-footer-info{flex:1 1 280px;min-width:0;display:grid;gap:8px}
+.pick-footer .pick-summary,.pick-footer .pick-warn{margin:0}
+.pick-footer form{margin:0;flex:0 0 auto}
+
+/* shown while an archive / restore / delete request is running */
+.sa-busy{position:fixed;inset:0;z-index:2000;display:flex;align-items:center;justify-content:center;background:rgba(245,248,252,.8);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
+.sa-busy-box{display:flex;align-items:center;gap:12px;padding:16px 22px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(30,82,144,.18);font:700 13.5px Inter,system-ui,sans-serif;color:var(--text)}
+.sa-spin{width:18px;height:18px;border-radius:50%;border:3px solid #CFE0F7;border-top-color:var(--blue);animation:saSpin .8s linear infinite}
+@keyframes saSpin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.sa-spin{animation-duration:2s}}
+html[data-theme="dark"] .pick-footer,html[data-theme="dark"] .sa-busy-box{background:#172A45}
+</style>
 </head>
 <body class="feature-compact ux-nested">
 <div class="wrap">
@@ -982,31 +1203,53 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
 <div class="card restricted"><div class="icon"><i class="fa-solid fa-lock"></i></div><h1>System Archive is restricted</h1><p class="sub">Only the Super Admin, or an Admin explicitly granted the <strong>System Archive</strong> edit permission, can archive or restore evaluation data.</p></div>
 <?php else: ?>
 <?php if ($flash): ?><div class="notice" style="border-color:<?= $flashType==='ok'?'#BDE9D4':'#F1B7C0' ?>;background:<?= $flashType==='ok'?'#EAF9F2':'#FFF0F2' ?>;color:<?= $flashType==='ok'?'#08734F':'#A62A42' ?>;"><i class="fa-solid <?= $flashType==='ok'?'fa-circle-check':'fa-circle-exclamation' ?>"></i><span><?= e($flash) ?></span></div><?php endif; ?>
-<div class="grid">
-<div class="card">
-<h2>Archive This Year Evaluation</h2><div class="sub">Archive all evaluation submissions and related data for the selected academic year.</div>
-<label class="label">Academic Year</label>
-<div class="multi-wrap" id="periodWrap">
-<button type="button" class="select multi-trigger" id="periodTrigger" aria-haspopup="listbox" aria-expanded="false"><span id="periodText">Select an evaluation period…</span><i class="fa-solid fa-chevron-down"></i></button>
-<div class="multi-box" id="periodMulti" role="listbox" aria-multiselectable="true" hidden>
-<?php if (!$periods): ?><div class="empty">No evaluation periods with live data.</div><?php else: ?>
-<label class="multi-row multi-all"><input type="checkbox" id="periodAll"> <span>Select all periods</span></label>
-<?php foreach ($periods as $p): ?><label class="multi-row"><input type="checkbox" class="period-check" value="<?= (int)$p['id'] ?>" data-label="<?= e($p['school_year'] . ' — ' . $p['semester']) ?>" data-live="<?= (int)$p['live_count'] ?>" <?= (!empty($viewArchive) && (int)$viewArchive['period_id']===(int)$p['id'])?'checked':'' ?>> <span><?= e($p['school_year']) ?> — <?= e($p['semester']) ?> <em>(<?= number_format((int)$p['live_count']) ?> live evaluation<?= (int)$p['live_count'] === 1 ? '' : 's' ?>)</em></span></label><?php endforeach; ?>
+<?php $byYear = []; foreach ($periods as $p) $byYear[$p['school_year']][] = $p;
+$preselectIds = array_values(array_filter(array_map('intval', explode(',', (string)($_GET['preselect'] ?? ''))))); ?>
+
+<!-- Quick check: one slim strip instead of a second card with four boxes -->
+<section class="card sa-stats" aria-label="Current system state">
+<div class="sa-stat"><span>Active evaluation period</span><b><?= $activePeriod ? e($activePeriod['school_year']) : 'None' ?></b><small><?= $activePeriod ? e($activePeriod['semester']) : 'No active period' ?></small></div>
+<div class="sa-stat"><span>Live evaluations</span><b><?= number_format(array_sum(array_map(fn($p)=>(int)$p['live_count'],$periods))) ?></b><small>across all open periods</small></div>
+<div class="sa-stat"><span>Ready to archive</span><b><?= count($periods) ?></b><small>periods not yet archived</small></div>
+<div class="sa-stat"><span>Archived so far</span><b><?= count($archives) ?></b><small>in Archived Records</small></div>
+</section>
+
+<section class="card sa-archive">
+<div class="sa-head">
+<h2>Archive evaluations</h2>
+<p>Pick the periods to archive. Their submissions and results are saved to Archived Records and cleared from the live dashboards. Questions, accounts, assignments and settings are never touched, and archived data can be restored later.</p>
+</div>
+<?php if ($preselectIds): ?><div class="sa-pad"><div class="pick-summary ready" style="margin:0"><i class="fa-solid fa-circle-info"></i> Opened from <b>Create new evaluation schedule</b>. The current evaluation is already selected: archive it, then go back to System &amp; Period to create the new schedule.</div></div><?php endif; ?>
+<?php if (!$periods): ?>
+<div class="sa-pad"><div class="pick-empty"><i class="fa-regular fa-folder-open"></i><div><strong>No evaluation periods to archive</strong><br>Periods you create in System &amp; Period will appear here. Already-archived periods are listed under Archived Records.</div></div></div>
+<?php else: ?>
+<div class="pick-toolbar"><label class="pick-all"><input type="checkbox" id="periodAll"> <span>Select all periods</span></label><span class="pick-hint"><?= count($periods) ?> period<?= count($periods)===1?'':'s' ?> available</span></div>
+<div class="pick-list" id="periodList">
+<?php foreach ($byYear as $yr => $list): ?>
+<div class="pick-year"><span><i class="fa-regular fa-calendar-days"></i> Academic year <?= e($yr) ?></span><button type="button" class="pick-year-btn" data-year="<?= e($yr) ?>">Select year</button></div>
+<div class="pick-grid">
+<?php foreach ($list as $p): $live = (int)$p['live_count']; $rng = eval_date_range($p['date_start'] ?? null, $p['date_end'] ?? null); $isAct = (int)$p['is_active'] === 1;
+    $round = preg_match('/\(Round (\d+)\)\s*$/', (string)$p['period_label'], $rm) ? (int)$rm[1] : 0;
+    $stdLabel = $p['period_label'] === $p['semester'] || $p['period_label'] === ($p['school_year'] . ' — ' . $p['semester']); ?>
+<label class="pick-card<?= $live === 0 ? ' is-empty' : '' ?>">
+<input type="checkbox" class="period-check" value="<?= (int)$p['id'] ?>" data-label="<?= e($p['school_year'] . ' — ' . $p['semester'] . ($round ? ' (Round ' . $round . ')' : '')) ?>" data-live="<?= $live ?>" data-active="<?= $isAct ? 1 : 0 ?>" data-year="<?= e($p['school_year']) ?>" <?= ((!empty($viewArchive) && (int)$viewArchive['period_id']===(int)$p['id']) || in_array((int)$p['id'], $preselectIds, true))?'checked':'' ?>>
+<span class="pick-main"><span class="pick-title"><strong><?= e($p['semester']) ?></strong><?php if ($round): ?><span class="chip chip-round">Round <?= $round ?></span><?php endif; ?><?php if ($isAct): ?><span class="chip chip-active">Active</span><?php endif; ?><?php if ($live === 0): ?><span class="chip chip-empty">No evaluations yet</span><?php endif; ?></span>
+<small><?php if ($rng !== ''): ?><i class="fa-regular fa-calendar"></i> <?= e($rng) ?><?php else: ?>No dates set<?php endif; ?><?php if (!$round && !$stdLabel): ?> · <?= e($p['period_label']) ?><?php endif; ?></small></span>
+<span class="pick-count"><b><?= number_format($live) ?></b><small>evaluation<?= $live === 1 ? '' : 's' ?></small></span>
+</label>
+<?php endforeach; ?>
+</div>
+<?php endforeach; ?>
+</div>
+<div class="pick-footer">
+<div class="pick-footer-info">
+<div class="pick-summary" id="pickSummary"></div>
+<div class="pick-warn" id="activeWarn" hidden></div>
+</div>
+<form method="POST" id="archiveForm" onsubmit="return confirmArchive(this)"><?= csrf_field() ?><input type="hidden" name="action" value="archive"><div id="archivePeriodInputs"></div><button class="btn primary" type="submit" id="archiveBtn" disabled><i class="fa-solid fa-box-archive"></i> <span id="archiveBtnText">Archive This Year</span></button></form>
+</div>
 <?php endif; ?>
-</div>
-</div>
-<div class="actions"><form method="POST" id="archiveForm" onsubmit="return confirmArchive(this)"><?= csrf_field() ?><input type="hidden" name="action" value="archive"><div id="archivePeriodInputs"></div><button class="btn primary" type="submit" id="archiveBtn" disabled><i class="fa-solid fa-box-archive"></i> <span id="archiveBtnText">Archive This Year</span></button></form></div>
-<div class="warn"><i class="fa-solid fa-triangle-exclamation"></i><span><strong>This action cannot be undone from the live dashboards.</strong> Questions, users, assignments, permissions, system settings, and system logs remain intact.</span></div>
-</div>
-<div class="card">
-<h2>Current System State</h2><div class="sub">A quick check before you archive.</div>
-<div class="detail-grid" style="grid-template-columns:repeat(2,1fr);margin-top:13px">
-<div class="mini"><span>Active evaluation period</span><b><?= $activePeriod ? e($activePeriod['school_year']) : 'None' ?></b></div>
-<div class="mini"><span>Live evaluations</span><b><?= number_format(array_sum(array_map(fn($p)=>(int)$p['live_count'],$periods))) ?></b></div>
-</div>
-<div class="success" style="margin-top:12px"><i class="fa-solid fa-shield-halved"></i><span>Archived data is stored separately and can be viewed later without deleting the original questions, accounts, or system configuration.</span></div>
-</div>
-</div>
+</section>
 
 <?php if ($viewArchive): ?>
 <div class="card detail"><h2>Archived Evaluation Data — <?= e($viewArchive['school_year']) ?></h2><div class="sub">Archive #<?= (int)$viewArchive['id'] ?> · Archived <?= e($viewArchive['archived_at']) ?> by <?= e($viewArchive['archived_by_name']) ?> · Status: <span class="status <?= e($viewArchive['status']) ?>"><?= ucfirst(e($viewArchive['status'])) ?></span></div>
@@ -1017,7 +1260,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
 </div>
 <?php endif; ?>
 
-<div class="card" style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:end;gap:12px"><div><h2>Archived Records</h2><div class="sub">Select one or more archived evaluation periods to restore.</div></div><div class="bulk-actions"><span class="selection-count" id="selectionCount">0 selected</span><form method="POST" id="bulkRestoreForm" onsubmit="return confirmBulkRestore(this)"><?= csrf_field() ?><input type="hidden" name="action" value="restore_selected"><div id="bulkRestoreInputs"></div><button class="btn primary" type="submit" id="bulkRestoreBtn" disabled><i class="fa-solid fa-box-open"></i> Restore Selected</button></form><div class="sub" id="archiveCountLabel" data-total="<?= count($archives) ?>"><?= count($archives) ?> archive<?= count($archives)===1?'':'s' ?></div></div></div>
+<div class="card" id="archivedRecords" style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:end;gap:12px"><div><h2>Archived Records</h2><div class="sub">Select one or more archived evaluation periods to restore.</div></div><div class="bulk-actions"><span class="selection-count" id="selectionCount">0 selected</span><form method="POST" id="bulkRestoreForm" onsubmit="return confirmBulkRestore(this)"><?= csrf_field() ?><input type="hidden" name="action" value="restore_selected"><div id="bulkRestoreInputs"></div><button class="btn primary" type="submit" id="bulkRestoreBtn" disabled><i class="fa-solid fa-box-open"></i> Restore Selected</button></form><form method="POST" id="bulkDeleteForm" onsubmit="return confirmBulkDelete(this)"><?= csrf_field() ?><input type="hidden" name="action" value="delete_selected"><div id="bulkDeleteInputs"></div><button class="btn danger" type="submit" id="bulkDeleteBtn" disabled><i class="fa-solid fa-trash"></i> Delete Selected</button></form><div class="sub" id="archiveCountLabel" data-total="<?= count($archives) ?>"><?= count($archives) ?> archive<?= count($archives)===1?'':'s' ?></div></div></div>
 <?php if ($archives):
     $archTerms = array_values(array_unique(array_map(fn($a) => (string)$a['period_label'], $archives)));
     $archYears = array_values(array_unique(array_map(fn($a) => (string)$a['school_year'], $archives)));
@@ -1041,15 +1284,15 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
 <div class="archive-table">
 <table><thead><tr><th class="select-col"><input type="checkbox" id="selectAllArchives" title="Select all archived records"></th><th>Academic Year</th><th>Archived On</th><th>Archived By</th><th>Records</th><th>Status</th><th>Actions</th></tr></thead><tbody>
 <?php if (!$archives): ?><tr><td colspan="7" class="empty">No archived evaluation years yet.</td></tr>
-<?php else: foreach ($archives as $a): ?><tr class="archive-row" data-term="<?= e($a['period_label']) ?>" data-year="<?= e($a['school_year']) ?>"><td class="select-col"><?php if ($a['status']==='archived'): ?><input type="checkbox" class="archive-check" value="<?= (int)$a['id'] ?>" data-label="<?= e($a['school_year'] . ' — ' . $a['period_label']) ?>"><?php else: ?><span style="color:#B7C5D5">—</span><?php endif; ?></td><td><strong><?= e($a['school_year']) ?></strong><br><span style="color:#91A6BE;font-size:10.5px"><?= e($a['period_label']) ?></span><?php $rng = eval_date_range($a['ep_start'] ?? null, $a['ep_end'] ?? null); if ($rng): ?><br><span style="color:#6D86A3;font-size:10.5px;font-weight:600"><i class="fa-regular fa-calendar" style="margin-right:4px"></i><?= e($rng) ?></span><?php endif; ?></td><td><?= e($a['archived_at']) ?></td><td><?= e($a['archived_by_name']) ?></td><td><?= number_format((int)$a['record_count']) ?></td><td><span class="status <?= e($a['status']) ?>"><?= ucfirst(e($a['status'])) ?></span></td><td style="display:flex;gap:6px;align-items:center"><?php if ($a['status']==='archived'): ?><form method="POST" onsubmit="return confirmRestore(this)"><?= csrf_field() ?><input type="hidden" name="action" value="restore"><input type="hidden" name="archive_id" value="<?= (int)$a['id'] ?>"><button class="btn primary" type="submit"><i class="fa-solid fa-box-open"></i> Restore</button></form><?php else: ?><span style="font-size:11px;color:#7A90AA;font-weight:600"><i class="fa-solid fa-circle-check"></i> Restored</span><?php endif; ?><form method="POST" onsubmit="return confirmDelete(this, <?= e(json_encode($a['school_year'] . ' — ' . $a['period_label'])) ?>, <?= e(json_encode($a['status'])) ?>)"><?= csrf_field() ?><input type="hidden" name="action" value="delete"><input type="hidden" name="archive_id" value="<?= (int)$a['id'] ?>"><button class="btn danger" type="submit"><i class="fa-solid fa-trash"></i> Delete</button></form></td></tr><?php endforeach; endif; ?>
+<?php else: foreach ($archives as $a): ?><tr class="archive-row" data-term="<?= e($a['period_label']) ?>" data-year="<?= e($a['school_year']) ?>"><td class="select-col"><?php if ($a['status']==='archived'): ?><input type="checkbox" class="archive-check" value="<?= (int)$a['id'] ?>" data-label="<?= e($a['school_year'] . ' — ' . $a['period_label']) ?>"><?php else: ?><span style="color:#B7C5D5">—</span><?php endif; ?></td><td><strong><?= e($a['school_year']) ?></strong><br><span style="color:#91A6BE;font-size:10.5px"><?= e($a['period_label']) ?></span><?php $rng = eval_date_range($a['ep_start'] ?? null, $a['ep_end'] ?? null); if ($rng): ?><br><span style="color:#6D86A3;font-size:10.5px;font-weight:600"><i class="fa-regular fa-calendar" style="margin-right:4px"></i><?= e($rng) ?></span><?php endif; ?></td><td><?= e(date('M j, Y · g:i A', strtotime((string)$a['archived_at']))) ?></td><td><?= e($a['archived_by_name']) ?></td><td><?= number_format((int)$a['record_count']) ?></td><td><span class="status <?= e($a['status']) ?>"><?= ucfirst(e($a['status'])) ?></span></td><td style="display:flex;gap:6px;align-items:center"><?php if ($a['status']==='archived'): ?><form method="POST" onsubmit="return confirmRestore(this)"><?= csrf_field() ?><input type="hidden" name="action" value="restore"><input type="hidden" name="archive_id" value="<?= (int)$a['id'] ?>"><button class="btn primary" type="submit"><i class="fa-solid fa-box-open"></i> Restore</button></form><?php else: ?><span style="font-size:11px;color:#7A90AA;font-weight:600"><i class="fa-solid fa-circle-check"></i> Restored</span><?php endif; ?><form method="POST" onsubmit="return confirmDelete(this, <?= e(json_encode($a['school_year'] . ' — ' . $a['period_label'])) ?>, <?= e(json_encode($a['status'])) ?>)"><?= csrf_field() ?><input type="hidden" name="action" value="delete"><input type="hidden" name="archive_id" value="<?= (int)$a['id'] ?>"><button class="btn danger" type="submit"><i class="fa-solid fa-trash"></i> Delete</button></form></td></tr><?php endforeach; endif; ?>
 <tr id="archiveNoMatch" style="display:none"><td colspan="7" class="empty">No archived records match this filter.</td></tr>
 </tbody></table></div></div>
 
-<div class="card" style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:end;gap:12px;flex-wrap:wrap"><div><h2><i class="fa-solid fa-trash-can-arrow-up" style="color:var(--red)"></i> Recently Deleted</h2><div class="sub">Deleted archives stay here for <?= (int)ARCHIVE_TRASH_DAYS ?> days and can be restored. After that they are permanently erased.</div></div><div class="bulk-actions"><span class="selection-count"><?= count($trashItems) ?> item<?= count($trashItems)===1?'':'s' ?></span><?php if ($trashItems): ?><form method="POST" onsubmit="return confirmEmptyTrash(this, <?= count($trashItems) ?>)"><?= csrf_field() ?><input type="hidden" name="action" value="empty_trash"><button class="btn danger" type="submit"><i class="fa-solid fa-trash-can"></i> Empty Recently Deleted</button></form><?php endif; ?></div></div>
+<div class="card" id="recentlyDeleted" style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:end;gap:12px;flex-wrap:wrap"><div><h2><i class="fa-solid fa-trash-can-arrow-up" style="color:var(--red)"></i> Recently Deleted</h2><div class="sub">Deleted archives stay here for <?= (int)ARCHIVE_TRASH_DAYS ?> days and can be restored. After that they are permanently erased.</div></div><div class="bulk-actions"><span class="selection-count"><?= count($trashItems) ?> item<?= count($trashItems)===1?'':'s' ?></span><?php if ($trashItems): ?><span class="selection-count" id="trashSelCount">0 selected</span><form method="POST" id="trashRestoreForm" onsubmit="return confirmTrashRestore(this)"><?= csrf_field() ?><input type="hidden" name="action" value="recover_selected"><div id="trashRestoreInputs"></div><button class="btn primary" type="submit" id="trashRestoreBtn" disabled><i class="fa-solid fa-rotate-left"></i> Restore Selected</button></form><?php if ($isSuperAdmin): ?><form method="POST" id="trashPurgeForm" onsubmit="return confirmTrashPurge(this)"><?= csrf_field() ?><input type="hidden" name="action" value="purge_selected"><div id="trashPurgeInputs"></div><button class="btn danger" type="submit" id="trashPurgeBtn" disabled><i class="fa-solid fa-trash"></i> Delete Selected</button></form><?php endif; ?><?php endif; ?></div></div>
 <div class="archive-table">
-<table><thead><tr><th>Academic Year</th><th>Records</th><th>Deleted By</th><th>Deleted On</th><th>Time Left</th><th>Actions</th></tr></thead><tbody>
-<?php if (!$trashItems): ?><tr><td colspan="6" class="empty">Nothing here. Deleted archives will appear for <?= (int)ARCHIVE_TRASH_DAYS ?> days.</td></tr>
-<?php else: foreach ($trashItems as $d): $left = (int)$d['days_left']; $leftClass = $left <= 3 ? 'del-unrestored' : ($left <= 7 ? 'left-warn' : 'restored'); $leftText = $left <= 0 ? 'Erased soon' : ($left === 1 ? '1 day left' : $left . ' days left'); $lbl = $d['school_year'] . ' — ' . $d['period_label']; ?><tr><td><strong><?= e($d['school_year']) ?></strong><br><span style="color:#91A6BE;font-size:10.5px"><?= e($d['period_label']) ?> · Archive #<?= (int)$d['archive_id'] ?></span></td><td><?= number_format((int)$d['record_count']) ?></td><td><?= e($d['deleted_by_name'] ?: '—') ?></td><td><?= e($d['deleted_at']) ?></td><td><span class="status <?= $leftClass ?>"><?= e($leftText) ?></span></td><td style="display:flex;gap:6px;align-items:center"><form method="POST" onsubmit="return confirmRecover(this, <?= e(json_encode($lbl)) ?>)"><?= csrf_field() ?><input type="hidden" name="action" value="recover"><input type="hidden" name="history_id" value="<?= (int)$d['id'] ?>"><button class="btn primary" type="submit"><i class="fa-solid fa-rotate-left"></i> Restore</button></form><form method="POST" onsubmit="return confirmPurge(this, <?= e(json_encode($lbl)) ?>)"><?= csrf_field() ?><input type="hidden" name="action" value="purge"><input type="hidden" name="history_id" value="<?= (int)$d['id'] ?>"><button class="btn danger" type="submit"><i class="fa-solid fa-trash"></i> Delete Now</button></form></td></tr><?php endforeach; endif; ?>
+<table><thead><tr><th class="select-col"><input type="checkbox" id="selectAllTrash" title="Select all deleted archives"></th><th>Academic Year</th><th>Records</th><th>Deleted By</th><th>Deleted On</th><th>Time Left</th><th>Actions</th></tr></thead><tbody>
+<?php if (!$trashItems): ?><tr><td colspan="7" class="empty">Nothing here. Deleted archives will appear for <?= (int)ARCHIVE_TRASH_DAYS ?> days.</td></tr>
+<?php else: foreach ($trashItems as $d): $left = (int)$d['days_left']; $leftClass = $left <= 3 ? 'del-unrestored' : ($left <= 7 ? 'left-warn' : 'restored'); $leftText = $left <= 0 ? 'Erased soon' : ($left === 1 ? '1 day left' : $left . ' days left'); $lbl = $d['school_year'] . ' — ' . $d['period_label']; ?><tr><td class="select-col"><input type="checkbox" class="trash-check" value="<?= (int)$d['id'] ?>" data-label="<?= e($lbl) ?>"></td><td><strong><?= e($d['school_year']) ?></strong><br><span style="color:#91A6BE;font-size:10.5px"><?= e($d['period_label']) ?> · Archive #<?= (int)$d['archive_id'] ?></span></td><td><?= number_format((int)$d['record_count']) ?></td><td><?= e($d['deleted_by_name'] ?: '—') ?></td><td><?= e($d['deleted_at']) ?></td><td><span class="status <?= $leftClass ?>"><?= e($leftText) ?></span></td><td style="display:flex;gap:6px;align-items:center"><form method="POST" onsubmit="return confirmRecover(this, <?= e(json_encode($lbl)) ?>)"><?= csrf_field() ?><input type="hidden" name="action" value="recover"><input type="hidden" name="history_id" value="<?= (int)$d['id'] ?>"><button class="btn primary" type="submit"><i class="fa-solid fa-rotate-left"></i> Restore</button></form><form method="POST" onsubmit="return confirmPurge(this, <?= e(json_encode($lbl)) ?>)"><?= csrf_field() ?><input type="hidden" name="action" value="purge"><input type="hidden" name="history_id" value="<?= (int)$d['id'] ?>"><button class="btn danger" type="submit"><i class="fa-solid fa-trash"></i> Delete Now</button></form></td></tr><?php endforeach; endif; ?>
 </tbody></table></div>
 <?php if ($deletionLog): ?>
 <details style="margin-top:12px"><summary style="cursor:pointer;font-size:11.5px;font-weight:700;color:#49647F">Deletion log (<?= count($deletionLog) ?>)</summary>
@@ -1072,6 +1315,25 @@ const periodText=document.getElementById('periodText');
 const periodBox=document.getElementById('periodMulti');
 const periodWrap=document.getElementById('periodWrap');
 const archiveBtnText=document.getElementById('archiveBtnText');
+function updatePickSummary(chosen){
+    periodChecks.forEach(c=>{const card=c.closest('.pick-card');if(card)card.classList.toggle('on',c.checked);});
+    const sum=document.getElementById('pickSummary'), warn=document.getElementById('activeWarn');
+    if(sum){
+        if(!chosen.length){sum.innerHTML='<i class="fa-regular fa-hand-pointer"></i> Select at least one period to enable archiving.';}
+        else{const total=chosen.reduce((t,c)=>t+(parseInt(c.dataset.live,10)||0),0);sum.innerHTML=`<i class="fa-solid fa-circle-check"></i> <b>${chosen.length}</b> period${chosen.length===1?'':'s'} selected · <b>${total.toLocaleString()}</b> evaluation${total===1?'':'s'} will be archived`;}
+        sum.classList.toggle('ready',chosen.length>0);
+    }
+    if(warn){
+        const act=chosen.filter(c=>c.dataset.active==='1'), empty=chosen.filter(c=>(parseInt(c.dataset.live,10)||0)===0);
+        const msgs=[];
+        if(act.length) msgs.push(`<i class="fa-solid fa-triangle-exclamation"></i> <b>${act.map(c=>c.dataset.label).join(', ')}</b> ${act.length===1?'is the':'are'} currently active. Archiving will set ${act.length===1?'it':'them'} to inactive and turn evaluation tracking off.`);
+        if(empty.length) msgs.push(`<i class="fa-solid fa-circle-info"></i> ${empty.length===1?'One selected period has':empty.length+' selected periods have'} no evaluations yet, so there is nothing to save for ${empty.length===1?'it':'them'}.`);
+        warn.innerHTML=msgs.join('<br>');
+        warn.hidden=msgs.length===0;
+    }
+    document.querySelectorAll('.pick-year-btn').forEach(b=>{const boxes=periodChecks.filter(c=>c.dataset.year===b.dataset.year);b.textContent=boxes.length&&boxes.every(c=>c.checked)?'Clear year':'Select year';});
+}
+document.querySelectorAll('.pick-year-btn').forEach(b=>b.addEventListener('click',()=>{const boxes=periodChecks.filter(c=>c.dataset.year===b.dataset.year);const all=boxes.every(c=>c.checked);boxes.forEach(c=>c.checked=!all);sync();}));
 function sync(){
     if(!btn) return;
     const chosen=periodChecks.filter(c=>c.checked);
@@ -1079,6 +1341,7 @@ function sync(){
     if(periodText) periodText.textContent=chosen.length===0?'Select an evaluation period…':(chosen.length===1?chosen[0].dataset.label:`${chosen.length} evaluation periods selected`);
     if(archiveBtnText) archiveBtnText.textContent=chosen.length>1?`Archive ${chosen.length} Periods`:'Archive This Year';
     if(periodInputs) periodInputs.innerHTML=chosen.map(c=>`<input type="hidden" name="period_ids[]" value="${c.value}">`).join('');
+    updatePickSummary(chosen);
     if(periodAll){
         periodAll.checked=periodChecks.length>0 && chosen.length===periodChecks.length;
         periodAll.indeterminate=chosen.length>0 && chosen.length<periodChecks.length;
@@ -1175,12 +1438,17 @@ sync();
             noBtn.textContent = opts.cancelLabel || 'Cancel';
             const prevFocus = document.activeElement;
             const docs = doc === document ? [document] : [doc, document];
+            function cleanup(){ try { back.remove(); } catch (e) {} }
             function close(val){
                 docs.forEach(d => d.removeEventListener('keydown', onKey, true));
-                back.classList.remove('show');
-                setTimeout(() => { back.remove(); try { if (prevFocus && prevFocus.focus) prevFocus.focus(); } catch (e) {} }, 150);
+                window.removeEventListener('pagehide', cleanup);
+                // Remove it right away. A timer started here is cancelled when the form submit replaces this
+                // page, which used to leave an invisible full-screen layer over the whole dashboard.
+                cleanup();
+                try { if (prevFocus && prevFocus.focus) prevFocus.focus(); } catch (e) {}
                 resolve(val);
             }
+            window.addEventListener('pagehide', cleanup);
             function onKey(e){
                 if (e.key === 'Escape'){ e.preventDefault(); close(false); }
                 else if (e.key === 'Tab'){
@@ -1198,38 +1466,38 @@ sync();
     };
 })();
 
-function findPBI(){
-    for (const w of [window, window.parent, window.top]) {
-        try { if (w && w.PBI && typeof w.PBI.confirm === 'function') return w.PBI; } catch (e) { /* cross-origin */ }
-    }
-    return null;
+function showBusy(text){
+    if (document.getElementById('saBusy')) return;
+    const d = document.createElement('div');
+    d.id = 'saBusy'; d.className = 'sa-busy'; d.setAttribute('role', 'status'); d.setAttribute('aria-live', 'polite');
+    d.innerHTML = '<div class="sa-busy-box"><span class="sa-spin" aria-hidden="true"></span><span class="sa-busy-text"></span></div>';
+    d.querySelector('.sa-busy-text').textContent = text;
+    document.body.appendChild(d);
+    document.querySelectorAll('button').forEach(b => { b.disabled = true; });
 }
+// Coming back with Back/Forward can restore a frozen copy of this page; load a fresh one instead.
+window.addEventListener('pageshow', e => { if (e.persisted) location.reload(); });
 
 // Submits a form only after the custom confirm modal is accepted.
 // Always returns false synchronously so the browser's own submit is blocked;
 // HTMLFormElement.prototype.submit bypasses onsubmit so there's no re-trigger loop.
 function confirmSubmit(form, message, opts){
     (async () => {
-        let ok;
-        try {
-            const pbi = findPBI();
-            ok = pbi ? await pbi.confirm(message, opts) : await window.saConfirm(message, opts);
-        } catch (err) {
-            console.error('Dashboard confirm failed, using built-in modal', err);
-            ok = await window.saConfirm(message, opts);
+        const ok = await window.saConfirm(message, opts);
+        if (!ok) return;
+        if (!form.querySelector('input[name="confirmed"]')) {
+            const c = document.createElement('input');
+            c.type = 'hidden'; c.name = 'confirmed'; c.value = '1';
+            form.appendChild(c);
         }
-        if (ok) {
-            if (!form.querySelector('input[name="confirmed"]')) {
-                const c = document.createElement('input');
-                c.type = 'hidden'; c.name = 'confirmed'; c.value = '1';
-                form.appendChild(c);
-            }
-            HTMLFormElement.prototype.submit.call(form);
-        }
+        const busy = {'Archive':'Archiving… please wait.','Restore':'Restoring… please wait.','Delete':'Deleting… please wait.','Delete Now':'Deleting… please wait.','Empty':'Emptying… please wait.'}[(opts && opts.okLabel) || ''] || 'Working… please wait.';
+        showBusy(busy);
+        // give the progress layer a moment to paint before the page navigates
+        setTimeout(() => HTMLFormElement.prototype.submit.call(form), 40);
     })();
     return false;
 }
-function confirmArchive(form){const chosen=periodChecks.filter(c=>c.checked);if(!chosen.length)return false;const n=chosen.length;return confirmSubmit(form, `Archive ${n===1?'this period':n+' periods'}?\n\nThis cannot be undone from the live dashboards.`, {okLabel:'Archive'});}
+function confirmArchive(form){const chosen=periodChecks.filter(c=>c.checked);if(!chosen.length)return false;const n=chosen.length;const list=chosen.map(c=>`• ${c.dataset.label} (${c.dataset.live} evaluation${c.dataset.live==='1'?'':'s'})`).join('\n');return confirmSubmit(form, `Archive ${n===1?'this period':n+' periods'}?\n\n${list}\n\nTheir live evaluation records move to Archived Records and are cleared from the dashboards. Archived periods are set to inactive. You can restore them later from Archived Records.`, {okLabel:'Archive'});}
 function confirmRestore(form){return confirmSubmit(form, 'Restore this archive back into the live evaluation tables?\n\nThis is allowed only when the selected period has no live evaluation records.', {okLabel:'Restore', danger:false});}
 const archiveChecks=[...document.querySelectorAll('.archive-check')];
 const selectAllArchives=document.getElementById('selectAllArchives');
@@ -1237,6 +1505,8 @@ const bulkRestoreBtn=document.getElementById('bulkRestoreBtn');
 const bulkRestoreForm=document.getElementById('bulkRestoreForm');
 const bulkRestoreInputs=document.getElementById('bulkRestoreInputs');
 const selectionCount=document.getElementById('selectionCount');
+const bulkDeleteBtn=document.getElementById('bulkDeleteBtn');
+const bulkDeleteInputs=document.getElementById('bulkDeleteInputs');
 
 function archiveRowShown(c){const tr=c.closest('tr');return !tr || tr.style.display!=='none';}
 
@@ -1274,6 +1544,8 @@ function syncArchiveSelection(){
     const visibleSelected=visible.filter(c=>c.checked);
     if(selectionCount) selectionCount.textContent=`${selected.length} selected`;
     bulkRestoreBtn.disabled=selected.length===0;
+    if(bulkDeleteBtn) bulkDeleteBtn.disabled=selected.length===0;
+    if(bulkDeleteInputs) bulkDeleteInputs.innerHTML=selected.map(c=>`<input type="hidden" name="archive_ids[]" value="${c.value}">`).join('');
     if(selectAllArchives){
         selectAllArchives.checked=visible.length>0 && visibleSelected.length===visible.length;
         selectAllArchives.indeterminate=visibleSelected.length>0 && visibleSelected.length<visible.length;
@@ -1295,7 +1567,45 @@ function confirmBulkRestore(form){
     if(!selected.length) return false;
     return confirmSubmit(form, `Restore ${selected.length} selected archive${selected.length===1?'':'s'}?\n\nEach selected period must have no live evaluation records. Continue?`, {okLabel:'Restore', danger:false});
 }
+function confirmBulkDelete(form){
+    const selected=archiveChecks.filter(c=>c.checked);
+    if(!selected.length) return false;
+    const n=selected.length, d=<?= (int)ARCHIVE_TRASH_DAYS ?>;
+    const list=selected.map(c=>`• ${c.dataset.label}`).join('\n');
+    return confirmSubmit(form, `Delete ${n} selected archive${n===1?'':'s'}?\n\n${list}\n\nThey will move to Recently Deleted, where you can restore them for ${d} days. After ${d} days they are permanently erased.`, {okLabel:'Delete'});
+}
 syncArchiveSelection();
+
+// ── Recently Deleted: multi-select ──
+const trashChecks=[...document.querySelectorAll('.trash-check')];
+const selectAllTrash=document.getElementById('selectAllTrash');
+function syncTrashSelection(){
+    const sel=trashChecks.filter(c=>c.checked);
+    const cnt=document.getElementById('trashSelCount'); if(cnt) cnt.textContent=`${sel.length} selected`;
+    const html=sel.map(c=>`<input type="hidden" name="history_ids[]" value="${c.value}">`).join('');
+    ['trashRestore','trashPurge'].forEach(k=>{
+        const b=document.getElementById(k+'Btn'), i=document.getElementById(k+'Inputs');
+        if(b) b.disabled=sel.length===0;
+        if(i) i.innerHTML=html;
+    });
+    if(selectAllTrash){
+        selectAllTrash.checked=trashChecks.length>0 && sel.length===trashChecks.length;
+        selectAllTrash.indeterminate=sel.length>0 && sel.length<trashChecks.length;
+    }
+}
+trashChecks.forEach(c=>c.addEventListener('change',syncTrashSelection));
+if(selectAllTrash) selectAllTrash.addEventListener('change',()=>{trashChecks.forEach(c=>c.checked=selectAllTrash.checked);syncTrashSelection();});
+function confirmTrashRestore(form){
+    const sel=trashChecks.filter(c=>c.checked); if(!sel.length) return false;
+    const n=sel.length, list=sel.map(c=>`• ${c.dataset.label}`).join('\n');
+    return confirmSubmit(form, `Restore ${n} deleted archive${n===1?'':'s'}?\n\n${list}\n\nThey will return to Archived Records with their original data.`, {okLabel:'Restore', danger:false});
+}
+function confirmTrashPurge(form){
+    const sel=trashChecks.filter(c=>c.checked); if(!sel.length) return false;
+    const n=sel.length, list=sel.map(c=>`• ${c.dataset.label}`).join('\n');
+    return confirmSubmit(form, `Permanently delete ${n} archive${n===1?'':'s'}?\n\n${list}\n\nThis erases their data now and cannot be undone.`, {okLabel:'Delete Now'});
+}
+syncTrashSelection();
 function confirmDelete(form, label, status){const d=<?= (int)ARCHIVE_TRASH_DAYS ?>;const risk=status==='archived'?`⚠ This archive has NOT been restored, so it holds the only copy of this evaluation data.\n\n`:`This archive was already restored to the live tables.\n\n`;return confirmSubmit(form, `Are you sure you want to delete the archive for ${label}?\n\n${risk}It will move to Recently Deleted, where you can restore it for ${d} days. After ${d} days it is permanently erased and cannot be recovered.`, {okLabel:'Delete'});}
 function confirmRecover(form, label){return confirmSubmit(form, `Restore the deleted archive for ${label}?\n\nIt will return to Archived Records with its original data.`, {okLabel:'Restore', danger:false});}
 function confirmPurge(form, label){return confirmSubmit(form, `Permanently delete the archive for ${label}?\n\nThis erases its data now and cannot be undone.`, {okLabel:'Delete Now'});}

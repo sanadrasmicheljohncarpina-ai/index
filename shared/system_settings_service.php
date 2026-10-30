@@ -231,11 +231,76 @@ function ss_period_columns(mysqli $mysqli): array {
 }
 
 /**
+ * Last error from ss_sync_evaluation_period() ('' when the last call succeeded).
+ */
+function ss_period_last_error(?string $set = null): string {
+    static $err = '';
+    if ($set !== null) $err = $set;
+    return $err;
+}
+
+/**
+ * Name of a UNIQUE index on evaluation_periods that covers school_year + semester,
+ * or '' when there is none. Such an index would block a second round of the same term.
+ */
+function ss_find_unique_period_index(mysqli $mysqli): string {
+    $byIndex = [];
+    $res = @$mysqli->query("SHOW INDEX FROM evaluation_periods");
+    if (!$res) return '';
+    while ($r = $res->fetch_assoc()) {
+        if ((int)$r['Non_unique'] === 0 && $r['Key_name'] !== 'PRIMARY') {
+            $byIndex[$r['Key_name']][] = strtolower((string)$r['Column_name']);
+        }
+    }
+    $res->free();
+    foreach ($byIndex as $name => $cols) {
+        if (in_array('school_year', $cols, true) && in_array('semester', $cols, true)) return (string)$name;
+    }
+    return '';
+}
+
+/**
+ * Every evaluation period (round) of a year/term, newest first, each flagged
+ * with whether it is currently archived.
+ * @return array<int, array{id:int, archived:bool}>
+ */
+function ss_period_candidates(mysqli $mysqli, string $year, string $term): array {
+    $hasArchive = false;
+    $t = @$mysqli->query("SHOW TABLES LIKE 'system_archives'");
+    if ($t) { $hasArchive = $t->num_rows > 0; $t->free(); }
+
+    $join = $hasArchive ? "LEFT JOIN system_archives sa ON sa.period_id = ep.id AND sa.status = 'archived'" : '';
+    $flag = $hasArchive ? '(sa.id IS NOT NULL)' : '0';
+    $rows = [];
+    $stmt = @$mysqli->prepare("SELECT ep.id, $flag AS archived FROM evaluation_periods ep $join WHERE ep.school_year=? AND ep.semester=? ORDER BY ep.id DESC");
+    if (!$stmt) return $rows;
+    $stmt->bind_param('ss', $year, $term);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    while ($r = $res->fetch_assoc()) $rows[] = ['id' => (int)$r['id'], 'archived' => (int)$r['archived'] === 1];
+    $stmt->close();
+    return $rows;
+}
+
+/** Newest round that is not archived (the preferred one wins when it still qualifies); 0 when none. */
+function ss_pick_open_period(array $rows, int $preferredId = 0): int {
+    foreach ($rows as $r) if (!$r['archived'] && $r['id'] === $preferredId) return $r['id'];
+    foreach ($rows as $r) if (!$r['archived']) return $r['id'];
+    return 0;
+}
+
+/**
  * Keep the selected academic period synchronized with the configured year /
  * term and schedule dates.  is_active identifies the current period; it is
  * not used as the submission-open flag.
+ *
+ * A year/term can have several rounds (evaluation_periods rows). The current
+ * round is remembered in system_settings.current_period_id. An archived round is
+ * never reused: when every round of the configured year/term is archived, a new
+ * round ("... (Round 2)") is created, so each round can be archived on its own.
  */
 function ss_sync_evaluation_period(mysqli $mysqli, array $sys): int {
+    ss_period_last_error('');
     $exists = @$mysqli->query("SHOW TABLES LIKE 'evaluation_periods'");
     if (!$exists || $exists->num_rows === 0) return 0;
 
@@ -248,31 +313,66 @@ function ss_sync_evaluation_period(mysqli $mysqli, array $sys): int {
     }
 
     $label = trim($year . ' — ' . $term, ' —');
-    $stmt = @$mysqli->prepare("SELECT id FROM evaluation_periods WHERE school_year=? AND semester=? ORDER BY id DESC LIMIT 1");
-    $periodId = 0;
-    if ($stmt) {
-        $stmt->bind_param('ss', $year, $term);
-        $stmt->execute();
-        $row = $stmt->get_result()->fetch_assoc();
-        $periodId = (int)($row['id'] ?? 0);
-        $stmt->close();
+    $preferred = (int)($sys['current_period_id'] ?? 0);
+    $periodId = ss_pick_open_period(ss_period_candidates($mysqli, $year, $term), $preferred);
+
+    if ($periodId <= 0) {
+        // Every round of this year/term is archived (or none exists yet): start a new round.
+        // The lock stops simultaneous requests from each creating their own.
+        $got = false;
+        try {
+            $lk = @$mysqli->query("SELECT GET_LOCK('pbi_period_sync', 5) AS l");
+            if ($lk) { $got = (int)($lk->fetch_assoc()['l'] ?? 0) === 1; $lk->free(); }
+
+            $rows = ss_period_candidates($mysqli, $year, $term);
+            $periodId = ss_pick_open_period($rows);
+            if ($periodId <= 0) {
+                $round = count($rows) + 1;
+                $newLabel = $round > 1 ? $label . ' (Round ' . $round . ')' : $label;
+                $stmt = @$mysqli->prepare("INSERT INTO evaluation_periods (period_label, school_year, semester) VALUES (?,?,?)");
+                if ($stmt) {
+                    $stmt->bind_param('sss', $newLabel, $year, $term);
+                    if ($stmt->execute()) {
+                        $periodId = (int)$mysqli->insert_id;
+                    } else {
+                        ss_period_last_error($stmt->error);
+                    }
+                    $stmt->close();
+                } else {
+                    ss_period_last_error($mysqli->error);
+                }
+            }
+        } catch (Throwable $e) {
+            ss_period_last_error($e->getMessage());
+            $periodId = 0;
+        } finally {
+            if ($got) @$mysqli->query("SELECT RELEASE_LOCK('pbi_period_sync')");
+        }
+    }
+
+    if ($periodId <= 0) {
+        error_log('ss_sync_evaluation_period: no evaluation period for ' . $label . ' (' . ss_period_last_error() . ')');
+        return 0;
+    }
+
+    // Remember which round is current so it stays stable between requests.
+    if ($preferred !== $periodId) {
+        $stmt = @$mysqli->prepare("INSERT INTO system_settings(setting_key,setting_value) VALUES('current_period_id',?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)");
+        if ($stmt) {
+            $pv = (string)$periodId;
+            $stmt->bind_param('s', $pv);
+            $stmt->execute();
+            $stmt->close();
+        }
     }
 
     $start = ss_parse_datetime($sys['eval_start'] ?? '');
     $end = ss_parse_datetime($sys['eval_end'] ?? '');
     $cols = ss_period_columns($mysqli);
 
-    if ($periodId <= 0) {
-        $stmt = @$mysqli->prepare("INSERT INTO evaluation_periods (period_label, school_year, semester) VALUES (?,?,?)");
-        if (!$stmt) return 0;
-        $stmt->bind_param('sss', $label, $year, $term);
-        $stmt->execute();
-        $periodId = (int)$mysqli->insert_id;
-        $stmt->close();
-    }
-
-    if ($periodId > 0 && $cols['start'] && $cols['end'] && $start && $end) {
-        $sql = "UPDATE evaluation_periods SET {$cols['start']}=?, {$cols['end']}=?, period_label=? WHERE id=?";
+    if ($cols['start'] && $cols['end'] && $start && $end) {
+        // The label is only filled in when empty, so a round keeps its "(Round N)" name.
+        $sql = "UPDATE evaluation_periods SET {$cols['start']}=?, {$cols['end']}=?, period_label=COALESCE(NULLIF(period_label,''),?) WHERE id=?";
         $stmt = @$mysqli->prepare($sql);
         if ($stmt) {
             $startDate = $start->format('Y-m-d');

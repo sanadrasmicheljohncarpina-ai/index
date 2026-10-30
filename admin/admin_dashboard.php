@@ -3480,6 +3480,177 @@ html[data-theme="dark"] body .iframe-box{
 }
 </style>
 
+<style id="dashboard-polish">
+/* ------------------------------------------------------------------
+   Dashboard polish (loaded after the layout blocks, before dark mode)
+   Goals: cleaner spacing, readable type sizes, higher contrast.
+   - Undoes the 8-9px "compact" text so nothing needs squinting.
+   - Layout rules apply to both themes; colour rules are light-theme only
+     (dark mode keeps the palette from #dashboard-dark-mode).
+   - Pure presentation: no markup, IDs, PHP or JS were changed.
+   ------------------------------------------------------------------ */
+
+/* The old "no scrolling" lock would clip the larger cards, so let the
+   dashboard scroll (the scrollbar stays hidden by the existing rule). */
+@media(min-width:901px){
+    html:has(#dashboard.active), body:has(#dashboard.active){height:auto!important;min-height:100%!important;overflow-y:auto!important;overflow-x:hidden!important;}
+}
+
+/* ── KPI cards ───────────────────────────────────────────── */
+html body:has(#dashboard.active) .pbi-stats-row{gap:18px!important;margin:0 0 18px!important;}
+html body:has(#dashboard.active) .pbi-stats-row > .pbi-stat-card{
+    height:auto!important;min-height:108px!important;padding:20px 22px!important;
+    border-radius:14px!important;overflow:visible!important;
+}
+html body:has(#dashboard.active) .pbi-stats-row > .pbi-stat-card:not(.pbi-completion-card){
+    grid-template-columns:48px minmax(0,1fr)!important;column-gap:16px!important;row-gap:3px!important;
+}
+html body:has(#dashboard.active) .pbi-stats-row > .pbi-stat-card:not(.pbi-completion-card) .pbi-stat-icon-circle{
+    width:48px!important;height:48px!important;border-radius:13px!important;font-size:19px!important;
+}
+html body:has(#dashboard.active) .pbi-stats-row > .pbi-stat-card .pbi-stat-label{
+    font-size:11.5px!important;font-weight:700!important;letter-spacing:.7px!important;line-height:1.25!important;
+}
+html body:has(#dashboard.active) .pbi-stats-row > .pbi-stat-card:not(.pbi-completion-card) .pbi-stat-value{
+    font-size:30px!important;font-weight:800!important;line-height:1.1!important;margin:1px 0 2px!important;
+}
+html body:has(#dashboard.active) .pbi-stats-row > .pbi-stat-card:not(.pbi-completion-card) .pbi-stat-sub{
+    display:block!important;max-width:100%!important;font-size:12px!important;font-weight:500!important;line-height:1.3!important;
+}
+/* The "–" placeholder trend adds noise; it still appears if JS ever marks it up/down. */
+html body:has(#dashboard.active) .pbi-stats-row > .pbi-stat-card .pbi-stat-trend.flat{display:none!important;}
+
+html body:has(#dashboard.active) .pbi-stats-row > .pbi-completion-card{gap:16px!important;}
+html body:has(#dashboard.active) .pbi-stats-row > .pbi-completion-card .pbi-completion-ring{width:70px!important;height:70px!important;}
+html body:has(#dashboard.active) .pbi-stats-row > .pbi-completion-card .pbi-completion-ring-inner{width:54px!important;height:54px!important;font-size:15px!important;font-weight:800!important;}
+html body:has(#dashboard.active) .pbi-stats-row > .pbi-completion-card .pbi-stat-label{font-size:11.5px!important;margin-bottom:4px!important;}
+html body:has(#dashboard.active) .pbi-stats-row > .pbi-completion-card .pbi-stat-sub{font-size:12px!important;font-weight:500!important;white-space:normal!important;line-height:1.35!important;}
+
+/* ── Current status panel ────────────────────────────────── */
+html body:has(#dashboard.active) .pbi-period-box{padding:26px 30px!important;}
+html body:has(#dashboard.active) .pbi-period-label{font-size:12px!important;font-weight:700!important;letter-spacing:.9px!important;display:flex;align-items:center;gap:10px;}
+html body:has(#dashboard.active) .pbi-period-badge{font-size:11.5px!important;font-weight:700!important;padding:4px 11px!important;border-radius:999px!important;}
+html body:has(#dashboard.active) .pbi-period-value{font-size:25px!important;font-weight:800!important;line-height:1.25!important;margin:8px 0 10px!important;}
+html body:has(#dashboard.active) .pbi-period-meta{font-size:13.5px!important;font-weight:500!important;display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;}
+html body:has(#dashboard.active) .pbi-period-meta i{margin-right:6px!important;}
+html body:has(#dashboard.active) .pbi-period-tiles{gap:16px!important;margin-top:20px!important;}
+html body:has(#dashboard.active) .pbi-period-tile{padding:16px 18px!important;border-radius:12px!important;}
+html body:has(#dashboard.active) .pbi-period-tile-label{font-size:12.5px!important;font-weight:600!important;margin-bottom:8px!important;}
+html body:has(#dashboard.active) .pbi-period-tile-value{font-size:32px!important;font-weight:800!important;line-height:1!important;}
+html body:has(#dashboard.active) .pbi-period-tile-sub{font-size:12px!important;margin-top:8px!important;line-height:1.3!important;}
+html body:has(#dashboard.active) .pbi-progress-track{height:8px!important;border-radius:999px!important;margin-top:12px!important;}
+html body:has(#dashboard.active) .pbi-progress-fill{border-radius:999px!important;}
+
+/* ── Bottom panels ───────────────────────────────────────── */
+html body:has(#dashboard.active) .pbi-panel{padding:26px 28px!important;}
+html body:has(#dashboard.active) .pbi-panel-head{margin-bottom:10px!important;min-height:36px;}
+html body:has(#dashboard.active) .pbi-panel-title{font-size:12.5px!important;font-weight:700!important;letter-spacing:.9px!important;}
+html body:has(#dashboard.active) .pbi-panel-viewall{font-size:12.5px!important;font-weight:700!important;padding:7px 14px!important;border-radius:8px!important;}
+
+html body:has(#dashboard.active) .pbi-personnel-item{padding:15px 0!important;gap:15px!important;}
+html body:has(#dashboard.active) .pbi-personnel-icon{width:46px!important;height:46px!important;font-size:18px!important;}
+html body:has(#dashboard.active) .pbi-personnel-name{font-size:15.5px!important;font-weight:700!important;line-height:1.25!important;}
+html body:has(#dashboard.active) .pbi-personnel-meta{font-size:12.5px!important;font-weight:500!important;margin-top:2px!important;}
+html body:has(#dashboard.active) .pbi-personnel-count{font-size:24px!important;font-weight:800!important;}
+
+html body:has(#dashboard.active) .pbi-attention-item{padding:15px 10px!important;margin:0 -10px!important;gap:12px!important;font-size:14px!important;font-weight:500!important;line-height:1.45!important;align-items:center!important;border-radius:10px!important;}
+html body:has(#dashboard.active) .pbi-attention-item i.dot{font-size:16px!important;margin-top:0!important;width:20px;text-align:center;}
+html body:has(#dashboard.active) .pbi-attention-item .chev{font-size:12px!important;opacity:.85!important;}
+
+/* ── Sidebar legibility (dark in both themes) ────────────── */
+.pbi-sidebar .nav-item{color:#D2DDEC!important;}
+.pbi-sidebar .nav-item:hover,.pbi-sidebar .nav-item.active{color:#FFFFFF!important;}
+.pbi-sidebar .nav-menu .nav-section-label{color:#AFC0D8!important;}
+.pbi-sidebar .sidebar-profile-role{color:#F5D56A!important;}
+
+/* ══ LIGHT THEME COLOURS (higher contrast) ═════════════════ */
+html:not([data-theme="dark"]) body:has(#dashboard.active){
+    --dp-ink:#0B1F3A;      /* primary text */
+    --dp-sub:#3E5068;      /* labels */
+    --dp-meta:#4A5C74;     /* captions */
+    --dp-line:#D3DCE8;     /* borders */
+    --dp-divider:#DCE4EF;  /* list dividers */
+    background:#E6ECF4!important;
+}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-dashboard-container{
+    background:#F3F6FB!important;border-color:#D3DCE8!important;
+}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-stat-card,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-box,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-panel{
+    background:#FFFFFF!important;border:1px solid var(--dp-line)!important;
+    box-shadow:0 1px 2px rgba(11,31,58,.07),0 6px 16px rgba(11,31,58,.06)!important;
+}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-stat-card:hover{box-shadow:0 2px 4px rgba(11,31,58,.08),0 12px 26px rgba(11,31,58,.10)!important;}
+
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-stat-label,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-label,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-panel-title,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-tile-label{color:var(--dp-sub)!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-stat-sub,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-meta,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-tile-sub,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-personnel-meta{color:var(--dp-meta)!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-meta .sep{color:#9AABC0!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-stat-value,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-value,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-tile-value,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-personnel-name,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-personnel-count,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-attention-item{color:var(--dp-ink)!important;}
+
+/* Icon chips: stronger tint + deeper glyph */
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-stat-card.stat-teal .pbi-stat-icon-circle,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-personnel-icon.teal{background:#D3F0E2!important;color:#087548!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-stat-card.stat-skyblue .pbi-stat-icon-circle,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-personnel-icon.skyblue{background:#F8E8B0!important;color:#7A5C00!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-stat-card.stat-violet .pbi-stat-icon-circle,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-personnel-icon.violet{background:#E3D9FB!important;color:#5521B5!important;}
+
+/* Status badge + tiles */
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-badge.green{background:#D6F2E4!important;color:#0A6A3B!important;border:1px solid #8ED0AD!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-badge.red{background:#FBE0E0!important;color:#A11F2E!important;border:1px solid #EDA3AA!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-badge.yellow{background:#FCEBC6!important;color:#7A4B00!important;border:1px solid #E8C374!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-tile{background:#F7F9FC!important;border:1px solid #D3DCE8!important;box-shadow:none!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-tile.tile-progress{background:#FFF8E2!important;border-color:#E6D294!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-tile.tile-submitted{background:#E4F6EC!important;border-color:#A6DABF!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-tile.tile-pending{background:#FFF1D4!important;border-color:#EBCB88!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-tile-value.green{color:#0A6A3B!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-tile-value.gold{color:#8A5300!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-progress-track{background:#E7DDB8!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-progress-fill{background:linear-gradient(90deg,#B98A00,#E4B52A)!important;}
+
+/* Participation ring */
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-completion-ring{background:conic-gradient(#C08F00 calc(var(--pct)*1%),#E4E9F1 0)!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-completion-ring-inner{background:#FFFFFF!important;color:var(--dp-ink)!important;}
+
+/* Lists */
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-personnel-item,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-attention-item{border-bottom:1px solid var(--dp-divider)!important;box-shadow:none!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-personnel-item:last-child,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-attention-item:last-child{border-bottom:none!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-attention-item.is-clickable:hover{background:#EAF1FB!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-attention-item .warn{color:#B53512!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-attention-item .info{color:#A66F00!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-attention-item .ok{color:#0A7A47!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-attention-item .chev{color:#6B7E96!important;}
+
+/* View All button */
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-panel-viewall{background:#FFFFFF!important;color:#0A6A3B!important;border:1px solid #8ED0AD!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-panel-viewall:hover{background:#E4F6EC!important;}
+
+/* Narrow screens: stack the tiles and relax the sizes */
+@media(max-width:1180px){
+    html body:has(#dashboard.active) .pbi-stats-row{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+}
+@media(max-width:760px){
+    html body:has(#dashboard.active) .pbi-stats-row{grid-template-columns:1fr!important;gap:12px!important;}
+    html body:has(#dashboard.active) .pbi-period-box,
+    html body:has(#dashboard.active) .pbi-panel{padding:18px!important;}
+    html body:has(#dashboard.active) .pbi-period-value{font-size:20px!important;}
+}
+</style>
+
 <style id="dashboard-dark-mode">
 /* ------------------------------------------------------------------
    Dashboard dark mode (loaded last on purpose).

@@ -4,6 +4,7 @@ session_start();
 require_once 'db.php';
 
 $error = '';
+$notice = (($_GET['reset'] ?? '') === '1') ? 'Password updated. You can now sign in with your new password.' : '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', (string)$_POST['csrf_token'])) {
@@ -189,6 +190,15 @@ body{
     border:1px solid rgba(240,84,84,.35);
     color:#ff8a8a;
 }
+
+.alert-success{
+    background:rgba(74,222,128,.10);
+    border:1px solid rgba(74,222,128,.35);
+    color:#4ade80;
+}
+.forgot-row{margin:-6px 0 18px;text-align:right;font-size:12px;}
+.forgot-row a{color:var(--violet-hover);font-weight:600;text-decoration:none;}
+.forgot-row a:hover{text-decoration:underline;}
 
 .form-group{margin-bottom:18px;}
 .form-label{
@@ -378,6 +388,13 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible{
     </div>
     <div class="divider"></div>
 
+    <?php if ($notice && !$error): ?>
+    <div class="alert alert-success" role="status">
+        <i class="fa-solid fa-circle-check"></i>
+        <span><?= htmlspecialchars($notice) ?></span>
+    </div>
+    <?php endif; ?>
+
     <?php if ($error): ?>
     <div class="alert alert-error" role="alert">
         <i class="fa-solid fa-circle-exclamation"></i>
@@ -409,6 +426,8 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible{
                 </button>
             </div>
         </div>
+
+        <div class="forgot-row"><a href="dean_forgot_password.php">Forgot password?</a></div>
 
         <button type="submit" class="btn-login" id="loginBtn">
             <i class="fa-solid fa-right-to-bracket"></i>

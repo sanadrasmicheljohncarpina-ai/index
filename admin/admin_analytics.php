@@ -441,7 +441,9 @@ function schoolheadTargetLabel($role) {
 //     (target_type='School', eval_type='peer' in the question bank) --
 //     entirely separate from the top-level School Head Evaluation tab, where
 //     the EA/students evaluate the Dean/Principal instead.
-//   - Faculty: exactly questionnaire.php's own has_teacher rule --
+//   - Faculty: exactly questionnaire.php's own has_teacher rule, plus the same
+//     year-level rule the Faculty/Staff dashboards use (a Staff account with >= 1
+//     user_year_levels row is Teaching Staff -> Faculty) --
 //     is_teaching_staff (Teacher role, an explicit secondary Teacher role, a
 //     Teacher sector, or an actual teaching_assignments row) OR
 //     ec_has_teacher_function($u). That second half matters: it's an
@@ -472,7 +474,8 @@ function ec_resolve_peer_group_full($p, $mysqli) {
         "SELECT id, full_name, designation, photo, source, role, sector,
                 EXISTS(SELECT 1 FROM teaching_assignments ta WHERE ta.user_id=u.id) AS has_teaching_assignment,
                 (u.role='teacher' OR u.sector='Teacher'
-                 OR EXISTS(SELECT 1 FROM teaching_assignments ta2 WHERE ta2.user_id=u.id)) AS is_teaching_staff,
+                 OR EXISTS(SELECT 1 FROM teaching_assignments ta2 WHERE ta2.user_id=u.id)
+                 OR EXISTS(SELECT 1 FROM user_year_levels yl2 WHERE yl2.user_id=u.id)) AS is_teaching_staff,
                 EXISTS(SELECT 1 FROM user_year_levels yl WHERE yl.user_id=u.id) AS has_year_level
          FROM users u WHERE u.id=? LIMIT 1"
     );
@@ -1086,6 +1089,11 @@ if ($view === 'sheet' && $target_id && ($tracker_id || ($_GET['report'] ?? '') =
 .cum-total{margin-bottom:12px;justify-content:space-between;}
 .cum-total-label{font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:1px;align-self:center;}
 .cum-total-result{text-align:right;margin-right:-2px;}
+.cum-legend-rows{display:flex;flex-direction:column;gap:5px;min-width:340px;}
+.cum-legend-row{display:flex;align-items:center;gap:10px;font-size:13px;}
+.cum-legend-dot{width:12px;height:12px;border-radius:3px;flex-shrink:0;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+.cum-legend-range{font-weight:700;width:92px;flex-shrink:0;}
+.cum-legend-text{flex:1;text-align:right;}
 .cum-remark{font-size:13px;line-height:1.4;font-style:italic;margin-bottom:5px;}
 @media print{
   .individual-sheet{display:none!important;}
@@ -1513,6 +1521,10 @@ html[data-theme="dark"] .avg-summary{background:#fff!important;border-color:#ddd
   body .cumulative-sheet .rating-num{font-size:11px!important;line-height:1!important;}
   body .cumulative-sheet .cum-total{margin:0 0 5px!important;padding:6px 12px!important;}
   body .cumulative-sheet .cum-total-label{font-size:11px!important;}
+  body .cumulative-sheet .cum-legend-rows{gap:1px!important;min-width:300px!important;}
+  body .cumulative-sheet .cum-legend-row{font-size:9.5px!important;gap:6px!important;}
+  body .cumulative-sheet .cum-legend-dot{width:8px!important;height:8px!important;}
+  body .cumulative-sheet .cum-legend-range{width:70px!important;}
   body .cumulative-sheet .avg-score-big{font-size:28px!important;}
   body .cumulative-sheet .avg-score-label{font-size:11px!important;margin-top:2px!important;}
   body .cumulative-sheet .avg-out-of{font-size:9px!important;margin-top:2px!important;}
@@ -1792,7 +1804,28 @@ function confirmNav(link, message, opts){
     <?php endif; ?>
 
     <?php if ($cumOverall !== null): ?>
-    <!-- TOTAL SCORE: sits directly under the last question -->
+    <!-- RATING LEGEND: same card style as Total Score, placed right before it.
+         Uses the satisfaction wording (same bands as scoreSatisfactionLabel()). -->
+    <div class="avg-summary cum-total cum-legend">
+        <div class="cum-total-label">Rating Legend</div>
+        <div class="cum-legend-rows">
+            <?php foreach ([
+                ['4.50 – 5.00', 'Very Satisfied',                    '#32B98A'],
+                ['3.50 – 4.49', 'Satisfied',                         '#6BCFA9'],
+                ['2.50 – 3.49', 'Neither Satisfied nor Dissatisfied','#facc15'],
+                ['1.50 – 2.49', 'Dissatisfied',                      '#fb923c'],
+                ['1.00 – 1.49', 'Very Dissatisfied',                 '#E6788A'],
+            ] as $lg): ?>
+            <div class="cum-legend-row">
+                <span class="cum-legend-dot" style="background:<?= $lg[2] ?>"></span>
+                <span class="cum-legend-range"><?= $lg[0] ?></span>
+                <span class="cum-legend-text"><?= $lg[1] ?></span>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+
+    <!-- TOTAL SCORE: sits directly under the legend -->
     <div class="avg-summary cum-total">
         <div class="cum-total-label">Total Score</div>
         <div class="cum-total-result">
@@ -2166,11 +2199,11 @@ function confirmNav(link, message, opts){
     </div>
     <div class="score-legend no-print">
         <div class="score-legend-title">Rating Legend</div>
-        <div class="score-legend-row"><span style="color:#32B98A">4.50 - 5.00</span> Always</div>
-        <div class="score-legend-row"><span style="color:#6BCFA9">3.50 - 4.49</span> Often</div>
-        <div class="score-legend-row"><span style="color:#facc15">2.50 - 3.49</span> Sometimes</div>
-        <div class="score-legend-row"><span style="color:#fb923c">1.50 - 2.49</span> Rarely</div>
-        <div class="score-legend-row"><span style="color:#E6788A">1.00 - 1.49</span> Never</div>
+        <div class="score-legend-row"><span style="color:#32B98A">4.50 - 5.00</span> Very Satisfied</div>
+        <div class="score-legend-row"><span style="color:#6BCFA9">3.50 - 4.49</span> Satisfied</div>
+        <div class="score-legend-row"><span style="color:#facc15">2.50 - 3.49</span> Neither Satisfied nor Dissatisfied</div>
+        <div class="score-legend-row"><span style="color:#fb923c">1.50 - 2.49</span> Dissatisfied</div>
+        <div class="score-legend-row"><span style="color:#E6788A">1.00 - 1.49</span> Very Dissatisfied</div>
     </div>
 </div>
 
@@ -2254,7 +2287,7 @@ function confirmNav(link, message, opts){
             <td><?= htmlspecialchars($row['label']) ?></td>
             <td><?= htmlspecialchars($row['role']) ?></td>
             <td style="font-weight:700;color:<?= $rc ?>"><?= $row['avg'] !== null ? number_format($row['avg'],2) : '—' ?></td>
-            <td><span class="rt-rating-pill" style="background:<?= $rc ?>1A;color:<?= $rc ?>"><?= scoreLabel($row['avg']) ?></span></td>
+            <td><span class="rt-rating-pill" style="background:<?= $rc ?>1A;color:<?= $rc ?>"><?= scoreSatisfactionLabel($row['avg']) ?></span></td>
             <td><?= !empty($row['date']) ? date('M d, Y', strtotime($row['date'])) : '—' ?></td>
             <td class="no-print" style="white-space:nowrap;">
                 <a class="rt-icon-btn rt-icon-view" title="View" aria-label="View" href="?view=sheet&target_id=<?= $target_id ?>&student_id=<?= $row['student_id'] ?>&tracker_id=<?= $row['tracker_id'] ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>&evaluator=<?= urlencode($evaluatorFilter) ?>"><i class="fa-solid fa-eye"></i></a>
@@ -3188,6 +3221,14 @@ function confirmNav(link, message, opts){
 // that wouldn't apply.
 $groupForOtherTabs = $groupFilter;
 ?>
+<?php
+// Who is doing the evaluating on the active tab (used in the section captions).
+$raWho = ['student'=>'students','peer'=>'colleagues','schoolhead'=>'the Dean / Principal','ea'=>'the Executive Assistant','staff'=>'staff members'][$activeEval] ?? $evaluatorNounP;
+?>
+<div class="ra-role-label ra-role-evaluators no-print">
+    <span class="ra-role-badge"><i class="fa-solid fa-pen-to-square"></i> Evaluators</span>
+    <span class="ra-role-hint">Who submitted the evaluations &mdash; choose one to see its results</span>
+</div>
 <div class="ra-topbar">
 <div class="eval-switcher">
     <a href="?group=All&eval_type=student" class="eval-tab student <?= $activeEval==='student'?'active':'' ?>">
@@ -3200,10 +3241,6 @@ $groupForOtherTabs = $groupFilter;
     <div class="eval-divider"></div>
     <a href="?group=Faculty&eval_type=schoolhead&evaluator=All" class="eval-tab schoolhead <?= $activeEval==='schoolhead'?'active':'' ?>">
         <i class="fa-solid fa-user-tie"></i> Dean / Principal
-    </a>
-    <div class="eval-divider"></div>
-    <a href="?group=All&eval_type=staff" class="eval-tab staff-eval <?= $activeEval==='staff'?'active':'' ?>">
-        <i class="fa-solid fa-users"></i> Staff Evaluation
     </a>
 </div>
         <div class="ra-table-tools ra-top-tools no-print">
@@ -3258,6 +3295,10 @@ $groupForOtherTabs = $groupFilter;
 </div>
 
 <!-- GROUP TABS -->
+<div class="ra-role-label ra-role-evaluated no-print">
+    <span class="ra-role-badge"><i class="fa-solid fa-user-check"></i> Being evaluated</span>
+    <span class="ra-role-hint">Personnel rated by <?= htmlspecialchars($raWho) ?> &mdash; filter by group</span>
+</div>
 <?php if ($activeEval === 'schoolhead'): ?>
 <div class="group-tabs">
     <a href="?group=All&eval_type=schoolhead&evaluator=<?= urlencode($evaluatorFilter) ?>"
@@ -3407,6 +3448,63 @@ table.ra-table tbody tr:hover{background:var(--inner);}
 .ra-pager-btns button:disabled{opacity:.4;cursor:not-allowed;}
 </style>
 
+<style id="ra-roles">
+/* ------------------------------------------------------------------
+   Evaluators vs. evaluated personnel
+   Row 1 (indigo)  = EVALUATORS: who submitted the evaluations.
+   Row 2 + table (teal) = BEING EVALUATED: the people who were rated.
+   Presentation only; links, filters and queries are unchanged.
+   ------------------------------------------------------------------ */
+html body:not(#rap) .ra-role-label{display:flex;align-items:center;flex-wrap:wrap;gap:10px 12px;margin:0 0 10px;}
+html body:not(#rap) .ra-role-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 13px;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;border:1px solid transparent;}
+html body:not(#rap) .ra-role-hint{font-size:13px;font-weight:500;}
+html body:not(#rap) .ra-topbar{margin-bottom:22px!important;}
+html body:not(#rap) .ra-role-evaluated{margin-top:2px;}
+
+/* Evaluator tabs: one tinted strip, solid fill for the selected evaluator */
+html body:not(#rap) .eval-switcher{padding:5px!important;gap:4px!important;border-radius:14px!important;}
+html body:not(#rap) .eval-switcher .eval-divider{display:none!important;}
+html body:not(#rap) .eval-tab{padding:11px 20px!important;border-radius:10px!important;font-size:14px!important;font-weight:700!important;}
+html body:not(#rap) .eval-tab::after{display:none!important;}
+html body:not(#rap) .eval-tab.student{--tc:#2563EB;}
+html body:not(#rap) .eval-tab.peer{--tc:#4968C8;}
+html body:not(#rap) .eval-tab.schoolhead{--tc:#B8700A;}
+html body:not(#rap) .eval-tab.staff-eval{--tc:#0E7490;}
+html body:not(#rap) .eval-tab.active{background:var(--tc)!important;color:#fff!important;box-shadow:0 3px 10px rgba(11,31,58,.22);}
+html body:not(#rap) .eval-tab.active > i{color:#fff!important;}
+
+/* Target-group tabs: teal family */
+html body:not(#rap) .group-tab{padding:9px 20px!important;font-size:14px!important;font-weight:700!important;}
+html body:not(#rap) .group-tab[class*="active-"]{box-shadow:0 2px 8px rgba(15,118,110,.14);}
+
+/* Table card: teal accent + caption */
+html body:not(#rap) .ra-table-card{border-left:5px solid #0F766E!important;}
+html body:not(#rap) .ra-table-head{flex-direction:column!important;align-items:flex-start!important;gap:4px!important;margin-bottom:18px!important;}
+html body:not(#rap) .ra-table-sub{font-size:13px;font-weight:500;padding-left:2px;}
+html body:not(#rap) .ra-table th{font-size:12px!important;letter-spacing:.06em;}
+
+/* ── Light theme colours ── */
+html:not([data-theme="dark"]) body:not(#rap) .ra-role-evaluators .ra-role-badge{background:#E0E7FF;color:#3730A3;border-color:#B4C0F7;}
+html:not([data-theme="dark"]) body:not(#rap) .ra-role-evaluated .ra-role-badge{background:#D5F3EE;color:#0B5F57;border-color:#8CD5C9;}
+html:not([data-theme="dark"]) body:not(#rap) .ra-role-hint,html:not([data-theme="dark"]) body:not(#rap) .ra-table-sub{color:#475569;}
+html:not([data-theme="dark"]) body:not(#rap) .eval-switcher{background:#EEF2FF!important;border:1px solid #C7D2FE!important;box-shadow:none!important;}
+html:not([data-theme="dark"]) body:not(#rap) .eval-tab:not(.active){color:#3B4A63!important;}
+html:not([data-theme="dark"]) body:not(#rap) .eval-tab:not(.active):hover{background:#E0E7FF!important;color:#1E1B4B!important;}
+html:not([data-theme="dark"]) body:not(#rap) .group-tab{background:#fff!important;border-color:#C9D6E4!important;color:#334155!important;}
+html:not([data-theme="dark"]) body:not(#rap) .group-tab:hover{background:#F0FAF8!important;border-color:#8CD5C9!important;color:#0B5F57!important;}
+html:not([data-theme="dark"]) body:not(#rap) .group-tab[class*="active-"]{background:#DDF4F0!important;border-color:#5CBFB0!important;color:#0B5F57!important;}
+html:not([data-theme="dark"]) body:not(#rap) .ra-table-card{border-left-color:#0F766E!important;}
+
+/* ── Dark theme ── */
+html[data-theme="dark"] body:not(#rap) .ra-role-evaluators .ra-role-badge{background:rgba(129,140,248,.18);color:#C7D2FE;border-color:rgba(129,140,248,.4);}
+html[data-theme="dark"] body:not(#rap) .ra-role-evaluated .ra-role-badge{background:rgba(45,212,191,.15);color:#99F6E4;border-color:rgba(45,212,191,.38);}
+html[data-theme="dark"] body:not(#rap) .ra-role-hint,html[data-theme="dark"] body:not(#rap) .ra-table-sub{color:var(--muted);}
+html[data-theme="dark"] body:not(#rap) .eval-switcher{background:rgba(129,140,248,.08)!important;border:1px solid rgba(129,140,248,.28)!important;}
+html[data-theme="dark"] body:not(#rap) .ra-table-card{border-left-color:#2DD4BF!important;}
+
+@media(max-width:900px){html body:not(#rap) .eval-switcher{width:100%;overflow-x:auto;}html body:not(#rap) .eval-tab{padding:10px 14px!important;white-space:nowrap;}}
+@media print{.ra-role-label{display:none!important;}}
+</style>
 <div class="ra-table-card">
     <div class="ra-table-head">
         <div class="section-title">
@@ -3414,6 +3512,7 @@ table.ra-table tbody tr:hover{background:var(--inner);}
             <?= $activeEval==='student' ? 'Evaluated Personnel' : 'Evaluated Personnel' ?>
             <span style="font-size:13px;font-weight:400;color:var(--muted)">(<?= count($people) ?> evaluated)</span>
         </div>
+        <div class="ra-table-sub">Rated by <?= htmlspecialchars($raWho) ?> &middot; scores are the average of the ratings they gave</div>
     </div>
 
     <?php if (empty($people)): ?>

@@ -440,6 +440,98 @@ html[data-theme="dark"] .qx-title,html[data-theme="dark"] .qx-group-name{color:v
 </style>
 <script src="admin_appearance.js"></script>
 <link rel="stylesheet" href="admin_unified_ui.css?v=<?= (int)@filemtime(__DIR__ . '/admin_unified_ui.css') ?>">
+<style id="qx-polish">
+/* ------------------------------------------------------------------
+   Questionnaire polish: clearer hierarchy, bigger readable type and
+   higher contrast.  Colours are light-theme only; dark mode keeps the
+   palette from admin_appearance.css.  Loaded last on purpose.
+   ------------------------------------------------------------------ */
+html:not([data-theme="dark"]) body:not(#qxp){--muted:#475569;--line:#d3dce8;}
+
+/* ═══ Landing (group picker) ═══ */
+html body:not(#qxp) .qx-panel{padding:32px 36px 38px!important;}
+html body:not(#qxp) .qx-step{font-size:13px!important;font-weight:800!important;letter-spacing:.09em!important;margin-bottom:6px!important;}
+html body:not(#qxp) .qx-step i{color:#d99a2b;}
+html body:not(#qxp) .qx-lead{margin:0 0 26px;font-size:14.5px;line-height:1.5;color:var(--muted);}
+html body:not(#qxp) .qx-groups{gap:22px!important;}
+html body:not(#qxp) .qx-group{position:relative;overflow:hidden;justify-content:flex-start!important;gap:8px!important;min-height:340px!important;padding:38px 22px 26px!important;border-radius:18px!important;
+    border:1px solid var(--line)!important;transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease!important;}
+html body:not(#qxp) .qx-group::before{content:"";position:absolute;left:0;right:0;top:0;height:5px;background:var(--c);}
+html body:not(#qxp) .qx-group-icon{width:92px!important;height:92px!important;font-size:34px!important;margin-bottom:14px!important;}
+html body:not(#qxp) .qx-group-name{font-size:22px!important;font-weight:800!important;line-height:1.25!important;}
+html body:not(#qxp) .qx-group-desc{font-size:13.5px;line-height:1.4;text-align:center;max-width:240px;color:var(--muted);}
+html body:not(#qxp) .qx-group-count{display:inline-flex;align-items:baseline;gap:6px;margin-top:14px;padding:7px 16px;border-radius:999px;font-size:13.5px!important;font-weight:700;}
+html body:not(#qxp) .qx-group-count strong{font-size:20px;font-weight:800;line-height:1;}
+html body:not(#qxp) .qx-group-cta{display:inline-flex;align-items:center;gap:8px;margin-top:auto;padding-top:20px;font-size:13px;font-weight:800;}
+html body:not(#qxp) .qx-group-cta i{font-size:12px;transition:transform .15s ease;}
+html body:not(#qxp) .qx-group:hover .qx-group-cta i,html body:not(#qxp) .qx-group:focus-visible .qx-group-cta i{transform:translateX(4px);}
+html body:not(#qxp) .qx-group:focus-visible{outline:3px solid var(--c);outline-offset:3px;}
+html body:not(#qxp) .qx-group.card-faculty{--c-ink:#1d4ed8;--c-bg:#e1ebff;}
+html body:not(#qxp) .qx-group.card-staff{--c-ink:#6d28d9;--c-bg:#ece3ff;}
+html body:not(#qxp) .qx-group.card-leadership{--c-ink:#b45309;--c-bg:#ffefcf;}
+html body:not(#qxp) .qx-group.card-ea{--c-ink:#15803d;--c-bg:#ddf5e6;}
+
+html:not([data-theme="dark"]) body:not(#qxp) .qx-panel{background:#fff!important;border-color:var(--line)!important;}
+html:not([data-theme="dark"]) body:not(#qxp) .qx-step{color:#1e3a5f!important;}
+html:not([data-theme="dark"]) body:not(#qxp) .qx-group{background:#fff!important;box-shadow:0 1px 2px rgba(11,31,58,.06),0 8px 22px rgba(11,31,58,.06)!important;}
+html:not([data-theme="dark"]) body:not(#qxp) .qx-group:hover,html:not([data-theme="dark"]) body:not(#qxp) .qx-group:focus-visible{background:#fbfdff!important;border-color:var(--c)!important;box-shadow:0 14px 32px rgba(11,31,58,.13)!important;transform:translateY(-3px)!important;}
+html:not([data-theme="dark"]) body:not(#qxp) .qx-group-name{color:#0b1f3a!important;}
+html:not([data-theme="dark"]) body:not(#qxp) .qx-group-count{background:var(--c-bg);color:var(--c-ink);}
+html:not([data-theme="dark"]) body:not(#qxp) .qx-group-cta{color:var(--c-ink);}
+html[data-theme="dark"] body:not(#qxp) .qx-group-count{background:rgba(255,255,255,.08);color:var(--text);}
+html[data-theme="dark"] body:not(#qxp) .qx-group-cta{color:var(--c);}
+@media(max-width:1100px){html body:not(#qxp) .qx-group{min-height:300px!important;}}
+@media(max-width:600px){html body:not(#qxp) .qx-group{min-height:0!important;}html body:not(#qxp) .qx-panel{padding:20px!important;}}
+
+/* ═══ Manage views (question bank / target questionnaire) ═══ */
+html body:not(#qxp) .cardhead{padding:18px 22px!important;}
+html body:not(#qxp) .cardhead h2{font-size:18px!important;font-weight:800!important;}
+html body:not(#qxp) .cardbody{padding:20px 22px!important;}
+html body:not(#qxp) .subtle{font-size:13px!important;}
+html body:not(#qxp) .back-link{padding:10px 14px!important;font-size:13px!important;border-radius:10px!important;}
+html body:not(#qxp) .person{padding:12px!important;border-radius:12px!important;}
+html body:not(#qxp) .avatar{width:44px!important;height:44px!important;}
+html body:not(#qxp) .person-name{font-size:14px!important;}
+html body:not(#qxp) .person-meta{font-size:12px!important;}
+html body:not(#qxp) .badge{font-size:12px!important;padding:4px 10px!important;}
+html body:not(#qxp) .manage-actions{gap:16px!important;margin:6px 0 20px!important;}
+html body:not(#qxp) .manage-action{padding:16px 18px!important;border-radius:12px!important;}
+html body:not(#qxp) .manage-action-title{font-size:12px!important;letter-spacing:.07em;text-transform:uppercase;margin-bottom:10px!important;}
+html body:not(#qxp) .field,html body:not(#qxp) .select{padding:11px 12px!important;font-size:14px!important;border-radius:9px!important;}
+html body:not(#qxp) .field:focus,html body:not(#qxp) .select:focus{outline:none;border-color:#2563eb!important;box-shadow:0 0 0 3px rgba(37,99,235,.18);}
+html body:not(#qxp) .btn{font-size:13px!important;font-weight:700!important;border-radius:9px!important;}
+html body:not(#qxp) .btn.small{padding:7px 13px!important;font-size:12px!important;}
+html body:not(#qxp) .filter-pill{font-size:12px!important;padding:7px 14px!important;}
+html body:not(#qxp) .list{gap:12px!important;}
+html body:not(#qxp) .qrow{padding:15px 18px!important;border-radius:12px!important;transition:border-color .15s ease,box-shadow .15s ease;}
+html body:not(#qxp) .qtext{font-size:14.5px!important;line-height:1.55!important;}
+html body:not(#qxp) .qcat{font-size:11.5px!important;font-weight:700;}
+html body:not(#qxp) .empty{padding:40px 12px!important;}
+
+html:not([data-theme="dark"]) body:not(#qxp) .card{border-color:var(--line)!important;box-shadow:0 1px 2px rgba(11,31,58,.06),0 6px 18px rgba(11,31,58,.05)!important;}
+html:not([data-theme="dark"]) body:not(#qxp) .cardhead{background:#f6f8fc;border-bottom-color:var(--line)!important;border-radius:14px 14px 0 0;}
+html:not([data-theme="dark"]) body:not(#qxp) .cardhead h2,html:not([data-theme="dark"]) body:not(#qxp) .qtext,html:not([data-theme="dark"]) body:not(#qxp) .person-name,html:not([data-theme="dark"]) body:not(#qxp) .toolbar strong{color:#0b1f3a!important;}
+html:not([data-theme="dark"]) body:not(#qxp) .person-meta{color:#475569!important;}
+html:not([data-theme="dark"]) body:not(#qxp) .person:hover{background:#f1f5fb!important;border-color:#c3cee0!important;}
+html:not([data-theme="dark"]) body:not(#qxp) .person.active{background:#eaf1ff!important;border-color:#9db8f2!important;box-shadow:inset 3px 0 0 #2563eb;}
+html:not([data-theme="dark"]) body:not(#qxp) .badge{background:#e4e9f2!important;color:#334155!important;}
+html:not([data-theme="dark"]) body:not(#qxp) .badge.has{background:#d6f3e4!important;color:#0a6a3b!important;}
+html:not([data-theme="dark"]) body:not(#qxp) .manage-action{background:#f5f8fc!important;border-color:var(--line)!important;}
+html:not([data-theme="dark"]) body:not(#qxp) .manage-action-title{color:#334155!important;}
+html:not([data-theme="dark"]) body:not(#qxp) .field,html:not([data-theme="dark"]) body:not(#qxp) .select{border-color:#b6c3d6!important;}
+html:not([data-theme="dark"]) body:not(#qxp) .btn{border-color:#b6c3d6!important;color:#1e293b!important;}
+html:not([data-theme="dark"]) body:not(#qxp) .btn:hover{background:#f1f5fb!important;}
+html:not([data-theme="dark"]) body:not(#qxp) .btn.primary{background:#d99a2b!important;border-color:#c4881f!important;color:#0a192f!important;}
+html:not([data-theme="dark"]) body:not(#qxp) .btn.primary:hover{background:#c98a1c!important;}
+html:not([data-theme="dark"]) body:not(#qxp) .btn.danger{border-color:#efb1b1!important;color:#a61b1b!important;background:#fff!important;}
+html:not([data-theme="dark"]) body:not(#qxp) .btn.danger:hover{background:#fef2f2!important;}
+html:not([data-theme="dark"]) body:not(#qxp) .back-link{border-color:#b6c3d6!important;color:#1e293b!important;}
+html:not([data-theme="dark"]) body:not(#qxp) .filter-pill{border-color:#b6c3d6!important;color:#334155!important;}
+html:not([data-theme="dark"]) body:not(#qxp) .filter-pill.active{background:#0a192f!important;border-color:#0a192f!important;color:#fff!important;}
+html:not([data-theme="dark"]) body:not(#qxp) .qrow{border-color:var(--line)!important;background:#fff;}
+html:not([data-theme="dark"]) body:not(#qxp) .qrow:hover{border-color:#aebcd1!important;box-shadow:0 4px 14px rgba(11,31,58,.07);}
+html:not([data-theme="dark"]) body:not(#qxp) .qcat{color:#7a4a05!important;background:#fff3d6!important;border-color:#efcf86!important;}
+</style>
 </head>
 <body>
 <div class="wrap">
@@ -489,13 +581,16 @@ html[data-theme="dark"] .qx-title,html[data-theme="dark"] .qx-group-name{color:v
     <section class="qx-panel">
       <h1 class="qx-title"><i class="fa-solid fa-clipboard-question"></i> Questionnaire</h1>
       <div class="qx-step"><i class="fa-solid fa-bolt"></i>Assign Questions</div>
+      <p class="qx-lead">Choose a group to view and manage the evaluation questions assigned to it.</p>
       <div class="qx-groups">
         <?php foreach ($questionnaireCards as $key => $card): ?>
           <?php $n = (int)$card['count']; ?>
           <a class="qx-group <?= qxm_e($card['class']) ?>" href="questionnaire.php?scope=<?= urlencode($key) ?>">
             <span class="qx-group-icon"><i class="fa-solid <?= qxm_e($card['icon']) ?>"></i></span>
             <span class="qx-group-name"><?= qxm_e($card['label']) ?></span>
-            <span class="qx-group-count"><?= $n ?> question<?= $n === 1 ? '' : 's' ?></span>
+            <span class="qx-group-desc"><?= qxm_e($card['desc']) ?></span>
+            <span class="qx-group-count"><strong><?= $n ?></strong> question<?= $n === 1 ? '' : 's' ?></span>
+            <span class="qx-group-cta">Manage questions <i class="fa-solid fa-arrow-right"></i></span>
           </a>
         <?php endforeach; ?>
       </div>

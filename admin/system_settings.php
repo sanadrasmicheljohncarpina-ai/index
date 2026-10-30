@@ -30,6 +30,119 @@ function ss_fmt_manila(string $v): string {
 ss_sync_from_database($mysqli);
 
 $sys = ss_raw($mysqli);
+// ── New evaluation schedule: the current evaluation must be archived first ──
+function ss_json(array $data, int $code = 200): void {
+    while (ob_get_level() > 0) { ob_end_clean(); }   // drop any notices/warnings printed earlier
+    http_response_code($code);
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    echo json_encode($data);
+    exit;
+}
+function ss_table_exists(mysqli $mysqli, string $table): bool {
+    $ok = false;
+    if ($r = $mysqli->query("SHOW TABLES LIKE '" . $mysqli->real_escape_string($table) . "'")) { $ok = $r->num_rows > 0; $r->free(); }
+    return $ok;
+}
+// Returns the current evaluation period(s) that still hold live, un-archived evaluations.
+// "Current" = the active period, or the period matching the academic year/term in settings.
+function ss_current_evaluation_gate(mysqli $mysqli, array $sys): array {
+    $year = (string)($sys['acad_year'] ?? '');
+    $term = (string)($sys['acad_term'] ?? '');
+    $hasArchive = ss_table_exists($mysqli, 'system_archives');
+    $join  = $hasArchive ? "LEFT JOIN system_archives sa ON sa.period_id = ep.id AND sa.status = 'archived'" : '';
+    $where = $hasArchive ? 'sa.id IS NULL AND ' : '';
+    $stmt = $mysqli->prepare("
+        SELECT ep.id, ep.school_year, ep.semester, ep.is_active, COUNT(et.id) AS live
+        FROM evaluation_periods ep
+        LEFT JOIN evaluation_tracker et ON et.period_id = ep.id
+        $join
+        WHERE {$where}(ep.is_active = 1 OR (ep.school_year = ? AND ep.semester = ?))
+        GROUP BY ep.id, ep.school_year, ep.semester, ep.is_active
+        HAVING COUNT(et.id) > 0
+        ORDER BY ep.is_active DESC, ep.id DESC");
+    if (!$stmt) {
+        // Fail closed: if we cannot verify, do not let a new round start on top of old data.
+        return ['ok' => false, 'blocked' => true, 'periods' => [], 'error' => 'The current evaluation could not be checked. Please try again.'];
+    }
+    $stmt->bind_param('ss', $year, $term);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $periods = [];
+    while ($row = $res->fetch_assoc()) {
+        $periods[] = ['id' => (int)$row['id'], 'label' => $row['school_year'] . ' — ' . $row['semester'],
+                      'live' => (int)$row['live'], 'active' => (int)$row['is_active'] === 1];
+    }
+    $stmt->close();
+    return ['ok' => true, 'blocked' => count($periods) > 0, 'periods' => $periods];
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'schedule_gate') {
+    ss_json(ss_current_evaluation_gate($mysqli, $sys));
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'create_new_schedule') {
+    // Enforced on the server too, so it cannot be skipped from the browser.
+    $gate = ss_current_evaluation_gate($mysqli, $sys);
+    if ($gate['blocked']) {
+        ss_json(['ok' => false, 'code' => 'archive_required', 'periods' => $gate['periods'],
+                 'error' => $gate['error'] ?? null,
+                 'message' => 'Archive the current evaluation before creating a new schedule.'], 409);
+    }
+    $structure = (string)($sys['acad_structure'] ?? 'college');
+    $terms = ss_structure_terms();
+    if (!isset($terms[$structure])) $structure = 'college';
+    $acad_year = trim($_POST['acad_year'] ?? '');
+    $acad_term = trim($_POST['acad_term'] ?? '');
+    $eval_start = trim($_POST['eval_start'] ?? '');
+    $eval_end = trim($_POST['eval_end'] ?? '');
+
+    if (!preg_match('/^(\d{4})-(\d{4})$/', $acad_year, $ym) || (int)$ym[2] !== (int)$ym[1] + 1) {
+        ss_json(['ok' => false, 'message' => 'Enter the academic year like 2026-2027.'], 422);
+    }
+    if (!in_array($acad_term, $terms[$structure], true)) {
+        ss_json(['ok' => false, 'message' => 'Choose a valid academic term.'], 422);
+    }
+    $ps = ss_parse_datetime($eval_start);
+    $pe = ss_parse_datetime($eval_end);
+    if (!$ps || !$pe) ss_json(['ok' => false, 'message' => 'Set both the opening and closing time.'], 422);
+    if ($pe <= $ps)   ss_json(['ok' => false, 'message' => 'The closing time must be after the opening time.'], 422);
+    if ($pe->getTimestamp() <= time()) ss_json(['ok' => false, 'message' => 'The closing time must be in the future.'], 422);
+
+    // The same year/term can be run again after it was archived: every round gets its own
+    // evaluation period (see ss_sync_evaluation_period). That needs evaluation_periods to allow
+    // more than one row per year/term, so stop early with the exact fix if a UNIQUE index forbids it.
+    if (ss_pick_open_period(ss_period_candidates($mysqli, $acad_year, $acad_term)) === 0) {
+        $uniq = ss_find_unique_period_index($mysqli);
+        if ($uniq !== '') {
+            ss_json(['ok' => false, 'message' => 'The database does not allow a second round for ' . $acad_year . ' · ' . $acad_term
+                . ' yet: evaluation_periods has a UNIQUE index (' . $uniq . ') on school_year + semester. Run this once in phpMyAdmin, then try again: '
+                . 'ALTER TABLE evaluation_periods DROP INDEX `' . $uniq . '`;'], 422);
+        }
+    }
+
+    try {
+    $new = ['acad_year' => $acad_year, 'acad_term' => $acad_term,
+            'eval_start' => $eval_start, 'eval_end' => $eval_end,
+            'control_mode' => 'schedule', 'auto_schedule' => 1];
+    foreach ($new as $k => $v) {
+        $stmt = $mysqli->prepare("INSERT INTO system_settings(setting_key,setting_value) VALUES(?,?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)");
+        $sv = (string)$v; $stmt->bind_param('ss', $k, $sv); $stmt->execute(); $stmt->close();
+    }
+    $sys = ss_raw($mysqli);
+    if (ss_sync_evaluation_period($mysqli, $sys) <= 0) {
+        throw new Exception('The evaluation period could not be created' . (ss_period_last_error() !== '' ? ' (' . ss_period_last_error() . ')' : '') . '.');
+    }
+    ss_notify_faculty_staff($mysqli, 'evaluation_schedule',
+        'The Executive Assistant created a new evaluation schedule for ' . $acad_year . ' · ' . $acad_term . ': '
+        . ss_fmt_manila($eval_start) . ' – ' . ss_fmt_manila($eval_end) . '.');
+    ss_json(['ok' => true, 'message' => $acad_year . ' · ' . $acad_term . ' opens ' . ss_fmt_manila($eval_start) . ' and closes ' . ss_fmt_manila($eval_end) . '. Automatic Schedule is on and Faculty and Staff have been notified.']);
+    } catch (Throwable $e) {
+        error_log('create_new_schedule failed: ' . $e->getMessage());
+        ss_json(['ok' => false, 'message' => 'The schedule could not be saved: ' . $e->getMessage()], 500);
+    }
+}
+
 $saveMsg = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_system_settings') {
     $acad_year = trim($_POST['acad_year'] ?? '');
@@ -543,6 +656,131 @@ a { color:inherit; }
 </style>
     <link rel="stylesheet" href="admin_ui_theme.css">
     <link rel="stylesheet" href="admin_compact_ui.css">
+<style id="ss-friendly">
+/* readable status colours on a white card */
+.stat-value.green{color:#0F9F6E}
+.stat-value.amber{color:#C77A08}
+.stat-value.red{color:#D6455D}
+.stat-card{position:relative}
+.stat-card.tone-green{border-left:4px solid #0F9F6E !important}
+.stat-card.tone-amber{border-left:4px solid #E2A33B !important}
+.stat-card.tone-red{border-left:4px solid #D6455D !important}
+.stat-explain{margin-top:8px;font-size:12.5px;line-height:1.5;color:#405A76}
+.stat-explain:empty{display:none}
+/* heads-up alerts with an action */
+.ss-alerts{display:grid;gap:10px;margin-bottom:16px}
+.ss-alerts:empty{display:none}
+.ss-alert{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 16px;border-radius:10px;font-size:13px;line-height:1.5}
+.ss-alert.amber{background:#FFF7E6;border:1px solid #F5D48A;color:#8D5D00}
+.ss-alert.red{background:#FFF0F2;border:1px solid #F1B7C0;color:#A62A42}
+.ss-alert button{flex:0 0 auto;border:1px solid currentColor;background:#fff;color:inherit;border-radius:8px;padding:7px 12px;font:700 12px Inter,sans-serif;cursor:pointer;white-space:nowrap}
+.ss-alert button:hover{background:rgba(255,255,255,.6)}
+/* inline field feedback */
+.field-note{font-size:12px;margin-top:5px;color:#67819E}
+.field-note.warn{color:#C77A08}
+.field-note:empty{display:none}
+input.has-warn{border-color:#E2A33B !important}
+/* quick date buttons */
+/* evaluation access as three clear cards */
+.control-modes{grid-template-columns:repeat(3,1fr);gap:12px}
+@media(max-width:760px){.control-modes{grid-template-columns:1fr}}
+.control-option{flex-direction:row;padding:14px 15px;border-width:1.5px}
+.control-option:hover{border-color:#9DBBE6 !important}
+.control-option.selected{box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+.control-option.selected[data-mode="schedule"]{background:#EEF4FF !important;border-color:#2563EB !important}
+.control-option.selected[data-mode="open"]{background:#FFF7E6 !important;border-color:#E2A33B !important;box-shadow:0 0 0 3px rgba(226,163,59,.18)}
+.control-option.selected[data-mode="closed"]{background:#FFF0F2 !important;border-color:#D6455D !important;box-shadow:0 0 0 3px rgba(214,69,93,.14)}
+.control-option .co-title{font-size:14px}
+/* sticky save bar */
+.actions{position:sticky;bottom:0;z-index:5;align-items:center;margin-top:6px;padding:14px 0 8px;background:linear-gradient(to bottom,rgba(248,250,252,0),#F8FAFC 35%)}
+.dirty-note{margin-right:auto;font-size:12.5px;font-weight:600;color:#67819E;display:inline-flex;align-items:center;gap:8px}
+.dirty-note::before{content:'';width:8px;height:8px;border-radius:50%;background:#0F9F6E}
+.dirty-note.dirty{color:#B26A06}
+.dirty-note.dirty::before{background:#F0B429;box-shadow:0 0 0 3px rgba(240,180,41,.25)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-primary:disabled{background:#9DB6E8 !important;border-color:#9DB6E8 !important}
+</style>
+<style id="ns-styles">
+.newsched-banner{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:0 0 10px;padding:14px 16px;border:1px solid #CFE0F7;border-radius:12px;background:#F4F8FF}
+.newsched-copy{display:flex;flex-direction:column;gap:2px;min-width:220px;flex:1}
+.newsched-copy strong{font-size:14px;color:#0B1F3A}
+.newsched-copy span{font-size:12.5px;color:#5C6B8A;line-height:1.45}
+.ns-overlay{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(11,31,58,.55);overscroll-behavior:contain}
+.ns-overlay[hidden]{display:none}
+.ns-modal{width:min(540px,100%);max-height:calc(100vh - 40px);overflow:auto;background:#fff;border-radius:16px;padding:24px;box-shadow:0 24px 60px rgba(11,31,58,.35)}
+.ns-modal h3{font-size:18px;color:#0B1F3A;margin:0 0 6px}
+.ns-text{font-size:13.5px;line-height:1.55;color:#405A76;margin:0 0 12px}
+.ns-note{font-size:12px;line-height:1.5;color:#67819E;margin:12px 0 0}
+.ns-busy{padding:28px 0;text-align:center;color:#67819E;font-size:13.5px}
+.ns-badge{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;margin-bottom:12px}
+.ns-badge.warn{background:#FFF7E6;color:#C77A08}
+.ns-list{list-style:none;margin:0 0 4px;padding:0;display:grid;gap:8px}
+.ns-list li{padding:10px 12px;border:1px solid #F5D48A;background:#FFFBF0;border-radius:10px;font-size:13px;color:#7A5200}
+.ns-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:520px){.ns-grid{grid-template-columns:1fr}}
+.ns-grid label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:700;color:#405A76}
+.ns-grid input,.ns-grid select{height:42px;padding:0 12px;border:1px solid #B9CDE5;border-radius:10px;font:500 14px Inter,system-ui,sans-serif;color:#0B1F3A;background:#fff}
+.ns-grid input:focus,.ns-grid select:focus{outline:2px solid rgba(37,99,235,.35);border-color:#2563EB}
+.ns-quick{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.ns-q{border:1px solid #B9CDE5;background:#fff;color:#2563EB;border-radius:999px;padding:6px 12px;font:700 12px Inter,sans-serif;cursor:pointer}
+.ns-q:hover{background:#EEF4FF;border-color:#2563EB}
+.ns-error{margin-top:12px;padding:10px 12px;border-radius:10px;background:#FFF0F2;border:1px solid #F1B7C0;color:#A62A42;font-size:12.5px;line-height:1.45}
+.ns-error[hidden]{display:none}
+.ns-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+.ns-modal,.ns-modal *{box-sizing:border-box;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
+.ns-modal:focus{outline:none}
+.ns-modal [hidden]{display:none!important}
+.ns-modal h3{font-weight:700;line-height:1.25}
+.ns-btn{height:40px;padding:0 16px;border:1px solid #B9CDE5;background:#fff;color:#0B1F3A;border-radius:10px;font-weight:700;font-size:13px;cursor:pointer}
+.ns-btn:hover{border-color:#2563EB}
+.ns-btn.primary{background:#2563EB;border-color:#2563EB;color:#fff}
+.ns-btn.primary:hover{background:#1E4FBF}
+.ns-btn:disabled{opacity:.55;cursor:not-allowed}
+.sched-current{border:1px solid #D8E5F4;border-radius:12px;background:#fff;padding:14px 16px;margin:0 0 12px}
+.sched-current-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.sched-current-label{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#67819E}
+.sched-current-row{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+.sched-cell{display:flex;flex-direction:column;gap:2px;min-width:150px}
+.sched-cell span{font-size:11.5px;color:#67819E;font-weight:600}
+.sched-cell b{font-size:15px;color:#0B1F3A}
+.sched-arrow{color:#9DB6E8;font-size:18px}
+.ss-success{position:sticky;top:0;z-index:30;box-shadow:0 6px 18px rgba(15,159,110,.18);display:flex;align-items:center;gap:14px;margin:0 0 16px;padding:14px 16px;border:1px solid #B9E4D3;border-radius:12px;background:#E8F8F1;color:#0A7A55}
+.ss-success[hidden]{display:none}
+.ss-success-icon{flex:0 0 auto;width:30px;height:30px;border-radius:50%;background:#0F9F6E;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px}
+.ss-success-text{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+.ss-success-text strong{font-size:15px;color:#075E42}
+.ss-success-text span{font-size:12.5px;line-height:1.45}
+.ss-success-close{flex:0 0 auto;border:0;background:transparent;color:#0A7A55;font-size:22px;line-height:1;cursor:pointer;padding:2px 6px;border-radius:6px}
+.ss-success-close:hover{background:rgba(15,159,110,.14)}
+.sched-flash{animation:schedFlash 2.4s ease}
+@keyframes schedFlash{0%{box-shadow:0 0 0 0 rgba(15,159,110,.55);border-color:#0F9F6E}70%{box-shadow:0 0 0 10px rgba(15,159,110,0);border-color:#0F9F6E}100%{box-shadow:0 0 0 0 rgba(15,159,110,0)}}
+.sched-chip{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.03em}
+.sched-chip.green{background:#E8F8F1;color:#0A7A55}
+.sched-chip.amber{background:#FFF7E6;color:#A86400}
+.sched-chip.red{background:#FFF0F2;color:#C23850}
+.sched-chip.gray{background:#EEF2F7;color:#5C6B8A}
+.ns-head{position:sticky;top:-24px;z-index:2;margin:-24px -24px 0;padding:24px 24px 12px;background:#fff;border-radius:16px 16px 0 0}
+.ns-head-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.ns-head-text{flex:1;min-width:220px}
+.ns-head-text .ns-text{margin-bottom:0}
+.ns-head-actions{display:flex;gap:10px;flex:0 0 auto}
+.ns-discard{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;padding:10px 12px;border:1px solid #F5D48A;background:#FFFBF0;border-radius:10px;color:#7A5200;font-size:13px}
+.ns-discard span{flex:1;min-width:180px}
+.ns-btn.danger{background:#D6455D;border-color:#D6455D;color:#fff}
+.ns-btn.danger:hover{background:#B8364C}
+.ns-shake{animation:nsShake .35s ease}
+@keyframes nsShake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+.ns-sec{margin:16px 0 0}
+.ns-sec-title{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#67819E;margin:0 0 8px}
+.ns-quick-label{font-size:11.5px;color:#67819E;font-weight:700;margin:12px 0 6px}
+.ns-quick{margin-top:0}
+.ns-preview{margin-top:12px;padding:11px 13px;border-radius:10px;font-size:12.5px;line-height:1.5;border:1px solid #D8E5F4;background:#F7FAFF;color:#405A76}
+.ns-preview b{display:block;font-size:13.5px;color:#0B1F3A}
+.ns-preview.good{background:#E8F8F1;border-color:#B9E4D3;color:#0A7A55}
+.ns-preview.good b{color:#075E42}
+.ns-preview.bad{background:#FFF0F2;border-color:#F1B7C0;color:#A62A42}
+.ns-preview.bad b{color:#A62A42}
+</style>
 <style id="pbi-feature-scrollbar">
 
 /* PBI FEATURE SCROLLBAR — consistent with the compact page scrollbar */
@@ -609,86 +847,133 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
 <link rel="stylesheet" href="admin_appearance.css">
 <script src="admin_appearance.js"></script>
 <link rel="stylesheet" href="admin_unified_ui.css?v=<?= (int)@filemtime(__DIR__ . '/admin_unified_ui.css') ?>">
+<style id="ss-clean">
+/* ── System & Period: calmer layout. Overrides the older rules above; element IDs are unchanged. ── */
+.shell{padding:22px 26px 26px !important}
+
+/* status card */
+.stat-card.ss-hero{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1.45fr) minmax(0,1fr);padding:0 !important;margin:0 0 16px;overflow:hidden}
+.ss-hero > div{padding:20px 22px;min-width:0}
+.ss-hero > div + div{border-left:1px solid #E6EEF8}
+.ss-hero .hero-kicker{display:flex;align-items:center;gap:8px;margin:0 0 9px;font:700 11px/1.2 Inter,system-ui,sans-serif;letter-spacing:.07em;text-transform:uppercase;color:#67819E}
+.ss-hero .hero-kicker em{font-style:normal;font-weight:600;letter-spacing:0;text-transform:none;color:#91A6BE}
+.ss-hero .hero-kicker.second{margin-top:16px}
+.ss-hero .stat-value{font-size:30px;font-weight:800;letter-spacing:-.02em;line-height:1.1}
+.ss-hero .stat-explain{margin-top:9px;font-size:13px;line-height:1.5;color:#405A76}
+.ss-hero .hw-grid{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.ss-hero .sched-cell{min-width:0}
+.ss-hero .sched-cell span{font-size:12px;color:#67819E;font-weight:600}
+.ss-hero .sched-cell b{font-size:15.5px;line-height:1.3;color:#0B1F3A}
+.ss-hero .hw-dur{margin-top:12px;font-size:12.5px;color:#67819E}
+.ss-hero .hw-dur b{color:#0B1F3A;font-weight:700}
+.ss-hero .meta-val{font-size:16px;font-weight:700;color:#0B1F3A;line-height:1.3}
+.ss-hero .meta-val.small{font-size:15px}
+.ss-hero .meta-term{display:inline-block;margin-top:6px;padding:3px 10px;border-radius:999px;background:#EEF4FF;color:#2563EB;font:700 12px Inter,system-ui,sans-serif}
+.ss-hero .sched-current{border:0 !important;border-radius:0;box-shadow:none !important;background:transparent !important;margin:0}
+@media(max-width:920px){
+  .stat-card.ss-hero{grid-template-columns:1fr}
+  .ss-hero > div + div{border-left:0;border-top:1px solid #E6EEF8}
+}
+
+/* section cards: plain title instead of a grey band */
+.section{border-radius:14px;margin-bottom:16px}
+.ss-head{padding:18px 22px 0}
+.ss-head h3{margin:0;font-size:16px;font-weight:700;letter-spacing:-.01em;color:#0B1F3A}
+.ss-head p{margin:3px 0 0;font-size:12.5px;line-height:1.5;color:#67819E}
+.ss-head p em{font-style:normal;font-weight:600;color:#405A76}
+.ss-body{padding:14px 22px 18px;display:grid;gap:12px}
+.ss-note{margin:0;font-size:12px;line-height:1.5;color:#67819E}
+
+/* "start a new round" row */
+.newsched-banner{margin:0;padding:14px 16px;border-color:#D4E3F7;background:#F5F9FF}
+.newsched-copy strong{font-size:14px}
+
+/* toggles as plain rows, no nested grey boxes */
+.shell .ss-body .toggle-row{background:transparent !important;border:0 !important;border-top:1px solid #E8EFF8 !important;border-radius:0 !important;padding:14px 0 !important}
+.shell .ss-body .toggle-row:last-child{padding-bottom:0 !important}
+.shell .ss-body .newsched-banner + .toggle-row,.shell .ss-body > div[hidden] + .toggle-row{margin-top:2px}
+
+/* academic period: one tidy row of three fields */
+.acad-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.acad-field label{display:block;margin:0 0 6px;font-size:12.5px;font-weight:700;color:#294765}
+.acad-field input[type="text"],.acad-field select{height:42px}
+@media(max-width:760px){.acad-grid{grid-template-columns:1fr}}
+</style>
 </head>
 <body class="feature-compact ux-nested">
 <div class="shell">
+
+  <div class="ss-success" id="ssSuccess" role="status" aria-live="polite" hidden>
+    <span class="ss-success-icon" aria-hidden="true">&#10003;</span>
+    <div class="ss-success-text"><strong>New evaluation schedule successfully created</strong><span id="ssSuccessDetail"></span></div>
+    <button type="button" class="ss-success-close" id="ssSuccessClose" aria-label="Dismiss">&times;</button>
+  </div>
 
   <?php if ($saveMsg): ?><div class="maint-banner show" style="margin-bottom:14px"><strong><?=ss_h($saveMsg)?></strong></div><?php endif; ?>
 
   <!-- Hidden hook: the script below attaches a click handler to this button -->
   <button class="btn btn-primary" id="saveBtnTop" style="display:none">Save System Settings</button>
 
-  <!-- Live snapshot, styled like the stat cards -->
-  <div class="stat-row">
-    <div class="stat-card">
-      <div class="stat-label">Academic Period</div>
-      <div class="stat-value small" id="statAcademic"><?=ss_h($sys['acad_year'] ?: '')?> · <?=ss_h(in_array($sys['acad_structure'], ['jhs','shs'], true) ? 'Basic Education' : 'Higher Education')?></div>
-      <div class="stat-note" id="statTerm"><?=ss_h($sys['acad_term'] ?? '1st Semester')?></div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Evaluation Status</div>
+  <!-- STATUS: one card instead of three stat cards + a repeated window card -->
+  <section class="stat-card ss-hero" aria-label="Evaluation status">
+    <div class="hero-status">
+      <div class="hero-kicker">Evaluation status</div>
       <div class="stat-value" id="statStatus">—</div>
-      <div class="stat-note" id="statWindow">—</div>
+      <div class="stat-explain" id="statExplain"></div>
     </div>
-    <div class="stat-card">
-      <div class="stat-label">Control Mode</div>
-      <div class="stat-value small" id="statMode">Follow Schedule</div>
+
+    <div class="hero-window sched-current">
+      <div class="hero-kicker">Evaluation window <em>Manila time</em></div>
+      <div class="hw-grid">
+        <div class="sched-cell"><span>Opens</span><b id="schedOpensText">Not set</b></div>
+        <div class="sched-arrow" aria-hidden="true">&rarr;</div>
+        <div class="sched-cell"><span>Closes</span><b id="schedClosesText">Not set</b></div>
+      </div>
+      <div class="hw-dur">Stays open for <b id="schedDurText">—</b></div>
+      <!-- Kept for the scripts that fill them in; not shown. -->
+      <div hidden><span id="statWindow">—</span><span class="sched-chip gray" id="schedChip">—</span></div>
     </div>
-  </div>
+
+    <div class="hero-meta">
+      <div class="hero-kicker">Academic period</div>
+      <div class="meta-val" id="statAcademic"><?=ss_h($sys['acad_year'] ?: '')?> · <?=ss_h(in_array($sys['acad_structure'], ['jhs','shs'], true) ? 'Basic Education' : 'Higher Education')?></div>
+      <div class="meta-term" id="statTerm"><?=ss_h($sys['acad_term'] ?? '1st Semester')?></div>
+      <div class="hero-kicker second">Control mode</div>
+      <div class="meta-val small" id="statMode">Follow Schedule</div>
+    </div>
+  </section>
+
+  <div class="ss-alerts" id="ssAlerts"></div>
 
   <div class="maint-banner" id="maintBanner">
     <strong>Maintenance mode is on.</strong>&nbsp;Only administrators can access the system right now.
   </div>
 
-  <!-- ACADEMIC CONFIGURATION -->
-  <div class="section">
-    <div class="section-head">
-      <span class="section-eyebrow">Academic Configuration</span>
-      <span class="section-hint">Defines the current period, not the evaluation window</span>
-    </div>
-    <div class="section-body">
-      <div class="field-row">
-        <label class="field-label" for="academicYear">Academic Year</label>
-        <input type="text" id="academicYear" value="<?=ss_h($sys['acad_year'] ?? '')?>" />
-      </div>
-      <div class="field-row">
-        <label class="field-label" for="academicStructure">Academic Structure</label>
-        <div class="select-wrap"><select id="academicStructure">
-          <option value="college" <?=($sys['acad_structure']==='college'?'selected':'')?>>Higher Education</option>
-          <option value="jhs" <?=(in_array($sys['acad_structure'], ['jhs','shs'], true)?'selected':'')?>>Basic Education</option>
-        </select></div>
-      </div>
-      <div class="field-row">
-        <label class="field-label" for="academicTerm">
-          Academic Term
-          <span class="field-help">Choices update automatically with Academic Structure</span>
-        </label>
-        <div class="select-wrap"><select id="academicTerm"></select></div>
-      </div>
-
-    </div>
-  </div>
-
   <!-- EVALUATION SCHEDULE -->
   <div class="section">
-    <div class="section-head">
-      <span class="section-eyebrow">Evaluation Schedule</span>
-      <span class="section-hint">Independent from the academic period above</span>
+    <div class="ss-head">
+      <h3>Evaluation schedule</h3>
+      <p>When submissions open and close.</p>
     </div>
-    <div class="section-body">
-      <div class="field-row">
-        <label class="field-label" for="evalOpens">Evaluation Opens</label>
-        <input type="datetime-local" id="evalOpens" value="<?=ss_h($sys['eval_start'] ?? '')?>" />
+    <div class="ss-body">
+      <div class="newsched-banner">
+        <div class="newsched-copy">
+          <strong>Starting a new evaluation round?</strong>
+          <span>Archive the current evaluation first, so results from different rounds never mix.</span>
+        </div>
+        <button type="button" class="btn btn-primary" id="newScheduleBtn">+ Create new evaluation schedule</button>
       </div>
-      <div class="field-row">
-        <label class="field-label" for="evalCloses">Evaluation Closes</label>
+
+      <!-- Dates are set through "Create new evaluation schedule"; these hold the saved values. -->
+      <div hidden>
+        <input type="datetime-local" id="evalOpens" value="<?=ss_h($sys['eval_start'] ?? '')?>" />
         <input type="datetime-local" id="evalCloses" value="<?=ss_h($sys['eval_end'] ?? '')?>" />
       </div>
 
       <div class="toggle-row">
         <div class="toggle-copy">
-          <div class="field-label">Automatic Schedule</div>
-          <span class="field-help">Open and close submissions automatically at the times above</span>
+          <div class="field-label">Automatic schedule</div>
+          <span class="field-help">Open and close submissions on their own at the scheduled times</span>
         </div>
         <label class="switch">
           <input type="checkbox" id="autoSchedule" <?=!empty($sys['auto_schedule'])?'checked':''?> >
@@ -698,8 +983,8 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
 
       <div class="toggle-row">
         <div class="toggle-copy">
-          <div class="field-label">Show Countdown</div>
-          <span class="field-help">Warns students before the evaluation closes</span>
+          <div class="field-label">Show countdown</div>
+          <span class="field-help">Warn students before the evaluation closes</span>
         </div>
         <label class="switch">
           <input type="checkbox" id="rule_countdown" <?=!empty($sys['rule_countdown'])?'checked':''?> >
@@ -711,48 +996,77 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
 
   <!-- EVALUATION ACCESS -->
   <div class="section">
-    <div class="section-head">
-      <span class="section-eyebrow">Evaluation Access</span>
-      <span class="section-hint">Current status and manual override</span>
+    <div class="ss-head">
+      <h3>Evaluation access</h3>
+      <p>Let the schedule decide, or override it by hand.</p>
     </div>
-    <div class="section-body">
+    <div class="ss-body">
       <div class="control-modes" id="controlModes">
         <label class="control-option" data-mode="schedule">
           <input type="radio" name="controlMode" value="schedule" <?=($sys['control_mode']??'schedule')==='schedule'?'checked':''?> >
           <div>
-            <div class="co-title">Follow Schedule</div>
-            <div class="co-desc">Status is determined automatically from the evaluation window</div>
+            <div class="co-title">Follow schedule</div>
+            <div class="co-desc">Open and closed are decided by the evaluation window</div>
           </div>
         </label>
         <label class="control-option" data-mode="open">
           <input type="radio" name="controlMode" value="open" <?=($sys['control_mode']??'schedule')==='open'?'checked':''?> >
           <div>
-            <div class="co-title">Force Open</div>
-            <div class="co-desc">Allow submissions regardless of the scheduled period</div>
+            <div class="co-title">Force open</div>
+            <div class="co-desc">Allow submissions regardless of the schedule</div>
           </div>
         </label>
         <label class="control-option" data-mode="closed">
           <input type="radio" name="controlMode" value="closed" <?=($sys['control_mode']??'schedule')==='closed'?'checked':''?> >
           <div>
-            <div class="co-title">Force Closed</div>
-            <div class="co-desc">Block submissions regardless of the scheduled period</div>
+            <div class="co-title">Force closed</div>
+            <div class="co-desc">Block submissions regardless of the schedule</div>
           </div>
         </label>
       </div>
     </div>
   </div>
 
+  <!-- ACADEMIC CONFIGURATION -->
+  <div class="section">
+    <div class="ss-head">
+      <h3>Academic period</h3>
+      <p>Normally set by <em>Create new evaluation schedule</em>. Edit here only to correct it.</p>
+    </div>
+    <div class="ss-body">
+      <div class="acad-grid">
+        <div class="acad-field">
+          <label for="academicYear">Academic year</label>
+          <input type="text" id="academicYear" value="<?=ss_h($sys['acad_year'] ?? '')?>" placeholder="e.g. 2026-2027" autocomplete="off" />
+          <div class="field-note" id="yearNote"></div>
+        </div>
+        <div class="acad-field">
+          <label for="academicStructure">Structure</label>
+          <div class="select-wrap"><select id="academicStructure">
+            <option value="college" <?=($sys['acad_structure']==='college'?'selected':'')?>>Higher Education</option>
+            <option value="jhs" <?=(in_array($sys['acad_structure'], ['jhs','shs'], true)?'selected':'')?>>Basic Education</option>
+          </select></div>
+        </div>
+        <div class="acad-field">
+          <label for="academicTerm">Term</label>
+          <div class="select-wrap"><select id="academicTerm"></select></div>
+        </div>
+      </div>
+      <p class="ss-note">Changing the year or term switches to a separate evaluation round for that term, or starts one if none is open.</p>
+    </div>
+  </div>
+
   <!-- MAINTENANCE -->
   <div class="section">
-    <div class="section-head">
-      <span class="section-eyebrow">Maintenance</span>
-      <span class="section-hint">System-wide, separate from evaluation access</span>
+    <div class="ss-head">
+      <h3>Maintenance</h3>
+      <p>System-wide, separate from evaluation access.</p>
     </div>
-    <div class="section-body">
-      <div class="toggle-row" style="border-bottom:none;">
+    <div class="ss-body">
+      <div class="toggle-row">
         <div class="toggle-copy">
-          <div class="field-label">Maintenance Mode</div>
-          <span class="field-help">Locks access for non-administrators; administrators keep access</span>
+          <div class="field-label">Maintenance mode</div>
+          <span class="field-help">Locks access for everyone except administrators</span>
         </div>
         <label class="switch">
           <input type="checkbox" id="maintenanceMode" <?=!empty($sys['maintenance'])?'checked':''?> >
@@ -763,10 +1077,79 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
   </div>
 
   <div class="actions">
-    <button class="btn" id="cancelBtn">Cancel</button>
-    <button class="btn btn-primary" id="saveBtn">Save System Settings</button>
+    <span class="dirty-note" id="dirtyNote">All changes saved</span>
+    <button class="btn" id="cancelBtn" disabled>Discard changes</button>
+    <button class="btn btn-primary" id="saveBtn" disabled>Save System Settings</button>
   </div>
 
+</div>
+
+<div class="ns-overlay" id="nsOverlay" hidden>
+  <div class="ns-modal" id="nsModal" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="nsHeading">
+    <div id="nsBusy" class="ns-busy">Checking the current evaluation…</div>
+
+    <div id="nsGate" hidden>
+      <div class="ns-badge warn" aria-hidden="true">!</div>
+      <h3 id="nsHeading">Archive the current evaluation first</h3>
+      <p class="ns-text" id="nsGateText"></p>
+      <ul class="ns-list" id="nsGateList"></ul>
+      <p class="ns-note">Archiving saves every submission and result to System Archive and clears them from the live dashboards. You can restore them later.</p>
+      <div class="ns-actions">
+        <button type="button" class="ns-btn" data-ns-close>Cancel</button>
+        <button type="button" class="ns-btn primary" id="nsGoArchive">Go to System Archive</button>
+      </div>
+    </div>
+
+    <div id="nsForm" hidden>
+      <div class="ns-head">
+        <div class="ns-head-row">
+          <div class="ns-head-text">
+            <h3>Create new evaluation schedule</h3>
+            <p class="ns-text">Set the academic period and when the next evaluation opens and closes.</p>
+          </div>
+          <div class="ns-head-actions">
+            <button type="button" class="ns-btn" data-ns-close>Cancel</button>
+            <button type="button" class="ns-btn primary" id="nsSubmit">Create schedule</button>
+          </div>
+        </div>
+        <div class="ns-discard" id="nsDiscard" hidden>
+          <span>You have unsaved changes. Discard this new schedule?</span>
+          <button type="button" class="ns-btn" id="nsKeep">Keep editing</button>
+          <button type="button" class="ns-btn danger" id="nsDiscardGo">Discard</button>
+        </div>
+        <div class="ns-error" id="nsError" hidden></div>
+      </div>
+
+      <div class="ns-sec">
+        <div class="ns-sec-title">Academic period</div>
+        <div class="ns-grid">
+          <label>Academic year<input type="text" id="nsYear" placeholder="e.g. 2026-2027" autocomplete="off"></label>
+          <label>Academic term<select id="nsTerm"></select></label>
+        </div>
+      </div>
+
+      <div class="ns-sec">
+        <div class="ns-sec-title">Evaluation window</div>
+        <div class="ns-grid">
+          <label>Evaluation opens<input type="datetime-local" id="nsOpens"></label>
+          <label>Evaluation closes<input type="datetime-local" id="nsCloses"></label>
+        </div>
+        <div class="ns-quick-label">Opens</div>
+        <div class="ns-quick">
+          <button type="button" class="ns-q" data-act="now">Now</button>
+          <button type="button" class="ns-q" data-act="tomorrow">Tomorrow, 8:00 AM</button>
+        </div>
+        <div class="ns-quick-label">Stays open for</div>
+        <div class="ns-quick">
+          <button type="button" class="ns-q" data-days="7">1 week</button>
+          <button type="button" class="ns-q" data-days="14">2 weeks</button>
+          <button type="button" class="ns-q" data-days="30">1 month</button>
+        </div>
+        <div class="ns-preview" id="nsPreview"></div>
+      </div>
+
+    </div>
+  </div>
 </div>
 
 <div class="toast" id="toast"><span class="dot"></span><span id="toastText">Saved</span></div>
@@ -889,6 +1272,7 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
     const status = computeStatus();
     els.statStatus.textContent = status.label;
     els.statStatus.className = 'stat-value' + (status.color ? ' ' + status.color : '');
+    renderInsights(status);
   }
 
   els.structure.addEventListener('change', () => { populateTerms(); render(); });
@@ -918,18 +1302,20 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
     if (d === isDirty) return;
     isDirty = d;
     postDirty(d);
+    updateActions();
   }
   function clearDirty(){
     takeBaseline();
     isDirty = false;
     postDirty(false);
+    updateActions();
   }
   [els.structure, els.term, els.opens, els.closes, els.auto, els.countdown, els.maintenance, els.controlModes]
     .forEach(el => el.addEventListener('change', markDirty));
   [els.year, els.opens, els.closes].forEach(el => el.addEventListener('input', markDirty));
   window.isSystemSettingsDirty = () => isDirty;
   window.getSystemSettingsChanges = () => getChanges();
-  window.discardSystemSettingsChanges = () => { isDirty = false; postDirty(false); };
+  window.discardSystemSettingsChanges = () => { isDirty = false; postDirty(false); updateActions(); };
   window.addEventListener('beforeunload', (e) => {
     if (!isDirty) return;
     e.preventDefault();
@@ -964,10 +1350,256 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
     return out;
   }
 
+  // ── FRIENDLIER UI HELPERS ─────────────────────────────────
+  function updateActions(){
+    const sv=document.getElementById('saveBtn'), cb=document.getElementById('cancelBtn'), n=document.getElementById('dirtyNote');
+    if (sv && !sv.dataset.busy) sv.disabled = !isDirty;
+    if (cb) cb.disabled = !isDirty;
+    if (n) { n.textContent = isDirty ? 'You have unsaved changes' : 'All changes saved'; n.classList.toggle('dirty', isDirty); }
+  }
+  function relTime(ms){
+    ms=Math.abs(ms); const m=Math.floor(ms/60000), h=Math.floor(m/60), d=Math.floor(h/24);
+    if (d>=1) return d+' day'+(d===1?'':'s')+(h%24?' '+(h%24)+' hr':'');
+    if (h>=1) return h+' hr'+(m%60?' '+(m%60)+' min':'');
+    return Math.max(m,1)+' min';
+  }
+  function setMode(m){
+    const r=els.controlModes.querySelector('input[value="'+m+'"]');
+    if (!r) return; r.checked=true; r.dispatchEvent(new Event('change',{bubbles:true}));
+  }
+  function renderInsights(status){
+    const now=Date.now(), opens=parseManilaLocal(els.opens.value), closes=parseManilaLocal(els.closes.value);
+    const valid=Number.isFinite(opens)&&Number.isFinite(closes)&&closes>opens;
+    const ended=valid&&now>=closes, mode=getControlMode();
+
+    // Academic year format hint (soft - does not block saving)
+    const yn=document.getElementById('yearNote'), y=els.year.value.trim(), ym=y.match(/^(\d{4})-(\d{4})$/);
+    let ymsg='';
+    if (!y) ymsg='Enter the academic year, for example 2026-2027.';
+    else if (!ym) ymsg='Use the format 2026-2027 so archives and reports group correctly.';
+    else if (Number(ym[2])!==Number(ym[1])+1) ymsg='The second year should follow the first, for example 2026-2027.';
+    if (yn) { yn.textContent=ymsg; yn.classList.toggle('warn',!!ymsg); }
+    els.year.classList.toggle('has-warn',!!ymsg);
+
+    // Plain-language explanation of the current status
+    let text='';
+    switch(status.label){
+      case 'MAINTENANCE': text='Maintenance mode is on. Only administrators can access the system.'; break;
+      case 'FORCED OPEN': text='Submissions are open for everyone, ignoring the schedule.'+(ended?' The scheduled window already ended, so this override is the only reason evaluations are open.':''); break;
+      case 'FORCED CLOSED': text='Submissions are blocked for everyone, ignoring the schedule.'; break;
+      case 'CLOSED \u00B7 MANUAL': text='Automatic Schedule is off, so evaluations stay closed until you turn it on or use Force Open.'; break;
+      case 'NOT CONFIGURED': text='Set both an opening and a closing time to start an evaluation.'; break;
+      case 'INVALID SCHEDULE': text='The closing time must be after the opening time.'; break;
+      case 'UPCOMING': text='Opens in '+relTime(opens-now)+'.'; break;
+      case 'CLOSED \u00B7 ENDED': text='The window ended '+relTime(now-closes)+' ago. Create a new evaluation schedule to run another round.'; break;
+      case 'OPEN': text='Submissions are open. Closes in '+relTime(closes-now)+'.'; break;
+    }
+    els.statExplain = els.statExplain || document.getElementById('statExplain');
+    els.statExplain.textContent=text;
+    const cur={o:document.getElementById('schedOpensText'),c:document.getElementById('schedClosesText'),d:document.getElementById('schedDurText'),chip:document.getElementById('schedChip')};
+    if (cur.o) cur.o.textContent = els.opens.value ? formatDateTime(els.opens.value) : 'Not set';
+    if (cur.c) cur.c.textContent = els.closes.value ? formatDateTime(els.closes.value) : 'Not set';
+    if (cur.d) cur.d.textContent = valid ? relTime(closes-opens) : '\u2014';
+    if (cur.chip) { cur.chip.textContent = status.label; cur.chip.className = 'sched-chip ' + (['green','amber','red'].includes(status.color) ? status.color : 'gray'); }
+    const card=els.statStatus.closest('.stat-card');
+    if (card) { card.classList.remove('tone-green','tone-amber','tone-red'); if (status.color) card.classList.add('tone-'+status.color); }
+
+    // Heads-up alerts that offer a one-click fix
+    const alerts=[];
+    if (!els.maintenance.checked && mode==='open' && (ended||!valid))
+      alerts.push({tone:'amber',text:'Force Open is on and the scheduled window '+(ended?'has ended':'is not set')+'. Evaluations stay open for everyone until you switch back.',action:'Switch to Follow Schedule',fn:()=>setMode('schedule')});
+    if (!els.maintenance.checked && mode==='schedule' && els.auto.checked && ended)
+      alerts.push({tone:'red',text:'The evaluation window ended '+relTime(now-closes)+' ago.',action:'Create new schedule',fn:()=>{const nb=document.getElementById('newScheduleBtn'); if(nb) nb.click();}});
+    const box=document.getElementById('ssAlerts');
+    if (box) {
+      box.textContent='';
+      alerts.forEach(a=>{
+        const d=document.createElement('div'); d.className='ss-alert '+a.tone;
+        const sp=document.createElement('span'); sp.textContent=a.text;
+        const b=document.createElement('button'); b.type='button'; b.textContent=a.action; b.addEventListener('click',a.fn);
+        d.appendChild(sp); d.appendChild(b); box.appendChild(d);
+      });
+    }
+  }
   populateTerms(<?=json_encode($sys['acad_term'] ?? '1st Semester')?>);
   render();
   takeBaseline();
+  updateActions();
   try { parent.postMessage({type:'system-settings-dirty', dirty:false}, '*'); } catch(e){}
+  // Back on the page after creating a schedule: confirm clearly, then tidy the address.
+  try {
+    const qs = new URLSearchParams(location.search);
+    if (qs.has('created')) {
+      const detail = qs.get('created') || '';
+      history.replaceState(null, '', location.pathname);
+      const bar = document.getElementById('ssSuccess');
+      if (bar) {
+        document.getElementById('ssSuccessDetail').textContent = detail;
+        bar.hidden = false;
+        window.scrollTo(0, 0);
+        showToast('New evaluation schedule successfully created');
+        const hide = () => { bar.hidden = true; };
+        document.getElementById('ssSuccessClose').addEventListener('click', hide);
+        setTimeout(hide, 12000);
+      }
+      const card = document.querySelector('.sched-current');
+      if (card) { card.classList.add('sched-flash'); setTimeout(() => card.classList.remove('sched-flash'), 2600); }
+    }
+  } catch(e){}
+
+  // ── CREATE NEW EVALUATION SCHEDULE (requires the current evaluation to be archived) ──
+  (function(){
+    const overlay=document.getElementById('nsOverlay'), btn=document.getElementById('newScheduleBtn');
+    if(!overlay||!btn) return;
+    // Render the dialog in the top-most window so the dim layer covers the whole page
+    // (sidebar, header and tabs included) instead of only this embedded frame.
+    let host=document;
+    try{ if(window.top&&window.top!==window&&window.top.document&&window.top.document.body) host=window.top.document; }catch(e){ host=document; }
+    if(host!==document){
+      const prev=host.getElementById('nsOverlay'); if(prev&&prev!==overlay) prev.remove();
+      const prevCss=host.getElementById('ns-styles-top'); if(prevCss) prevCss.remove();
+      const st=host.createElement('style'); st.id='ns-styles-top';
+      st.textContent=document.getElementById('ns-styles').textContent;
+      host.head.appendChild(st);
+      host.body.appendChild(host.adoptNode(overlay));
+      // Clean up if this frame is reloaded or closed while the dialog is mounted up there.
+      window.addEventListener('pagehide',()=>{ try{ overlay.remove(); st.remove(); }catch(e){} });
+    }
+    const $=id=>host.getElementById(id);
+    function show(which){ ['nsBusy','nsGate','nsForm'].forEach(id=>{ $(id).hidden=(id!==which); }); }
+    function open(){ overlay.hidden=false; const m=$('nsModal'); if(m) m.focus({preventScroll:true}); }
+    let formDirty=false;
+    function close(){ overlay.hidden=true; const d=$('nsDiscard'); if(d) d.hidden=true; }
+    // Clicking the dim area or pressing Esc must not throw away what was typed:
+    // ask first when the form has been changed.
+    function requestClose(){
+      if(!$('nsForm').hidden && formDirty){
+        $('nsDiscard').hidden=false;
+        const m=$('nsModal'); m.classList.remove('ns-shake'); void m.offsetWidth; m.classList.add('ns-shake');
+        return;
+      }
+      close();
+    }
+    overlay.addEventListener('click',e=>{ if(e.target===overlay) requestClose(); });
+    $('nsKeep').addEventListener('click',()=>{ $('nsDiscard').hidden=true; });
+    $('nsDiscardGo').addEventListener('click',()=>{ formDirty=false; close(); });
+    overlay.querySelectorAll('[data-ns-close]').forEach(b=>b.addEventListener('click',close));
+    const onKey=e=>{ if(e.key==='Escape'&&!overlay.hidden) requestClose(); };
+    document.addEventListener('keydown',onKey);
+    if(host!==document) host.addEventListener('keydown',onKey);
+
+    let gatePeriods=[];
+    function fillGate(g){
+      gatePeriods=g.periods||[];
+      const list=$('nsGateList'); list.textContent='';
+      gatePeriods.forEach(p=>{
+        const li=document.createElement('li');
+        const b=document.createElement('b'); b.textContent=p.label;
+        li.appendChild(b);
+        li.appendChild(document.createTextNode(' — '+p.live.toLocaleString()+' live evaluation'+(p.live===1?'':'s')+(p.active?' (active)':'')));
+        list.appendChild(li);
+      });
+      $('nsGateText').textContent = g.ok===false && !gatePeriods.length
+        ? (g.error||'The current evaluation could not be checked. Please try again.')
+        : 'A new schedule cannot be created while the current evaluation still has live submissions. Archive it first so the new round starts clean:';
+      $('nsGoArchive').hidden = !gatePeriods.length;
+    }
+    $('nsGoArchive').addEventListener('click',()=>{
+      try{ parent.postMessage({type:'pbi-open-tab',tab:'archive',preselect:gatePeriods.map(p=>p.id)},window.location.origin); }catch(e){}
+      close();
+    });
+
+    function nextPeriod(){
+      const opts=TERM_OPTIONS[els.structure.value]||[], m=els.year.value.trim().match(/^(\d{4})-(\d{4})$/);
+      const a=m?Number(m[1]):new Date().getFullYear(), i=opts.indexOf(els.term.value);
+      if(opts.length>1&&i>=0&&i<opts.length-1) return {year:a+'-'+(a+1),term:opts[i+1]};
+      return {year:(a+1)+'-'+(a+2),term:opts[0]||els.term.value};
+    }
+    function prepareForm(){
+      const opts=TERM_OPTIONS[els.structure.value]||[], sel=$('nsTerm'), nx=nextPeriod();
+      sel.textContent='';
+      opts.forEach(o=>{ const op=document.createElement('option'); op.value=o; op.textContent=o; sel.appendChild(op); });
+      sel.value=nx.term; sel.disabled=opts.length===1;
+      $('nsYear').value=nx.year; $('nsOpens').value=''; $('nsCloses').value=''; $('nsError').hidden=true;
+      formDirty=false; $('nsDiscard').hidden=true;
+      update();
+    }
+    function ms(ts){ return new Date(ts+8*3600000).toISOString().slice(0,16); }
+    function check(){
+      const y=$('nsYear').value.trim(), ym=y.match(/^(\d{4})-(\d{4})$/);
+      const oV=$('nsOpens').value, cV=$('nsCloses').value;
+      if(!ym||Number(ym[2])!==Number(ym[1])+1) return {ok:false,tone:'bad',title:'Check the academic year',msg:'Enter it like 2026-2027.'};
+      if(!oV||!cV) return {ok:false,tone:'muted',title:'Set the evaluation window',msg:'Pick the opening and closing time, or use the quick buttons above.'};
+      const o=parseManilaLocal(oV), c=parseManilaLocal(cV);
+      if(!Number.isFinite(o)||!Number.isFinite(c)) return {ok:false,tone:'bad',title:'Check the dates',msg:'One of the dates is not valid.'};
+      if(c<=o) return {ok:false,tone:'bad',title:'Check the dates',msg:'The closing time must be after the opening time.'};
+      if(c<=Date.now()) return {ok:false,tone:'bad',title:'Check the dates',msg:'The closing time must be in the future.'};
+      const when=o<=Date.now()?'Opens immediately':'Opens in '+relTime(o-Date.now());
+      return {ok:true,tone:'good',title:formatDateTime(oV)+'  \u2192  '+formatDateTime(cV),msg:when+' \u00B7 stays open for '+relTime(c-o)+'.'};
+    }
+    function update(keepError){
+      const r=check(), pv=$('nsPreview');
+      if(!keepError) $('nsError').hidden=true;
+      $('nsCloses').min=$('nsOpens').value||'';
+      pv.className='ns-preview '+r.tone;
+      pv.textContent='';
+      const b=document.createElement('b'); b.textContent=r.title;
+      pv.appendChild(b); pv.appendChild(document.createTextNode(r.msg));
+      $('nsSubmit').disabled=!r.ok;
+    }
+    overlay.querySelectorAll('.ns-q').forEach(b=>b.addEventListener('click',()=>{
+      formDirty=true;
+      const now=Date.now();
+      if(b.dataset.act==='now'){ $('nsOpens').value=ms(now); update(); return; }
+      if(b.dataset.act==='tomorrow'){
+        const t=new Date(now+8*3600000); t.setUTCDate(t.getUTCDate()+1);
+        $('nsOpens').value=t.toISOString().slice(0,10)+'T08:00'; update(); return;
+      }
+      let base=parseManilaLocal($('nsOpens').value);
+      if(!Number.isFinite(base)){ base=now; $('nsOpens').value=ms(now); }
+      $('nsCloses').value=ms(base+Number(b.dataset.days)*86400000);
+      update();
+    }));
+    ['nsYear','nsTerm','nsOpens','nsCloses'].forEach(id=>{ const el=$(id); const h=()=>{ formDirty=true; update(); }; el.addEventListener('input',h); el.addEventListener('change',h); });
+
+    btn.addEventListener('click',()=>{
+      if(isDirty){ showToast('Save or discard your current changes first.'); return; }
+      show('nsBusy'); open();
+      fetch('system_settings.php?action=schedule_gate',{credentials:'same-origin',cache:'no-store'})
+        .then(r=>r.json())
+        .then(g=>{
+          if(g&&g.blocked){ fillGate(g); show('nsGate'); }
+          else if(g&&g.ok){ prepareForm(); show('nsForm'); $('nsYear').focus(); }
+          else { close(); showToast('Unable to check the current evaluation'); }
+        })
+        .catch(()=>{ close(); showToast('Unable to check the current evaluation'); });
+    });
+
+    $('nsSubmit').addEventListener('click',()=>{
+      const err=$('nsError'), sb=$('nsSubmit');
+      const fail=m=>{ err.textContent=m; err.hidden=false; };
+      err.hidden=true;
+      const y=$('nsYear').value.trim(), ym=y.match(/^(\d{4})-(\d{4})$/);
+      if(!ym||Number(ym[2])!==Number(ym[1])+1) return fail('Enter the academic year like 2026-2027.');
+      const o=parseManilaLocal($('nsOpens').value), c=parseManilaLocal($('nsCloses').value);
+      if(!Number.isFinite(o)||!Number.isFinite(c)) return fail('Set both the opening and closing time.');
+      if(c<=o) return fail('The closing time must be after the opening time.');
+      if(c<=Date.now()) return fail('The closing time must be in the future.');
+      const fd=new FormData();
+      fd.append('action','create_new_schedule'); fd.append('acad_year',y); fd.append('acad_term',$('nsTerm').value);
+      fd.append('eval_start',$('nsOpens').value); fd.append('eval_end',$('nsCloses').value);
+      sb.disabled=true; sb.textContent='Creating…';
+      fetch('system_settings.php',{method:'POST',body:fd,credentials:'same-origin'})
+        .then(async r=>({status:r.status,d:await r.json().catch(()=>null)}))
+        .then(({status,d})=>{
+          if(status===409&&d&&d.code==='archive_required'){ fillGate(d); show('nsGate'); return; }
+          if(d&&d.ok){ close(); location.replace('system_settings.php?created='+encodeURIComponent(d.message||'The new schedule is now active.')); return; }
+          fail((d&&d.message)||'Could not create the schedule. Please try again.');
+        })
+        .catch(()=>fail('Could not reach the server. Please try again.'))
+        .finally(()=>{ sb.textContent='Create schedule'; update(true); });
+    });
+  })();
 
   function showToast(text) {
     els.toastText.textContent = text;
@@ -996,10 +1628,14 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
     if (els.auto.checked) fd.append('auto_schedule','1');
     if (els.maintenance.checked) fd.append('maintenance','1');
     if (els.countdown.checked) fd.append('rule_countdown','1');
+    const sb = document.getElementById('saveBtn');
+    if (sb && sb.dataset.busy) return Promise.resolve(false);
+    if (sb) { sb.dataset.busy = '1'; sb.disabled = true; sb.textContent = 'Saving\u2026'; }
+    const done = () => { if (sb) { delete sb.dataset.busy; sb.textContent = 'Save System Settings'; updateActions(); } };
     return fetch('system_settings.php',{method:'POST',body:fd,credentials:'same-origin'})
       .then(r=>r.ok?r.text():Promise.reject(new Error('save failed')))
-      .then(()=>{ clearDirty(); showToast('System settings saved'); return true; })
-      .catch(()=>{ showToast('Unable to save system settings'); return false; });
+      .then(()=>{ clearDirty(); done(); showToast('System settings saved'); return true; })
+      .catch(()=>{ done(); showToast('Unable to save system settings'); return false; });
   }
   document.getElementById('saveBtn').addEventListener('click', saveSystemSettings);
   document.getElementById('saveBtnTop').addEventListener('click', saveSystemSettings);

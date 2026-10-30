@@ -1177,7 +1177,7 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
             let n = 1;
             Object.keys(grouped).forEach(cat => {
                 html += '<div class="de-cat-title"><i class="fa-solid fa-layer-group"></i>' + esc(cat) + '</div>';
-                html += '<div class="de-table-wrap"><table class="de-table"><thead><tr><th>Question</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th></tr></thead><tbody>';
+                html += '<div class="de-table-wrap"><table class="de-table"><tbody>';
                 grouped[cat].forEach(q => {
                     const num = n++;
                     html += '<tr data-number="' + num + '"><td><div class="de-qtext"><span class="de-qno">' + num + '.</span>' + esc(q.question) + '</div></td>';
@@ -1218,7 +1218,6 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
     }
     form.addEventListener('input',  () => { if (mode === 'evaluate' && loaded) dirty = true; });
     form.addEventListener('change', () => { if (mode === 'evaluate' && loaded) dirty = true; });
-    form.addEventListener('submit', e => { if (!e.defaultPrevented && mode === 'evaluate' && loaded) submitting = true; });
     form.addEventListener('change', e => {
         if (!e.target.matches('input[type="radio"]')) return;
         const row = e.target.closest('tr'); if (row) row.classList.remove('unanswered');
@@ -1253,6 +1252,11 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
             if (!missing.length && cEl) { cEl.scrollIntoView({behavior: 'smooth', block: 'center'}); cEl.focus({preventScroll: true}); }
             return;
         }
+        // Validation passed and the form is really being sent: only now is it
+        // safe to switch the leave warning off. (A blocked submit -- missing
+        // answers or comment -- must keep the warning, or clicking outside the
+        // popup afterwards would discard the evaluator's answers silently.)
+        submitting = true;
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Submitting...';
     });
