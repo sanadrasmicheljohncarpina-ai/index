@@ -359,22 +359,120 @@ html[data-theme="dark"] .btn-action.view{background:transparent}
 /* Match the title icon to the dashboard header icon colour (falls back to #D97706). */
 (function(){try{var i=parent.document.getElementById('pbiAdminTopbarIcon');if(i){document.documentElement.style.setProperty('--ux-header-icon',parent.getComputedStyle(i).color);}}catch(e){}})();
 </script>
+<style id="ea-polish">
+/* ------------------------------------------------------------------
+   Evaluate Others polish: clearer hierarchy, per-group progress,
+   stronger contrast. Colours are light-theme only; dark mode keeps
+   the palette from the page's own dark tokens. Loaded last on purpose.
+   ------------------------------------------------------------------ */
+html:not([data-theme="dark"]) body:not(#eap){--ea-muted:#475569;--ea-muted-2:#556579;--ea-line:#d3dce8;--ea-card-border:#cdd8e6;--ea-text:#0b1f3a;}
+
+/* ── Header ── */
+html body:not(#eap) .panel-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px 16px;margin-bottom:6px;}
+html body:not(#eap) .panel-head .panel-title{margin:0!important;}
+html body:not(#eap) .period-chip{display:inline-flex;align-items:center;gap:8px;padding:7px 14px;border-radius:999px;font-size:12.5px;font-weight:700;border:1px solid transparent;}
+html body:not(#eap) .panel-lead{margin:0 0 22px;font-size:14.5px;line-height:1.5;color:var(--ea-muted);}
+html:not([data-theme="dark"]) body:not(#eap) .period-chip{background:#EEF2FF;color:#3730A3;border-color:#C7D2FE;}
+html[data-theme="dark"] body:not(#eap) .period-chip{background:rgba(129,140,248,.14);color:#C7D2FE;border-color:rgba(129,140,248,.35);}
+
+/* ── Group cards ── */
+html body:not(#eap) .evaluation-panel{padding:28px 32px 30px!important;}
+html body:not(#eap) .group-grid{gap:22px!important;}
+html body:not(#eap) .group-card{--g:#2563EB;--g-ink:#1d4ed8;--g-bg:#e1ebff;
+    justify-content:flex-start!important;gap:0;min-height:320px!important;padding:36px 22px 24px!important;border-radius:18px!important;
+    border:1px solid var(--ea-card-border)!important;}
+html body:not(#eap) .group-card.group-dean{--g:#D97706;--g-ink:#b45309;--g-bg:#ffefcf;}
+html body:not(#eap) .group-card.group-staff{--g:#16A34A;--g-ink:#15803d;--g-bg:#ddf5e6;}
+html body:not(#eap) .group-card::after{display:none!important;}
+html body:not(#eap) .group-card::before{content:"";position:absolute;left:0;right:0;top:0;height:5px;background:var(--g);}
+html body:not(#eap) .group-icon{width:88px!important;height:88px!important;font-size:34px!important;margin-bottom:16px!important;}
+html body:not(#eap) .group-card h3{font-size:24px!important;margin-bottom:2px;}
+html body:not(#eap) .group-count{display:inline-flex;align-items:baseline;gap:6px;margin-top:10px!important;padding:6px 16px;border-radius:999px;font-size:13.5px!important;font-weight:700;}
+html body:not(#eap) .group-count strong{font-size:19px;font-weight:800;line-height:1;}
+html:not([data-theme="dark"]) body:not(#eap) .group-count{background:var(--g-bg);color:var(--g-ink);}
+html[data-theme="dark"] body:not(#eap) .group-count{background:rgba(255,255,255,.08);color:var(--ea-text);}
+html body:not(#eap) .group-progress{display:flex;flex-direction:column;align-items:center;gap:7px;width:100%;max-width:230px;margin-top:20px;}
+html body:not(#eap) .group-progress-bar{display:block;width:100%;height:8px;border-radius:999px;overflow:hidden;background:rgba(100,116,139,.2);}
+html body:not(#eap) .group-progress-bar i{display:block;height:100%;border-radius:999px;background:var(--g);transition:width .3s ease;}
+html body:not(#eap) .group-progress.complete .group-progress-bar i{background:#16A34A;}
+html body:not(#eap) .group-progress-text{font-size:13px;font-weight:500;color:var(--ea-muted);}
+html body:not(#eap) .group-progress-text strong{color:var(--ea-text);font-weight:800;}
+html body:not(#eap) .group-progress-text.empty{margin-top:20px;}
+html body:not(#eap) .group-cta{display:inline-flex;align-items:center;gap:8px;margin-top:auto;padding-top:20px;font-size:13px;font-weight:800;color:var(--g-ink);}
+html[data-theme="dark"] body:not(#eap) .group-cta{color:var(--g);}
+html body:not(#eap) .group-cta i{font-size:12px;transition:transform .15s ease;}
+html body:not(#eap) .group-card:hover .group-cta i{transform:translateX(4px);}
+html body:not(#eap) .group-card.selected .group-cta i{transform:none;}
+html body:not(#eap) .group-card:focus-visible{outline:3px solid var(--g);outline-offset:3px;}
+html:not([data-theme="dark"]) body:not(#eap) .group-card{background:#fff!important;box-shadow:0 1px 2px rgba(11,31,58,.06),0 8px 22px rgba(11,31,58,.06)!important;}
+html:not([data-theme="dark"]) body:not(#eap) .group-card:hover{background:#fbfdff!important;border-color:var(--g)!important;box-shadow:0 14px 32px rgba(11,31,58,.13)!important;transform:translateY(-3px)!important;}
+html:not([data-theme="dark"]) body:not(#eap) .group-card.selected{background:#fff!important;border-color:var(--g)!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--g) 22%,transparent),0 12px 28px rgba(11,31,58,.12)!important;}
+html[data-theme="dark"] body:not(#eap) .group-card.selected{border-color:var(--g)!important;box-shadow:0 0 0 3px rgba(255,255,255,.07)!important;}
+
+/* ── Roster (after choosing a group) ── */
+html body:not(#eap) .roster-panel{margin-top:24px!important;border-radius:18px!important;}
+html body:not(#eap) .roster-head{padding:20px 26px!important;}
+html body:not(#eap) .roster-heading .roster-icon{width:42px!important;height:42px!important;font-size:17px!important;}
+html body:not(#eap) .roster-heading h2{font-size:24px!important;}
+html body:not(#eap) .roster-stats{gap:8px 10px!important;}
+html body:not(#eap) .roster-stats span{padding:6px 14px;border-radius:999px;font-size:13px;font-weight:600;border:1px solid transparent;}
+html body:not(#eap) .roster-stats strong{font-size:15px;font-weight:800;}
+html:not([data-theme="dark"]) body:not(#eap) .roster-stats span{background:#EEF2F7;color:#334155;border-color:#D3DCE8;}
+html:not([data-theme="dark"]) body:not(#eap) .roster-stats span:nth-child(2){background:#DDF4E6;color:#0A6A3B;border-color:#9ED8B7;}
+html:not([data-theme="dark"]) body:not(#eap) .roster-stats span:nth-child(3){background:#FFF1D4;color:#8A5300;border-color:#EBCB88;}
+html:not([data-theme="dark"]) body:not(#eap) .roster-stats span.period{background:#EEF2FF;color:#3730A3;border-color:#C7D2FE;}
+html:not([data-theme="dark"]) body:not(#eap) .roster-stats strong{color:inherit;}
+html body:not(#eap) .person-grid{gap:14px!important;padding:22px!important;}
+html body:not(#eap) .person-card{gap:16px!important;padding:16px 18px!important;border-radius:14px!important;border-left-width:4px!important;transition:box-shadow .15s ease,border-color .15s ease;}
+html body:not(#eap) .person-card.is-done{border-left-color:#16A34A!important;}
+html body:not(#eap) .person-card.is-pending{border-left-color:#F59E0B!important;}
+html body:not(#eap) .person-card:hover{box-shadow:0 6px 18px rgba(11,31,58,.10);}
+html body:not(#eap) .person-photo{width:56px!important;height:56px!important;}
+html body:not(#eap) .person-name{font-size:15.5px!important;}
+html body:not(#eap) .person-meta{font-size:13px!important;margin-top:2px!important;}
+html body:not(#eap) .status-pill{font-size:12px!important;padding:4px 11px!important;margin-top:8px!important;}
+html:not([data-theme="dark"]) body:not(#eap) .status-pill.done{background:#D6F2E4!important;color:#0A6A3B!important;border-color:#8ED0AD!important;}
+html:not([data-theme="dark"]) body:not(#eap) .status-pill.pending{background:#FFF1D4!important;color:#8A5300!important;border-color:#EBCB88!important;}
+html body:not(#eap) .btn-action{padding:11px 18px!important;border-radius:10px!important;font-size:13px!important;min-width:112px;}
+html:not([data-theme="dark"]) body:not(#eap) .btn-action.view{background:#fff!important;color:#1e293b!important;border-color:#b6c3d6!important;}
+html:not([data-theme="dark"]) body:not(#eap) .btn-action.view:hover{background:#F1F5FB!important;}
+html body:not(#eap) .roster-empty{padding:56px 20px!important;font-size:14px!important;}
+
+@media(max-width:900px){html body:not(#eap) .group-card{min-height:260px!important;}html body:not(#eap) .evaluation-panel{padding:20px!important;}}
+@media(max-width:560px){html body:not(#eap) .group-card{min-height:0!important;}html body:not(#eap) .person-action .btn-action{width:100%;}}
+</style>
 </head>
 <body class="feature-compact">
 <main class="wrap">
   <section class="evaluation-panel">
-    <h1 class="panel-title"><i class="fa-solid fa-clipboard-check"></i>Your Evaluation</h1>
+    <div class="panel-head">
+      <h1 class="panel-title"><i class="fa-solid fa-clipboard-check"></i>Your Evaluation</h1>
+      <?php if ($periodName !== ''): ?><span class="period-chip"><i class="fa-regular fa-calendar"></i> <?= e($periodName) ?></span><?php endif; ?>
+    </div>
+    <p class="panel-lead">Choose a group, then evaluate each member. Your progress for the active period is shown on every card.</p>
 
     <div class="group-grid">
       <?php foreach ($categories as $type => $people):
           $meta = $groupMeta[$type];
           $isSelected = $selectedType === $type;
           $count = count($people);
+          $groupDone = 0;
+          foreach ($people as $gp) { if (isset($done[(int) $gp['id']])) $groupDone++; }
+          $groupPct = $count > 0 ? (int) round($groupDone / $count * 100) : 0;
       ?>
         <a class="group-card <?= e($meta['class']) ?> <?= $isSelected ? 'selected' : '' ?>" href="<?= $isSelected ? '?' : '?type=' . urlencode($type) . '#roster' ?>" aria-label="<?= $isSelected ? 'Deselect' : 'Select' ?> <?= e($type) ?>"<?= $isSelected ? ' aria-current="true"' : '' ?>>
           <div class="group-icon"><i class="fa-solid <?= e($meta['icon']) ?>"></i></div>
           <h3><?= e($type) ?></h3>
-          <div class="group-count"><?= $count ?> <?= $count === 1 ? 'member' : 'members' ?></div>
+          <div class="group-count"><strong><?= $count ?></strong> <?= $count === 1 ? 'member' : 'members' ?></div>
+          <?php if ($count > 0): ?>
+            <div class="group-progress<?= $groupPct === 100 ? ' complete' : '' ?>" role="img" aria-label="<?= $groupDone ?> of <?= $count ?> evaluated">
+              <span class="group-progress-bar"><i style="width:<?= $groupPct ?>%"></i></span>
+              <span class="group-progress-text"><strong><?= $groupDone ?></strong> of <?= $count ?> evaluated</span>
+            </div>
+          <?php else: ?>
+            <div class="group-progress-text empty">No eligible members</div>
+          <?php endif; ?>
+          <span class="group-cta"><?= $isSelected ? 'Selected' : 'Select group' ?> <i class="fa-solid <?= $isSelected ? 'fa-check' : 'fa-arrow-right' ?>"></i></span>
         </a>
       <?php endforeach; ?>
     </div>
@@ -422,7 +520,7 @@ html[data-theme="dark"] .btn-action.view{background:transparent}
               $pid = (int) $person['id'];
               $isDone = isset($done[$pid]);
           ?>
-            <article class="person-card">
+            <article class="person-card <?= $isDone ? 'is-done' : 'is-pending' ?>">
               <?php if (!empty($person['photo'])): ?>
                 <div class="person-photo"><img src="<?= personPhoto($person['photo']) ?>" alt="" loading="lazy" onerror="this.parentNode.innerHTML='<i class=&quot;fa-solid fa-user&quot;></i>'"></div>
               <?php else: ?>

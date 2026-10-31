@@ -512,10 +512,10 @@ $HEALTH_ITEMS = [
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet"/>
     <style>
     :root{
-        --dark-blue:#FFFFFF;--blue-mid:#FBF7EC;--blue-accent:#0F9F6E;
-        --blue-hover:#0C7F59;--light:#FFFFFF;--muted:#67819E;
+        --dark-blue:#FFFFFF;--blue-mid:#FBF7EC;--blue-accent:var(--accent,#0F9F6E);
+        --blue-hover:color-mix(in srgb,var(--accent,#0F9F6E) 80%,#000);--light:#FFFFFF;--muted:#67819E;
         --radius:8px;--shadow:0 4px 12px rgba(15,23,42,.08);
-        --indicator-bg:rgba(15,159,110,.10);
+        --indicator-bg:color-mix(in srgb,var(--accent,#0F9F6E) 10%,transparent);
         --sev-green:#3F8F4A;--sev-yellow:#B7791F;--sev-red:#C24141;--sev-blue:#8B5E15;
         --page-bg:#FFFFFF;--card-bg:#FFFFFF;--card-border:#E8DFC4;
         --dashboard-bg:#FFFFFF;
@@ -526,7 +526,7 @@ $HEALTH_ITEMS = [
         --sidebar-text:#F3F7FC;--sidebar-text-dim:#8FA3C0;--sidebar-border:rgba(255,255,255,.08);
         --sidebar-card-bg:rgba(255,255,255,.05);--sidebar-hover-bg:rgba(255,255,255,.07);
         --sidebar-logo-bg:rgba(240,202,90,.16);--sidebar-logo-border:rgba(240,202,90,.45);--sidebar-icon-active:#F0CA5A;
-        --accent-soft-bg:#E6F7F1;--accent-soft-border:#B9E4D3;
+        --accent-soft-bg:color-mix(in srgb,var(--accent,#0F9F6E) 11%,#fff);--accent-soft-border:color-mix(in srgb,var(--accent,#0F9F6E) 30%,#fff);
         --pbi-green:#16A34A;--pbi-green-dark:#0F7A38;--pbi-green-bg:#E8F8EE;--page-bg-tint:#F3FAF5;
     }
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -553,13 +553,13 @@ $HEALTH_ITEMS = [
     .brand-avatar{
         width:48px;height:48px;border-radius:50%;
         border:2px solid var(--blue-accent);
-        box-shadow:0 0 8px rgba(15,159,110,.6);
+        box-shadow:0 0 8px color-mix(in srgb,var(--blue-accent) 60%,transparent);
         overflow:hidden;display:flex;align-items:center;justify-content:center;
         background:var(--blue-accent);flex-shrink:0;
         font-size:17px;font-weight:700;color:#FFFFFF;letter-spacing:.5px;
         transition:box-shadow .2s,border-color .2s;
     }
-    .brand-avatar:hover{box-shadow:0 0 14px rgba(15,159,110,.9);border-color:var(--blue-accent);}
+    .brand-avatar:hover{box-shadow:0 0 14px color-mix(in srgb,var(--blue-accent) 90%,transparent);border-color:var(--blue-accent);}
     .brand-avatar img{width:100%;height:100%;object-fit:cover;display:block;}
     /* small settings gear badge on avatar */
     .avatar-gear{
@@ -599,7 +599,7 @@ $HEALTH_ITEMS = [
     .pd-head-avatar img{width:100%;height:100%;object-fit:cover;display:block;}
     .pd-head-name{font-size:13px;font-weight:700;color:#0B1F3A;line-height:1.3;}
     .pd-head-role{font-size:11px;color:var(--muted);}
-    .pd-head-badge{display:inline-flex;align-items:center;gap:3px;margin-top:4px;font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;background:rgba(15,159,110,.3);color:var(--blue-accent);border:1px solid rgba(15,159,110,.35);text-transform:uppercase;}
+    .pd-head-badge{display:inline-flex;align-items:center;gap:3px;margin-top:4px;font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;background:color-mix(in srgb,var(--blue-accent) 30%,transparent);color:var(--blue-accent);border:1px solid rgba(15,159,110,.35);text-transform:uppercase;}
     .pd-menu{padding:6px 0;}
     .pd-item{
         display:flex;align-items:center;gap:11px;padding:9px 16px;
@@ -609,7 +609,7 @@ $HEALTH_ITEMS = [
     }
     .pd-item:hover{background:#F8FAFC;}
     .pd-icon{width:26px;height:26px;border-radius:6px;background:#FBF7EC;color:#67819E;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;transition:all .15s;}
-    .pd-item:hover .pd-icon{background:rgba(15,159,110,.25);color:var(--blue-accent);}
+    .pd-item:hover .pd-icon{background:color-mix(in srgb,var(--blue-accent) 25%,transparent);color:var(--blue-accent);}
     .pd-divider{height:1px;background:#E8DFC4;margin:4px 12px;}
     .pd-item.danger{color:#D18C96;}
     .pd-item.danger .pd-icon{color:#BF616A;background:rgba(191,97,106,.1);}
@@ -727,7 +727,7 @@ $HEALTH_ITEMS = [
     .notif-item.clickable{cursor:pointer;}
     .notif-item.clickable:hover{background:var(--accent-soft-bg,#F0F6FF);}
     .notif-item.clickable:active{background:var(--accent-soft-bg,#FBF1D6);}
-    .notif-item.unread{background:rgba(15,159,110,.08);}
+    .notif-item.unread{background:color-mix(in srgb,var(--blue-accent) 8%,transparent);}
     .notif-item.unread::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--blue-accent);border-radius:0 2px 2px 0;}
     .notif-icon{width:30px;height:30px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;margin-top:1px;}
     .notif-text{font-size:12px;color:var(--text-dark);line-height:1.45;margin-bottom:3px;word-break:break-word;}
@@ -1683,8 +1683,10 @@ body{background:var(--dashboard-bg)!important;background-attachment:fixed!import
     */
     @media(min-width:901px){
         html, body{
-            height:100%!important;
-            overflow:hidden!important;
+            height:auto!important;
+            min-height:100%!important;
+            overflow-y:auto!important;
+            overflow-x:hidden!important;
         }
         .pbi-sidebar{
             overflow:hidden!important;
@@ -2258,7 +2260,7 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { display:none !important; widt
         <div class="sf-group" style="margin-top:16px;">
             <label class="sf-label">Accent Color</label>
             <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;">
-                <?php foreach(['#5E81AC'=>'Ocean Blue','#4968C8'=>'Violet','#0F9F6E'=>'Emerald','#D6455D'=>'Crimson','#C77A08'=>'Amber'] as $hex=>$name): ?>
+                <?php foreach(['#2f6ee2'=>'Blue','#0F9F6E'=>'Green','#8b5cf6'=>'Purple','#e2792f'=>'Amber','#e23f6c'=>'Rose'] as $hex=>$name): ?>
                 <label style="cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;">
                     <input type="radio" name="accent_color" value="<?= $hex ?>" style="display:none;" onchange="applyAccent('<?= $hex ?>')" <?= $hex==='#0F9F6E'?'checked':'' ?>>
                     <span style="width:28px;height:28px;border-radius:50%;background:<?= $hex ?>;display:block;border:3px solid transparent;transition:border-color .2s;" class="clr-swatch" data-color="<?= $hex ?>"></span>
@@ -2820,7 +2822,13 @@ function pwStrength(val){
 function togglePw(id,iconId){const el=document.getElementById(id),ic=document.getElementById(iconId);el.type=el.type==='password'?'text':'password';ic.className=el.type==='password'?'fa-solid fa-eye':'fa-solid fa-eye-slash';}
 
 /* ── APPEARANCE ── */
-function applyAccent(color){document.documentElement.style.setProperty('--blue-accent',color);localStorage.setItem('pbi_accent',color);document.querySelectorAll('.clr-swatch').forEach(s=>s.style.borderColor=s.dataset.color===color?'#fff':'transparent');}
+function markAccentSwatches(color){document.querySelectorAll('.clr-swatch').forEach(s=>s.style.borderColor=(s.dataset.color||'').toLowerCase()===String(color||'').toLowerCase()?'#fff':'transparent');}
+/* Accent is shared with Settings > Appearance: same localStorage key (pbiAccent), applied by admin_appearance.js as --accent. */
+function applyAccent(color){
+    try{localStorage.setItem('pbiAccent',color);}catch(e){}
+    if(window.PBIAppearance&&PBIAppearance.apply) PBIAppearance.apply(); else document.documentElement.style.setProperty('--accent',color);
+    markAccentSwatches(color);
+}
 function applyCompact(on){document.querySelectorAll('.nav-item span').forEach(s=>s.style.display=on?'none':'');document.querySelectorAll('.nav-section-label').forEach(s=>s.style.display=on?'none':'');localStorage.setItem('pbi_compact',on?'1':'0');}
 
 /* ── SYSTEM & PERIOD: dynamic Academic Term dropdown + control-mode highlight ──
@@ -3044,7 +3052,27 @@ function mergeNotifFeed(feed){
     _notifStore=fresh.concat(kept).slice(0,NOTIF_KEEP_MAX);
     return _notifStore.map(x=>x.e);
 }
+// The signed-in user never gets a notification about their own actions
+// (e.g. the EA submitting an evaluation must not notify the EA). Matched by
+// actor id when the backend supplies one, otherwise by actor name, otherwise
+// by the "<Me> evaluated ..." text. The System Logs table is unaffected.
+const ME_ID = <?= json_encode((string)($_SESSION['user_id'] ?? '')) ?>;
+const ME_NAME = <?= json_encode(trim((string)($_SESSION['full_name'] ?? ''))) ?>.toLowerCase();
+function isOwnAction(e){
+    if(!e) return false;
+    const aid = e.actor_user_id ?? e.actor_id ?? e.evaluator_id ?? null;
+    if(aid!==null && aid!=='' && ME_ID!=='' && String(aid)===ME_ID) return true;
+    if(ME_NAME==='') return false;
+    const actor = String(e.actor||'').trim().toLowerCase();
+    if(actor===ME_NAME) return true;
+    return String(e.text||'').trim().toLowerCase().startsWith(ME_NAME+' evaluated ');
+}
 function renderBell(feed,unreadCount){
+    if(Array.isArray(feed)){
+        const before=feed.length;
+        feed=feed.filter(e=>!isOwnAction(e));
+        unreadCount=Math.max(0,(unreadCount||0)-(before-feed.length));
+    }
     const badge=document.getElementById('notifBadge'),btn=document.getElementById('notifBtn'),list=document.getElementById('notifList');
     if(unreadCount>0){badge.textContent=unreadCount>99?'99+':unreadCount;badge.classList.add('show');btn.classList.add('has-unread');}
     else{badge.classList.remove('show');btn.classList.remove('has-unread');}
@@ -3162,9 +3190,8 @@ window.onload=function(){
     const saved=localStorage.getItem('activePage')||'dashboard';
     const link=document.getElementById('link-'+saved)||document.getElementById('link-dashboard');
     showPage(saved,link);
-    const accent=localStorage.getItem('pbi_accent');
     const compact=localStorage.getItem('pbi_compact');
-    applyAccent(accent||'#0F9F6E');
+    try{const a=(window.PBIAppearance?PBIAppearance.read().accent:null); if(a) markAccentSwatches(a);}catch(e){}
     if(compact==='1'){document.getElementById('togCompact').checked=true;applyCompact(true);}
     <?php if($settings_msg):?>openSettings('system');<?php endif;?>
 };
@@ -3477,6 +3504,193 @@ html[data-theme="dark"] body .iframe-box{
 @media(max-width:760px){
     html body:has(.pbi-dashboard-container) .page-content{padding:var(--dash-top-gap,14px) 12px!important;}
     html body .iframe-box{border-radius:14px!important;}
+}
+</style>
+
+<style id="dashboard-polish">
+/* ------------------------------------------------------------------
+   Dashboard polish (loaded after the layout blocks, before dark mode)
+   Goals: cleaner spacing, readable type sizes, higher contrast.
+   - Undoes the 8-9px "compact" text so nothing needs squinting.
+   - Layout rules apply to both themes; colour rules are light-theme only
+     (dark mode keeps the palette from #dashboard-dark-mode).
+   - Pure presentation: no markup, IDs, PHP or JS were changed.
+   ------------------------------------------------------------------ */
+
+/* Scroll inside the card, like the Evaluation Tracker: the page itself stays
+   locked (header, sidebar and card frame never move) and only the dashboard
+   content scrolls, with a slim visible scrollbar. Desktop only; tablets and
+   phones keep normal page scrolling. */
+@media(min-width:901px){
+    html body:has(#dashboard.active) #dashboard.active .pbi-dashboard-container{
+        height:auto!important;
+        min-height:0!important;
+        overflow:visible!important;
+        scrollbar-width:auto;
+        scrollbar-color:#8FA2BC #E4EAF3;
+    }
+    html body:has(#dashboard.active) .pbi-dashboard-container::-webkit-scrollbar{width:12px;display:block!important;}
+    html body:has(#dashboard.active) .pbi-dashboard-container::-webkit-scrollbar-track{background:#E4EAF3;border-radius:8px;margin:14px 0;}
+    html body:has(#dashboard.active) .pbi-dashboard-container::-webkit-scrollbar-thumb{background:#8FA2BC;border-radius:8px;border:2px solid #E4EAF3;}
+    html body:has(#dashboard.active) .pbi-dashboard-container::-webkit-scrollbar-thumb:hover{background:#6C819F;}
+    html[data-theme="dark"] body:has(#dashboard.active) .pbi-dashboard-container{scrollbar-color:#4A6488 #1B2E48;}
+    html[data-theme="dark"] body:has(#dashboard.active) .pbi-dashboard-container::-webkit-scrollbar-track{background:#1B2E48;}
+    html[data-theme="dark"] body:has(#dashboard.active) .pbi-dashboard-container::-webkit-scrollbar-thumb{background:#4A6488;border-color:#1B2E48;}
+    html[data-theme="dark"] body:has(#dashboard.active) .pbi-dashboard-container::-webkit-scrollbar-thumb:hover{background:#6384B0;}
+}
+
+/* ── KPI cards ───────────────────────────────────────────── */
+html body:has(#dashboard.active) .pbi-stats-row{gap:18px!important;margin:0 0 18px!important;}
+html body:has(#dashboard.active) .pbi-stats-row > .pbi-stat-card{
+    height:auto!important;min-height:108px!important;padding:20px 22px!important;
+    border-radius:14px!important;overflow:visible!important;
+}
+html body:has(#dashboard.active) .pbi-stats-row > .pbi-stat-card:not(.pbi-completion-card){
+    grid-template-columns:48px minmax(0,1fr)!important;column-gap:16px!important;row-gap:3px!important;
+}
+html body:has(#dashboard.active) .pbi-stats-row > .pbi-stat-card:not(.pbi-completion-card) .pbi-stat-icon-circle{
+    width:48px!important;height:48px!important;border-radius:13px!important;font-size:19px!important;
+}
+html body:has(#dashboard.active) .pbi-stats-row > .pbi-stat-card .pbi-stat-label{
+    font-size:11.5px!important;font-weight:700!important;letter-spacing:.7px!important;line-height:1.25!important;
+}
+html body:has(#dashboard.active) .pbi-stats-row > .pbi-stat-card:not(.pbi-completion-card) .pbi-stat-value{
+    font-size:30px!important;font-weight:800!important;line-height:1.1!important;margin:1px 0 2px!important;
+}
+html body:has(#dashboard.active) .pbi-stats-row > .pbi-stat-card:not(.pbi-completion-card) .pbi-stat-sub{
+    display:block!important;max-width:100%!important;font-size:12px!important;font-weight:500!important;line-height:1.3!important;
+}
+/* The "–" placeholder trend adds noise; it still appears if JS ever marks it up/down. */
+html body:has(#dashboard.active) .pbi-stats-row > .pbi-stat-card .pbi-stat-trend.flat{display:none!important;}
+
+html body:has(#dashboard.active) .pbi-stats-row > .pbi-completion-card{gap:16px!important;}
+html body:has(#dashboard.active) .pbi-stats-row > .pbi-completion-card .pbi-completion-ring{width:70px!important;height:70px!important;}
+html body:has(#dashboard.active) .pbi-stats-row > .pbi-completion-card .pbi-completion-ring-inner{width:54px!important;height:54px!important;font-size:15px!important;font-weight:800!important;}
+html body:has(#dashboard.active) .pbi-stats-row > .pbi-completion-card .pbi-stat-label{font-size:11.5px!important;margin-bottom:4px!important;}
+html body:has(#dashboard.active) .pbi-stats-row > .pbi-completion-card .pbi-stat-sub{font-size:12px!important;font-weight:500!important;white-space:normal!important;line-height:1.35!important;}
+
+/* ── Current status panel ────────────────────────────────── */
+html body:has(#dashboard.active) .pbi-period-box{padding:26px 30px!important;}
+html body:has(#dashboard.active) .pbi-period-label{font-size:12px!important;font-weight:700!important;letter-spacing:.9px!important;display:flex;align-items:center;gap:10px;}
+html body:has(#dashboard.active) .pbi-period-badge{font-size:11.5px!important;font-weight:700!important;padding:4px 11px!important;border-radius:999px!important;}
+html body:has(#dashboard.active) .pbi-period-value{font-size:25px!important;font-weight:800!important;line-height:1.25!important;margin:8px 0 10px!important;}
+html body:has(#dashboard.active) .pbi-period-meta{font-size:13.5px!important;font-weight:500!important;display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;}
+html body:has(#dashboard.active) .pbi-period-meta i{margin-right:6px!important;}
+html body:has(#dashboard.active) .pbi-period-tiles{gap:16px!important;margin-top:20px!important;}
+html body:has(#dashboard.active) .pbi-period-tile{padding:16px 18px!important;border-radius:12px!important;}
+html body:has(#dashboard.active) .pbi-period-tile-label{font-size:12.5px!important;font-weight:600!important;margin-bottom:8px!important;}
+html body:has(#dashboard.active) .pbi-period-tile-value{font-size:32px!important;font-weight:800!important;line-height:1!important;}
+html body:has(#dashboard.active) .pbi-period-tile-sub{font-size:12px!important;margin-top:8px!important;line-height:1.3!important;}
+html body:has(#dashboard.active) .pbi-progress-track{height:8px!important;border-radius:999px!important;margin-top:12px!important;}
+html body:has(#dashboard.active) .pbi-progress-fill{border-radius:999px!important;}
+
+/* ── Bottom panels ───────────────────────────────────────── */
+html body:has(#dashboard.active) .pbi-panel{padding:26px 28px!important;}
+html body:has(#dashboard.active) .pbi-panel-head{margin-bottom:10px!important;min-height:36px;}
+html body:has(#dashboard.active) .pbi-panel-title{font-size:12.5px!important;font-weight:700!important;letter-spacing:.9px!important;}
+html body:has(#dashboard.active) .pbi-panel-viewall{font-size:12.5px!important;font-weight:700!important;padding:7px 14px!important;border-radius:8px!important;}
+
+html body:has(#dashboard.active) .pbi-personnel-item{padding:15px 0!important;gap:15px!important;}
+html body:has(#dashboard.active) .pbi-personnel-icon{width:46px!important;height:46px!important;font-size:18px!important;}
+html body:has(#dashboard.active) .pbi-personnel-name{font-size:15.5px!important;font-weight:700!important;line-height:1.25!important;}
+html body:has(#dashboard.active) .pbi-personnel-meta{font-size:12.5px!important;font-weight:500!important;margin-top:2px!important;}
+html body:has(#dashboard.active) .pbi-personnel-count{font-size:24px!important;font-weight:800!important;}
+
+html body:has(#dashboard.active) .pbi-attention-item{padding:15px 10px!important;margin:0 -10px!important;gap:12px!important;font-size:14px!important;font-weight:500!important;line-height:1.45!important;align-items:center!important;border-radius:10px!important;}
+html body:has(#dashboard.active) .pbi-attention-item i.dot{font-size:16px!important;margin-top:0!important;width:20px;text-align:center;}
+html body:has(#dashboard.active) .pbi-attention-item .chev{font-size:12px!important;opacity:.85!important;}
+
+/* ── Sidebar legibility (dark in both themes) ────────────── */
+.pbi-sidebar .nav-item{color:#D2DDEC!important;}
+.pbi-sidebar .nav-item:hover,.pbi-sidebar .nav-item.active{color:#FFFFFF!important;}
+.pbi-sidebar .nav-menu .nav-section-label{color:#AFC0D8!important;}
+.pbi-sidebar .sidebar-profile-role{color:#F5D56A!important;}
+
+/* ══ LIGHT THEME COLOURS (higher contrast) ═════════════════ */
+html:not([data-theme="dark"]) body:has(#dashboard.active){
+    --dp-ink:#0B1F3A;      /* primary text */
+    --dp-sub:#3E5068;      /* labels */
+    --dp-meta:#4A5C74;     /* captions */
+    --dp-line:#D3DCE8;     /* borders */
+    --dp-divider:#DCE4EF;  /* list dividers */
+    background:#E6ECF4!important;
+}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-dashboard-container{
+    background:#F3F6FB!important;border-color:#D3DCE8!important;
+}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-stat-card,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-box,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-panel{
+    background:#FFFFFF!important;border:1px solid var(--dp-line)!important;
+    box-shadow:0 1px 2px rgba(11,31,58,.07),0 6px 16px rgba(11,31,58,.06)!important;
+}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-stat-card:hover{box-shadow:0 2px 4px rgba(11,31,58,.08),0 12px 26px rgba(11,31,58,.10)!important;}
+
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-stat-label,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-label,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-panel-title,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-tile-label{color:var(--dp-sub)!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-stat-sub,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-meta,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-tile-sub,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-personnel-meta{color:var(--dp-meta)!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-meta .sep{color:#9AABC0!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-stat-value,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-value,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-tile-value,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-personnel-name,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-personnel-count,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-attention-item{color:var(--dp-ink)!important;}
+
+/* Icon chips: stronger tint + deeper glyph */
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-stat-card.stat-teal .pbi-stat-icon-circle,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-personnel-icon.teal{background:#D3F0E2!important;color:#087548!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-stat-card.stat-skyblue .pbi-stat-icon-circle,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-personnel-icon.skyblue{background:#F8E8B0!important;color:#7A5C00!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-stat-card.stat-violet .pbi-stat-icon-circle,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-personnel-icon.violet{background:#E3D9FB!important;color:#5521B5!important;}
+
+/* Status badge + tiles */
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-badge.green{background:#D6F2E4!important;color:#0A6A3B!important;border:1px solid #8ED0AD!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-badge.red{background:#FBE0E0!important;color:#A11F2E!important;border:1px solid #EDA3AA!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-badge.yellow{background:#FCEBC6!important;color:#7A4B00!important;border:1px solid #E8C374!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-tile{background:#F7F9FC!important;border:1px solid #D3DCE8!important;box-shadow:none!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-tile.tile-progress{background:#FFF8E2!important;border-color:#E6D294!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-tile.tile-submitted{background:#E4F6EC!important;border-color:#A6DABF!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-tile.tile-pending{background:#FFF1D4!important;border-color:#EBCB88!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-tile-value.green{color:#0A6A3B!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-period-tile-value.gold{color:#8A5300!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-progress-track{background:#E7DDB8!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-progress-fill{background:linear-gradient(90deg,#B98A00,#E4B52A)!important;}
+
+/* Participation ring */
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-completion-ring{background:conic-gradient(#C08F00 calc(var(--pct)*1%),#E4E9F1 0)!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-completion-ring-inner{background:#FFFFFF!important;color:var(--dp-ink)!important;}
+
+/* Lists */
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-personnel-item,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-attention-item{border-bottom:1px solid var(--dp-divider)!important;box-shadow:none!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-personnel-item:last-child,
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-attention-item:last-child{border-bottom:none!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-attention-item.is-clickable:hover{background:#EAF1FB!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-attention-item .warn{color:#B53512!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-attention-item .info{color:#A66F00!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-attention-item .ok{color:#0A7A47!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-attention-item .chev{color:#6B7E96!important;}
+
+/* View All button */
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-panel-viewall{background:#FFFFFF!important;color:#0A6A3B!important;border:1px solid #8ED0AD!important;}
+html:not([data-theme="dark"]) body:has(#dashboard.active) .pbi-panel-viewall:hover{background:#E4F6EC!important;}
+
+/* Narrow screens: stack the tiles and relax the sizes */
+@media(max-width:1180px){
+    html body:has(#dashboard.active) .pbi-stats-row{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+}
+@media(max-width:760px){
+    html body:has(#dashboard.active) .pbi-stats-row{grid-template-columns:1fr!important;gap:12px!important;}
+    html body:has(#dashboard.active) .pbi-period-box,
+    html body:has(#dashboard.active) .pbi-panel{padding:18px!important;}
+    html body:has(#dashboard.active) .pbi-period-value{font-size:20px!important;}
 }
 </style>
 

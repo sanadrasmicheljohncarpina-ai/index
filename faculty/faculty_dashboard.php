@@ -1,4 +1,20 @@
 <?php
+/* Evaluate Others: per-group progress bar + call to action for the picker cards. */
+if (!function_exists('fx_group_progress')) {
+    function fx_group_progress(int $n, int $done): string {
+        $out = '';
+        if ($n > 0) {
+            $pct = (int) round($done / $n * 100);
+            $out .= '<div class="eval-group-progress' . ($pct === 100 ? ' complete' : '') . '" role="img" aria-label="' . $done . ' of ' . $n . ' evaluated">'
+                  . '<span class="eval-group-bar"><i style="width:' . $pct . '%"></i></span>'
+                  . '<span class="eval-group-progress-text"><strong>' . $done . '</strong> of ' . $n . ' evaluated</span></div>';
+        } else {
+            $out .= '<div class="eval-group-progress-text empty">No eligible members</div>';
+        }
+        return $out . '<span class="eval-group-cta"><span class="cta-select">Select group <i class="fa-solid fa-arrow-right"></i></span><span class="cta-selected"><i class="fa-solid fa-check"></i> Selected</span></span>';
+    }
+}
+
 // session_bootstrap.php — include this BEFORE session_start() everywhere
 session_set_cookie_params([
     'lifetime' => 0,        // session cookie, dies when browser closes
@@ -28,6 +44,21 @@ $user_id     = $_SESSION['user_id'];
 $full_name   = $_SESSION['full_name'];
 $designation = $_SESSION['designation'] ?? 'Teacher';
 $page        = $_GET['page'] ?? 'dashboard';
+
+// ── SECURITY QUESTIONS STATUS (for the Settings card) ────────
+// 'ok' = all 3 questions saved, 'none' = not set up yet. Read directly so this page needs no extra includes.
+$sq_status = 'none';
+if ($page === 'settings') {
+    try {
+        $sqStmt = $mysqli->prepare("SELECT COUNT(*) AS c FROM student_security_answers WHERE user_id = ?");
+        $sqUid  = (int)$user_id;
+        $sqStmt->bind_param('i', $sqUid);
+        $sqStmt->execute();
+        $sqRow = $sqStmt->get_result()->fetch_assoc();
+        $sqStmt->close();
+        if ((int)($sqRow['c'] ?? 0) >= 3) { $sq_status = 'ok'; }
+    } catch (Throwable $e) { error_log('settings security-questions status failed: ' . $e->getMessage()); }
+}
 
 // ── CSRF TOKEN ────────────────────────────────────────────────
 if (empty($_SESSION['csrf_token'])) {
@@ -2821,6 +2852,95 @@ body:not(.light-theme) .section-card.peer-box::-webkit-scrollbar-thumb{backgroun
 @media(max-width:900px){.person-grid{grid-template-columns:1fr;}}
 @media(max-width:560px){.person-card{align-items:flex-start;flex-wrap:wrap;}.person-action{width:100%;}.person-action .btn-action{width:100%;}}
 </style>
+<style id="fx-polish">
+/* ------------------------------------------------------------------
+   Evaluate Others polish (same treatment as the admin EA page):
+   group cards with progress, clearer roster, stronger contrast.
+   Light/dark follow the page's own body.light-theme switch.
+   Presentation only: links, filters, forms and evaluation popups are untouched.
+   ------------------------------------------------------------------ */
+html body:not(#fxp) .cat-heading{margin-bottom:6px!important;}
+html body:not(#fxp) .cat-lead{margin:0 0 22px;font-size:14.5px;line-height:1.5;}
+html body.light-theme:not(#fxp) .cat-lead{color:#475569;}
+html body:not(.light-theme):not(#fxp) .cat-lead{color:#A0B3C6;}
+
+/* group cards */
+html body:not(#fxp) .eval-group-grid.cat-select{gap:22px!important;}
+html body:not(#fxp) .eval-group-grid.cat-select .eval-group-card.eval-group-card{--g:#2563EB;--g-ink:#1D4ED8;--g-bg:#E1EBFF;--g-ring:rgba(37,99,235,.26);
+    position:relative;justify-content:flex-start!important;gap:0;min-height:320px!important;padding:32px 22px 24px!important;border-radius:18px!important;
+    border-width:1px!important;border-style:solid!important;border-top:5px solid var(--g)!important;}
+html body:not(#fxp) .eval-group-grid.cat-select .eval-group-card.eval-group-card:has(.eval-group-icon.green){--g:#16A34A;--g-ink:#15803D;--g-bg:#DDF5E6;--g-ring:rgba(22,163,74,.26);}
+html body:not(#fxp) .eval-group-grid.cat-select .eval-group-card.eval-group-card:has(.eval-group-icon.purple){--g:#7C5FD9;--g-ink:#5F45B8;--g-bg:#ECE3FF;--g-ring:rgba(124,95,217,.26);}
+html body:not(#fxp) .eval-group-grid.cat-select .eval-group-card.eval-group-card:has(.eval-group-icon.gold){--g:#D97706;--g-ink:#B45309;--g-bg:#FFEFCF;--g-ring:rgba(217,119,6,.26);}
+html body:not(#fxp) .eval-group-grid.cat-select .eval-group-icon{width:88px!important;height:88px!important;font-size:34px!important;margin-bottom:16px!important;}
+html body:not(#fxp) .eval-group-grid.cat-select .eval-group-title.eval-group-title{font-size:24px!important;margin-bottom:2px!important;}
+html body:not(#fxp) .eval-group-grid.cat-select .eval-group-count.eval-group-count{display:inline-flex;margin-top:10px;padding:6px 16px;border-radius:999px;font-size:13.5px!important;font-weight:700;}
+html body:not(#fxp) .eval-group-progress{display:flex;flex-direction:column;align-items:center;gap:7px;width:100%;max-width:230px;margin-top:20px;}
+html body:not(#fxp) .eval-group-bar{display:block;width:100%;height:8px;border-radius:999px;overflow:hidden;background:rgba(100,116,139,.22);}
+html body:not(#fxp) .eval-group-bar i{display:block;height:100%;border-radius:999px;background:var(--g);transition:width .3s ease;}
+html body:not(#fxp) .eval-group-progress.complete .eval-group-bar i{background:#16A34A;}
+html body:not(#fxp) .eval-group-progress-text{font-size:13px;font-weight:500;}
+html body:not(#fxp) .eval-group-progress-text strong{font-weight:800;}
+html body:not(#fxp) .eval-group-progress-text.empty{margin-top:20px;}
+html body:not(#fxp) .eval-group-cta{display:inline-flex;margin-top:auto;padding-top:20px;font-size:13px;font-weight:800;color:var(--g-ink);}
+html body:not(#fxp) .eval-group-cta .cta-select,html body:not(#fxp) .eval-group-cta .cta-selected{display:inline-flex;align-items:center;gap:8px;}
+html body:not(#fxp) .eval-group-cta .cta-selected{display:none;}
+html body:not(#fxp) .eval-group-card.is-selected .eval-group-cta .cta-select{display:none;}
+html body:not(#fxp) .eval-group-card.is-selected .eval-group-cta .cta-selected{display:inline-flex;}
+html body:not(#fxp) .eval-group-cta i{font-size:12px;transition:transform .15s ease;}
+html body:not(#fxp) .eval-group-card:hover .eval-group-cta .cta-select i{transform:translateX(4px);}
+html body:not(#fxp) .eval-group-card:focus-visible{outline:3px solid var(--g);outline-offset:3px;}
+
+html body.light-theme:not(#fxp) .eval-group-grid.cat-select .eval-group-card.eval-group-card{background:#fff!important;border-color:#CDD8E6!important;border-top-color:var(--g)!important;box-shadow:0 1px 2px rgba(11,31,58,.06),0 8px 22px rgba(11,31,58,.06)!important;}
+html body.light-theme:not(#fxp) .eval-group-grid.cat-select .eval-group-card.eval-group-card:hover{background:#fbfdff!important;border-color:var(--g)!important;box-shadow:0 14px 32px rgba(11,31,58,.13)!important;transform:translateY(-3px)!important;}
+html body.light-theme:not(#fxp) .eval-group-grid.cat-select .eval-group-card.eval-group-card.is-selected{background:#fff!important;border-color:var(--g)!important;box-shadow:0 0 0 3px var(--g-ring),0 12px 28px rgba(11,31,58,.12)!important;}
+html body.light-theme:not(#fxp) .eval-group-grid.cat-select .eval-group-title.eval-group-title{color:#0b1f3a!important;}
+html body.light-theme:not(#fxp) .eval-group-grid.cat-select .eval-group-count.eval-group-count{background:var(--g-bg);color:var(--g-ink)!important;}
+html body.light-theme:not(#fxp) .eval-group-progress-text{color:#475569;}
+html body.light-theme:not(#fxp) .eval-group-progress-text strong{color:#0b1f3a;}
+html body:not(.light-theme):not(#fxp) .eval-group-grid.cat-select .eval-group-card.eval-group-card{border-top-color:var(--g)!important;}
+html body:not(.light-theme):not(#fxp) .eval-group-grid.cat-select .eval-group-card.eval-group-card:hover,html body:not(.light-theme):not(#fxp) .eval-group-grid.cat-select .eval-group-card.eval-group-card.is-selected{border-color:var(--g)!important;}
+html body:not(.light-theme):not(#fxp) .eval-group-grid.cat-select .eval-group-count.eval-group-count{background:rgba(255,255,255,.08);color:#E5ECF5!important;}
+html body:not(.light-theme):not(#fxp) .eval-group-progress-text{color:#A0B3C6;}
+html body:not(.light-theme):not(#fxp) .eval-group-progress-text strong{color:#F1F5F9;}
+html body:not(.light-theme):not(#fxp) .eval-group-cta{color:var(--g);}
+
+/* roster */
+html body:not(#fxp) .roster-panel{border-radius:18px!important;}
+html body:not(#fxp) .roster-head{padding:20px 26px!important;}
+html body:not(#fxp) .roster-heading .roster-icon{width:42px!important;height:42px!important;font-size:17px!important;}
+html body:not(#fxp) .roster-heading h2{font-size:24px!important;}
+html body:not(#fxp) .roster-stats{gap:8px 10px!important;}
+html body:not(#fxp) .roster-stats span{padding:6px 14px;border-radius:999px;font-size:13px;font-weight:600;border:1px solid transparent;}
+html body:not(#fxp) .roster-stats strong{font-size:15px;font-weight:800;color:inherit;}
+html body.light-theme:not(#fxp) .roster-stats span{background:#EEF2F7;color:#334155;border-color:#D3DCE8;}
+html body.light-theme:not(#fxp) .roster-stats span:nth-child(2){background:#DDF4E6;color:#0A6A3B;border-color:#9ED8B7;}
+html body.light-theme:not(#fxp) .roster-stats span:nth-child(3){background:#FFF1D4;color:#8A5300;border-color:#EBCB88;}
+html body.light-theme:not(#fxp) .roster-stats span.period{background:#EEF2FF;color:#3730A3;border-color:#C7D2FE;}
+html body:not(.light-theme):not(#fxp) .roster-stats span{background:rgba(255,255,255,.06);color:#C9D6E8;border-color:rgba(255,255,255,.10);}
+html body:not(.light-theme):not(#fxp) .roster-stats span:nth-child(2){background:rgba(34,197,94,.14);color:#86EFAC;border-color:rgba(34,197,94,.3);}
+html body:not(.light-theme):not(#fxp) .roster-stats span:nth-child(3){background:rgba(245,158,11,.14);color:#F8C465;border-color:rgba(245,158,11,.3);}
+html body:not(#fxp) .roster-panel .person-grid{gap:14px!important;padding:22px!important;}
+html body:not(#fxp) .roster-panel .person-card{gap:16px!important;padding:16px 18px!important;border-radius:14px!important;border-left-width:4px!important;transition:box-shadow .15s ease;}
+html body:not(#fxp) .roster-panel .person-card.is-done{border-left-color:#16A34A!important;}
+html body:not(#fxp) .roster-panel .person-card.is-pending{border-left-color:#F59E0B!important;}
+html body:not(#fxp) .roster-panel .person-card:hover{box-shadow:0 6px 18px rgba(11,31,58,.10);}
+html body:not(#fxp) .roster-panel .person-photo{width:56px!important;height:56px!important;}
+html body:not(#fxp) .roster-panel .person-name{font-size:15.5px!important;}
+html body:not(#fxp) .roster-panel .person-meta{font-size:13px!important;margin-top:2px!important;}
+html body:not(#fxp) .roster-panel .person-card .status-pill{font-size:12px!important;padding:4px 11px!important;margin-top:8px!important;}
+html body:not(#fxp) .roster-panel .btn-action{padding:11px 18px!important;border-radius:10px!important;font-size:13px!important;min-width:112px;}
+html body.light-theme:not(#fxp) .roster-panel .person-card{background:#fff!important;border-color:#CDD8E6!important;}
+html body.light-theme:not(#fxp) .roster-panel .person-name{color:#0b1f3a!important;}
+html body.light-theme:not(#fxp) .roster-panel .person-meta{color:#475569!important;}
+html body.light-theme:not(#fxp) .roster-panel .person-card .status-pill.done{background:#D6F2E4!important;color:#0A6A3B!important;border-color:#8ED0AD!important;}
+html body.light-theme:not(#fxp) .roster-panel .person-card .status-pill.pending{background:#FFF1D4!important;color:#8A5300!important;border-color:#EBCB88!important;}
+html body.light-theme:not(#fxp) .roster-panel .btn-action.view{background:#fff!important;color:#1e293b!important;border-color:#b6c3d6!important;}
+html body:not(#fxp) .roster-empty{padding:56px 20px!important;font-size:14px!important;}
+
+@media(max-width:900px){html body:not(#fxp) .eval-group-grid.cat-select .eval-group-card.eval-group-card{min-height:250px!important;}}
+@media(max-width:560px){html body:not(#fxp) .eval-group-grid.cat-select .eval-group-card.eval-group-card{min-height:0!important;}html body:not(#fxp) .roster-panel .person-card{flex-wrap:wrap;}}
+</style>
 </head>
 <body class="light-theme">
 
@@ -3232,6 +3352,16 @@ body:not(.light-theme) .section-card.peer-box::-webkit-scrollbar-thumb{backgroun
                 <button class="btn-primary" type="submit"><i class="fa-solid fa-key"></i> Update Password</button>
             </form>
         </section>
+
+        <section class="settings-card full ac-card ac-c5" id="security-questions-settings">
+            <div class="ac-head"><span class="ac-icon"><i class="fa-solid fa-shield-halved"></i></span><div><h2>Security Questions</h2><p class="ac-sub">These questions are used to recover your account if you forget your password.</p></div></div>
+            <?php if ($sq_status === 'ok'): ?>
+            <div class="sq-status ok"><i class="fa-solid fa-circle-check"></i> Security questions are set</div>
+            <?php else: ?>
+            <div class="sq-status warn"><i class="fa-solid fa-triangle-exclamation"></i> Not set up yet</div>
+            <?php endif; ?>
+            <div><a class="btn-primary" href="security_questions.php"><i class="fa-solid fa-pen-to-square"></i> <?= $sq_status === 'none' ? 'Set Security Questions' : 'Update Security Questions' ?></a></div>
+        </section>
     </div>
 
     <div class="settings-layout-grid settings-tab-panel" id="settingsPanelAppearance" role="tabpanel" aria-labelledby="settingsTabAppearance" hidden>
@@ -3327,24 +3457,28 @@ $dean_done_count = count(array_intersect(array_map('intval', array_column($dean_
 <?php endif; ?>
 
     <h2 class="cat-heading"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i> Your Evaluation</h2>
+    <p class="cat-lead">Choose a group, then evaluate each member. Your progress for the active period is shown on every card.</p>
     <div class="eval-group-grid peer-category-grid cat-select">
         <?php if ($can_evaluate_faculty_peer): ?>
         <a href="faculty_dashboard.php?page=peer&group=teacher#roster" class="eval-group-card">
             <div class="eval-group-icon blue"><i class="fa-solid fa-chalkboard-user"></i></div>
             <div class="eval-group-title">Faculty</div>
             <div class="eval-group-count"><?= $teacher_count ?> member<?= $teacher_count == 1 ? '' : 's' ?></div>
+            <?= fx_group_progress((int)$teacher_count, (int)$teacher_done_count) ?>
         </a>
         <?php endif; ?>
         <a href="faculty_dashboard.php?page=peer&group=staff#roster" class="eval-group-card">
             <div class="eval-group-icon green"><i class="fa-solid fa-briefcase"></i></div>
             <div class="eval-group-title">Staff</div>
             <div class="eval-group-count"><?= $staff_count ?> member<?= $staff_count == 1 ? '' : 's' ?></div>
+            <?= fx_group_progress((int)$staff_count, (int)$staff_done_count) ?>
         </a>
         <?php if ($can_evaluate_principal): ?>
         <a href="faculty_dashboard.php?page=peer&group=principal#roster" class="eval-group-card">
             <div class="eval-group-icon purple"><i class="fa-solid fa-user-tie"></i></div>
             <div class="eval-group-title">Principal</div>
             <div class="eval-group-count"><?= count($principal_targets) ?> member<?= count($principal_targets) == 1 ? '' : 's' ?></div>
+            <?= fx_group_progress(count($principal_targets), (int)$principal_done_count) ?>
         </a>
         <?php endif; ?>
         <?php if ($can_evaluate_dean): ?>
@@ -3352,6 +3486,7 @@ $dean_done_count = count(array_intersect(array_map('intval', array_column($dean_
             <div class="eval-group-icon gold"><i class="fa-solid fa-graduation-cap"></i></div>
             <div class="eval-group-title">Dean</div>
             <div class="eval-group-count"><?= count($dean_targets) ?> member<?= count($dean_targets) == 1 ? '' : 's' ?></div>
+            <?= fx_group_progress(count($dean_targets), (int)$dean_done_count) ?>
         </a>
         <?php endif; ?>
     </div>
@@ -3379,11 +3514,12 @@ $peer_dean_done = count(array_intersect(array_map('intval', array_column($dean_t
 ?>
 <div class="section-card peer-shell peer-box">
     <h2 class="cat-heading"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i> Your Evaluation</h2>
+    <p class="cat-lead">Choose a group, then evaluate each member. Your progress for the active period is shown on every card.</p>
     <div class="eval-group-grid peer-category-grid cat-select">
-        <?php if ($can_evaluate_faculty_peer): ?><a href="faculty_dashboard.php?page=peer<?= $peer_group === 'teacher' ? '' : '&group=teacher#roster' ?>" class="eval-group-card <?= $peer_group === 'teacher' ? 'is-selected' : '' ?>" <?= $peer_group === 'teacher' ? 'aria-current="true"' : '' ?>><div class="eval-group-icon blue"><i class="fa-solid fa-chalkboard-user"></i></div><div class="eval-group-title">Faculty</div><div class="eval-group-count"><?= count($peer_teacher_targets) ?> members</div></a><?php endif; ?>
-        <a href="faculty_dashboard.php?page=peer<?= $peer_group === 'staff' ? '' : '&group=staff#roster' ?>" class="eval-group-card <?= $peer_group === 'staff' ? 'is-selected' : '' ?>" <?= $peer_group === 'staff' ? 'aria-current="true"' : '' ?>><div class="eval-group-icon green"><i class="fa-solid fa-briefcase"></i></div><div class="eval-group-title">Staff</div><div class="eval-group-count"><?= count($peer_staff_targets) ?> members</div></a>
-        <?php if ($can_evaluate_principal): ?><a href="faculty_dashboard.php?page=peer<?= $peer_group === 'principal' ? '' : '&group=principal#roster' ?>" class="eval-group-card <?= $peer_group === 'principal' ? 'is-selected' : '' ?>" <?= $peer_group === 'principal' ? 'aria-current="true"' : '' ?>><div class="eval-group-icon purple"><i class="fa-solid fa-user-tie"></i></div><div class="eval-group-title">Principal</div><div class="eval-group-count"><?= count($principal_targets) ?> <?= count($principal_targets) === 1 ? 'member' : 'members' ?></div></a><?php endif; ?>
-        <?php if ($can_evaluate_dean): ?><a href="faculty_dashboard.php?page=peer<?= $peer_group === 'dean' ? '' : '&group=dean#roster' ?>" class="eval-group-card <?= $peer_group === 'dean' ? 'is-selected' : '' ?>" <?= $peer_group === 'dean' ? 'aria-current="true"' : '' ?>><div class="eval-group-icon gold"><i class="fa-solid fa-graduation-cap"></i></div><div class="eval-group-title">Dean</div><div class="eval-group-count"><?= count($dean_targets) ?> <?= count($dean_targets) === 1 ? 'member' : 'members' ?></div></a><?php endif; ?>
+        <?php if ($can_evaluate_faculty_peer): ?><a href="faculty_dashboard.php?page=peer<?= $peer_group === 'teacher' ? '' : '&group=teacher#roster' ?>" class="eval-group-card <?= $peer_group === 'teacher' ? 'is-selected' : '' ?>" <?= $peer_group === 'teacher' ? 'aria-current="true"' : '' ?>><div class="eval-group-icon blue"><i class="fa-solid fa-chalkboard-user"></i></div><div class="eval-group-title">Faculty</div><div class="eval-group-count"><?= count($peer_teacher_targets) ?> member<?= count($peer_teacher_targets) === 1 ? '' : 's' ?></div><?= fx_group_progress(count($peer_teacher_targets), (int)$peer_teacher_done) ?></a><?php endif; ?>
+        <a href="faculty_dashboard.php?page=peer<?= $peer_group === 'staff' ? '' : '&group=staff#roster' ?>" class="eval-group-card <?= $peer_group === 'staff' ? 'is-selected' : '' ?>" <?= $peer_group === 'staff' ? 'aria-current="true"' : '' ?>><div class="eval-group-icon green"><i class="fa-solid fa-briefcase"></i></div><div class="eval-group-title">Staff</div><div class="eval-group-count"><?= count($peer_staff_targets) ?> member<?= count($peer_staff_targets) === 1 ? '' : 's' ?></div><?= fx_group_progress(count($peer_staff_targets), (int)$peer_staff_done) ?></a>
+        <?php if ($can_evaluate_principal): ?><a href="faculty_dashboard.php?page=peer<?= $peer_group === 'principal' ? '' : '&group=principal#roster' ?>" class="eval-group-card <?= $peer_group === 'principal' ? 'is-selected' : '' ?>" <?= $peer_group === 'principal' ? 'aria-current="true"' : '' ?>><div class="eval-group-icon purple"><i class="fa-solid fa-user-tie"></i></div><div class="eval-group-title">Principal</div><div class="eval-group-count"><?= count($principal_targets) ?> <?= count($principal_targets) === 1 ? 'member' : 'members' ?></div><?= fx_group_progress(count($principal_targets), (int)$peer_principal_done) ?></a><?php endif; ?>
+        <?php if ($can_evaluate_dean): ?><a href="faculty_dashboard.php?page=peer<?= $peer_group === 'dean' ? '' : '&group=dean#roster' ?>" class="eval-group-card <?= $peer_group === 'dean' ? 'is-selected' : '' ?>" <?= $peer_group === 'dean' ? 'aria-current="true"' : '' ?>><div class="eval-group-icon gold"><i class="fa-solid fa-graduation-cap"></i></div><div class="eval-group-title">Dean</div><div class="eval-group-count"><?= count($dean_targets) ?> <?= count($dean_targets) === 1 ? 'member' : 'members' ?></div><?= fx_group_progress(count($dean_targets), (int)$peer_dean_done) ?></a><?php endif; ?>
     </div>
 
 <?php if (!$evaluation_open): ?>
@@ -3431,7 +3567,7 @@ $displayPeerPeriod = ($peer_group === 'teacher' && $college_peer_period) ? $coll
                 : in_array((int)$p['id'], $done_peers, true);
             $peer_label = peer_display_label($mysqli, $p, $peer_group, $peer_group_labels);
         ?>
-        <article class="person-card">
+        <article class="person-card <?= $done ? 'is-done' : 'is-pending' ?>">
             <div class="person-photo">
                 <?php if (!empty($p['photo'])): ?><img src="<?= UPLOAD_URL . htmlspecialchars($p['photo']) ?>" alt="" onerror="this.parentNode.innerHTML='<i class=&quot;fa-solid fa-user&quot;></i>'" loading="lazy"/><?php else: ?><i class="fa-solid fa-user"></i><?php endif; ?>
             </div>
@@ -3482,10 +3618,6 @@ $displayPeerPeriod = ($peer_group === 'teacher' && $college_peer_period) ? $coll
       <form class="peer-eval-form" method="POST" action="faculty_dashboard.php?page=peer_eval&tid=<?= $peer_target['id'] ?>&group=<?= urlencode($peer_eval_group) ?>" id="evalForm" novalidate>
         <div class="peer-eval-scroll" id="peerEvalScroll">
           <div class="eval-validation-alert" id="facultyEvalValidation" role="alert" aria-live="assertive"></div>
-          <div class="peer-eval-progress-banner">
-            <span><i class="fa-solid fa-circle-info"></i> Please rate every question before submitting.</span>
-            <strong id="facultyEvalProgress" aria-live="polite">0 of 0 questions answered</strong>
-          </div>
           <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>"/>
           <input type="hidden" name="submit_peer" value="1"/>
           <input type="hidden" name="target_id" value="<?= $peer_target['id'] ?>"/>
@@ -3511,7 +3643,7 @@ $displayPeerPeriod = ($peer_group === 'teacher' && $college_peer_period) ? $coll
               <h3 class="q-category-header"><i class="fa-solid <?= $icon ?>"></i><?= htmlspecialchars($cat) ?></h3>
               <div class="eval-form-wrap">
                 <table class="eval-form-table">
-                  <thead><tr><th>Question</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th></tr></thead>
+                  <colgroup><col><col class="c-rate"><col class="c-rate"><col class="c-rate"><col class="c-rate"><col class="c-rate"></colgroup>
                   <tbody>
                     <?php foreach ($qs as $q): ?>
                       <tr class="eval-question-row">
@@ -3627,12 +3759,14 @@ function checkAll() {
 function updateFacultyEvalProgress() {
     const form = document.getElementById('evalForm');
     const counter = document.getElementById('facultyEvalProgress');
-    if (!form || !counter) return;
+    if (!form) return;
 
     const groups = [...new Set([...form.querySelectorAll('input[type="radio"][name^="ratings["]')].map(r => r.name))];
     const answered = groups.filter(name => form.querySelector('input[name="' + CSS.escape(name) + '"]:checked')).length;
-    counter.textContent = answered + ' of ' + groups.length + ' questions answered';
-    counter.classList.toggle('is-complete', groups.length > 0 && answered === groups.length);
+    if (counter) {
+        counter.textContent = answered + ' of ' + groups.length + ' questions answered';
+        counter.classList.toggle('is-complete', groups.length > 0 && answered === groups.length);
+    }
 
     if (groups.length > 0 && answered === groups.length) {
         document.getElementById('facultyEvalValidation')?.classList.remove('show');
@@ -4316,6 +4450,11 @@ document.getElementById('photoModal').addEventListener('click', function(e) {
 .settings-shell.principal-settings-layout .field-note{font-size:11px;line-height:1.4;color:var(--ap-muted);}
 .settings-shell.principal-settings-layout .btn-primary{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 17px;border:0;border-radius:9px;font:700 13.5px 'DM Sans',sans-serif;color:#fff;background:var(--ap-accent);box-shadow:0 4px 14px rgba(var(--ap-accent-rgb),.20);cursor:pointer;text-decoration:none;transition:transform .18s,background .18s;}
 .settings-shell.principal-settings-layout .btn-primary:hover{background:var(--ap-accent-strong);color:#fff;transform:translateY(-1px);}
+.settings-shell.principal-settings-layout .ac-c5{--ap-card-accent:var(--ap-accent);}
+.settings-shell.principal-settings-layout a.btn-primary{text-decoration:none;}
+.settings-shell.principal-settings-layout .sq-status{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;margin-bottom:16px;border-radius:999px;font-size:12px;font-weight:600;background:var(--ap-accent-bg);border:1px solid var(--ap-line);color:var(--ap-muted);}
+.settings-shell.principal-settings-layout .sq-status.ok{color:#10B981;border-color:rgba(16,185,129,.4);}
+.settings-shell.principal-settings-layout .sq-status.warn{color:#D97706;border-color:rgba(217,119,6,.45);}
 .settings-shell.principal-settings-layout .btn-primary:focus-visible,.settings-shell.principal-settings-layout button:focus-visible{outline:3px solid rgba(var(--ap-accent-rgb),.30);outline-offset:2px;}
 .settings-shell.principal-settings-layout .settings-action-link{font-size:12px;padding:9px 12px;white-space:nowrap;}
 .settings-shell.principal-settings-layout .settings-protected-icon{color:var(--ap-accent-dark);font-size:17px;flex:0 0 auto;}
@@ -4356,5 +4495,35 @@ body.reduce-motion *,body.reduce-motion *::before,body.reduce-motion *::after{an
 @media(max-width:560px){.settings-shell.principal-settings-layout .settings-card.ac-card{padding:18px 17px 20px !important;}.settings-shell.principal-settings-layout .profile-card{align-items:flex-start;flex-direction:column;}.settings-shell.principal-settings-layout .ac-head{gap:11px;}.settings-shell.principal-settings-layout .ac-icon{width:38px;height:38px;flex-basis:38px;}.settings-shell.principal-settings-layout .setting-row{align-items:flex-start;}}
 </style>
 
+<style id="faculty-form-ea-sizing">
+/* Evaluation popup sized like the admin EA evaluation form. */
+html body .peer-eval-dialog{max-width:780px;border-radius:18px;}
+html body .peer-eval-dialog .peer-eval-dialog-header{padding:24px 28px 16px;}
+html body .peer-eval-dialog .peer-eval-avatar{width:52px;height:52px;}
+html body .peer-eval-dialog .peer-eval-target-copy h2{font-size:20px;}
+html body .peer-eval-dialog .peer-eval-target-copy p{font-size:12px;}
+html body .peer-eval-dialog .peer-eval-scroll{padding:24px 28px;}
+html body .peer-eval-dialog .peer-eval-scale{gap:16px;margin-bottom:18px;padding:10px 14px;border-radius:8px;}
+html body .peer-eval-dialog .peer-eval-scale-item{gap:5px;font-size:11px;}
+html body .peer-eval-dialog .peer-eval-scale-item span{width:18px;height:18px;border-radius:4px;font-size:10px;}
+html body .peer-eval-dialog .peer-eval-question-section .q-category-header{margin:18px 0 8px;padding:0;border:0;font-size:10px;letter-spacing:.9px;}
+html body .peer-eval-dialog .peer-eval-question-section:first-of-type .q-category-header{margin-top:0;}
+html body .peer-eval-dialog .eval-form-wrap{margin:0 0 16px;border-radius:12px;}
+html body .peer-eval-dialog .eval-form-table td{padding:10px 6px;}
+html body .peer-eval-dialog .eval-form-table td:first-child{padding-left:14px;padding-right:10px;}
+html body .peer-eval-dialog .eval-form-table col.c-rate{width:52px;}
+html body .peer-eval-dialog .eval-form-qtext{font-size:12.5px;font-weight:400;line-height:1.45;}
+html body .peer-eval-dialog .eval-form-qno{font-size:12.5px;}
+html body .peer-eval-dialog .eval-form-rating label{width:34px;height:30px;border-radius:7px;font-size:12px;font-weight:800;}
+html body .peer-eval-dialog .peer-eval-footer{padding:16px 28px 24px;}
+html body .peer-eval-dialog .peer-eval-footer .btn-submit-new{min-height:0;padding:13px;border-radius:10px;font-size:15px;box-shadow:none;}
+html body .peer-eval-dialog .peer-eval-footer .btn-cancel-new{padding:13px 22px;border-radius:10px;font-size:14px;}
+@media(max-width:700px){
+ html body .peer-eval-dialog .peer-eval-dialog-header,html body .peer-eval-dialog .peer-eval-footer{padding-left:18px;padding-right:18px;}
+ html body .peer-eval-dialog .peer-eval-scroll{padding:18px;}
+ html body .peer-eval-dialog .eval-form-table col.c-rate{width:36px;}
+ html body .peer-eval-dialog .eval-form-rating label{width:29px;height:30px;}
+}
+</style>
 </body>
 </html>

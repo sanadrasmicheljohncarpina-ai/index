@@ -136,9 +136,23 @@ function activityColor(a){
     if(a.severity && SEVERITY_COLORS[a.severity]) return SEVERITY_COLORS[a.severity];
     return a.type==='role_change' ? '#4968C8' : '#2563EB';
 }
+// The signed-in user's own actions are not listed (same rule as the
+// dashboard bell). Matched by actor id when supplied, else actor name, else
+// the "<Me> evaluated ..." text.
+const ME_ID = <?= json_encode((string)($_SESSION['user_id'] ?? '')) ?>;
+const ME_NAME = <?= json_encode(trim((string)($_SESSION['full_name'] ?? ''))) ?>.toLowerCase();
+function isOwnAction(e){
+    if(!e) return false;
+    const aid = e.actor_user_id ?? e.actor_id ?? e.evaluator_id ?? null;
+    if(aid!==null && aid!=='' && ME_ID!=='' && String(aid)===ME_ID) return true;
+    if(ME_NAME==='') return false;
+    const actor = String(e.actor||'').trim().toLowerCase();
+    if(actor===ME_NAME) return true;
+    return String(e.text||'').trim().toLowerCase().startsWith(ME_NAME+' evaluated ');
+}
 function renderLogsTable(feedFull){
     const body=document.getElementById('logsTableBody');if(!body)return;
-    feedFull=feedFull||[];
+    feedFull=(feedFull||[]).filter(a=>!isOwnAction(a));
     if(feedFull.length===0){
         body.innerHTML='<tr><td colspan="4" class="logs-empty">No recent activity yet.</td></tr>';
         return;
