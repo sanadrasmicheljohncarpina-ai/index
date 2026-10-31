@@ -173,7 +173,7 @@ $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 <script>
 (function(){
   try{
-    var t=localStorage.getItem('pbiTheme')||'light', a=localStorage.getItem('pbiAccent')||'#2f6ee2';
+    var t=localStorage.getItem('pbiTheme')||'light', a=(localStorage.getItem('pbiAccent')||'#0F9F6E').replace(/^#1f9d63$/i,'#0F9F6E');
     var r=t==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):t;
     document.documentElement.setAttribute('data-theme',r);
     document.documentElement.style.setProperty('--accent',a);
@@ -187,7 +187,7 @@ $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
-:root{--accent:#2f6ee2;--accent-soft:#eaf2ff;--bg:#f4f8ff;--text:#10243f;--muted:#66809c;--panel-bg:#fff;--panel-border:#dce8f5;--input-bg:#f9fbff;--input-border:#d4e2f2;--ok:#0F9F6E;--err:#D6455D}
+:root{--accent:#0F9F6E;--accent-soft:color-mix(in srgb,var(--accent) 12%,#fff);--bg:#f4f8ff;--text:#10243f;--muted:#66809c;--panel-bg:#fff;--panel-border:#dce8f5;--input-bg:#f9fbff;--input-border:#d4e2f2;--ok:#0F9F6E;--err:#D6455D}
 html[data-theme="dark"]{--bg:#0b1626;--text:#e7eef8;--muted:#8ba0bd;--panel-bg:#121f33;--panel-border:#22344d;--input-bg:#16243a;--input-border:#25374f;--accent-soft:color-mix(in srgb,var(--accent) 22%,#121f33)}
 *{box-sizing:border-box}
 html,body{margin:0;font-family:Inter,system-ui,sans-serif;background:transparent;color:var(--text)}

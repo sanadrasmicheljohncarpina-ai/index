@@ -206,6 +206,16 @@ body::before{display:none;}
 .card-footer{border-top-color:rgba(255,255,255,.08);}
 button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid rgba(251,191,36,.38);outline-offset:2px;}
 @media(prefers-reduced-motion:reduce){.login-card{transition:none;}.btn-login{transition:none;}}
+
+/* Match Admin (EA) login card size */
+.login-card{max-width:420px!important;padding:48px 44px 40px!important;}
+.logo-ring{width:72px!important;height:72px!important;}
+.card-subtitle{text-wrap:balance;}
+.login-card .form-input{height:38px!important;min-height:0!important;padding-top:0!important;padding-bottom:0!important;padding-left:46px!important;padding-right:46px!important;}
+.input-wrap .f-icon{left:14px!important;width:18px!important;text-align:center!important;}
+.btn-login{height:38px!important;min-height:0!important;padding:0 13px!important;}
+.login-card .card-footer{display:none!important;}
+@media(max-width:480px){.login-card{padding:36px 22px 30px!important;margin:16px;}}
 </style>
 </head>
 <body>

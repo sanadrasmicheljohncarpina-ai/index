@@ -252,7 +252,7 @@ body{
 .alert{display:flex;align-items:flex-start;gap:10px;border-radius:10px;padding:12px 14px;font-size:12px;line-height:1.5;margin-bottom:18px;}
 .alert i{margin-top:2px;}
 .alert-error{background:rgba(248,113,113,.10);border:1px solid rgba(248,113,113,.30);color:#FF9A9A;}
-.alert-success{background:rgba(74,222,128,.09);border:1px solid rgba(74,222,128,.26);color:#8CF5AD;}
+.alert-success{background:rgba(34,197,94,.10);border:1px solid rgba(34,197,94,.28);color:#86efac;}
 
 .section-head{display:none;}
 .section-title{font:700 17px 'Rajdhani',sans-serif;letter-spacing:1.2px;text-transform:uppercase;color:var(--violet-h);display:flex;align-items:center;gap:8px;}
@@ -695,20 +695,19 @@ summary:focus-visible{outline:3px solid rgba(156,133,240,.40);outline-offset:2px
 <div class="reg-card">
   <div class="card-header">
     <img class="logo-ring" src="../image/pbi_logo" alt="PBI Logo"/>
-    <div class="card-title">Dean Registration</div>
+    <?php if (!$success): ?><div class="card-title">Dean Registration</div><?php endif; ?>
     <div class="card-subtitle">Employee Performance Evaluation &amp; Management System</div>
+    <?php if ($success): ?><div class="role-pill"><i class="fa-solid fa-user-tie"></i> Dean Access</div><?php endif; ?>
   </div>
   <div class="divider"></div>
 
   <?php if ($success): ?>
-    <div class="success-panel">
-      <div class="success-icon"><i class="fa-solid fa-check"></i></div>
-      <div class="success-title">Registration Submitted</div>
-      <p class="success-text">Your Dean account has been created and is now <strong style="color:#fff;">pending administrator approval</strong>. Once approved, you can return here to sign in.</p>
-      <div class="success-actions"><a class="back-btn" href="dean_login.php"><i class="fa-solid fa-arrow-left"></i> Back to Dean Login</a></div>
+    <div class="alert alert-success">
+      <i class="fa-solid fa-circle-check"></i>
+      <span>Registration submitted successfully. Your account is <strong>pending administrator approval</strong>. You will be able to log in once your account is approved.</span>
     </div>
-    <div class="card-footer">
-      <span class="secure-badge"><i class="fa-solid fa-circle-check"></i> Secured &amp; Encrypted Connection</span>
+    <div class="card-footer" style="border-top:none;margin-top:8px;">
+      <a href="dean_login.php">Back to Login</a>
     </div>
   <?php else: ?>
     <?php if ($error): ?>
@@ -754,7 +753,7 @@ summary:focus-visible{outline:3px solid rgba(156,133,240,.40);outline-offset:2px
         <div class="form-group">
           <label class="form-label" for="password">Password <span class="req">*</span></label>
           <div class="input-wrap">
-            <input class="form-input" type="password" id="password" name="password" placeholder="Minimum 8 characters" required minlength="8" autocomplete="new-password" oninput="checkStrength(this.value); checkMatch();"/>
+            <input class="form-input" type="password" id="password" name="password" value="<?= $error ? htmlspecialchars(is_string($_POST['password'] ?? null) ? $_POST['password'] : '') : '' ?>" placeholder="Minimum 8 characters" required minlength="8" autocomplete="new-password" oninput="checkStrength(this.value); checkMatch();"/>
             <i class="fa-solid fa-lock f-icon"></i>
             <button type="button" class="toggle-pw" onclick="togglePw('password','eye1')" aria-label="Show password"><i class="fa-solid fa-eye-slash" id="eye1"></i></button>
           </div>
@@ -767,7 +766,7 @@ summary:focus-visible{outline:3px solid rgba(156,133,240,.40);outline-offset:2px
         <div class="form-group">
           <label class="form-label" for="confirm_password">Confirm Password <span class="req">*</span></label>
           <div class="input-wrap">
-            <input class="form-input" type="password" id="confirm_password" name="confirm_password" placeholder="Re-enter your password" required minlength="8" autocomplete="new-password" oninput="checkMatch();"/>
+            <input class="form-input" type="password" id="confirm_password" name="confirm_password" value="<?= $error ? htmlspecialchars(is_string($_POST['confirm_password'] ?? null) ? $_POST['confirm_password'] : '') : '' ?>" placeholder="Re-enter your password" required minlength="8" autocomplete="new-password" oninput="checkMatch();"/>
             <i class="fa-solid fa-lock f-icon"></i>
             <button type="button" class="toggle-pw" onclick="togglePw('confirm_password','eye2')" aria-label="Show confirmation password"><i class="fa-solid fa-eye-slash" id="eye2"></i></button>
           </div>
@@ -796,7 +795,7 @@ summary:focus-visible{outline:3px solid rgba(156,133,240,.40);outline-offset:2px
               <?php endforeach; ?>
             </select>
             <div class="sq-chosen" id="sq_chosen<?= $n ?>" aria-live="polite"></div>
-            <input class="form-input sq-answer" type="text" name="sq_answer[<?= $n ?>]" id="sq_a<?= $n ?>" maxlength="100" placeholder="Your answer" autocomplete="off" required/>
+            <input class="form-input sq-answer" type="text" name="sq_answer[<?= $n ?>]" id="sq_a<?= $n ?>" maxlength="100" value="<?= $error ? htmlspecialchars(is_string($_POST['sq_answer'][$n] ?? null) ? $_POST['sq_answer'][$n] : '') : '' ?>" placeholder="Your answer" autocomplete="off" required/>
           </div>
           <?php endfor; ?>
         </div>
@@ -898,6 +897,15 @@ function revealSq(el){ const b=el&&el.closest?el.closest('.sq-section'):null; if
   selects.forEach(s=>s.addEventListener('change',sync));
   sync();
 })();
+</script>
+<script>
+window.addEventListener('DOMContentLoaded', function () {
+  var p = document.getElementById('password');
+  if (p && p.value) {
+    if (typeof checkStrength === 'function') checkStrength(p.value);
+    if (typeof checkMatch === 'function') checkMatch();
+  }
+});
 </script>
 </body>
 </html>

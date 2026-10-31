@@ -646,6 +646,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_evaluation']))
                 } elseif ($missing_question_keys) {
                     $missing_count = count($missing_question_keys);
                     $submit_error = "Please answer all questions before submitting. You have {$missing_count} unanswered question" . ($missing_count === 1 ? '' : 's') . " remaining.";
+                } elseif ($comment === '') {
+                    // Strict rule: a written comment is mandatory. Enforced here
+                    // as well as in the form so a crafted POST can't skip it.
+                    $submit_error = "Please write a comment before submitting. Comments, suggestions and areas for improvement are required.";
                 }
             }
 
@@ -848,12 +852,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
 
 $land_on_settings = ($profile_error || $profile_success || $password_error || $password_success);
 
+// ── SECURITY QUESTIONS STATUS (for the Settings card) ────────
+$sq_status = 'none'; // none | ok | retired
+try {
+    $sq_existing = sq_load($mysqli, (int)$_SESSION['user_id']);
+    if (count($sq_existing) === 3) { $sq_status = sq_needs_update($sq_existing) ? 'retired' : 'ok'; }
+} catch (Throwable $e) { error_log('dashboard sq_load failed: ' . $e->getMessage()); }
+
 // ── FETCH QUESTIONS FOR A TARGET (AJAX) ──────────────────────
 // Reads from the same question source the admin assigns for this
 // person's student-evaluation context:
 //   - Staff   -> user_questions (per-person, target_type='Staff')
 //   - Teacher -> qn_get_faculty_questions() -- the same shared-bank helper
 //                the admin Faculty question-bank editor itself calls
+if (isset($_GET['get_submission'])) {
+    // Read-only: the logged-in student's OWN submitted evaluation for this
+    // person in the current period (evaluator_id is always the session user).
+    header('Content-Type: application/json; charset=utf-8');
+    $out = ['success' => false, 'error' => 'No submitted evaluation was found.'];
+    try {
+        $vt_id  = intval($_GET['target_id'] ?? 0);
+        $vt_ctx = strtolower(trim($_GET['context'] ?? 'teacher'));
+        if (!in_array($vt_ctx, ['teacher','staff','school_head'], true)) $vt_ctx = 'teacher';
+        if ($vt_id > 0 && $period_is_open) {
+            $vt_period = (int)$activePeriodRow['id'];
+            $vs = $mysqli->prepare("SELECT id, remarks, submitted_at FROM evaluation_tracker
+                                    WHERE evaluator_id=? AND target_user_id=? AND period_id=? AND evaluation_context=?
+                                    ORDER BY submitted_at DESC, id DESC LIMIT 1");
+            $vs->bind_param('iiis', $student_id, $vt_id, $vt_period, $vt_ctx);
+            $vs->execute();
+            $vtrk = $vs->get_result()->fetch_assoc();
+            $vs->close();
+            if ($vtrk) {
+                $va = $mysqli->prepare("SELECT qa.answer_score AS score,
+                                               COALESCE(uq.question_text, eq.question_text) AS question,
+                                               COALESCE(uq.category, eq.category, 'General') AS category
+                                        FROM questionnaire_answers qa
+                                        LEFT JOIN user_questions uq ON qa.question_source='user' AND uq.id=qa.user_question_id
+                                        LEFT JOIN evaluation_questions eq ON qa.question_source='evaluation' AND eq.id=qa.question_id
+                                        WHERE qa.tracker_id=?
+                                        ORDER BY category, COALESCE(eq.id,0), qa.id");
+                $vtid = (int)$vtrk['id'];
+                $va->bind_param('i', $vtid);
+                $va->execute();
+                $vrows = $va->get_result()->fetch_all(MYSQLI_ASSOC);
+                $va->close();
+                $vsum = 0; $vans = [];
+                foreach ($vrows as $vr) {
+                    $vsum += (float)$vr['score'];
+                    $vans[] = ['category' => (string)$vr['category'], 'question' => (string)$vr['question'], 'score' => (float)$vr['score']];
+                }
+                $out = [
+                    'success'      => true,
+                    'score'        => count($vans) ? round($vsum / count($vans), 2) : null,
+                    'submitted_at' => $vtrk['submitted_at'] ? date('M j, Y g:i A', strtotime($vtrk['submitted_at'])) : '',
+                    'comment'      => (string)($vtrk['remarks'] ?? ''),
+                    'answers'      => $vans,
+                ];
+            }
+        }
+    } catch (Throwable $ve) {
+        $out = ['success' => false, 'error' => 'Could not load your submitted evaluation.'];
+    }
+    echo json_encode($out, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    exit;
+}
+
 if (isset($_GET['get_questions'])) {
     header('Content-Type: application/json');
     try {
@@ -2301,6 +2365,11 @@ body:not(.light-theme) #view-settings{--ap-card:rgba(10,25,47,.55);--ap-soft:rgb
 #view-settings .ac-btn{display:inline-flex;align-items:center;gap:8px;padding:11px 17px;border:0;border-radius:9px;font:600 14px 'DM Sans',sans-serif;color:#fff;background:var(--ap-accent);box-shadow:0 4px 14px rgba(217,119,6,.25);cursor:pointer;transition:.18s ease;}
 #view-settings .ac-btn:hover{background:#F59E0B;color:#fff;transform:translateY(-1px);}
 #view-settings .ac-btn:disabled{opacity:.6;cursor:not-allowed;transform:none;}
+#view-settings a.ac-btn{text-decoration:none;}
+#view-settings .ac-c5{--ac-c:#8B5CF6;}
+#view-settings .sq-status{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;margin-bottom:16px;border-radius:999px;font-size:12px;font-weight:600;background:var(--ap-soft);border:1px solid var(--ap-line);color:var(--ap-muted);}
+#view-settings .sq-status.ok{color:#10B981;border-color:rgba(16,185,129,.35);}
+#view-settings .sq-status.warn{color:#D97706;border-color:rgba(217,119,6,.4);}
 
 /* Password eye toggle */
 #view-settings .pw-wrap{position:relative;display:block;}
@@ -2330,6 +2399,270 @@ body.reduce-motion *,body.reduce-motion *::before,body.reduce-motion *::after{an
 @media (max-width:900px){#view-settings .appearance-theme-options{grid-template-columns:1fr;}#view-settings .form-grid{grid-template-columns:1fr;}}
 @media (max-width:768px){#view-settings .appearance-feature-grid{grid-template-columns:1fr;}#view-settings .appearance-device-badge{display:none;}}
 @media (max-width:650px){#view-settings .profile-card{align-items:flex-start;flex-direction:column;}#view-settings .ac-card{padding:18px 18px 20px;}}
+/* ══════════════════════════════════════════════════════════════
+   EVALUATION FORM — Principal-style size and look
+   (mirrors .de-modal in principal_evaluations.php)
+   Size + amber rating colours apply in both themes; the white
+   Principal look is scoped to body.light-theme.
+   ══════════════════════════════════════════════════════════════ */
+:is(#evalModal,#viewEvalModal).modal-overlay{align-items:center!important;padding:10px 20px!important;background:rgba(10,25,47,.55)!important;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);}
+:is(#evalModal,#viewEvalModal) .modal{max-width:780px!important;height:96vh;max-height:calc(100vh - 20px)!important;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.35);}
+:is(#evalModal,#viewEvalModal) .modal-header{padding:20px 28px;}
+:is(#evalModal,#viewEvalModal) .modal-avatar,:is(#evalModal,#viewEvalModal) .modal-avatar-ph{width:52px;height:52px;}
+:is(#evalModal,#viewEvalModal) .modal-body{padding:24px 28px 18px;}
+:is(#evalModal,#viewEvalModal) .modal-footer{padding:20px 28px;gap:12px;}
+:is(#evalModal,#viewEvalModal) .btn-cancel-modal,:is(#evalModal,#viewEvalModal) .btn-submit{padding:13px 20px;font-size:15px;border-radius:12px;}
+:is(#evalModal,#viewEvalModal) .btn-submit{background:#D99A2B;box-shadow:0 8px 20px rgba(217,154,43,.30);}
+:is(#evalModal,#viewEvalModal) .btn-submit:hover{background:#B45309;}
+
+/* amber rating cells, 40x36 like the Principal form */
+:is(#evalModal,#viewEvalModal) .eval-form-rating label{width:40px;height:36px;border-radius:9px;font-size:13px;font-weight:600;}
+:is(#evalModal,#viewEvalModal) .eval-form-rating label:hover{border-color:#D99A2B;background:rgba(217,154,43,.08);}
+:is(#evalModal,#viewEvalModal) .eval-form-rating input:checked + label{background:#D99A2B;border-color:#D99A2B;color:#fff;box-shadow:0 4px 12px rgba(217,154,43,.35);}
+:is(#evalModal,#viewEvalModal) .eval-form-rating input:focus-visible + label{outline:2px solid #B45309;outline-offset:2px;}
+:is(#evalModal,#viewEvalModal) .eval-progress{background:#FFF7ED;border:1px solid #FED7AA;font-size:13px;font-weight:600;}
+:is(#evalModal,#viewEvalModal) .eval-progress .progress-status{color:#B45309;font-weight:700;}
+
+/* category heading: dot instead of icon; question numbers bold black */
+:is(#evalModal,#viewEvalModal) .eval-form-cat{display:flex;align-items:center;gap:9px;margin:18px 0 8px;font-size:12px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;color:#000;}
+:is(#evalModal,#viewEvalModal) .eval-form-cat i{display:none;}
+:is(#evalModal,#viewEvalModal) .eval-form-cat::before{content:"";width:9px;height:9px;border-radius:50%;background:#D99A2B;flex:0 0 auto;}
+:is(#evalModal,#viewEvalModal) .eval-form-qno{color:#000;font-weight:800;}
+body:not(.light-theme) :is(#evalModal,#viewEvalModal) .eval-form-cat,body:not(.light-theme) :is(#evalModal,#viewEvalModal) .eval-form-qno{color:var(--light);}
+
+/* white Principal look (light theme) */
+body.light-theme :is(#evalModal,#viewEvalModal) .modal{background:#fff;border:0;}
+body.light-theme :is(#evalModal,#viewEvalModal) .modal-header{background:#fff;border-bottom:1px solid #D9E4EF;}
+body.light-theme :is(#evalModal,#viewEvalModal) .modal-avatar,body.light-theme :is(#evalModal,#viewEvalModal) .modal-avatar-ph{border:2px solid #D9E4EF;}
+body.light-theme :is(#evalModal,#viewEvalModal) .modal-name{color:#172033;}
+body.light-theme :is(#evalModal,#viewEvalModal) .modal-desig{color:#64748B;}
+body.light-theme :is(#evalModal,#viewEvalModal) .modal-footer{border-top:1px solid #D9E4EF;}
+body.light-theme :is(#evalModal,#viewEvalModal) .btn-cancel-modal{background:#F5F7FB;color:#172033;border:1px solid #CBD5E1;}
+body.light-theme :is(#evalModal,#viewEvalModal) .scale-legend{background:#F5F7FB;border:1px solid #D9E4EF;}
+body.light-theme :is(#evalModal,#viewEvalModal) .eval-form-wrap{background:#fff;border:1px solid #D9E4EF;border-radius:12px;}
+body.light-theme :is(#evalModal,#viewEvalModal) .eval-form-table th{background:#F4F8FF!important;color:#64748B!important;border-bottom:1px solid #D9E4EF!important;}
+body.light-theme :is(#evalModal,#viewEvalModal) .eval-form-table td{border-bottom:1px solid #E8EEF5!important;}
+body.light-theme :is(#evalModal,#viewEvalModal) .eval-form-rating label{border:1px solid #CBD5E1;background:#F5F7FB;color:#64748B;}
+body.light-theme :is(#evalModal,#viewEvalModal) .eval-form-rating input:checked + label{background:#D99A2B;border-color:#D99A2B;color:#fff;}
+body.light-theme :is(#evalModal,#viewEvalModal) .comment-box{background:transparent;padding:0;margin-top:20px;}
+body.light-theme :is(#evalModal,#viewEvalModal) .comment-label{font-size:13px;color:#B45309;}
+body.light-theme :is(#evalModal,#viewEvalModal) .comment-textarea{min-height:96px;background:#F5F7FB;color:#172033;border:1px solid #CBD5E1;border-radius:10px;padding:12px;font-size:13.5px;}
+body.light-theme :is(#evalModal,#viewEvalModal) .comment-textarea:focus{border-color:#D99A2B;}
+@media(max-width:640px){
+    :is(#evalModal,#viewEvalModal) .modal-header{padding:16px 18px;}
+    :is(#evalModal,#viewEvalModal) .modal-body{padding:18px;}
+    :is(#evalModal,#viewEvalModal) .modal-footer{padding:14px 18px;gap:10px;}
+}
+
+/* read-only "View" modal — same look as the Principal's submitted-evaluation view */
+#viewEvalModal .modal-body{padding:24px 28px 18px;}
+#viewEvalModal .vw-summary{display:flex;align-items:baseline;gap:8px;margin-bottom:6px;}
+#viewEvalModal .vw-summary .num{font-family:'Rajdhani',sans-serif;font-size:34px;font-weight:700;color:var(--light);}
+#viewEvalModal .vw-summary .of{font-size:13px;color:var(--muted);}
+#viewEvalModal .vw-sub{font-size:13px;color:var(--muted);margin-bottom:6px;}
+#viewEvalModal .eval-form-cat,#viewEvalModal .eval-form-qno{color:#F0B84D;}
+body.light-theme #viewEvalModal .eval-form-cat,body.light-theme #viewEvalModal .eval-form-qno{color:#B45309;}
+#viewEvalModal .vw-table th:not(:first-child){width:88px;line-height:1.3;}
+#viewEvalModal .vw-chip{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:28px;padding:0 8px;border-radius:8px;background:#D99A2B;color:#fff;font-weight:700;font-size:13px;}
+#viewEvalModal .vw-comment{margin-top:20px;}
+#viewEvalModal .vw-comment-label{font-size:13px;font-weight:700;color:#F0B84D;margin-bottom:8px;}
+body.light-theme #viewEvalModal .vw-comment-label{color:#B45309;}
+#viewEvalModal .vw-comment-text{font-size:13.5px;line-height:1.55;white-space:pre-wrap;color:var(--light);background:var(--inner);border:1px solid var(--border);border-radius:10px;padding:12px 14px;}
+#viewEvalModal .vw-comment-text.vw-none{color:var(--muted);font-style:italic;}
+#viewEvalModal .modal-footer .btn-cancel-modal{flex:0 0 auto;}
+
+/* required comment — red outlined box + inline message (matches the Principal's form) */
+.comment-req{color:#ef4444;font-weight:800;}
+.comment-box.invalid{border:1px solid #f87171!important;box-shadow:0 0 0 3px rgba(239,68,68,.12);}
+body.light-theme #evalModal .comment-box.invalid{padding:16px 20px 14px;border-radius:14px;background:#F8FAFF;}
+.comment-error{margin-top:12px;font-size:13px;font-weight:700;color:#b91c1c;line-height:1.4;}
+.comment-error[hidden]{display:none;}
+body:not(.light-theme) .comment-error{color:#f87171;}
+
+/* ══════════════════════════════════════════════════════════════
+   EVALUATE PERSONNEL — matches the Executive Assistant's
+   "Evaluate Others" page (ea_evaluation.php): header + period chip,
+   group cards with progress, roster panel with stat pills.
+   Loaded last on purpose.
+   ══════════════════════════════════════════════════════════════ */
+html body .sd-shell .eval-panel-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px 16px;margin-bottom:6px;}
+html body .sd-shell .eval-main-card .eval-card-title{font-size:26px!important;margin:0!important;gap:11px;}
+html body .sd-shell .eval-main-card .eval-card-title i{font-size:22px!important;}
+html body .sd-shell .period-chip{display:inline-flex;align-items:center;gap:8px;padding:7px 14px;border-radius:999px;font-size:12.5px;font-weight:700;border:1px solid #C7D2FE;background:#EEF2FF;color:#3730A3;}
+html body:not(.light-theme) .sd-shell .period-chip{background:rgba(129,140,248,.14);color:#C7D2FE;border-color:rgba(129,140,248,.35);}
+html body .sd-shell .eval-panel-lead{margin:0 0 22px;font-size:14.5px;line-height:1.5;color:var(--sd-sub);}
+
+/* group cards */
+html body .sd-shell .eval-main-card .category-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:22px!important;margin-bottom:24px!important;}
+html body .sd-shell .eval-main-card .cat-btn{--cat-color:var(--g,#2563EB)!important;position:relative;display:flex!important;flex-direction:column;align-items:center;justify-content:flex-start!important;min-height:320px!important;padding:36px 22px 24px!important;border-radius:18px!important;overflow:hidden;opacity:1!important;transform:none;background:var(--sd-card)!important;border:1px solid var(--sd-line)!important;box-shadow:0 1px 2px rgba(11,31,58,.06),0 8px 22px rgba(11,31,58,.06)!important;transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease;}
+html body .sd-shell .eval-main-card .cat-btn::before{content:"";position:absolute;left:0;right:0;top:0;height:5px;background:var(--g);}
+html body .sd-shell .eval-main-card .cat-btn::after{display:none!important;}
+html body .sd-shell .eval-main-card .cat-btn:hover{transform:translateY(-3px);border-color:var(--g)!important;box-shadow:0 14px 32px rgba(11,31,58,.13)!important;}
+html body .sd-shell .eval-main-card .cat-btn.active{transform:none;border-color:var(--g)!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--g) 22%,transparent),0 12px 28px rgba(11,31,58,.12)!important;}
+html body .sd-shell .eval-main-card .cat-btn:focus-visible{outline:3px solid var(--g);outline-offset:3px;}
+html body .sd-shell .eval-main-card .cat-icon{width:88px!important;height:88px!important;font-size:34px!important;margin-bottom:16px!important;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--g)!important;background:var(--g-bg)!important;}
+html body:not(.light-theme) .sd-shell .eval-main-card .cat-icon{background:color-mix(in srgb,var(--g) 16%,transparent)!important;}
+html body .sd-shell .eval-main-card .cat-name{font-family:'Rajdhani',sans-serif;font-size:24px!important;font-weight:700;margin:0 0 2px!important;color:var(--sd-ink)!important;}
+html body .sd-shell .eval-main-card .cat-meta{display:inline-flex;align-items:baseline;gap:6px;margin-top:10px;padding:6px 16px;border-radius:999px;font-size:13.5px!important;font-weight:700;background:var(--g-bg);color:var(--g-ink);}
+html body .sd-shell .eval-main-card .cat-meta strong{font-size:19px;font-weight:800;line-height:1;}
+html body:not(.light-theme) .sd-shell .eval-main-card .cat-meta{background:rgba(255,255,255,.08);color:var(--sd-ink);}
+html body .sd-shell .group-progress{display:flex;flex-direction:column;align-items:center;gap:7px;width:100%;max-width:230px;margin-top:20px;}
+html body .sd-shell .group-progress-bar{display:block;width:100%;height:8px;border-radius:999px;overflow:hidden;background:rgba(100,116,139,.2);}
+html body .sd-shell .group-progress-bar i{display:block;height:100%;border-radius:999px;background:var(--g);transition:width .3s ease;}
+html body .sd-shell .group-progress.complete .group-progress-bar i{background:#16A34A;}
+html body .sd-shell .group-progress-text{font-size:13px;font-weight:500;color:var(--sd-sub);}
+html body .sd-shell .group-progress-text strong{color:var(--sd-ink);font-weight:800;}
+html body .sd-shell .group-cta{display:inline-flex;align-items:center;margin-top:auto;padding-top:20px;font-size:13px;font-weight:800;color:var(--g-ink);}
+html body:not(.light-theme) .sd-shell .group-cta{color:var(--g);}
+html body .sd-shell .group-cta i{font-size:12px;margin-left:6px;transition:transform .15s ease;}
+html body .sd-shell .cat-btn:hover .cta-off i{transform:translateX(4px);}
+html body .sd-shell .group-cta .cta-on{display:none;}
+html body .sd-shell .cat-btn.active .group-cta .cta-on{display:inline;}
+html body .sd-shell .cat-btn.active .group-cta .cta-off{display:none;}
+
+/* roster panel */
+html body .sd-shell .ev-panel{margin:24px 0 0!important;border-radius:18px!important;overflow:hidden;background:var(--sd-card)!important;border:1px solid var(--sd-line)!important;}
+html body .sd-shell .ev-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px 16px;padding:20px 26px!important;border-bottom:1px solid var(--sd-line);background:#f8fbff;}
+html body:not(.light-theme) .sd-shell .ev-head{background:rgba(255,255,255,.03);}
+html body .sd-shell .ev-head-left{display:flex;align-items:center;gap:11px;}
+html body .sd-shell .ev-head-icon{width:42px!important;height:42px!important;border-radius:10px!important;font-size:17px!important;background:#edf4fd!important;color:#2F6EE2!important;}
+html body:not(.light-theme) .sd-shell .ev-head-icon{background:#1D3A60!important;color:#78AFFF!important;}
+html body .sd-shell .ev-head-title{font-family:'Rajdhani',sans-serif;font-size:24px!important;font-weight:700;color:var(--sd-ink)!important;}
+html body .sd-shell .ev-stats{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;}
+html body .sd-shell .ev-stats span{padding:6px 14px;border-radius:999px;font-size:13px;font-weight:600;border:1px solid #D3DCE8;background:#EEF2F7;color:#334155;}
+html body .sd-shell .ev-stats strong{font-size:15px;font-weight:800;color:inherit;}
+html body .sd-shell .ev-stats .s-done{background:#DDF4E6;color:#0A6A3B;border-color:#9ED8B7;}
+html body .sd-shell .ev-stats .s-pend{background:#FFF1D4;color:#8A5300;border-color:#EBCB88;}
+html body .sd-shell .ev-stats .s-period{background:#EEF2FF;color:#3730A3;border-color:#C7D2FE;}
+html body .sd-shell .ev-stats .s-period i{margin-right:6px;}
+html body:not(.light-theme) .sd-shell .ev-stats span{background:rgba(255,255,255,.06);color:var(--sd-ink);border-color:var(--sd-line);}
+html body:not(.light-theme) .sd-shell .ev-stats .s-done{background:rgba(52,211,153,.12);color:#6EE7B7;border-color:rgba(52,211,153,.25);}
+html body:not(.light-theme) .sd-shell .ev-stats .s-pend{background:rgba(245,158,11,.12);color:#F8C465;border-color:rgba(245,158,11,.28);}
+html body:not(.light-theme) .sd-shell .ev-stats .s-period{background:rgba(129,140,248,.14);color:#C7D2FE;border-color:rgba(129,140,248,.35);}
+html body .sd-shell .ev-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px!important;padding:22px!important;}
+html body .sd-shell .ev-row{gap:16px!important;padding:16px 18px!important;border-radius:14px!important;border-left:4px solid #F59E0B!important;}
+html body .sd-shell .ev-row.is-done{border-left-color:#16A34A!important;}
+html body .sd-shell .ev-row:hover{box-shadow:0 6px 18px rgba(11,31,58,.10);}
+html body .sd-shell .ev-avatar{width:56px!important;height:56px!important;}
+html body .sd-shell .ev-name{font-size:15.5px!important;font-weight:800;}
+html body .sd-shell .ev-desig{font-size:13px!important;margin-top:2px;}
+html body .sd-shell .ev-badge{display:inline-flex;align-items:center;gap:5px;margin-top:8px;padding:4px 11px!important;border-radius:999px;font-size:12px!important;font-weight:800;}
+html body .sd-shell .ev-badge-done{background:#D6F2E4!important;color:#0A6A3B!important;border:1px solid #8ED0AD!important;}
+html body .sd-shell .ev-badge-pending{background:#FFF1D4!important;color:#8A5300!important;border:1px solid #EBCB88!important;}
+html body:not(.light-theme) .sd-shell .ev-badge-done{background:rgba(52,211,153,.12)!important;color:#6EE7B7!important;border-color:rgba(52,211,153,.25)!important;}
+html body:not(.light-theme) .sd-shell .ev-badge-pending{background:rgba(245,158,11,.12)!important;color:#F8C465!important;border-color:rgba(245,158,11,.28)!important;}
+html body .sd-shell .ev-btn{height:auto!important;min-width:112px;padding:11px 18px!important;border-radius:10px!important;font-size:13px!important;font-weight:800;justify-content:center;}
+html body .sd-shell .ev-btn-eval{background:#0E9F6E!important;border:1px solid #0E9F6E!important;color:#fff!important;}
+html body .sd-shell .ev-btn-eval:hover:not(:disabled){background:#0B8A5F!important;border-color:#0B8A5F!important;}
+html body .sd-shell .ev-btn-eval:disabled{background:#f1f5f9!important;border-color:#e2e8f0!important;color:#94a3b8!important;}
+html body .sd-shell .ev-btn-view{background:#fff!important;color:#1e293b!important;border:1px solid #b6c3d6!important;}
+html body .sd-shell .ev-btn-view:hover{background:#F1F5FB!important;}
+html body:not(.light-theme) .sd-shell .ev-btn-view{background:transparent!important;color:#B1C1D4!important;border-color:#34506F!important;}
+html body:not(.light-theme) .sd-shell .ev-btn-view:hover{background:#172E4C!important;color:#fff!important;}
+html body:not(.light-theme) .sd-shell .ev-btn-eval:disabled{background:rgba(255,255,255,.06)!important;border-color:var(--sd-line)!important;color:var(--muted)!important;}
+@media(max-width:900px){
+  html body .sd-shell .eval-main-card .category-grid{grid-template-columns:1fr!important;}
+  html body .sd-shell .eval-main-card .cat-btn{min-height:260px!important;}
+  html body .sd-shell .ev-grid{grid-template-columns:1fr;}
+}
+@media(max-width:560px){
+  html body .sd-shell .eval-main-card .cat-btn{min-height:0!important;}
+  html body .sd-shell .ev-head{align-items:flex-start;flex-direction:column;}
+  html body .sd-shell .ev-row{flex-wrap:wrap;}
+  html body .sd-shell .ev-btn{width:100%;}
+}
+
+/* ══════════════════════════════════════════════════════════════
+   EVALUATION FORM — same size as the EA form (ea_evaluate.php)
+   780px wide, 96vh tall, 28px side padding, compact 34x30 rating cells.
+   ══════════════════════════════════════════════════════════════ */
+:is(#evalModal,#viewEvalModal).modal-overlay{padding:10px 20px!important;}
+:is(#evalModal,#viewEvalModal) .modal{max-width:780px!important;height:96vh;max-height:calc(100vh - 20px)!important;border-radius:18px!important;}
+:is(#evalModal,#viewEvalModal) .modal-header{padding:24px 28px 16px!important;gap:14px;}
+:is(#evalModal,#viewEvalModal) .modal-avatar,:is(#evalModal,#viewEvalModal) .modal-avatar-ph{width:52px!important;height:52px!important;}
+:is(#evalModal,#viewEvalModal) .modal-name{font-size:20px!important;}
+:is(#evalModal,#viewEvalModal) .modal-desig{font-size:12px!important;}
+:is(#evalModal,#viewEvalModal) .modal-body{padding:24px 28px!important;}
+:is(#evalModal,#viewEvalModal) .modal-footer{padding:16px 28px 24px!important;gap:12px;}
+:is(#evalModal,#viewEvalModal) .btn-cancel-modal{padding:13px 22px!important;font-size:14px!important;border-radius:10px!important;}
+:is(#evalModal,#viewEvalModal) .btn-submit{padding:13px!important;font-size:15px!important;border-radius:10px!important;}
+:is(#evalModal,#viewEvalModal) .scale-legend{gap:16px;margin-bottom:18px;padding:10px 14px;border-radius:8px;}
+:is(#evalModal,#viewEvalModal) .legend-item{font-size:11px;}
+:is(#evalModal,#viewEvalModal) .eval-progress{padding:9px 12px!important;font-size:11.5px!important;border-radius:8px;margin-bottom:14px;}
+:is(#evalModal,#viewEvalModal) .eval-form-cat{font-size:10px!important;letter-spacing:.9px!important;margin:18px 0 8px!important;}
+:is(#evalModal,#viewEvalModal) .eval-form-table{table-layout:fixed;min-width:650px;}
+:is(#evalModal,#viewEvalModal) .eval-form-table th{font-size:10px;padding:10px 6px;}
+:is(#evalModal,#viewEvalModal) .eval-form-table th:first-child{min-width:360px;padding-left:14px;}
+:is(#evalModal,#viewEvalModal) .eval-form-table th:not(:first-child){width:52px;}
+:is(#evalModal,#viewEvalModal) .eval-form-table td{padding:10px 6px;}
+:is(#evalModal,#viewEvalModal) .eval-form-table td:first-child{min-width:360px;padding-left:14px;padding-right:10px;}
+:is(#evalModal,#viewEvalModal) .eval-form-qtext{font-size:12.5px;line-height:1.45;}
+:is(#evalModal,#viewEvalModal) .eval-form-rating label,:is(#evalModal,#viewEvalModal) .eval-form-static span{width:34px!important;height:30px!important;border-radius:7px!important;font-size:12px!important;font-weight:800!important;}
+:is(#evalModal,#viewEvalModal) .comment-label{font-size:12px!important;}
+:is(#evalModal,#viewEvalModal) .comment-textarea{min-height:100px!important;font-size:13px!important;padding:12px 14px!important;}
+@media(max-width:700px){
+  :is(#evalModal,#viewEvalModal).modal-overlay{padding:10px!important;}
+  :is(#evalModal,#viewEvalModal) .modal-header{padding:16px 18px!important;}
+  :is(#evalModal,#viewEvalModal) .modal-body{padding:18px!important;}
+  :is(#evalModal,#viewEvalModal) .modal-footer{padding:14px 18px!important;}
+}
+
+/* Evaluation form: no "Question 5 4 3 2 1" header row and no "x / y answered" strip */
+#evalModal .eval-form-table thead{display:none;}
+#evalModal .eval-progress{display:none!important;}
+#evalModal .eval-form-table td:not(:first-child){width:52px;}  /* keeps the rating columns aligned when the header is hidden */
+
+/* ── Evaluate tab: one accent only (the student portal's amber) ── */
+html body .sd-shell .period-chip{background:#FDF0D5;color:#8A5300;border-color:#F0D49A;}
+html body:not(.light-theme) .sd-shell .period-chip{background:rgba(217,154,43,.14);color:#F0B84D;border-color:rgba(217,154,43,.35);}
+html body .sd-shell .group-progress.complete .group-progress-bar i{background:var(--g);}
+html body .sd-shell .ev-head-icon{background:#FDF0D5!important;color:#B45309!important;}
+html body:not(.light-theme) .sd-shell .ev-head-icon{background:rgba(217,154,43,.16)!important;color:#F0B84D!important;}
+html body .sd-shell .ev-stats .s-done{background:#FDF0D5;color:#8A5300;border-color:#F0D49A;}
+html body .sd-shell .ev-stats .s-pend{background:#EEF2F7;color:#475569;border-color:#D3DCE8;}
+html body .sd-shell .ev-stats .s-period{background:transparent;color:#8A5300;border-color:#F0D49A;}
+html body:not(.light-theme) .sd-shell .ev-stats .s-done{background:rgba(217,154,43,.14);color:#F0B84D;border-color:rgba(217,154,43,.35);}
+html body:not(.light-theme) .sd-shell .ev-stats .s-pend{background:rgba(255,255,255,.06);color:var(--sd-sub);border-color:var(--sd-line);}
+html body:not(.light-theme) .sd-shell .ev-stats .s-period{background:transparent;color:#F0B84D;border-color:rgba(217,154,43,.35);}
+html body .sd-shell .ev-row{border-left-color:#CBD5E1!important;}
+html body .sd-shell .ev-row.is-done{border-left-color:#D99A2B!important;}
+html body:not(.light-theme) .sd-shell .ev-row{border-left-color:rgba(255,255,255,.18)!important;}
+html body:not(.light-theme) .sd-shell .ev-row.is-done{border-left-color:#D99A2B!important;}
+html body .sd-shell .ev-badge-done{background:#FDF0D5!important;color:#8A5300!important;border:1px solid #F0D49A!important;}
+html body .sd-shell .ev-badge-pending{background:#EEF2F7!important;color:#475569!important;border:1px solid #D3DCE8!important;}
+html body:not(.light-theme) .sd-shell .ev-badge-done{background:rgba(217,154,43,.14)!important;color:#F0B84D!important;border-color:rgba(217,154,43,.35)!important;}
+html body:not(.light-theme) .sd-shell .ev-badge-pending{background:rgba(255,255,255,.06)!important;color:var(--sd-sub)!important;border-color:var(--sd-line)!important;}
+html body .sd-shell .ev-btn-eval{background:#D99A2B!important;border-color:#D99A2B!important;color:#fff!important;}
+html body .sd-shell .ev-btn-eval:hover:not(:disabled){background:#B45309!important;border-color:#B45309!important;}
+html body .sd-shell .ev-btn-view:hover{border-color:#D99A2B!important;}
+
+/* ── Settings tabs: Profile & Security / Appearance (same as the Principal's account settings) ── */
+#view-settings .settings-tabs{display:flex;gap:6px;margin:0 0 18px;padding:5px;border:1px solid #D9E4EF;border-radius:12px;background:#F4F8FF;width:fit-content;max-width:100%;overflow-x:auto;}
+#view-settings .settings-tab{appearance:none;border:0;background:transparent;color:#64748B;font:inherit;font-size:13.5px;font-weight:600;padding:9px 18px;border-radius:9px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;white-space:nowrap;transition:background .2s,color .2s,box-shadow .2s;}
+#view-settings .settings-tab i{color:#D99A2B;}
+#view-settings .settings-tab:hover{color:#172033;background:rgba(217,154,43,.12);}
+#view-settings .settings-tab[aria-selected="true"]{background:#FFFFFF;color:#172033;box-shadow:0 1px 5px rgba(15,23,42,.10);}
+#view-settings .settings-tab:focus-visible{outline:2px solid #D99A2B;outline-offset:2px;}
+#view-settings .settings-tabpanel[hidden]{display:none!important;}
+body:not(.light-theme) #view-settings .settings-tabs{background:rgba(10,25,47,.55);border-color:rgba(255,255,255,.10);}
+body:not(.light-theme) #view-settings .settings-tab{color:#A0B3C6;}
+body:not(.light-theme) #view-settings .settings-tab:hover{color:#fff;background:rgba(217,154,43,.15);}
+body:not(.light-theme) #view-settings .settings-tab[aria-selected="true"]{background:rgba(217,154,43,.18);color:#fff;box-shadow:none;}
+
+/* "Leave without submitting?" dialog (same as the EA evaluation form) */
+.leave-dlg-overlay{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(9,17,30,.55);}
+.leave-dlg{width:100%;max-width:420px;background:#fff;color:#10243f;border:1px solid #d7e3ef;border-radius:18px;box-shadow:0 30px 80px rgba(15,23,42,.35);padding:26px 28px 24px;font-family:'Inter',Segoe UI,Arial,sans-serif;}
+body:not(.light-theme) .leave-dlg{background:var(--mid);color:var(--light);border-color:var(--border);}
+.leave-dlg h3{margin:0 0 8px;font-size:16px;font-weight:700;}
+.leave-dlg p{margin:0 0 22px;font-size:13.5px;line-height:1.55;color:#66809c;}
+body:not(.light-theme) .leave-dlg p{color:var(--muted);}
+.leave-dlg-actions{display:flex;gap:12px;}
+.leave-dlg-actions button{flex:1;padding:12px 16px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;}
+.leave-dlg-stay{background:#f8fbff;border:1px solid #dce8f5;color:#10243f;}
+.leave-dlg-stay:hover{background:#eef4fb;}
+body:not(.light-theme) .leave-dlg-stay{background:var(--inner);border-color:var(--border);color:var(--light);}
+.leave-dlg-leave{background:#D97706;border:1px solid #D97706;color:#fff;}
+.leave-dlg-leave:hover{background:#B45F04;}
 </style>
 </head>
 <body class="light-theme">
@@ -2558,8 +2891,22 @@ body.reduce-motion *,body.reduce-motion *::before,body.reduce-motion *::after{an
             <div class="empty"><i class="fa-solid fa-users-slash"></i><p>No evaluations are available right now.</p></div>
             <?php else: ?>
 
+            <?php
+            // Per-group accent colours (same palette as the EA "Evaluate Others" page).
+            $ea_theme = [   // single portal accent (amber) for every group
+                'Principal' => ['#D99A2B', '#B45309', '#FDF0D5'],
+                'Dean'      => ['#D99A2B', '#B45309', '#FDF0D5'],
+                'Staff'     => ['#D99A2B', '#B45309', '#FDF0D5'],
+                'Faculty'   => ['#D99A2B', '#B45309', '#FDF0D5'],
+            ];
+            $ea_period_label = trim((string)$academic_year_label . ($active_period_semester ? ' — ' . $active_period_semester : ''), ' —');
+            ?>
             <div class="eval-main-card">
-            <div class="eval-card-title"><i class="fa-solid fa-clipboard-check"></i> Your Evaluation</div>
+            <div class="eval-panel-head">
+                <div class="eval-card-title"><i class="fa-solid fa-clipboard-check"></i> Your Evaluation</div>
+                <?php if ($ea_period_label !== ''): ?><span class="period-chip"><i class="fa-regular fa-calendar"></i> <?= htmlspecialchars($ea_period_label) ?></span><?php endif; ?>
+            </div>
+            <p class="eval-panel-lead">Choose a group, then evaluate each member. Your progress for the active period is shown on every card.</p>
             <div class="category-grid">
                 <?php foreach ($top_level as $group_name => $persons):
                     $slug     = strtolower(str_replace([' ','-'], '_', $group_name));
@@ -2567,18 +2914,25 @@ body.reduce-motion *,body.reduce-motion *::before,body.reduce-motion *::after{an
                     $done_ct=count(array_filter($persons,fn($p)=>isset($done_ids[$p['id'].'|'.($p['_evaluation_context']??'teacher')])));
                     $all_done = ($total > 0 && $done_ct === $total);
                     $icon     = $group_icons[$group_name] ?? 'fa-user';
-                    $color    = $group_colors[$group_name] ?? '#D97706';
+                    $th       = $ea_theme[$group_name] ?? ['#D97706', '#b45309', '#ffefcf'];
+                    $grp_pct  = $total > 0 ? (int)round($done_ct / $total * 100) : 0;
                 ?>
                 <div class="cat-btn <?= $all_done ? 'all-done' : '' ?>"
                      id="catbtn_<?= $slug ?>" onclick="togglePanel('<?= $slug ?>')"
-                     style="--cat-color:<?= $color ?>;">
-                    <div class="cat-icon" style="color:<?= $color ?>;"><i class="fa-solid <?= $icon ?>"></i></div>
+                     role="button" tabindex="0"
+                     onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();togglePanel('<?= $slug ?>');}"
+                     style="--g:<?= $th[0] ?>;--g-ink:<?= $th[1] ?>;--g-bg:<?= $th[2] ?>;">
+                    <div class="cat-icon"><i class="fa-solid <?= $icon ?>"></i></div>
                     <div class="cat-name"><?= htmlspecialchars($group_name) ?></div>
-                    <div class="cat-meta"><?= $total ?> member<?= $total !== 1 ? 's' : '' ?></div>
-                    <?php if ($done_ct > 0): ?>
-                    <div class="cat-done-pill"><i class="fa-solid fa-check"></i> <?= $done_ct ?>/<?= $total ?> done</div>
-                    <?php endif; ?>
-                    <div class="cat-active-arrow" style="border-top-color:<?= $color ?>;"></div>
+                    <div class="cat-meta"><strong><?= $total ?></strong> <?= $total === 1 ? 'member' : 'members' ?></div>
+                    <div class="group-progress<?= $grp_pct === 100 ? ' complete' : '' ?>" role="img" aria-label="<?= $done_ct ?> of <?= $total ?> evaluated">
+                        <span class="group-progress-bar"><i style="width:<?= $grp_pct ?>%"></i></span>
+                        <span class="group-progress-text"><strong><?= $done_ct ?></strong> of <?= $total ?> evaluated</span>
+                    </div>
+                    <span class="group-cta">
+                        <span class="cta-off">Select group <i class="fa-solid fa-arrow-right"></i></span>
+                        <span class="cta-on">Selected <i class="fa-solid fa-check"></i></span>
+                    </span>
                 </div>
                 <?php endforeach; ?>
             </div>
@@ -2601,7 +2955,7 @@ body.reduce-motion *,body.reduce-motion *::before,body.reduce-motion *::after{an
                 ]);
                 ob_start();
                 ?>
-                <div class="ev-row <?= $is_done ? 'done' : '' ?>">
+                <div class="ev-row <?= $is_done ? 'done is-done' : 'is-pending' ?>">
                     <?php if ($p['photo']): ?>
                     <img class="ev-avatar" src="../image/<?= htmlspecialchars($p['photo']) ?>"
                          alt="<?= htmlspecialchars($p['full_name']) ?>"/>
@@ -2618,7 +2972,8 @@ body.reduce-motion *,body.reduce-motion *::before,body.reduce-motion *::after{an
                         <?php endif; ?>
                     </div>
                     <?php if ($is_done): ?>
-                    <button type="button" class="ev-btn ev-btn-view" onclick="switchView('history')">
+                    <button type="button" class="ev-btn ev-btn-view" onclick="openViewFromData(this)"
+                        data-eval='<?= htmlspecialchars($eval_args, ENT_QUOTES) ?>'>
                         <i class="fa-regular fa-eye"></i> View
                     </button>
                     <?php elseif ($has_questions): ?>
@@ -2650,24 +3005,20 @@ body.reduce-motion *,body.reduce-motion *::before,body.reduce-motion *::after{an
             ?>
             <div class="members-panel ev-panel" id="panel_<?= $slug ?>">
                 <div class="ev-head">
-                    <span class="ev-head-icon"><i class="fa-solid <?= $icon ?>"></i></span>
-                    <span class="ev-head-title"><?= htmlspecialchars($group_name) ?></span>
+                    <div class="ev-head-left">
+                        <span class="ev-head-icon"><i class="fa-solid <?= $icon ?>"></i></span>
+                        <span class="ev-head-title"><?= htmlspecialchars($group_name) ?></span>
+                    </div>
+                    <div class="ev-stats">
+                        <span><strong><?= $panel_total ?></strong> <?= $panel_total === 1 ? 'member' : 'members' ?></span>
+                        <span class="s-done"><strong><?= $panel_done ?></strong> completed</span>
+                        <span class="s-pend"><strong><?= $panel_pend ?></strong> pending</span>
+                        <?php if ($ea_period_label !== ''): ?><span class="s-period"><i class="fa-regular fa-calendar"></i> <?= htmlspecialchars($ea_period_label) ?></span><?php endif; ?>
+                    </div>
                 </div>
 
                 <div class="ev-grid">
                     <?php foreach ($persons as $p) echo render_person_card($p, $done_ids, $period_is_open); ?>
-                </div>
-
-                <div class="ev-foot">
-                    <div class="ev-foot-stats">
-                        <span><strong><?= $panel_total ?></strong> member<?= $panel_total !== 1 ? 's' : '' ?></span>
-                        <span><strong class="c-done"><?= $panel_done ?></strong> completed</span>
-                        <span><strong class="c-pend"><?= $panel_pend ?></strong> pending</span>
-                    </div>
-                    <div class="ev-foot-period">
-                        <i class="fa-regular fa-calendar"></i>
-                        <?= htmlspecialchars($academic_year_label . ($active_period_semester ? ' — ' . $active_period_semester : '')) ?>
-                    </div>
                 </div>
             </div>
             <?php endforeach; ?>
@@ -2757,76 +3108,12 @@ body.reduce-motion *,body.reduce-motion *::before,body.reduce-motion *::after{an
             <div class="sd-page-sub">Manage your profile and account.</div>
 
 
-            <div class="ac-card ac-c1" id="student-appearance-settings">
-                <div class="ac-head appearance-heading-row">
-                    <span class="ac-icon"><i class="fa-solid fa-palette"></i></span>
-                    <div>
-                        <h2>Appearance</h2>
-                        <p class="ac-sub">Choose your theme, content spacing, and motion preferences.</p>
-                    </div>
-                    <span class="appearance-device-badge"><i class="fa-solid fa-laptop"></i> Saved on this device</span>
-                </div>
-
-                <div class="appearance-feature-grid">
-                    <section class="appearance-control-card appearance-theme-card" aria-labelledby="appearanceThemeHeading">
-                        <div class="appearance-control-head">
-                            <span class="appearance-control-icon"><i class="fa-solid fa-circle-half-stroke"></i></span>
-                            <div>
-                                <h3 id="appearanceThemeHeading">Theme mode</h3>
-                                <p>Choose a look that suits your environment.</p>
-                            </div>
-                        </div>
-                        <div class="appearance-theme-options" role="group" aria-label="Theme mode">
-                            <button type="button" class="appearance-choice" id="appearanceLightBtn" data-theme-choice="light" aria-pressed="false" onclick="setAppearance('light')">
-                                <span class="appearance-choice-icon"><i class="fa-solid fa-sun"></i></span>
-                                <span class="appearance-choice-copy"><strong>Light</strong><small>Bright and clean</small></span>
-                                <span class="appearance-choice-check"><i class="fa-solid fa-check"></i></span>
-                            </button>
-                            <button type="button" class="appearance-choice" id="appearanceDarkBtn" data-theme-choice="dark" aria-pressed="false" onclick="setAppearance('dark')">
-                                <span class="appearance-choice-icon"><i class="fa-solid fa-moon"></i></span>
-                                <span class="appearance-choice-copy"><strong>Dark</strong><small>Low-light friendly</small></span>
-                                <span class="appearance-choice-check"><i class="fa-solid fa-check"></i></span>
-                            </button>
-                            <button type="button" class="appearance-choice" id="appearanceSystemBtn" data-theme-choice="system" aria-pressed="false" onclick="setAppearance('system')">
-                                <span class="appearance-choice-icon"><i class="fa-solid fa-desktop"></i></span>
-                                <span class="appearance-choice-copy"><strong>System</strong><small>Follow device setting</small></span>
-                                <span class="appearance-choice-check"><i class="fa-solid fa-check"></i></span>
-                            </button>
-                        </div>
-                        <div class="appearance-inline-status"><i class="fa-solid fa-circle-info"></i> Current mode: <strong id="appearanceCurrentMode">Light</strong></div>
-                    </section>
-
-                    <section class="appearance-control-card" aria-labelledby="appearanceLayoutHeading">
-                        <div class="appearance-control-head">
-                            <span class="appearance-control-icon"><i class="fa-solid fa-sliders"></i></span>
-                            <div>
-                                <h3 id="appearanceLayoutHeading">Interface spacing</h3>
-                                <p>Choose how much space appears around cards and content.</p>
-                            </div>
-                        </div>
-                        <div class="appearance-density-options" role="group" aria-label="Interface spacing">
-                            <button type="button" class="appearance-density-choice" data-density-choice="comfortable" aria-pressed="false" onclick="setStudentDensity('comfortable')"><i class="fa-solid fa-expand"></i><span><strong>Comfortable</strong><small>More breathing room</small></span></button>
-                            <button type="button" class="appearance-density-choice" data-density-choice="compact" aria-pressed="false" onclick="setStudentDensity('compact')"><i class="fa-solid fa-compress"></i><span><strong>Compact</strong><small>More content on screen</small></span></button>
-                        </div>
-                    </section>
-
-                    <section class="appearance-control-card appearance-accessibility-card" aria-labelledby="appearanceAccessibilityHeading">
-                        <div class="appearance-control-head">
-                            <span class="appearance-control-icon"><i class="fa-solid fa-universal-access"></i></span>
-                            <div>
-                                <h3 id="appearanceAccessibilityHeading">Accessibility</h3>
-                                <p>Reduce interface movement for a calmer experience.</p>
-                            </div>
-                        </div>
-                        <button type="button" class="appearance-motion-toggle" id="appearanceMotionBtn" aria-pressed="false" onclick="toggleStudentReducedMotion()">
-                            <span class="appearance-motion-copy"><strong>Reduce animations</strong><small>Minimize transitions and motion effects</small></span>
-                            <span class="appearance-switch-track" aria-hidden="true"><span class="appearance-switch-thumb"></span></span>
-                        </button>
-                        <div class="appearance-accessibility-note"><i class="fa-solid fa-shield-heart"></i> Your settings stay in this browser and do not change other users' views.</div>
-                    </section>
-                </div>
+            <div class="settings-tabs" role="tablist" aria-label="Account settings sections">
+                <button type="button" class="settings-tab" role="tab" id="tabBtnProfile" data-tab="profile" aria-controls="tabPanelProfile" aria-selected="true"><i class="fa-solid fa-user"></i> Profile &amp; Security</button>
+                <button type="button" class="settings-tab" role="tab" id="tabBtnAppearance" data-tab="appearance" aria-controls="tabPanelAppearance" aria-selected="false" tabindex="-1"><i class="fa-solid fa-palette"></i> Appearance</button>
             </div>
 
+            <div class="settings-tabpanel" role="tabpanel" id="tabPanelProfile" aria-labelledby="tabBtnProfile" data-panel="profile">
             <div class="ac-card ac-c2">
                 <div class="ac-head">
                     <span class="ac-icon"><i class="fa-solid fa-id-badge"></i></span>
@@ -2937,6 +3224,127 @@ body.reduce-motion *,body.reduce-motion *::before,body.reduce-motion *::after{an
                     <button class="ac-btn" type="submit" id="updatePwBtn"><i class="fa-solid fa-key"></i> Update Password</button>
                 </form>
             </div>
+
+            <div class="ac-card ac-c5" id="student-security-questions">
+                <div class="ac-head">
+                    <span class="ac-icon"><i class="fa-solid fa-shield-halved"></i></span>
+                    <div>
+                        <h2>Security Questions</h2>
+                        <p class="ac-sub">These questions are used to recover your account if you forget your password.</p>
+                    </div>
+                </div>
+                <?php if ($sq_status === 'ok'): ?>
+                <div class="sq-status ok"><i class="fa-solid fa-circle-check"></i> Security questions are set</div>
+                <?php elseif ($sq_status === 'retired'): ?>
+                <div class="sq-status warn"><i class="fa-solid fa-triangle-exclamation"></i> One of your questions is no longer offered &mdash; please update them</div>
+                <?php else: ?>
+                <div class="sq-status warn"><i class="fa-solid fa-triangle-exclamation"></i> Not set up yet</div>
+                <?php endif; ?>
+                <div>
+                    <a class="ac-btn" href="security_questions.php"><i class="fa-solid fa-pen-to-square"></i> <?= $sq_status === 'none' ? 'Set Security Questions' : 'Update Security Questions' ?></a>
+                </div>
+            </div>
+            </div>
+
+            <div class="settings-tabpanel" role="tabpanel" id="tabPanelAppearance" aria-labelledby="tabBtnAppearance" data-panel="appearance" hidden>
+            <div class="ac-card ac-c1" id="student-appearance-settings">
+                <div class="ac-head appearance-heading-row">
+                    <span class="ac-icon"><i class="fa-solid fa-palette"></i></span>
+                    <div>
+                        <h2>Appearance</h2>
+                        <p class="ac-sub">Choose your theme, content spacing, and motion preferences.</p>
+                    </div>
+                    <span class="appearance-device-badge"><i class="fa-solid fa-laptop"></i> Saved on this device</span>
+                </div>
+
+                <div class="appearance-feature-grid">
+                    <section class="appearance-control-card appearance-theme-card" aria-labelledby="appearanceThemeHeading">
+                        <div class="appearance-control-head">
+                            <span class="appearance-control-icon"><i class="fa-solid fa-circle-half-stroke"></i></span>
+                            <div>
+                                <h3 id="appearanceThemeHeading">Theme mode</h3>
+                                <p>Choose a look that suits your environment.</p>
+                            </div>
+                        </div>
+                        <div class="appearance-theme-options" role="group" aria-label="Theme mode">
+                            <button type="button" class="appearance-choice" id="appearanceLightBtn" data-theme-choice="light" aria-pressed="false" onclick="setAppearance('light')">
+                                <span class="appearance-choice-icon"><i class="fa-solid fa-sun"></i></span>
+                                <span class="appearance-choice-copy"><strong>Light</strong><small>Bright and clean</small></span>
+                                <span class="appearance-choice-check"><i class="fa-solid fa-check"></i></span>
+                            </button>
+                            <button type="button" class="appearance-choice" id="appearanceDarkBtn" data-theme-choice="dark" aria-pressed="false" onclick="setAppearance('dark')">
+                                <span class="appearance-choice-icon"><i class="fa-solid fa-moon"></i></span>
+                                <span class="appearance-choice-copy"><strong>Dark</strong><small>Low-light friendly</small></span>
+                                <span class="appearance-choice-check"><i class="fa-solid fa-check"></i></span>
+                            </button>
+                            <button type="button" class="appearance-choice" id="appearanceSystemBtn" data-theme-choice="system" aria-pressed="false" onclick="setAppearance('system')">
+                                <span class="appearance-choice-icon"><i class="fa-solid fa-desktop"></i></span>
+                                <span class="appearance-choice-copy"><strong>System</strong><small>Follow device setting</small></span>
+                                <span class="appearance-choice-check"><i class="fa-solid fa-check"></i></span>
+                            </button>
+                        </div>
+                        <div class="appearance-inline-status"><i class="fa-solid fa-circle-info"></i> Current mode: <strong id="appearanceCurrentMode">Light</strong></div>
+                    </section>
+
+                    <section class="appearance-control-card" aria-labelledby="appearanceLayoutHeading">
+                        <div class="appearance-control-head">
+                            <span class="appearance-control-icon"><i class="fa-solid fa-sliders"></i></span>
+                            <div>
+                                <h3 id="appearanceLayoutHeading">Interface spacing</h3>
+                                <p>Choose how much space appears around cards and content.</p>
+                            </div>
+                        </div>
+                        <div class="appearance-density-options" role="group" aria-label="Interface spacing">
+                            <button type="button" class="appearance-density-choice" data-density-choice="comfortable" aria-pressed="false" onclick="setStudentDensity('comfortable')"><i class="fa-solid fa-expand"></i><span><strong>Comfortable</strong><small>More breathing room</small></span></button>
+                            <button type="button" class="appearance-density-choice" data-density-choice="compact" aria-pressed="false" onclick="setStudentDensity('compact')"><i class="fa-solid fa-compress"></i><span><strong>Compact</strong><small>More content on screen</small></span></button>
+                        </div>
+                    </section>
+
+                    <section class="appearance-control-card appearance-accessibility-card" aria-labelledby="appearanceAccessibilityHeading">
+                        <div class="appearance-control-head">
+                            <span class="appearance-control-icon"><i class="fa-solid fa-universal-access"></i></span>
+                            <div>
+                                <h3 id="appearanceAccessibilityHeading">Accessibility</h3>
+                                <p>Reduce interface movement for a calmer experience.</p>
+                            </div>
+                        </div>
+                        <button type="button" class="appearance-motion-toggle" id="appearanceMotionBtn" aria-pressed="false" onclick="toggleStudentReducedMotion()">
+                            <span class="appearance-motion-copy"><strong>Reduce animations</strong><small>Minimize transitions and motion effects</small></span>
+                            <span class="appearance-switch-track" aria-hidden="true"><span class="appearance-switch-thumb"></span></span>
+                        </button>
+                        <div class="appearance-accessibility-note"><i class="fa-solid fa-shield-heart"></i> Your settings stay in this browser and do not change other users' views.</div>
+                    </section>
+                </div>
+            </div>
+            </div>
+
+            <script>
+            (function(){
+                var root=document.getElementById('view-settings');
+                if(!root)return;
+                var tabs=[].slice.call(root.querySelectorAll('.settings-tab'));
+                var panels=[].slice.call(root.querySelectorAll('.settings-tabpanel'));
+                function show(name,focus){
+                    tabs.forEach(function(t){
+                        var on=t.dataset.tab===name;
+                        t.setAttribute('aria-selected',on?'true':'false');
+                        t.tabIndex=on?0:-1;
+                        if(on&&focus)t.focus();
+                    });
+                    panels.forEach(function(p){p.hidden=p.dataset.panel!==name;});
+                }
+                tabs.forEach(function(t,i){
+                    t.addEventListener('click',function(){show(t.dataset.tab);});
+                    t.addEventListener('keydown',function(e){
+                        var n=null;
+                        if(e.key==='ArrowRight')n=tabs[(i+1)%tabs.length];
+                        if(e.key==='ArrowLeft')n=tabs[(i-1+tabs.length)%tabs.length];
+                        if(n){e.preventDefault();show(n.dataset.tab,true);}
+                    });
+                });
+                show('profile'); // Profile & Security first (profile/password messages land here after saving)
+            })();
+            </script>
           </div>
         </div>
 
@@ -2952,7 +3360,7 @@ body.reduce-motion *,body.reduce-motion *::before,body.reduce-motion *::after{an
                 <div class="modal-name" id="modalName"></div>
                 <div class="modal-desig" id="modalDesig"></div>
             </div>
-            <button class="modal-close" onclick="closeEval()"><i class="fa-solid fa-xmark"></i></button>
+            <button class="modal-close" type="button" onclick="requestCloseEval()" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
         </div>
         <form method="POST" action="student_dashboard.php" id="evalForm" novalidate>
             <input type="hidden" name="submit_evaluation" value="1"/>
@@ -2962,12 +3370,32 @@ body.reduce-motion *,body.reduce-motion *::before,body.reduce-motion *::after{an
                 <div class="loading-qs"><i class="fa-solid fa-spinner"></i> Loading questions...</div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn-cancel-modal" onclick="closeEval()">Cancel</button>
+                <button type="button" class="btn-cancel-modal" onclick="requestCloseEval()">Cancel</button>
                 <button type="submit" class="btn-submit">
                     <i class="fa-solid fa-paper-plane"></i> Submit Evaluation
                 </button>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- VIEW SUBMITTED EVALUATION MODAL (read-only) -->
+<div class="modal-overlay" id="viewEvalModal">
+    <div class="modal">
+        <div class="modal-header">
+            <div id="viewAvatarWrap"></div>
+            <div>
+                <div class="modal-name" id="viewName"></div>
+                <div class="modal-desig" id="viewDesig"></div>
+            </div>
+            <button class="modal-close" type="button" onclick="closeViewEval()" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="modal-body" id="viewBody">
+            <div class="loading-qs"><i class="fa-solid fa-spinner"></i> Loading your evaluation...</div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn-cancel-modal" onclick="closeViewEval()">Close</button>
+        </div>
     </div>
 </div>
 
@@ -3133,7 +3561,80 @@ function openEval(id,name,desig,photo,context){
     document.body.style.overflow = 'hidden';
     loadQuestions(id,context||'teacher');
 }
+function openViewFromData(btn) {
+    const d = JSON.parse(btn.getAttribute('data-eval'));
+    openViewEval(d.id, d.name, d.desig, d.photo, d.context || 'teacher');
+}
+function openViewEval(id, name, desig, photo, context) {
+    document.getElementById('viewName').textContent  = name;
+    document.getElementById('viewDesig').textContent = desig || 'Faculty / Staff';
+    const wrap = document.getElementById('viewAvatarWrap');
+    if (photo) {
+        const img = document.createElement('img');
+        img.className = 'modal-avatar'; img.src = photo; img.alt = name;
+        img.onerror = () => img.outerHTML = '<div class="modal-avatar-ph"><i class="fa-solid fa-user"></i></div>';
+        wrap.innerHTML = ''; wrap.appendChild(img);
+    } else {
+        wrap.innerHTML = '<div class="modal-avatar-ph"><i class="fa-solid fa-user"></i></div>';
+    }
+    const body = document.getElementById('viewBody');
+    body.innerHTML = '<div class="loading-qs"><i class="fa-solid fa-spinner"></i> Loading your evaluation...</div>';
+    document.getElementById('viewEvalModal').classList.add('open');
+    document.body.style.overflow = 'hidden';
+
+    fetch(`student_dashboard.php?get_submission=1&target_id=${encodeURIComponent(id)}&context=${encodeURIComponent(context || 'teacher')}`)
+        .then(r => r.json())
+        .then(d => {
+            if (!d.success) {
+                body.innerHTML = `<div class="empty"><i class="fa-solid fa-triangle-exclamation"></i><p style="color:#dc2626;margin-top:10px;font-size:13px">${escapeHtml(d.error || 'Could not load your evaluation.')}</p></div>`;
+                return;
+            }
+            let html = '';
+            if (d.score !== null && d.score !== undefined) {
+                html += `<div class="vw-summary"><span class="num">${Number(d.score).toFixed(2)}</span><span class="of">/ 5.00 overall</span></div>`;
+            }
+            if (d.submitted_at) html += `<div class="vw-sub">Submitted ${escapeHtml(d.submitted_at)}</div>`;
+
+            const groups = []; const idx = {};
+            (d.answers || []).forEach(a => {
+                if (!(a.category in idx)) { idx[a.category] = groups.length; groups.push({cat: a.category, rows: []}); }
+                groups[idx[a.category]].rows.push(a);
+            });
+            let n = 0;
+            groups.forEach(g => {
+                html += `<div class="eval-form-cat">${escapeHtml(g.cat)}</div>`;
+                html += `<div class="eval-form-wrap"><table class="eval-form-table vw-table"><thead><tr><th>Question</th><th>Your rating</th></tr></thead><tbody>`;
+                g.rows.forEach(a => {
+                    n++;
+                    html += `<tr><td><div class="eval-form-qtext"><span class="eval-form-qno">${n}.</span>${escapeHtml(a.question)}</div></td><td><span class="vw-chip">${escapeHtml(String(Math.round(a.score * 100) / 100))}</span></td></tr>`;
+                });
+                html += `</tbody></table></div>`;
+            });
+
+            html += `<div class="vw-comment"><div class="vw-comment-label">Your comment</div>` +
+                    (d.comment && d.comment.trim() !== ''
+                        ? `<div class="vw-comment-text">${escapeHtml(d.comment)}</div>`
+                        : `<div class="vw-comment-text vw-none">No comment was left for this evaluation.</div>`) +
+                    `</div>`;
+            body.innerHTML = html;
+        })
+        .catch(() => {
+            body.innerHTML = `<div class="empty"><i class="fa-solid fa-triangle-exclamation"></i><p style="color:#dc2626;margin-top:10px;font-size:13px">Failed to load your evaluation.</p></div>`;
+        });
+}
+function closeViewEval() {
+    document.getElementById('viewEvalModal').classList.remove('open');
+    if (!document.getElementById('evalModal').classList.contains('open')) document.body.style.overflow = '';
+}
+document.getElementById('viewEvalModal').addEventListener('click', function(e) {
+    if (e.target === this) closeViewEval();
+});
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && document.getElementById('viewEvalModal').classList.contains('open')) closeViewEval();
+});
+
 function closeEval() {
+    evalSubmitting = false;
     document.getElementById('evalModal').classList.remove('open');
     document.body.style.overflow = '';
     questionsLoaded = false;
@@ -3192,11 +3693,12 @@ function loadQuestions(id,context){
             html += `<div class="comment-box">
                 <div class="comment-label">
                     <i class="fa-solid fa-comment-dots"></i>
-                    Comments, Suggestions &amp; Areas for Improvement
+                    Comments, Suggestions &amp; Areas for Improvement <span class="comment-req" title="Required">*</span>
                 </div>
-                <textarea name="comment" class="comment-textarea"
+                <textarea name="comment" class="comment-textarea" required aria-required="true"
                     placeholder="Share your thoughts, suggestions, or concerns about this person's performance...."
                     rows="4"></textarea>
+                <div class="comment-error" id="commentError" role="alert" hidden>Required \u2014 you can't submit this evaluation without a comment.</div>
             </div>`;
             document.getElementById('modalBody').innerHTML = html;
             questionsLoaded = true;
@@ -3210,7 +3712,61 @@ function loadQuestions(id,context){
 }
 
 document.getElementById('evalModal').addEventListener('click', function(e) {
-    if (e.target === this) closeEval();
+    if (e.target === this) requestCloseEval();   // click outside the form → ask first
+});
+
+/* ── Unsaved-evaluation guard ─────────────────────────────────────
+   Clicking outside the form, Cancel, the X, Escape, refreshing or closing
+   the tab never discards a started evaluation silently: the styled
+   "Leave without submitting?" dialog appears first. Nothing is asked
+   when no rating or comment has been entered yet. */
+let evalSubmitting = false;
+function evalIsDirty() {
+    const f = document.getElementById('evalForm');
+    if (!f || evalSubmitting) return false;
+    if (!document.getElementById('evalModal').classList.contains('open')) return false;
+    if (f.querySelector('input[type="radio"][name^="rating["]:checked')) return true;
+    const c = f.querySelector('textarea[name="comment"]');
+    return !!(c && c.value.trim() !== '');
+}
+function askEvalLeave() {
+    return new Promise(function(resolve) {
+        const ov = document.createElement('div');
+        ov.className = 'leave-dlg-overlay';
+        ov.setAttribute('role', 'alertdialog');
+        ov.setAttribute('aria-modal', 'true');
+        ov.setAttribute('aria-labelledby', 'leaveDlgTitle');
+        ov.innerHTML = '<div class="leave-dlg">'
+            + '<h3 id="leaveDlgTitle">Leave without submitting?</h3>'
+            + '<p>You have an unsubmitted evaluation. If you leave now, your answers will be lost.</p>'
+            + '<div class="leave-dlg-actions">'
+            + '<button type="button" class="leave-dlg-stay">Stay</button>'
+            + '<button type="button" class="leave-dlg-leave">Leave</button>'
+            + '</div></div>';
+        function done(v) { document.removeEventListener('keydown', onKey, true); ov.remove(); resolve(v); }
+        function onKey(e) { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); done(false); } }
+        ov.querySelector('.leave-dlg-stay').addEventListener('click', function() { done(false); });
+        ov.querySelector('.leave-dlg-leave').addEventListener('click', function() { done(true); });
+        // clicking the dark area around the dialog counts as "Stay", never as leaving
+        ov.addEventListener('click', function(e) { if (e.target === ov) done(false); });
+        document.addEventListener('keydown', onKey, true);
+        document.body.appendChild(ov);
+        ov.querySelector('.leave-dlg-stay').focus();
+    });
+}
+function requestCloseEval() {
+    if (document.querySelector('.leave-dlg-overlay')) return;
+    if (!evalIsDirty()) { closeEval(); return; }
+    askEvalLeave().then(function(ok) { if (ok) closeEval(); });
+}
+document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Escape') return;
+    if (document.querySelector('.leave-dlg-overlay')) return;
+    if (document.getElementById('evalModal').classList.contains('open')) requestCloseEval();
+});
+// refresh, closing the tab, browser back
+window.addEventListener('beforeunload', function(e) {
+    if (evalIsDirty()) { e.preventDefault(); e.returnValue = ''; }
 });
 
 const evalForm = document.getElementById('evalForm');
@@ -3228,7 +3784,7 @@ function updateEvaluationProgress(form) {
     const names = [...new Set(radios.map(r => r.name))];
     const answered = names.filter(name => form.querySelector(`input[name="${CSS.escape(name)}"]:checked`)).length;
     status.textContent = `${answered} / ${names.length} answered`;
-    status.style.color = answered === names.length ? '#22c55e' : '#00E5FF';
+    status.style.color = answered === names.length ? '#22c55e' : (document.body.classList.contains('light-theme') ? '#B45309' : '#F0B84D');
 }
 
 function showEvaluationValidation(form, unanswered) {
@@ -3256,6 +3812,28 @@ function clearEvaluationValidation(form) {
     const box = form.querySelector('#evalValidation');
     if (box) box.hidden = true;
     form.querySelectorAll('.unanswered-question').forEach(row => row.classList.remove('unanswered-question'));
+    const cb = form.querySelector('.comment-box');
+    if (cb) cb.classList.remove('invalid');
+    const ce = form.querySelector('#commentError');
+    if (ce) ce.hidden = true;
+}
+
+// A written comment is mandatory (whitespace-only doesn't count).
+function evaluationCommentMissing(form) {
+    const cm = form.querySelector('textarea[name="comment"]');
+    return !!cm && cm.value.trim() === '';
+}
+
+function showCommentValidation(form) {
+    const top = form.querySelector('#evalValidation');
+    if (top) top.hidden = true;
+    const cb = form.querySelector('.comment-box');
+    const ce = form.querySelector('#commentError');
+    const cm = form.querySelector('textarea[name="comment"]');
+    if (cb) cb.classList.add('invalid');
+    if (ce) ce.hidden = false;
+    if (cb) cb.scrollIntoView({behavior:'smooth', block:'center'});
+    if (cm) setTimeout(() => cm.focus({preventScroll:true}), 120);
 }
 
 if (evalForm) {
@@ -3268,6 +3846,15 @@ if (evalForm) {
         const unanswered = getUnansweredEvaluationQuestions(this);
         const box = this.querySelector('#evalValidation');
         if (box && !unanswered.length) clearEvaluationValidation(this);
+    });
+
+    evalForm.addEventListener('input', function(e) {
+        if (e.target.matches('textarea[name="comment"]') && e.target.value.trim() !== '') {
+            const cb = this.querySelector('.comment-box');
+            if (cb) cb.classList.remove('invalid');
+            const ce = this.querySelector('#commentError');
+            if (ce) ce.hidden = true;
+        }
     });
 
     evalForm.addEventListener('submit', function(e) {
@@ -3283,7 +3870,14 @@ if (evalForm) {
             return;
         }
 
+        if (evaluationCommentMissing(this)) {
+            e.preventDefault();
+            showCommentValidation(this);
+            return;
+        }
+
         clearEvaluationValidation(this);
+        evalSubmitting = true;
         const submitBtn = this.querySelector('.btn-submit');
         if (submitBtn) {
             submitBtn.disabled = true;

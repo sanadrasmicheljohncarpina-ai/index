@@ -569,6 +569,7 @@ html_head_open('PBI — Evaluate Others');
 .de-table th{background:#F4F8FF;color:var(--de-muted);font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;text-align:center;padding:11px 8px;border-bottom:1px solid var(--de-border);}
 .de-table th:first-child{text-align:left;padding-left:16px;}
 .de-table th:not(:first-child){width:58px;}
+.de-table col.c-rate{width:58px;}
 .de-table td{padding:12px 8px;border-bottom:1px solid #E8EEF5;text-align:center;vertical-align:middle;}
 .de-table td:first-child{text-align:left;padding-left:16px;}
 .de-table tr:last-child td{border-bottom:none;}
@@ -617,7 +618,7 @@ html_head_open('PBI — Evaluate Others');
 @media(max-width:900px){.de-cats{grid-template-columns:1fr;}.de-grid{grid-template-columns:1fr;}}
 @media(max-width:700px){.de-overlay{padding:10px;}}
 @media(max-width:640px){.de-modal-head{padding:16px 18px;gap:12px;}.de-modal-head img{width:52px;height:52px;}.de-modal-body{padding:18px;}.de-modal-foot{padding:14px 18px;gap:10px;}}
-@media(max-width:768px){.de-table th:not(:first-child){width:46px;}.de-rate label{width:30px;height:28px;}}
+@media(max-width:768px){.de-table th:not(:first-child),.de-table col.c-rate{width:46px;}.de-rate label{width:30px;height:28px;}}
 </style>
 
 <style id="principal-integrated-light-view">
@@ -1030,7 +1031,10 @@ main.main::before {
     <div class="alert error"><i class="fa-solid fa-hourglass-half"></i> Waiting for <?= BASIC_ED_LABEL ?> evaluation period</div>
     <?php endif; ?>
 
-    <div class="de-choose-title"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i><span>Your Evaluation</span></div>
+    <div class="de-choose-title"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i><span>Your Evaluation</span>
+        <?php if (!empty($periodLabel)): ?><span class="de-period-chip"><i class="fa-regular fa-calendar"></i> <?= htmlspecialchars($periodLabel) ?></span><?php endif; ?>
+    </div>
+    <p class="de-lead">Choose a group, then evaluate each member. Your progress for the active period is shown on every card.</p>
     <div class="de-cats" role="tablist">
         <?php foreach ($validTabs as $t):
             $list = $rosterByTab[$t];
@@ -1042,6 +1046,11 @@ main.main::before {
             <div class="de-cat-name"><?= htmlspecialchars($catMeta[$t]['label']) ?></div>
             <div class="de-cat-count"><?= $n ?> member<?= $n === 1 ? '' : 's' ?></div>
             <span class="de-cat-done"><i class="fa-solid fa-check" style="font-size:9px;"></i> <?= $done ?>/<?= $n ?> done</span>
+            <span class="de-cat-bar<?= ($n > 0 && $done === $n) ? ' complete' : '' ?>" aria-hidden="true"><i style="width:<?= $n > 0 ? (int) round($done / $n * 100) : 0 ?>%"></i></span>
+            <span class="de-cat-cta">
+                <span class="cta-select">Select group <i class="fa-solid fa-arrow-right"></i></span>
+                <span class="cta-selected"><i class="fa-solid fa-check"></i> Selected</span>
+            </span>
         </button>
         <?php endforeach; ?>
     </div>
@@ -1286,14 +1295,13 @@ main.main::before {
             qs.forEach(q => { (grouped[q.category || 'General'] = grouped[q.category || 'General'] || []).push(q); });
 
             let html = '<div class="de-validation" id="deValidation" role="alert" aria-live="assertive" hidden></div>';
-            html += '<div class="de-progress"><span>Please rate every question and write a comment before submitting.</span><span class="de-progress-status" id="deProgress">0 / ' + qs.length + ' answered</span></div>';
             html += '<div class="de-legend">' + [[5,'Always'],[4,'Often'],[3,'Sometimes'],[2,'Rarely'],[1,'Never']]
                 .map(x => '<div class="de-legend-item"><div class="de-legend-dot">' + x[0] + '</div> ' + x[1] + '</div>').join('') + '</div>';
 
             let n = 1;
             Object.keys(grouped).forEach(cat => {
                 html += '<div class="de-cat-title">' + esc(cat) + '</div>';
-                html += '<div class="de-table-wrap"><table class="de-table"><thead><tr><th>Question</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th></tr></thead><tbody>';
+                html += '<div class="de-table-wrap"><table class="de-table"><colgroup><col><col class="c-rate"><col class="c-rate"><col class="c-rate"><col class="c-rate"><col class="c-rate"></colgroup><tbody>';
                 grouped[cat].forEach(q => {
                     const num = n++;
                     html += '<tr data-number="' + num + '"><td><div class="de-qtext"><span class="de-qno">' + num + '.</span>' + esc(q.question) + '</div></td>';
@@ -1748,3 +1756,127 @@ main.main.principal-feature-page{
 </style>
 
 <link rel="stylesheet" href="includes/principal_dark_repairs.css?v=20261011.4" id="principal-dark-repairs"/>
+
+<style id="de-polish">
+/* ------------------------------------------------------------------
+   Evaluate Others polish (same treatment as the admin EA page):
+   clearer hierarchy, per-group progress bar, stronger contrast.
+   Light-theme colours only; dark mode keeps its own palette.
+   Presentation only: the tabs, filters and evaluation modal are untouched.
+   ------------------------------------------------------------------ */
+html:not(.dark-theme) body:not(#dep){--muted:#475569;--border:#d3dce8;}
+
+/* ── Title row ── */
+html body:not(#dep) .de-choose-title{flex-wrap:wrap;margin-bottom:6px!important;}
+html body:not(#dep) .de-period-chip{margin-left:auto;display:inline-flex;align-items:center;gap:8px;padding:7px 14px;border-radius:999px;font-family:'DM Sans','Inter',sans-serif;font-size:12.5px;font-weight:700;border:1px solid transparent;}
+html:not(.dark-theme) body:not(#dep) .de-period-chip{background:#EEF2FF;color:#3730A3;border-color:#C7D2FE;}
+html.dark-theme body:not(#dep) .de-period-chip{background:rgba(156,133,240,.16);color:#C4B5FD;border-color:rgba(156,133,240,.35);}
+html body:not(#dep) .de-lead{margin:0 0 22px;font-size:14.5px;line-height:1.5;color:var(--muted);}
+
+/* ── Group cards ── */
+html body:not(#dep) .de-cats{gap:22px!important;margin-bottom:28px!important;}
+html body:not(#dep) .de-cat{--g:#7C5FD9;--g-ink:#5F45B8;--g-bg:#ECE3FF;--g-ring:rgba(124,95,217,.28);
+    display:flex!important;flex-direction:column;align-items:center;min-height:310px;padding:32px 22px 22px!important;
+    border-radius:18px!important;border-width:1px!important;border-bottom-width:1px!important;border-top:5px solid var(--g)!important;}
+html body:not(#dep) .de-cat.faculty{--g:#0EA5E9;--g-ink:#0369A1;--g-bg:#DFF1FD;--g-ring:rgba(14,165,233,.28);}
+html body:not(#dep) .de-cat.staff{--g:#16A34A;--g-ink:#15803D;--g-bg:#DDF5E6;--g-ring:rgba(22,163,74,.28);}
+html body:not(#dep) .de-cat.ea{--g:#7C5FD9;--g-ink:#5F45B8;--g-bg:#ECE3FF;--g-ring:rgba(124,95,217,.28);}
+/* top accent = the card's own top border, so it follows the rounded corners */
+html body:not(#dep) .de-cat::before{display:none!important;}
+html body:not(#dep) .de-cat.active::after{border-top-color:var(--g)!important;}
+html body:not(#dep) .de-cat .de-cat-ico{width:88px!important;height:88px!important;font-size:34px!important;margin-bottom:16px!important;}
+html body:not(#dep) .de-cat .de-cat-name{font-size:24px!important;}
+html body:not(#dep) .de-cat .de-cat-count{display:inline-flex;margin-top:10px!important;padding:6px 16px;border-radius:999px;font-size:13.5px!important;font-weight:700;}
+html body:not(#dep) .de-cat .de-cat-done{margin-top:20px!important;padding:0!important;background:none!important;font-size:13px!important;font-weight:700;}
+html body:not(#dep) .de-cat-bar{display:block;width:100%;max-width:230px;height:8px;margin-top:8px;border-radius:999px;overflow:hidden;background:rgba(100,116,139,.22);}
+html body:not(#dep) .de-cat-bar i{display:block;height:100%;border-radius:999px;background:var(--g);transition:width .3s ease;}
+html body:not(#dep) .de-cat-bar.complete i{background:#16A34A;}
+html body:not(#dep) .de-cat-cta{display:inline-flex;margin-top:auto;padding-top:20px;font-size:13px;font-weight:800;color:var(--g-ink);}
+html body:not(#dep) .de-cat-cta .cta-select,html body:not(#dep) .de-cat-cta .cta-selected{display:inline-flex;align-items:center;gap:8px;}
+html body:not(#dep) .de-cat-cta .cta-selected{display:none;}
+html body:not(#dep) .de-cat.active .de-cat-cta .cta-select{display:none;}
+html body:not(#dep) .de-cat.active .de-cat-cta .cta-selected{display:inline-flex;}
+html body:not(#dep) .de-cat-cta i{font-size:12px;transition:transform .15s ease;}
+html body:not(#dep) .de-cat:hover .de-cat-cta .cta-select i{transform:translateX(4px);}
+html body:not(#dep) .de-cat:focus-visible{outline:3px solid var(--g);outline-offset:3px;}
+html:not(.dark-theme) body:not(#dep) .de-cat{background:#fff!important;border-color:#CDD8E6!important;box-shadow:0 1px 2px rgba(11,31,58,.06),0 8px 22px rgba(11,31,58,.06)!important;color:#0b1f3a;}
+html:not(.dark-theme) body:not(#dep) .de-cat{border-top-color:var(--g)!important;}
+html:not(.dark-theme) body:not(#dep) .de-cat:hover{border-color:var(--g)!important;box-shadow:0 14px 32px rgba(11,31,58,.13)!important;transform:translateY(-3px)!important;}
+html:not(.dark-theme) body:not(#dep) .de-cat.active{border-color:var(--g)!important;box-shadow:0 0 0 3px var(--g-ring),0 12px 28px rgba(11,31,58,.12)!important;}
+html:not(.dark-theme) body:not(#dep) .de-cat .de-cat-name{color:#0b1f3a!important;}
+html:not(.dark-theme) body:not(#dep) .de-cat .de-cat-count{background:var(--g-bg)!important;color:var(--g-ink)!important;}
+html:not(.dark-theme) body:not(#dep) .de-cat .de-cat-done{color:#334155!important;}
+html.dark-theme body:not(#dep) .de-cat .de-cat-count{background:rgba(255,255,255,.08)!important;color:var(--light)!important;}
+html.dark-theme body:not(#dep) .de-cat-cta{color:var(--g);}
+
+/* ── Roster panel ── */
+html body:not(#dep) .de-panel{border-radius:18px!important;margin-top:16px!important;}
+html body:not(#dep) .de-panel-head{padding:18px 24px!important;gap:12px!important;}
+html body:not(#dep) .de-panel-ico{width:40px!important;height:40px!important;font-size:16px!important;border-radius:10px!important;}
+html body:not(#dep) .de-panel-title{font-size:24px!important;}
+html body:not(#dep) .de-panel-tools select{padding:9px 12px!important;font-size:13px!important;border-radius:9px!important;min-width:190px!important;}
+html body:not(#dep) .de-grid{gap:14px!important;padding:20px 22px!important;}
+html body:not(#dep) .de-person{gap:16px!important;padding:16px 18px!important;border-radius:14px!important;border-left-width:4px!important;transition:box-shadow .15s ease,border-color .15s ease;}
+html body:not(#dep) .de-person[data-status="completed"]{border-left-color:#16A34A!important;}
+html body:not(#dep) .de-person[data-status="pending"]{border-left-color:#F59E0B!important;}
+html body:not(#dep) .de-person:hover{box-shadow:0 6px 18px rgba(11,31,58,.10);}
+html body:not(#dep) .de-avatar{width:56px!important;height:56px!important;}
+html body:not(#dep) .de-person-name{font-size:15.5px!important;}
+html body:not(#dep) .de-person-desig{font-size:13px!important;margin:2px 0 7px!important;}
+html body:not(#dep) .de-pill{font-size:12px!important;padding:4px 11px!important;border:1px solid transparent;}
+html body:not(#dep) .de-pill-date{font-size:12px!important;}
+html body:not(#dep) .de-btn{padding:10px 18px!important;font-size:13px!important;font-weight:700!important;border-radius:10px!important;min-width:112px;justify-content:center;}
+html body:not(#dep) .de-panel-foot{padding:14px 24px!important;font-size:13px!important;}
+html body:not(#dep) .de-panel-foot b{font-size:15px;font-weight:800;}
+html:not(.dark-theme) body:not(#dep) .de-person{background:#fff!important;border-color:#CDD8E6!important;}
+html:not(.dark-theme) body:not(#dep) .de-person-name{color:#0b1f3a!important;}
+html:not(.dark-theme) body:not(#dep) .de-pill.done{background:#D6F2E4!important;color:#0A6A3B!important;border-color:#8ED0AD!important;}
+html:not(.dark-theme) body:not(#dep) .de-pill.pending{background:#FFF1D4!important;color:#8A5300!important;border-color:#EBCB88!important;}
+html:not(.dark-theme) body:not(#dep) .de-btn-view:not([disabled]){background:#fff!important;color:#1e293b!important;border-color:#b6c3d6!important;}
+html:not(.dark-theme) body:not(#dep) .de-btn-view:not([disabled]):hover{background:#F1F5FB!important;}
+
+@media(max-width:900px){html body:not(#dep) .de-cats{grid-template-columns:1fr!important;}html body:not(#dep) .de-cat{min-height:250px;}html body:not(#dep) .de-grid{grid-template-columns:1fr!important;}}
+@media(max-width:560px){html body:not(#dep) .de-cat{min-height:0;}html body:not(#dep) .de-person{flex-wrap:wrap;}}
+</style>
+
+<style id="de-form-ea-sizing">
+/* Evaluation popup sizing matched to the admin EA evaluation form
+   (ea_evaluate.php): same header, progress bar, legend, category titles,
+   row heights, rating buttons, comment box and footer dimensions. */
+html body .de-modal{border-radius:18px;}
+html body .de-modal .de-modal-head{padding:24px 28px 16px;gap:14px;}
+html body .de-modal .de-modal-head img{width:52px;height:52px;border-width:2px;}
+html body .de-modal .de-modal-name{font-size:20px;}
+html body .de-modal .de-modal-sub{font-size:12px;}
+html body .de-modal .de-modal-body{padding:24px 28px;}
+
+html body .de-modal .de-progress{padding:9px 12px;margin:0 0 14px;border-radius:8px;font-size:11.5px;}
+html body .de-modal .de-validation{padding:11px 13px;margin:0 0 16px;border-radius:9px;font-size:12.5px;line-height:1.5;}
+html body .de-modal .de-legend{gap:16px;margin-bottom:18px;padding:10px 14px;border-radius:8px;font-size:11px;}
+html body .de-modal .de-legend-item{gap:5px;}
+html body .de-modal .de-legend-dot{width:18px;height:18px;border-radius:4px;font-size:10px;}
+
+html body .de-modal .de-cat-title{margin:18px 0 8px;gap:0;font-size:10px;font-weight:800;letter-spacing:.9px;}
+html body .de-modal .de-cat-title:first-of-type{margin-top:0;}
+html body .de-modal .de-cat-title::before{content:"\f5fd";font-family:"Font Awesome 6 Free","Font Awesome 5 Free";font-weight:900;width:auto;height:auto;border-radius:0;background:none;color:inherit;font-size:10px;margin-right:5px;}
+html body .de-modal .de-table-wrap{margin:0 0 16px;border-radius:12px;}
+html body .de-modal .de-table td{padding:10px 6px;}
+html body .de-modal .de-table td:first-child{padding-left:14px;padding-right:10px;}
+html body .de-modal .de-table col.c-rate{width:52px;}
+html body .de-modal .de-qtext{font-size:12.5px;line-height:1.45;}
+html body .de-modal .de-qno{font-weight:800;}
+html body .de-modal .de-rate label{width:34px;height:30px;border-radius:7px;font-size:12px;font-weight:800;box-shadow:0 2px 5px rgba(15,23,42,.03);}
+html body .de-modal .de-rate input:checked + label{box-shadow:none;}
+
+html body .de-modal .de-comment{margin-top:24px;}
+html body .de-modal .de-comment-label{font-size:12px;margin-bottom:10px;}
+html body .de-modal .de-comment textarea{min-height:100px;padding:12px 14px;border-radius:8px;font-size:13px;line-height:1.5;}
+
+html body .de-modal .de-modal-foot{padding:16px 28px 24px;}
+html body .de-modal .de-modal-foot .de-btn{padding:13px;border-radius:10px;font-size:15px;}
+html body .de-modal .de-modal-foot .de-btn-cancel{padding:13px 22px;font-size:14px;font-weight:600;}
+html body .de-modal .de-modal-foot .de-btn-submit{box-shadow:none;font-weight:700;}
+
+@media(max-width:768px){html body .de-modal .de-table col.c-rate{width:46px;}html body .de-modal .de-rate label{width:30px;height:28px;}}
+@media(max-width:700px){html body .de-modal .de-modal-body,html body .de-modal .de-modal-head,html body .de-modal .de-modal-foot{padding-left:18px;padding-right:18px;}}
+</style>

@@ -28,6 +28,15 @@ $errors = [];
 $success = null;
 $userId = (int)$_SESSION['user_id'];
 
+// ── SECURITY QUESTIONS STATUS (for the Settings card) ────────
+$sq_status = 'none'; // none | ok | retired
+try {
+    if (!function_exists('sq_load')) { require_once 'security.php'; }
+    security_ensure_tables($mysqli);
+    $sq_existing = sq_load($mysqli, $userId);
+    if (count($sq_existing) === 3) { $sq_status = sq_needs_update($sq_existing) ? 'retired' : 'ok'; }
+} catch (Throwable $e) { error_log('settings sq_load failed: ' . $e->getMessage()); }
+
 // Pull the current Dean profile before processing a request so all forms
 // and the sidebar always reflect the latest saved data.
 $stmt = $mysqli->prepare(
@@ -479,6 +488,26 @@ if(localStorage.getItem('dean_reduce_motion')==='1')d.classList.add('dean-reduce
             <button class="btn-primary" type="submit"><i class="fa-solid fa-key"></i> Update Password</button>
         </form>
     </div>
+
+    <div class="section ac-card ac-c6" id="security-questions-settings">
+        <div class="ac-head">
+            <span class="ac-icon"><i class="fa-solid fa-shield-halved"></i></span>
+            <div>
+                <h2>Security Questions</h2>
+                <p class="ac-sub">These questions are used to recover your account if you forget your password.</p>
+            </div>
+        </div>
+        <?php if ($sq_status === 'ok'): ?>
+        <div class="sq-status ok"><i class="fa-solid fa-circle-check"></i> Security questions are set</div>
+        <?php elseif ($sq_status === 'retired'): ?>
+        <div class="sq-status warn"><i class="fa-solid fa-triangle-exclamation"></i> One of your questions is no longer offered &mdash; please update them</div>
+        <?php else: ?>
+        <div class="sq-status warn"><i class="fa-solid fa-triangle-exclamation"></i> Not set up yet</div>
+        <?php endif; ?>
+        <div>
+            <a class="btn-primary" href="security_questions.php"><i class="fa-solid fa-pen-to-square"></i> <?= $sq_status === 'none' ? 'Set Security Questions' : 'Update Security Questions' ?></a>
+        </div>
+    </div>
     </div><!-- /#tab-profile -->
 </main>
 <script>
@@ -624,6 +653,11 @@ main.main .ac-c1{--ac-c:var(--ac);}
 main.main .ac-c2,main.main .ac-c5{--ac-c:#10B981;}
 main.main .ac-c3{--ac-c:#D88900;}
 main.main .ac-c4{--ac-c:#3B82F6;}
+main.main .ac-c6{--ac-c:#8B5CF6;}
+main.main a.btn-primary{display:inline-flex;align-items:center;gap:8px;text-decoration:none;}
+.sq-status{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;margin-bottom:16px;border-radius:999px;font-size:12px;font-weight:600;background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.3);}
+.sq-status.ok{color:#10B981;border-color:rgba(16,185,129,.4);}
+.sq-status.warn{color:#D97706;border-color:rgba(217,119,6,.45);}
 main.main .ac-card{position:relative !important;overflow:hidden !important;border-radius:15px !important;padding:22px 24px 24px !important;margin-bottom:20px !important;}
 main.main .ac-card::before{content:'';position:absolute;left:0;right:0;top:0;height:3px;background:var(--ac-c);}
 main.main .ac-head{display:flex;align-items:flex-start;gap:14px;margin-bottom:18px;}

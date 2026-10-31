@@ -136,6 +136,22 @@ body{min-height:100vh;background:radial-gradient(circle at 50% 42%,rgba(255,255,
 .card-footer a{color:var(--teal-hover);text-decoration:none;font-weight:600;}
 .card-footer a:hover{text-decoration:underline;}
 </style>
+<style id="login-match-ea">
+/* Same card proportions as the Admin (EA) login: width, field height, button height,
+   icon positions and spacing. */
+.login-card{max-width:420px}
+body{padding:24px}
+.card-subtitle{margin-top:4px;line-height:normal}
+.input-wrap .form-input{height:37px;min-height:37px;padding:0 46px}
+.input-wrap .f-icon{left:14px;width:18px;text-align:center;z-index:2}
+.input-wrap .toggle-pw{right:12px;z-index:3;width:26px;height:30px;padding:0;display:flex;align-items:center;justify-content:center}
+.input-wrap .toggle-pw i{display:block}
+.btn-login{height:38px;min-height:38px;padding:0 16px}
+.card-footer{margin-top:16px;padding-top:0;border-top:0;font-size:13px}
+@media(max-width:480px){body{padding:16px}.login-card{padding:36px 22px 30px}}
+@media(max-height:700px){body{overflow:auto}}
+</style>
+
 </head>
 <body>
 <div class="bg-grid"></div>
