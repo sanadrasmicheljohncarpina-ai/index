@@ -1318,6 +1318,26 @@ a { color:inherit; }
     <?php endif; ?>
 
     <?php if ($cumOverall !== null): ?>
+    <!-- RATING LEGEND: same card style as Total Score, placed right before it -->
+    <div class="cum-total cum-legend">
+        <div class="cum-total-label">Rating Legend</div>
+        <div class="cum-legend-rows">
+            <?php foreach ([
+                ['4.50 &ndash; 5.00', 'Very Satisfied',                     '#32B98A'],
+                ['3.50 &ndash; 4.49', 'Satisfied',                          '#6BCFA9'],
+                ['2.50 &ndash; 3.49', 'Neither Satisfied nor Dissatisfied', '#facc15'],
+                ['1.50 &ndash; 2.49', 'Dissatisfied',                       '#fb923c'],
+                ['1.00 &ndash; 1.49', 'Very Dissatisfied',                  '#E6788A'],
+            ] as $lg): ?>
+            <div class="cum-legend-row">
+                <span class="cum-legend-dot" style="--c:<?= $lg[2] ?>"></span>
+                <span class="cum-legend-range"><?= $lg[0] ?></span>
+                <span class="cum-legend-text"><?= $lg[1] ?></span>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+
     <!-- TOTAL SCORE: sits directly under the last question -->
     <div class="cum-total">
         <div class="cum-total-label">Total Score</div>
@@ -1473,6 +1493,12 @@ html body .cumulative-sheet .rating-lbl{font-size:8px!important;font-weight:600;
 html body .cumulative-sheet .cum-total{display:flex;justify-content:space-between;align-items:center;gap:14px;margin:0 0 12px;padding:12px 14px;background:#fff!important;border:1px solid #ddd!important;border-radius:0!important;box-shadow:none!important;}
 html body .cumulative-sheet .cum-total-label{font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:1px;}
 html body .cumulative-sheet .cum-total-result{text-align:right;margin-right:-2px;}
+html body .cumulative-sheet .cum-legend-rows{display:flex;flex-direction:column;gap:5px;min-width:340px;}
+html body .cumulative-sheet .cum-legend-row{display:flex;align-items:center;gap:10px;font-size:13px;}
+html body .cumulative-sheet .cum-legend-dot{width:12px;height:12px;border-radius:3px;flex-shrink:0;background-color:var(--c)!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+html body .cumulative-sheet .cum-legend-range{font-weight:700;width:92px;flex-shrink:0;}
+html body .cumulative-sheet .cum-legend-text{flex:1;text-align:right;}
+@media(max-width:640px){html body .cumulative-sheet .cum-legend{flex-direction:column;align-items:flex-start;}html body .cumulative-sheet .cum-legend-rows{min-width:0;width:100%;}}
 html body .cumulative-sheet .avg-score-big{font-family:'Rajdhani',sans-serif;font-size:42px!important;font-weight:700;line-height:1;}
 html body .cumulative-sheet .avg-score-label{font-size:14px;font-weight:700;margin-top:4px;}
 html body .cumulative-sheet .avg-out-of{font-size:13px;margin-top:6px;}
@@ -1505,6 +1531,7 @@ html body .cumulative-sheet .cum-empty{text-align:center;padding:24px;font-style
   html body .cumulative-sheet .q-table thead{display:table-header-group;}
   html body .cumulative-sheet .q-table tr{break-inside:avoid;page-break-inside:avoid;}
   html body .cumulative-sheet .cum-total,
+  html body .cumulative-sheet .cum-legend,
   html body .cumulative-sheet .comment-section{break-inside:avoid;page-break-inside:avoid;}
 
   /* top header bar (page title, period chip, bell) must not print */
@@ -1536,6 +1563,10 @@ html body .cumulative-sheet .cum-empty{text-align:center;padding:24px;font-style
   html body .cumulative-sheet .rating-num{font-size:11px!important;line-height:1!important;}
   html body .cumulative-sheet .cum-total{margin:0 0 5px!important;padding:6px 12px!important;}
   html body .cumulative-sheet .cum-total-label{font-size:11px!important;}
+  html body .cumulative-sheet .cum-legend-rows{gap:1px!important;min-width:300px!important;}
+  html body .cumulative-sheet .cum-legend-row{font-size:9.5px!important;gap:6px!important;line-height:1.2!important;}
+  html body .cumulative-sheet .cum-legend-dot{width:8px!important;height:8px!important;background-color:var(--c)!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;}
+  html body .cumulative-sheet .cum-legend-range{width:68px!important;}
   html body .cumulative-sheet .avg-score-big{font-size:28px!important;}
   html body .cumulative-sheet .avg-score-label{font-size:11px!important;margin-top:2px!important;}
   html body .cumulative-sheet .avg-out-of{font-size:9px!important;margin-top:2px!important;}
@@ -1956,13 +1987,46 @@ if ($view === 'students' && $target_id) {
     </div>
 </div>
 
+<style id="rp-generate-detail">
+/* Generate Report button + Grade Level filter on the Evaluation Results header.
+   (The same rules exist further down for the list view, which exits before this
+   page is drawn, so the detail view needs its own copy.) */
+html body .detail-head-actions{display:flex;align-items:center;justify-content:flex-end;gap:14px;flex-wrap:wrap;}
+html body a.detail-generate-btn,html body a.detail-generate-btn:link,html body a.detail-generate-btn:visited{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;height:42px;padding:0 20px;border-radius:10px;
+    background:#2563EB!important;color:#fff!important;-webkit-text-fill-color:#fff!important;
+    border:1px solid #2563EB;font-size:13px;font-weight:700;line-height:1;text-decoration:none!important;
+    font-family:'Inter',sans-serif;white-space:nowrap;cursor:pointer;transition:opacity .15s,box-shadow .15s;
+    box-shadow:0 2px 8px rgba(37,99,235,.25);}
+html body a.detail-generate-btn:hover,html body a.detail-generate-btn:focus-visible{opacity:.9;box-shadow:0 4px 14px rgba(37,99,235,.35);outline:none;}
+html body a.detail-generate-btn i{color:#fff!important;font-size:14px;}
+@media(max-width:640px){html body .detail-head-actions{width:100%;justify-content:stretch;}html body a.detail-generate-btn{flex:1;}}
+@media print{.detail-head-actions{display:none!important;}}
+</style>
 <div class="detail-results-head">
     <div class="detail-results-title">
         <i class="fa-solid fa-list-check"></i>
         <h2>Evaluation Results</h2>
         <span>(<?= count($evaluators) ?>)</span>
     </div>
-    <?php if ($activeEval === 'student' && !empty($availableYearLevels)): ?>
+    <div class="detail-head-actions no-print">
+    <?php if (!empty($evaluators)):
+        $firstEv = reset($evaluators);
+        $genQs = '?view=sheet&target_id=' . $target_id . '&student_id=' . (int)$firstEv['student_id'] . '&tracker_id=' . (int)$firstEv['tracker_id']
+            . '&group=' . urlencode($groupFilter) . '&eval_type=' . $activeEval
+            . ($selectedYearLevel !== '' ? '&year_level=' . urlencode($selectedYearLevel) : '');
+        $genPeriodId = match ($activeEval) {
+            'peer' => (int)$peerPeriodId,
+            'staff' => (int)$staffPeriodId,
+            default => (int)$studentPeriodId,
+        };
+        $genQs .= '&report=1' . ($reportTrackerIds !== ''
+            ? '&report_period_id=' . $genPeriodId . '&report_tracker_ids=' . urlencode($reportTrackerIds)
+            : '');
+    ?>
+    <a class="detail-generate-btn no-print" href="<?= htmlspecialchars($genQs, ENT_QUOTES, 'UTF-8') ?>"><i class="fa-solid fa-file-lines"></i> Generate Report</a>
+    <?php endif; ?>
+        <?php if ($activeEval === 'student' && !empty($availableYearLevels)): ?>
     <form method="get" class="detail-year-filter no-print">
         <input type="hidden" name="view" value="students"/>
         <input type="hidden" name="target_id" value="<?= $target_id ?>"/>
@@ -1977,6 +2041,7 @@ if ($view === 'students' && $target_id) {
         </select>
     </form>
     <?php endif; ?>
+    </div>
 </div>
 
 <div class="detail-results-panel">
@@ -2016,19 +2081,7 @@ if ($view === 'students' && $target_id) {
                     $sheetQs = '?view=sheet&target_id=' . $target_id . '&student_id=' . (int)$ev['student_id'] . '&tracker_id=' . (int)$ev['tracker_id']
                         . '&group=' . urlencode($groupFilter) . '&eval_type=' . $activeEval
                         . ($selectedYearLevel !== '' ? '&year_level=' . urlencode($selectedYearLevel) : '');
-                    $reportPeriodId = match ($activeEval) {
-                        'peer' => (int)$peerPeriodId,
-                        'staff' => (int)$staffPeriodId,
-                        default => (int)$studentPeriodId,
-                    };
-                    $sheetReportQs = $sheetQs . '&report=1'
-                        . ($reportTrackerIds !== ''
-                            ? '&report_period_id=' . $reportPeriodId . '&report_tracker_ids=' . urlencode($reportTrackerIds)
-                            : '');
                 ?>
-                <a class="detail-view-btn detail-report-btn" title="Generate Report" aria-label="Generate Report" href="<?= htmlspecialchars($sheetReportQs, ENT_QUOTES, 'UTF-8') ?>">
-                    <i class="fa-solid fa-file-lines"></i>
-                </a>
                 <a class="detail-view-btn" title="View" aria-label="View evaluation" href="<?= $sheetQs ?>">
                     <i class="fa-solid fa-eye"></i>
                 </a>
@@ -2481,9 +2534,74 @@ a { color:inherit; }
 <?php if ($toast): ?><div class="toast"><i class="fa-solid fa-circle-check"></i><?= htmlspecialchars($toast) ?></div><?php endif; ?>
 
 <!-- ── REPORTS REDESIGN ── -->
+<style id="rp-generate-single">
+/* One "Generate Report" button above the results table (same as the admin report);
+   rows keep just the eye icon. */
+html body:not(#rap) .detail-head-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+html body a.detail-generate-btn,html body a.detail-generate-btn:link,html body a.detail-generate-btn:visited{
+    display:inline-flex;align-items:center;gap:8px;padding:9px 18px;border-radius:8px;
+    background:#2563EB!important;color:#fff!important;-webkit-text-fill-color:#fff!important;
+    border:1px solid #2563EB;font-size:13px;font-weight:700;text-decoration:none!important;
+    font-family:'Inter',sans-serif;white-space:nowrap;transition:opacity .15s;}
+html body a.detail-generate-btn:hover,html body a.detail-generate-btn:focus-visible{opacity:.88;}
+html body a.detail-generate-btn i{color:#fff!important;}
+@media print{.detail-head-actions{display:none!important;}}
+</style>
+<style id="rp-roles">
+/* ------------------------------------------------------------------
+   Evaluators vs. evaluated personnel (same treatment as Evaluation Reports)
+   Indigo = EVALUATORS (who submitted), teal = BEING EVALUATED (who was rated).
+   Presentation only; links, filters, search and queries are unchanged.
+   ------------------------------------------------------------------ */
+html body:not(#rap) .ra-role-label{display:flex;align-items:center;flex-wrap:wrap;gap:10px 12px;margin:0 0 10px;}
+html body:not(#rap) .ra-role-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 13px;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;border:1px solid transparent;}
+html body:not(#rap) .ra-role-hint{font-size:13px;font-weight:500;}
+html body:not(#rap) .ra-role-evaluated{margin-top:4px;}
+html body:not(#rap) .reports-redesign .reports-top-row{margin-bottom:22px!important;}
+html body:not(#rap) .reports-redesign .reports-top-switcher{padding:5px!important;gap:4px!important;border-radius:16px!important;}
+html body:not(#rap) .reports-redesign .reports-top-tab{min-height:44px!important;border-radius:12px!important;}
+html body:not(#rap) .reports-redesign .reports-filter-tabs{margin-bottom:16px!important;}
+html body:not(#rap) .reports-redesign .reports-filter-tab{min-height:44px!important;}
+html body:not(#rap) .reports-redesign .reports-data-panel{border-left:5px solid #0F766E!important;}
+html body:not(#rap) .reports-redesign .reports-data-sub{margin:-8px 28px 16px;padding-left:29px;font-size:13px;font-weight:500;}
+
+/* Light */
+html:not(.dark-theme) body:not(#rap)  .ra-role-evaluators .ra-role-badge{background:#E0E7FF;color:#3730A3;border-color:#B4C0F7;}
+html:not(.dark-theme) body:not(#rap)  .ra-role-evaluated .ra-role-badge{background:#D5F3EE;color:#0B5F57;border-color:#8CD5C9;}
+html:not(.dark-theme) body:not(#rap)  .ra-role-hint{color:#475569;}
+html:not(.dark-theme) body:not(#rap) .reports-redesign .reports-data-sub{color:#475569;}
+html:not(.dark-theme) body:not(#rap) .reports-redesign .reports-top-switcher{background:#EEF2FF!important;border:1px solid #C7D2FE!important;}
+html:not(.dark-theme) body:not(#rap) .reports-redesign .reports-top-tab:not(.active){background:transparent!important;border-color:transparent!important;box-shadow:none!important;}
+html:not(.dark-theme) body:not(#rap) .reports-redesign .reports-top-tab:not(.active):hover{background:rgba(255,255,255,.85)!important;}
+html:not(.dark-theme) body:not(#rap) .reports-redesign .reports-filter-tab:not(.active){border-color:#C9D6E4!important;color:#334155!important;}
+html:not(.dark-theme) body:not(#rap) .reports-redesign .reports-filter-tab:not(.active):hover{background:#F0FAF8!important;border-color:#8CD5C9!important;color:#0B5F57!important;}
+html:not(.dark-theme) body:not(#rap) .reports-redesign .reports-filter-tab.active{background:#DDF4F0!important;border-color:#5CBFB0!important;color:#0B5F57!important;box-shadow:0 2px 8px rgba(15,118,110,.14)!important;}
+html:not(.dark-theme) body:not(#rap) .reports-redesign .reports-filter-tab.active b{background:#BFE9E2!important;color:#0B5F57!important;}
+
+/* Dark */
+html.dark-theme body:not(#rap)  .ra-role-evaluators .ra-role-badge{background:rgba(129,140,248,.18);color:#C7D2FE;border-color:rgba(129,140,248,.4);}
+html.dark-theme body:not(#rap)  .ra-role-evaluated .ra-role-badge{background:rgba(45,212,191,.15);color:#99F6E4;border-color:rgba(45,212,191,.38);}
+html.dark-theme body:not(#rap)  .ra-role-hint{color:#A0B3C6;}
+html.dark-theme body:not(#rap) .reports-redesign .reports-data-sub{color:#A0B3C6;}
+html.dark-theme body:not(#rap) .reports-redesign .reports-top-switcher{background:rgba(129,140,248,.08)!important;border:1px solid rgba(129,140,248,.28)!important;}
+html.dark-theme body:not(#rap) .reports-redesign .reports-filter-tab.active{background:rgba(45,212,191,.14)!important;border-color:rgba(45,212,191,.4)!important;color:#99F6E4!important;box-shadow:none!important;}
+html.dark-theme body:not(#rap) .reports-redesign .reports-filter-tab.active b{background:rgba(45,212,191,.22)!important;color:#99F6E4!important;}
+html.dark-theme body:not(#rap) .reports-redesign .reports-data-panel{border-left-color:#2DD4BF!important;}
+
+@media(max-width:900px){html body:not(#rap) .reports-redesign .reports-top-switcher{width:100%;overflow-x:auto;}}
+@media print{.ra-role-label,.reports-data-sub{display:none!important;}}
+</style>
 <div class="reports-redesign">
 
     <!-- Top-level report types: keep the current two data sets only. -->
+    <?php
+// Who is doing the evaluating on the active tab (used in the section captions).
+$raWho = ['student'=>'students','peer'=>'colleagues','staff'=>'staff members'][$activeEval] ?? $evaluatorNounP;
+?>
+    <div class="ra-role-label ra-role-evaluators no-print">
+        <span class="ra-role-badge"><i class="fa-solid fa-pen-to-square"></i> Evaluators</span>
+        <span class="ra-role-hint">Who submitted the evaluations &mdash; choose one to see its results</span>
+    </div>
     <div class="reports-top-row">
     <div class="reports-top-switcher">
         <a href="?group=<?= urlencode($groupFilter) ?>&eval_type=student" class="reports-top-tab student <?= $activeEval==='student'?'active':'' ?>">
@@ -2510,6 +2628,10 @@ a { color:inherit; }
         </div>
     </div>
 
+    <div class="ra-role-label ra-role-evaluated no-print">
+        <span class="ra-role-badge"><i class="fa-solid fa-user-check"></i> Being evaluated</span>
+        <span class="ra-role-hint">Personnel rated by <?= htmlspecialchars($raWho) ?> &mdash; filter by group</span>
+    </div>
     <?php if ($activeEval === 'student'): ?>
     <div class="reports-filter-tabs">
         <a href="?group=All&eval_type=student" class="reports-filter-tab <?= $groupFilter==='All'?'active':'' ?>">
@@ -2550,6 +2672,7 @@ a { color:inherit; }
                 <span class="reports-live-status" id="reportsLiveStatus"><span class="reports-live-dot"></span> Live</span>
             </div>
         </div>
+        <div class="reports-data-sub">Rated by <?= htmlspecialchars($raWho) ?> &middot; scores are the average of the ratings they gave</div>
 
         <div class="reports-active-filter-note" id="reportsFilterNote" hidden>
             <span>Use the tabs above to narrow the current report.</span>

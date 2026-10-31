@@ -283,8 +283,8 @@ foreach ($questions as $q) { $questionGroups[$q['category'] ?: 'General'][] = $q
 /* EA evaluation form — same look and behaviour as the student evaluation form. */
 :root{
     --mid:#ffffff;--inner:#f8fbff;--soft:#eef4fb;
-    /* This evaluation form uses the admin's gold accent regardless of a saved site-wide accent. */
-    --accent:#B8860B !important;--accent-h:#946A08;--accent-soft:rgba(184,134,11,.10);--accent-line:rgba(184,134,11,.30);
+    /* Follows the site-wide accent chosen in Settings > Appearance (--accent is set on <html> by admin_appearance.js). */
+    --accent-h:color-mix(in srgb,var(--accent,#0F9F6E) 80%,#000);--accent-soft:color-mix(in srgb,var(--accent,#0F9F6E) 10%,transparent);--accent-line:color-mix(in srgb,var(--accent,#0F9F6E) 30%,transparent);
     --light:#10243f;--muted:#66809c;--border:#dce8f5;--radius:10px;
     --name:#10243f;--legend-bg:#f8fbff;--th-bg:#eef4fb;--td-line:#e6eef7;
     --overlay:rgba(9,17,30,.64);--modal-border:#d7e3ef;--modal-shadow:0 30px 80px rgba(15,23,42,.24);
@@ -351,7 +351,7 @@ html[data-theme="dark"] .eval-validation strong{color:#ffd0d0;}
 .eval-form-rating label{cursor:pointer;transition:all .15s ease}
 .eval-form-rating label:hover{border-color:var(--accent);background:var(--accent-soft)}
 .eval-form-rating input:checked + label{background:var(--accent);border-color:var(--accent);color:#fff}
-.eval-form-rating input:focus-visible + label{outline:3px solid rgba(184,134,11,.28);outline-offset:2px}
+.eval-form-rating input:focus-visible + label{outline:3px solid color-mix(in srgb,var(--accent,#0F9F6E) 28%,transparent);outline-offset:2px}
 .eval-form-static{display:flex;justify-content:center}
 .eval-form-static span{opacity:.55}
 .eval-form-static span.on{background:var(--accent);border-color:var(--accent);color:#fff;opacity:1}
@@ -363,7 +363,7 @@ html[data-theme="dark"] .eval-validation strong{color:#ffd0d0;}
 .comment-box{margin-top:24px;background:var(--inner);border:1px solid var(--comment-border);border-radius:10px;padding:16px;}
 .comment-label{font-size:12px;font-weight:700;color:var(--accent);margin-bottom:10px;display:flex;align-items:center;gap:7px;}
 .comment-textarea{width:100%;background:var(--ta-bg);border:1px solid var(--ta-line);border-radius:8px;color:var(--ta-color);padding:12px 14px;font-size:13px;font-family:'Inter',sans-serif;resize:vertical;outline:none;transition:border-color .2s;line-height:1.5;min-height:100px;}
-.comment-textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(184,134,11,.14);}
+.comment-textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent,#0F9F6E) 14%,transparent);}
 .comment-textarea::placeholder{color:#64748b;opacity:1;}
 .comment-req{color:#ef4444;margin-left:3px;font-weight:800;}
 .comment-hint{font-size:11.5px;color:var(--muted);margin:8px 0 0;}
@@ -443,7 +443,8 @@ $closeAttr = $embed ? ' onclick="parent.closeEvalModal();return false;"' : '';
       <div class="eval-form-cat"><i class="fa-solid fa-layer-group" style="margin-right:5px"></i><?= e($cat) ?></div>
       <div class="eval-form-wrap">
         <table class="eval-form-table">
-          <thead><tr><th>Question</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th></tr></thead>
+          <colgroup><col><col style="width:52px"><col style="width:52px"><col style="width:52px"><col style="width:52px"><col style="width:52px"></colgroup>
+
           <tbody>
           <?php foreach ($answers as $a): $qn++; $score = (int)$a['answer_score']; ?>
             <tr>
@@ -488,7 +489,6 @@ $closeAttr = $embed ? ' onclick="parent.closeEvalModal();return false;"' : '';
         <div class="eval-validation" id="evalValidation" role="alert" aria-live="assertive" <?= $errors ? '' : 'hidden' ?>>
           <?php if ($errors): ?><i class="fa-solid fa-circle-exclamation"></i><div><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div><?php endif; ?>
         </div>
-        <div class="eval-progress" id="evalProgress"><span>Please rate every question and write a comment before submitting.</span><span class="progress-status" id="evalProgressStatus">0 / <?= count($questions) ?> answered</span></div>
         <div class="scale-legend">
           <div class="legend-item"><div class="legend-dot">5</div> Always</div>
           <div class="legend-item"><div class="legend-dot">4</div> Often</div>
@@ -500,7 +500,8 @@ $closeAttr = $embed ? ' onclick="parent.closeEvalModal();return false;"' : '';
         <div class="eval-form-cat"><i class="fa-solid fa-layer-group" style="margin-right:5px"></i><?= e($cat) ?></div>
         <div class="eval-form-wrap">
           <table class="eval-form-table">
-            <thead><tr><th>Question</th><th>5</th><th>4</th><th>3</th><th>2</th><th>1</th></tr></thead>
+            <colgroup><col><col style="width:52px"><col style="width:52px"><col style="width:52px"><col style="width:52px"><col style="width:52px"></colgroup>
+
             <tbody>
             <?php foreach ($qs as $q): $qn++; $qid = (int)$q['id']; ?>
               <tr data-question-number="<?= $qn ?>">

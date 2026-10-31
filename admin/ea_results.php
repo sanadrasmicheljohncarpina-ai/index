@@ -663,7 +663,7 @@ $starsOn = $overallAvg !== null ? (int)round($overallAvg) : 0;
 <style>
 :root{
     --page:#F8FAFC;--card:#FFFFFF;--border:#D7E3EF;--border-soft:#E8EEF5;
-    --text:#0B1F3A;--muted:#647B96;--accent:#D99121;--accent-bg:#FFF7E9;--accent-border:#F0D39D;
+    --text:#0B1F3A;--muted:#647B96;--accent-bg:color-mix(in srgb,var(--accent,#0F9F6E) 9%,#fff);--accent-border:color-mix(in srgb,var(--accent,#0F9F6E) 35%,#fff);
     --blue:#2563EB;--shadow:0 7px 22px rgba(30,82,144,.08);--radius:14px;
 }
 *{box-sizing:border-box}
@@ -686,8 +686,8 @@ body{min-height:100vh}
 .meta{margin-top:6px;color:#58718C;font-size:12px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .dot{color:#A7B7C7}
 .right{display:flex;align-items:center;gap:12px;flex-shrink:0}
-.score-pill{min-width:88px;text-align:center;border:1px solid var(--accent-border);background:#FFF9EF;color:var(--accent);border-radius:21px;padding:9px 13px;font-size:13px;font-weight:800}
-.view-btn{border:1px solid var(--accent-border);background:#FFFCF5;color:var(--accent);border-radius:20px;padding:8px 16px;font-size:12px;font-weight:800;cursor:pointer}
+.score-pill{min-width:88px;text-align:center;border:1px solid var(--accent-border);background:color-mix(in srgb,var(--accent,#0F9F6E) 6%,#fff);color:var(--accent);border-radius:21px;padding:9px 13px;font-size:13px;font-weight:800}
+.view-btn{border:1px solid var(--accent-border);background:color-mix(in srgb,var(--accent,#0F9F6E) 4%,#fff);color:var(--accent);border-radius:20px;padding:8px 16px;font-size:12px;font-weight:800;cursor:pointer}
 .view-btn:hover{background:#FFF6E6}
 .empty{background:var(--card);border:1px dashed #C7D5E4;border-radius:15px;padding:62px 24px;text-align:center;color:var(--muted)}
 .empty i{font-size:31px;opacity:.4;margin-bottom:12px}
@@ -761,7 +761,7 @@ body{min-height:100vh}
    hardcoded instead of using a variable. */
 html[data-theme="dark"]{
     --page:#0A192F;--card:#172A45;--border:#24395A;--border-soft:#1E314F;
-    --text:#E7ECF3;--muted:#93A5BE;--accent-bg:#2A2013;--accent-border:#4A3A1E;
+    --text:#E7ECF3;--muted:#93A5BE;--accent-bg:color-mix(in srgb,var(--accent,#0F9F6E) 18%,#172A45);--accent-border:color-mix(in srgb,var(--accent,#0F9F6E) 35%,#172A45);
     color-scheme:dark;
 }
 html[data-theme="dark"] .stat-value,html[data-theme="dark"] .detail-value{color:var(--text) !important;}
@@ -818,7 +818,7 @@ html[data-theme="dark"] .comments .text{color:#C7D2E3 !important;}
 
 .er-item{display:flex;justify-content:space-between;align-items:center;gap:18px;background:var(--page);border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:10px;cursor:pointer;transition:border-color .15s,box-shadow .15s}
 .er-item:last-child{margin-bottom:0}
-.er-item:hover,.er-item:focus-visible{border-color:var(--accent);box-shadow:0 2px 12px rgba(217,145,33,.18);outline:none}
+.er-item:hover,.er-item:focus-visible{border-color:var(--accent);box-shadow:0 2px 12px color-mix(in srgb,var(--accent,#0F9F6E) 18%,transparent);outline:none}
 .er-main{min-width:0;flex:1}
 .er-eyebrow{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:6px}
 .er-meta{font-size:12px;color:var(--muted);margin-top:3px}
@@ -1094,7 +1094,7 @@ function pevEnsureStyle(){
     const st = d.createElement('style');
     st.id = 'pev-style';
     st.textContent = `
-.pev-backdrop{--c-card:#fff;--c-border:#D7E3EF;--c-soft:#E8EEF5;--c-text:#0B1F3A;--c-muted:#647B96;--c-label:#70849C;--c-accent:#D99121;--c-track:#E8EEF5;--c-cat:#344B63;--c-q:#162A43;--c-q2:#526A82;--c-body:#354C63;
+.pev-backdrop{--c-card:#fff;--c-border:#D7E3EF;--c-soft:#E8EEF5;--c-text:#0B1F3A;--c-muted:#647B96;--c-label:#70849C;--c-accent:var(--accent,#0F9F6E);--c-track:#E8EEF5;--c-cat:#344B63;--c-q:#162A43;--c-q2:#526A82;--c-body:#354C63;
   position:fixed;inset:0;z-index:2147483000;display:none;align-items:center;justify-content:center;padding:24px;
   background:rgba(3,10,22,.55);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);
   font-family:Inter,'Segoe UI',Arial,sans-serif;color:var(--c-text);line-height:1.4}

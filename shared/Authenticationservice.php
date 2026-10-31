@@ -57,6 +57,21 @@ function ems_verify_login(mysqli $mysqli, string $username, string $password, st
 }
 
 /**
+ * Make sure a users column accepts NULL (self-healing, same idea as dean/db.php).
+ * Needed so accounts registered without an email / employee ID are stored as NULL
+ * rather than '' — an empty string would clash with a UNIQUE index on the second account.
+ */
+function ems_allow_null_column(mysqli $mysqli, string $column): void
+{
+    if (!in_array($column, ['email', 'employee_id'], true)) return;
+    $res = $mysqli->query("SHOW COLUMNS FROM users LIKE '" . $column . "'");
+    $col = $res ? $res->fetch_assoc() : null;
+    if ($col && strtoupper((string)$col['Null']) === 'NO') {
+        $mysqli->query("ALTER TABLE users MODIFY COLUMN `" . $column . "` " . $col['Type'] . " NULL DEFAULT NULL");
+    }
+}
+
+/**
  * Register a new Principal or Dean account. Always lands in 'pending' status —
  * same self-registration + admin-approval workflow used elsewhere in PBI.
  *
@@ -72,7 +87,11 @@ function ems_verify_login(mysqli $mysqli, string $username, string $password, st
  */
 function ems_register_account(mysqli $mysqli, string $role, array $fields): array
 {
-    $required = ['full_name', 'employee_id', 'username', 'email', 'password'];
+    // Dean self-registration no longer collects employee ID, email or department,
+    // so those are only required for the other roles.
+    $required = $role === 'dean'
+        ? ['full_name', 'username', 'password']
+        : ['full_name', 'employee_id', 'username', 'email', 'password'];
     foreach ($required as $key) {
         if (empty($fields[$key])) {
             return ['ok' => false, 'error' => "Missing required field: $key"];
@@ -82,19 +101,31 @@ function ems_register_account(mysqli $mysqli, string $role, array $fields): arra
     if ($role === 'principal' && empty($fields['education_level'])) {
         return ['ok' => false, 'error' => 'Assigned school level is required.'];
     }
-    if ($role === 'dean' && empty($fields['department'])) {
-        return ['ok' => false, 'error' => 'Department is required.'];
-    }
 
     // Uniqueness check across username and email regardless of role.
-    $stmt = $mysqli->prepare("SELECT id FROM users WHERE username = ? OR email = ? LIMIT 1");
-    $stmt->bind_param("ss", $fields['username'], $fields['email']);
+    // (A blank email is not compared, so accounts registered without one never clash.)
+    $email      = (string)($fields['email'] ?? '');
+    $employeeId = (string)($fields['employee_id'] ?? '');
+    if ($email === '') {
+        $stmt = $mysqli->prepare("SELECT id FROM users WHERE username = ? LIMIT 1");
+        $stmt->bind_param("s", $fields['username']);
+    } else {
+        $stmt = $mysqli->prepare("SELECT id FROM users WHERE username = ? OR email = ? LIMIT 1");
+        $stmt->bind_param("ss", $fields['username'], $email);
+    }
     $stmt->execute();
     if ($stmt->get_result()->fetch_assoc()) {
         $stmt->close();
         return ['ok' => false, 'error' => 'Username or email is already registered.'];
     }
     $stmt->close();
+
+    // Blank email / employee ID are stored as NULL (not ''), so several accounts can
+    // be registered without them even when those columns have a UNIQUE index.
+    $emailDb      = $email      === '' ? null : $email;
+    $employeeIdDb = $employeeId === '' ? null : $employeeId;
+    if ($emailDb === null)      { ems_allow_null_column($mysqli, 'email'); }
+    if ($employeeIdDb === null) { ems_allow_null_column($mysqli, 'employee_id'); }
 
     $passwordHash = password_hash($fields['password'], PASSWORD_DEFAULT);
     $educationLevel = $fields['education_level'] ?? ($role === 'dean' ? 'college' : null);
@@ -119,15 +150,22 @@ function ems_register_account(mysqli $mysqli, string $role, array $fields): arra
         $fields['username'],
         $passwordHash,
         $fields['full_name'],
-        $fields['email'],
+        $emailDb,
         $role,
         $educationLevel,
         $department,
         $designation,
-        $fields['employee_id']
+        $employeeIdDb
     );
 
-    $ok = $stmt->execute();
+    // mysqli may be in exception mode: report a database error as a normal failure
+    // instead of letting it become an uncaught fatal error on the registration page.
+    try {
+        $ok = $stmt->execute();
+    } catch (mysqli_sql_exception $e) {
+        error_log('ems_register_account failed: ' . $e->getMessage());
+        $ok = false;
+    }
     $stmt->close();
 
     return $ok

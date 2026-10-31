@@ -7,10 +7,18 @@ secure_session_start();
 require_once 'db.php';
 security_ensure_tables($mysqli);
 
-if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'student') {
+// Students, deans and principals can all manage their security questions.
+$sqRoutes = [
+    'student'   => ['login' => 'student_login.php',   'back' => 'student_dashboard.php',         'backLabel' => 'Dashboard'],
+    'dean'      => ['login' => 'dean_login.php',      'back' => 'dean_account_settings.php',     'backLabel' => 'Settings'],
+    'principal' => ['login' => 'principal_login.php', 'back' => 'principal_account_settings.php', 'backLabel' => 'Settings'],
+];
+$role = (string)($_SESSION['role'] ?? '');
+if (empty($_SESSION['user_id']) || !isset($sqRoutes[$role])) {
     header("Location: student_login.php");
     exit;
 }
+$route = $sqRoutes[$role];
 $uid   = (int)$_SESSION['user_id'];
 $setup = ($_GET['setup'] ?? '') === '1';
 
@@ -23,8 +31,8 @@ $hasRetired   = $hasQuestions && sq_needs_update($existing);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $ident = 'uid:' . $uid;
 
-    $stmt = $mysqli->prepare("SELECT username, password_hash FROM users WHERE id = ? AND role = 'student' LIMIT 1");
-    $stmt->bind_param("i", $uid);
+    $stmt = $mysqli->prepare("SELECT username, password_hash FROM users WHERE id = ? AND role = ? LIMIT 1");
+    $stmt->bind_param("is", $uid, $role);
     $stmt->execute();
     $me = $stmt->get_result()->fetch_assoc();
     $stmt->close();
@@ -32,7 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_valid($_POST['csrf_token'] ?? '')) {
         $error = "Your session expired. Please try again.";
     } elseif (!$me) {
-        header("Location: student_login.php");
+        header("Location: " . $route['login']);
         exit;
     } elseif (auth_is_locked($mysqli, 'sqchange', $ident)) {
         $error = AUTH_LOCK_MESSAGE;
@@ -49,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 sq_save($mysqli, $uid, $rows);
                 $mysqli->commit();
                 auth_clear($mysqli, 'sqchange', $ident);
-                if ($setup) { header("Location: student_dashboard.php"); exit; }
+                if ($setup) { header("Location: " . $route['back']); exit; }
                 $success = "Your security questions have been saved.";
                 $hasQuestions = true;
             } catch (Throwable $e) {
@@ -107,7 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="form-group" style="margin-bottom:10px">
                 <div class="input-wrap select-arr">
                     <select class="form-input sq-select" name="sq_question[<?= $n ?>]" id="sq_q<?= $n ?>" required>
-                        <option value="" disabled selected>Choose a question</option>
+                        <option value="" disabled <?= empty($_POST['sq_question'][$n]) ? 'selected' : '' ?>>Choose a question</option>
                         <?php foreach ($sq_all as $k => $q): ?>
                         <option value="<?= htmlspecialchars($k) ?>" <?= (($_POST['sq_question'][$n] ?? '') === $k) ? 'selected' : '' ?>><?= htmlspecialchars($q) ?></option>
                         <?php endforeach; ?>
@@ -117,7 +125,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="sq-chosen" id="sq_chosen<?= $n ?>" aria-live="polite"></div>
             <div class="form-group">
                 <input class="form-input plain" type="text" name="sq_answer[<?= $n ?>]" id="sq_a<?= $n ?>" maxlength="100"
-                       placeholder="Your answer" required autocomplete="off"/>
+                       value="<?= $error ? htmlspecialchars(is_string($_POST['sq_answer'][$n] ?? null) ? $_POST['sq_answer'][$n] : '') : '' ?>" placeholder="Your answer" required autocomplete="off"/>
             </div>
         </div>
         <?php endfor; ?>
@@ -136,7 +144,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <p class="help-note">Choose 3 different questions only you can answer, and avoid answers a classmate could guess. Use short answers you will type the same way every time (for example, just a name). Answers are stored encrypted and are not case-sensitive.</p>
 
     <div class="back-row">
-        <a href="student_dashboard.php"><i class="fa-solid fa-arrow-left"></i> <?= $setup ? 'Skip for now' : 'Back to Dashboard' ?></a>
+        <a href="<?= htmlspecialchars($route['back']) ?>"><i class="fa-solid fa-arrow-left"></i> <?= $setup ? 'Skip for now' : 'Back to ' . htmlspecialchars($route['backLabel']) ?></a>
     </div>
 </div>
 <script>

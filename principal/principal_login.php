@@ -4,6 +4,8 @@ session_start();
 require_once 'db.php';
 
 $error = '';
+$success = $_SESSION['reset_success'] ?? '';
+unset($_SESSION['reset_success']);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== ($_SESSION['csrf_token'] ?? '')) {
@@ -210,6 +212,10 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
     </div>
     <div class="divider"></div>
 
+    <?php if ($success): ?>
+    <div class="alert alert-success" role="status"><i class="fa-solid fa-circle-check"></i><span><?= htmlspecialchars($success) ?></span></div>
+    <?php endif; ?>
+
     <?php if ($error): ?>
     <div class="alert alert-error">
         <i class="fa-solid fa-circle-exclamation"></i>
@@ -240,6 +246,12 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
                 </button>
             </div>
         </div>
+        <div style="text-align:right; margin-top:-8px; margin-bottom:16px;">
+            <a href="forgot_password.php?restart=1" style="font-size:12px; color:var(--amber-h); text-decoration:none; font-weight:600;">
+                <i class="fa-solid fa-key"></i> Forgot Password?
+            </a>
+        </div>
+
         <button type="submit" class="btn-login">
             <i class="fa-solid fa-right-to-bracket"></i> Sign In as Principal
         </button>
@@ -490,6 +502,17 @@ body{background:#0A192F!important;background-image:none!important;color:#E0E6F0!
   .portal-hex-gold{top:-80px!important;left:-80px!important;}
   .portal-hex-blue{right:-80px!important;bottom:-80px!important;}
 }
+.alert-success{display:flex;align-items:flex-start;gap:8px;border-radius:8px;padding:11px 14px;margin-bottom:18px;font-size:13px;line-height:1.45;background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.35);color:#6ee7b7;}
+
+/* Match Admin (EA) login card size */
+.login-card{max-width:420px!important;padding:48px 44px 40px!important;}
+.logo-ring{width:72px!important;height:72px!important;}
+.card-subtitle{text-wrap:balance;}
+.login-card .form-input{height:38px!important;min-height:0!important;padding-top:0!important;padding-bottom:0!important;padding-left:46px!important;padding-right:46px!important;}
+.input-wrap .f-icon{left:14px!important;width:18px!important;text-align:center!important;}
+.btn-login{height:38px!important;min-height:0!important;padding:0 13px!important;}
+.login-card .card-footer{display:none!important;}
+@media(max-width:480px){.login-card{padding:36px 22px 30px!important;margin:16px;}}
 </style>
 </body>
 </html>

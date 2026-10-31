@@ -4,6 +4,8 @@ session_start();
 require_once 'db.php';
 
 $error = '';
+$success = $_SESSION['reset_success'] ?? '';
+unset($_SESSION['reset_success']);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', (string)$_POST['csrf_token'])) {
@@ -354,7 +356,24 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible{
 @media(prefers-reduced-motion:reduce){
     .login-card,.reg-card{transition:none;}
 }
+.alert-success{display:flex;align-items:flex-start;gap:8px;border-radius:8px;padding:11px 14px;margin-bottom:18px;font-size:13px;line-height:1.45;background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.35);color:#6ee7b7;}
 </style>
+<style id="dean-login-match-ea">
+/* Same card proportions as the Admin (EA) login: identical width, field height, button height,
+   icon positions and spacing. The "Secured & Encrypted" note sits just under the card so it no
+   longer makes the card taller than the EA one. */
+.input-wrap .form-input{height:37px;min-height:37px;padding:0 46px}
+.input-wrap .f-icon{left:14px;width:18px;text-align:center;z-index:2}
+.input-wrap .toggle-pw{right:12px;z-index:3;width:26px;height:30px;padding:0;display:flex;align-items:center;justify-content:center}
+.input-wrap .toggle-pw i{display:block}
+.forgot-row{text-align:right;margin-top:-10px;margin-bottom:14px}
+.forgot-row a{font-size:12px;color:var(--violet-hover);text-decoration:none;font-weight:600}
+.forgot-row a:hover{text-decoration:underline}
+.btn-login{height:38px;min-height:38px;padding:0 16px}
+.login-card .card-footer{position:absolute;left:0;right:0;top:100%;margin:14px 0 0;padding:0;border-top:0}
+@media(max-width:480px){.login-card{padding:36px 22px 30px}}
+</style>
+
 </head>
 <body>
 <div class="bg-grid" aria-hidden="true"></div>
@@ -377,6 +396,10 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible{
         <div class="role-pill"><i class="fa-solid fa-user-tie"></i> Dean Access</div>
     </div>
     <div class="divider"></div>
+
+    <?php if ($success): ?>
+    <div class="alert alert-success" role="status"><i class="fa-solid fa-circle-check"></i><span><?= htmlspecialchars($success) ?></span></div>
+    <?php endif; ?>
 
     <?php if ($error): ?>
     <div class="alert alert-error" role="alert">
@@ -408,6 +431,12 @@ button:focus-visible,a:focus-visible,.photo-preview:focus-visible{
                     <i class="fa-solid fa-eye-slash" id="eyeIcon"></i>
                 </button>
             </div>
+        </div>
+
+        <div class="forgot-row">
+            <a href="forgot_password.php?restart=1" style="font-size:12px; color:var(--violet-hover); text-decoration:none; font-weight:600;">
+                <i class="fa-solid fa-key"></i> Forgot Password?
+            </a>
         </div>
 
         <button type="submit" class="btn-login" id="loginBtn">

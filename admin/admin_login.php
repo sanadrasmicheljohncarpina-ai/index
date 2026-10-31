@@ -17,7 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
     $password = $_POST['password']     ?? '';
 
-    if (empty($username) && empty($password)) {
+    if ($username === '' || $password === '') {
         $error = "Please enter your username and password.";
     } else {
         // BINARY makes the username match case-sensitive: "Admin" will not log in as "admin".
@@ -31,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $user = $stmt->get_result()->fetch_assoc();
         $stmt->close();
 
-        if ($user || password_verify($password, $user['password_hash'])) {
+        if ($user && password_verify($password, $user['password_hash'])) {
             session_regenerate_id(true);
             $_SESSION['user_id']   = $user['id'];
             $_SESSION['full_name'] = $user['full_name'];
@@ -49,7 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = "Incorrect username or password. Please try again.";
         }
     }
-    if ($mysqli->ping()) close();
+    if ($mysqli->ping()) $mysqli->close();
 }
 
 ?>

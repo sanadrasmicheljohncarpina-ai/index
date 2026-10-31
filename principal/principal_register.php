@@ -437,7 +437,7 @@ summary:focus-visible{outline:3px solid rgba(240,184,77,.38);outline-offset:2px}
                         <label class="form-label" for="password">Password<span class="required">*</span></label>
                         <div class="input-wrap">
                             <i class="fa-solid fa-lock f-icon"></i>
-                            <input class="form-input" type="password" id="password" name="password" placeholder="Min. 8 characters" required minlength="8" oninput="checkStrength(this.value)"/>
+                            <input class="form-input" type="password" id="password" name="password" value="<?= $error ? htmlspecialchars(is_string($_POST['password'] ?? null) ? $_POST['password'] : '') : '' ?>" placeholder="Min. 8 characters" required minlength="8" oninput="checkStrength(this.value)"/>
                             <button type="button" class="toggle-pw" onclick="togglePw('password','eye1')" aria-label="Show password" title="Show password"><i class="fa-solid fa-eye-slash" id="eye1"></i></button>
                         </div>
                     </div>
@@ -446,7 +446,7 @@ summary:focus-visible{outline:3px solid rgba(240,184,77,.38);outline-offset:2px}
                         <label class="form-label" for="confirm_password">Confirm Password<span class="required">*</span></label>
                         <div class="input-wrap">
                             <i class="fa-solid fa-lock f-icon"></i>
-                            <input class="form-input" type="password" id="confirm_password" name="confirm_password" placeholder="Re-enter password" required minlength="8"/>
+                            <input class="form-input" type="password" id="confirm_password" name="confirm_password" value="<?= $error ? htmlspecialchars(is_string($_POST['confirm_password'] ?? null) ? $_POST['confirm_password'] : '') : '' ?>" placeholder="Re-enter password" required minlength="8"/>
                             <button type="button" class="toggle-pw" onclick="togglePw('confirm_password','eye2')" aria-label="Show password" title="Show password"><i class="fa-solid fa-eye-slash" id="eye2"></i></button>
                         </div>
                     </div>
@@ -479,7 +479,7 @@ summary:focus-visible{outline:3px solid rgba(240,184,77,.38);outline-offset:2px}
                         <?php endforeach; ?>
                     </select>
                     <div class="sq-chosen" id="sq_chosen<?= $n ?>" aria-live="polite"></div>
-                    <input class="form-input sq-answer" type="text" name="sq_answer[<?= $n ?>]" id="sq_a<?= $n ?>" maxlength="100" placeholder="Your answer" autocomplete="off" required/>
+                    <input class="form-input sq-answer" type="text" name="sq_answer[<?= $n ?>]" id="sq_a<?= $n ?>" maxlength="100" value="<?= $error ? htmlspecialchars(is_string($_POST['sq_answer'][$n] ?? null) ? $_POST['sq_answer'][$n] : '') : '' ?>" placeholder="Your answer" autocomplete="off" required/>
                 </div>
                 <?php endfor; ?>
                 </div>
@@ -566,6 +566,15 @@ document.getElementById('regForm')?.addEventListener('submit',function(e){
     selects.forEach(s=>s.addEventListener('change',sync));
     sync();
 })();
+</script>
+<script>
+window.addEventListener('DOMContentLoaded', function () {
+  var p = document.getElementById('password');
+  if (p && p.value) {
+    if (typeof checkStrength === 'function') checkStrength(p.value);
+    if (typeof checkMatch === 'function') checkMatch();
+  }
+});
 </script>
 </body>
 </html>

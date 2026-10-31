@@ -6,8 +6,8 @@
    ============================================================ */
 
 :root{
-  --accent:#B8860B;
-  --accent-soft:#FBF1D6;
+  --accent:#0F9F6E;
+  --accent-soft:color-mix(in srgb, var(--accent) 12%, #fff);
   --bg:#f4f8ff;
   --text:#10243f;
   --muted:#66809c;
@@ -700,8 +700,8 @@ html[data-theme="dark"]{
   --surface-3:#1a2a40;
   --border-strong:#3a506e;
 
-  --accent-bg:rgba(47,110,226,.14);
-  --accent-border:rgba(47,110,226,.35);
+  --accent-bg:color-mix(in srgb, var(--accent) 14%, transparent);
+  --accent-border:color-mix(in srgb, var(--accent) 35%, transparent);
   --blue-soft:rgba(37,99,235,.14);
   --green-soft:rgba(15,159,110,.14);
   --amber-soft:rgba(194,123,19,.15);
@@ -719,7 +719,7 @@ html[data-theme="dark"]{
   --fd-text:var(--text);
   --fd-muted:var(--muted);
   --fd-primary:var(--accent);
-  --fd-primary-soft:rgba(47,110,226,.14);
+  --fd-primary-soft:color-mix(in srgb, var(--accent) 14%, transparent);
   --fd-success:#35c692;
   --fd-success-soft:rgba(15,159,110,.14);
   --fd-warning:#e6b14b;
@@ -730,14 +730,14 @@ html[data-theme="dark"]{
   --sidebar-card-bg:#142338;
   --sidebar-hover-bg:#182b43;
   --sidebar-border:#273a54;
-  --sidebar-active:rgba(47,110,226,.18);
+  --sidebar-active:color-mix(in srgb, var(--accent) 18%, transparent);
   --sidebar-active-solid:var(--accent);
   --sidebar-text:var(--text);
   --sidebar-text-dim:var(--muted);
   --sidebar-logo-bg:#172a41;
   --sidebar-logo-border:#345071;
-  --accent-soft-bg:rgba(47,110,226,.14);
-  --accent-soft-border:rgba(47,110,226,.36);
+  --accent-soft-bg:color-mix(in srgb, var(--accent) 14%, transparent);
+  --accent-soft-border:color-mix(in srgb, var(--accent) 36%, transparent);
 
   /* Evaluation-specific accent surfaces. */
   --purple:#7c8ff0;
@@ -1098,7 +1098,7 @@ html[data-theme="dark"] .frame,
 html[data-theme="dark"] iframe.frame{background:var(--panel-bg)!important;border-color:var(--panel-border)!important}
 html[data-theme="dark"] .side button{color:var(--muted)!important}
 html[data-theme="dark"] .side button:hover{background:#20324a!important;color:var(--text)!important}
-html[data-theme="dark"] .side button.active{background:rgba(47,110,226,.16)!important;color:#a9c7f8!important}
+html[data-theme="dark"] .side button.active{background:color-mix(in srgb, var(--accent) 16%, transparent)!important;color:color-mix(in srgb, var(--accent) 55%, #fff)!important}
 html[data-theme="dark"] .side button.side-save-btn{background:var(--accent)!important;color:#fff!important}
 html[data-theme="dark"] .track{background:#3a4b61!important}
 html[data-theme="dark"] .switch input:checked+.track{background:var(--accent)!important}

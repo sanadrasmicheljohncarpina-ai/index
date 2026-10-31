@@ -8,13 +8,13 @@
    ============================================================ */
 (function () {
   var KEYS = { density: 'pbiDensity', motion: 'pbiReduceMotion', accent: 'pbiAccent', theme: 'pbiTheme' };
-  var DEFAULTS = { density: 'compact', motion: false, accent: '#2f6ee2', theme: 'light' };
+  var DEFAULTS = { density: 'compact', motion: false, accent: '#0F9F6E', theme: 'light' };
 
   function read() {
     return {
       density: localStorage.getItem(KEYS.density) || DEFAULTS.density,
       motion: localStorage.getItem(KEYS.motion) === '1',
-      accent: localStorage.getItem(KEYS.accent) || DEFAULTS.accent,
+      accent: (localStorage.getItem(KEYS.accent) || DEFAULTS.accent).replace(/^#1f9d63$/i, '#0F9F6E'), /* old Green swatch -> brand green */
       theme: localStorage.getItem(KEYS.theme) || DEFAULTS.theme,
     };
   }
