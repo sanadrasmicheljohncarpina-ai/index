@@ -29,6 +29,31 @@ if (!function_exists('fx_group_progress')) {
         require_once '../shared/eligibility.php';
         require_once '../shared/ea_personnel_service.php';
 require_once '../shared/system_settings_service.php';
+
+// Countdown chip shown next to the "Evaluation period is currently open/closed" status.
+// Before the evaluation opens it counts down to the opening; once open it counts down to the closing.
+if (!function_exists('pbi_cd_chip')) {
+    function pbi_cd_chip(string $phase, int $targetMs, int $nowMs): string {
+        $label = $phase === 'soon' ? 'Opens in' : 'Closes in';
+        return '<style>.pbi-cd{display:inline-flex;align-items:center;gap:6px;margin-left:10px;padding-left:10px;border-left:1px solid currentColor;'
+            . 'border-left-color:color-mix(in srgb,currentColor 35%,transparent);font-weight:700;color:inherit;white-space:nowrap}'
+            . '.pbi-cd .pbi-cd-l{opacity:.8;font-weight:600}'
+            . '.pbi-cd .pbi-cd-t{font-variant-numeric:tabular-nums}</style>'
+            . '<span class="pbi-cd" role="timer" aria-live="off" id="pbiCd" data-target="' . $targetMs . '" data-now="' . $nowMs . '">'
+            . '<i class="fa-regular fa-clock" aria-hidden="true"></i>'
+            . '<span class="pbi-cd-l" id="pbiCdLabel">' . $label . '</span><span class="pbi-cd-t" id="pbiCdTime">&mdash;</span></span>'
+            . '<script>(function(){var el=document.getElementById("pbiCd");if(!el)return;'
+            . 'var target=+el.dataset.target,off=(+el.dataset.now)-Date.now();'
+            . 'function p(n){return n<10?"0"+n:""+n}'
+            . 'function tick(){var s=Math.max(0,Math.floor((target-(Date.now()+off))/1000));'
+            . 'var d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60),x=s%60;'
+            . 'document.getElementById("pbiCdTime").textContent=(d>0?d+"d ":"")+p(h)+"h "+p(m)+"m "+p(x)+"s";'
+            . 'if(s<=0){clearInterval(t);try{var k="pbiCdReload",l=+sessionStorage.getItem(k)||0;'
+            . 'if(Date.now()-l>15000){sessionStorage.setItem(k,String(Date.now()));setTimeout(function(){location.reload()},1500);}}catch(e){setTimeout(function(){location.reload()},1500);}}}'
+            . 'tick();var t=setInterval(tick,1000);})();</script>';
+    }
+}
+
 require_once '../shared/QuestionnaireService.php';
 require_once __DIR__ . '/kept_feedback.php';
 require_once __DIR__ . '/received_results.php';
@@ -607,6 +632,16 @@ $up->bind_param('iiii', $user_id, $n1, $n2, $n3); $up->execute(); $up->close();
         $dashboard_open_display = $dashboard_start ? $dashboard_start->format('M j, Y g:i A') : 'Not configured';
         $dashboard_close_display = $dashboard_end ? $dashboard_end->format('M j, Y g:i A') : 'Not configured';
         $dashboard_status_class = strtolower($dashboard_status);
+
+        // Countdown shown inside the status pill: "Opens in" before the evaluation opens, "Closes in" while it is open.
+        $pbiCdHtml = '';
+        if (!empty($period) && !empty($dashboard_sys['rule_countdown']) && empty($dashboard_sys['maintenance'])
+            && ($dashboard_sys['control_mode'] ?? 'schedule') === 'schedule'
+            && $dashboard_start && $dashboard_end && $dashboard_end > $dashboard_start) {
+            $__n = new DateTimeImmutable('now', $dashboard_tz);
+            if ($__n < $dashboard_start)                       $pbiCdHtml = pbi_cd_chip('soon', (int)($dashboard_start->getTimestamp() * 1000), (int)($__n->getTimestamp() * 1000));
+            elseif ($__n < $dashboard_end && $evaluation_open) $pbiCdHtml = pbi_cd_chip('open', (int)($dashboard_end->getTimestamp() * 1000), (int)($__n->getTimestamp() * 1000));
+        }
 
         // ── STAFF EVALUATION QUESTIONNAIRE ─────────────────────────────
         // Non-teaching Staff evaluate the Executive Assistant. Teaching Staff
@@ -3276,6 +3311,7 @@ html body:not(.light-theme):not(#fxp) .ea-fact.is-pending > i{background:rgba(24
                 <span class="status-pill <?= $evaluation_open ? '' : 'closed' ?>">
                     <i class="fa-solid <?= $evaluation_open ? 'fa-lock-open' : 'fa-lock' ?>"></i>
                     <?= $evaluation_open ? 'Evaluation period is currently open' : 'Evaluation is currently closed — waiting for the scheduled opening' ?>
+                    <?= $pbiCdHtml ?>
                 </span>
                 <?php endif; ?>
             </div>
