@@ -8,6 +8,9 @@ $role = strtolower(trim((string)($_SESSION['role'] ?? '')));
 $isSuperAdmin = in_array($role, ['superadmin','super admin'], true);
 $defaultTab = $_GET['tab'] ?? 'system';
 $allowedTabs = ['profile','system','archive','appearance'];
+// System Archive now lives inside System & Period ("Schedule history"); old ?tab=archive links land there.
+$openHistory = ($defaultTab === 'archive');
+if ($openHistory) $defaultTab = 'system';
 if (!in_array($defaultTab, $allowedTabs, true)) $defaultTab = 'system';
 
 // ── PROFILE & SECURITY (account of the signed-in admin) ───────────────────────
@@ -17,6 +20,58 @@ if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 $meId = (int)($_SESSION['user_id'] ?? 0);
 if (empty($_SESSION['settings_csrf'])) $_SESSION['settings_csrf'] = bin2hex(random_bytes(32));
 $settingsCsrf = $_SESSION['settings_csrf'];
+
+// ── Security questions popup: save (AJAX, returns JSON) ─────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['sq_ajax'] ?? '') === '1') {
+    $out = ['ok' => false, 'message' => 'Something went wrong. Please try again.'];
+    try {
+        mysqli_report(MYSQLI_REPORT_OFF);
+        if (!$meId) {
+            $out['message'] = 'Please sign in again.';
+        } elseif (!hash_equals($settingsCsrf, (string)($_POST['csrf_token'] ?? ''))) {
+            $out['message'] = 'Your session expired. Please reload the page and try again.';
+        } else {
+            require_once 'security.php';   // sq_validate(), sq_save(), security_ensure_tables()
+            security_ensure_tables($mysqli);
+            $uname = ''; $stored = null;
+            if ($st = $mysqli->prepare('SELECT username, password_hash FROM users WHERE id = ? LIMIT 1')) {
+                $st->bind_param('i', $meId); $st->execute();
+                $u = $st->get_result()->fetch_assoc() ?: []; $st->close();
+                $uname = (string)($u['username'] ?? ''); $stored = (string)($u['password_hash'] ?? '');
+            }
+            $given = (string)($_POST['current_password'] ?? '');
+            if ($stored === '' || $given === '' || !password_verify($given, $stored)) {
+                $out['message'] = 'Your current password is not correct.';
+            } else {
+                [$sqErr, $sqRows] = sq_validate($_POST['sq_question'] ?? [], $_POST['sq_answer'] ?? [], $uname);
+                if ($sqErr !== null) {
+                    $out['message'] = $sqErr;
+                } else {
+                    $mysqli->begin_transaction();
+                    try {
+                        $del = $mysqli->prepare('DELETE FROM student_security_answers WHERE user_id = ?');
+                        $del->bind_param('i', $meId); $del->execute(); $del->close();
+                        sq_save($mysqli, $meId, $sqRows);
+                        $mysqli->commit();
+                        $_SESSION['settings_flash'] = ['type' => 'success', 'msg' => 'Security questions updated.'];
+                        $out = ['ok' => true, 'message' => 'Security questions updated.'];
+                    } catch (Throwable $e) {
+                        try { $mysqli->rollback(); } catch (Throwable $ignored) {}
+                        error_log('admin security questions save failed: ' . $e->getMessage());
+                        $out['message'] = 'The security questions could not be saved. Please try again.';
+                    }
+                }
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('admin security questions failed: ' . $e->getMessage());
+    }
+    while (ob_get_level() > 0) { ob_end_clean(); }
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    echo json_encode($out);
+    exit;
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['profile_action'])) {
     $flash = ['type' => 'error', 'msg' => 'Something went wrong. Please try again.'];
@@ -133,6 +188,8 @@ unset($_SESSION['settings_flash']);
 
 $me = ['full_name' => '', 'username' => '', 'photo' => ''];
 $sq_status = 'none';   // none | ok
+$sqQuestions = [];
+try { require_once 'security.php'; $sqQuestions = sq_questions(); } catch (Throwable $e) { error_log('sq_questions failed: ' . $e->getMessage()); }
 if ($meId) {
     try {
         $q = $mysqli->prepare("SELECT full_name, username, photo FROM users WHERE id = ? LIMIT 1");
@@ -299,9 +356,8 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
   <div class="layout">
     <div class="toolbar">
     <aside class="side" aria-label="Settings sections">
-      <button class="tab-btn" data-tab="profile"><i class="fa-solid fa-user-gear" style="color:#10B981"></i><span>Profile &amp; Security</span></button>
       <button class="tab-btn" data-tab="system"><i class="fa-solid fa-sliders" style="color:#3B82F6"></i><span>System &amp; Period</span></button>
-      <button class="tab-btn" data-tab="archive"><i class="fa-solid fa-box-archive" style="color:#F59E0B"></i><span>System Archive</span></button>
+      <button class="tab-btn" data-tab="profile"><i class="fa-solid fa-user-gear" style="color:#10B981"></i><span>Profile &amp; Security</span></button>
       <button class="tab-btn" data-tab="appearance"><i class="fa-solid fa-palette" style="color:#EC4899"></i><span>Appearance</span></button>
     </aside>
     <div class="side-actions" id="sideActions" style="display:none">
@@ -365,16 +421,13 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
             <?php else: ?>
             <div class="pf-status warn"><i class="fa-solid fa-triangle-exclamation"></i> Not set up yet</div>
             <?php endif; ?>
-            <div><a class="pf-btn" href="security_questions.php"><i class="fa-solid fa-pen-to-square"></i> <?= $sq_status === 'none' ? 'Set Security Questions' : 'Update Security Questions' ?></a></div>
+            <div><button type="button" class="pf-btn" id="sqOpen"><i class="fa-solid fa-pen-to-square"></i> <?= $sq_status === 'none' ? 'Set Security Questions' : 'Update Security Questions' ?></button></div>
           </div>
         </div>
         <?php endif; ?>
       </section>
       <section class="panel-card section-panel" id="section-system">
-        <iframe class="frame" title="System and Period Settings" src="system_settings.php" scrolling="yes" frameborder="0"></iframe>
-      </section>
-      <section class="panel-card section-panel" id="section-archive" style="display:none">
-        <iframe class="frame" title="System Archive" src="system_archive.php" scrolling="yes" frameborder="0"></iframe>
+        <iframe class="frame" title="System and Period Settings" src="system_settings.php<?= $openHistory ? '?view=history' : '' ?>" scrolling="yes" frameborder="0"></iframe>
       </section>
       <section class="panel-card section-panel" id="section-appearance" style="display:none">
         <div class="panel-bar"><div><h2>Appearance</h2><p>Adjust the admin interface to your preferred working style.</p></div><div style="display:flex;align-items:center;gap:12px"><span class="panel-note">Preferences are saved in this browser.</span><button class="reset-link" id="resetAppearance" type="button">Reset to defaults</button></div></div>
@@ -428,14 +481,6 @@ window.addEventListener('message', (e) => {
   if (d) return;
   const banner = document.getElementById('unsavedBanner');
   if (banner) banner.classList.remove('show');
-});
-// The System & Period tab can ask to jump to System Archive, pre-selecting the periods to archive.
-window.addEventListener('message',(e)=>{
-  if(e.origin!==window.location.origin||!e.data||e.data.type!=='pbi-open-tab'||e.data.tab!=='archive') return;
-  const ids=(Array.isArray(e.data.preselect)?e.data.preselect:[]).map(Number).filter(n=>n>0);
-  const f=document.querySelector('#section-archive iframe.frame');
-  if(f) f.src='system_archive.php'+(ids.length?'?preselect='+encodeURIComponent(ids.join(',')):'');
-  setTab('archive');
 });
 // ---- Hooks used by the admin dashboard's sidebar (admin_dashboard.php) ----
 function systemFrameWin(){
@@ -553,6 +598,227 @@ if(pfPw) pfPw.addEventListener('submit',function(e){
     e.preventDefault(); alert('New passwords do not match.');
   }
 });
+</script>
+<style id="sqm-styles">
+.sqm-overlay{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(11,31,58,.55);overscroll-behavior:contain}
+.sqm-overlay[hidden]{display:none}
+.sqm-modal{width:min(620px,100%);max-height:calc(100vh - 40px);overflow:auto;background:#fff;border-radius:16px;padding:20px 22px;box-shadow:0 24px 60px rgba(11,31,58,.35);color:#0B1F3A}
+.sqm-modal,.sqm-modal *{box-sizing:border-box;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
+.sqm-modal:focus{outline:none}
+.sqm-modal [hidden]{display:none!important}
+.sqm-head{position:sticky;top:-20px;z-index:2;margin:-20px -22px 0;padding:20px 22px 6px;background:#fff;border-radius:16px 16px 0 0}
+.sqm-head-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.sqm-head-text{flex:1;min-width:220px}
+.sqm-modal h3{font-size:18px;font-weight:700;line-height:1.25;color:#0B1F3A;margin:0 0 4px}
+.sqm-text{font-size:13.5px;line-height:1.5;color:#405A76;margin:0}
+.sqm-head-actions{display:flex;gap:10px;flex:0 0 auto}
+.sqm-btn{height:40px;padding:0 16px;border:1px solid #B9CDE5;background:#fff;color:#0B1F3A;border-radius:10px;font-weight:700;font-size:13px;cursor:pointer}
+.sqm-btn:hover{border-color:var(--accent)}
+.sqm-btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.sqm-btn.primary:hover{background:#1E4FBF}
+.sqm-btn.danger{background:#D6455D;border-color:#D6455D;color:#fff}
+.sqm-btn:disabled{opacity:.55;cursor:not-allowed}
+.sqm-error{margin-top:12px;padding:10px 12px;border-radius:10px;background:#FFF0F2;border:1px solid #F1B7C0;color:#A62A42;font-size:12.5px;line-height:1.45}
+.sqm-discard{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;padding:10px 12px;border:1px solid #F5D48A;background:#FFFBF0;border-radius:10px;color:#7A5200;font-size:13px}
+.sqm-discard span{flex:1;min-width:180px}
+.sqm-sec{margin:12px 0 0}
+.sqm-sec-title{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#67819E;margin:0 0 6px}
+.sqm-confirm{display:flex;gap:12px;align-items:center;padding:12px 14px;border:2px solid var(--accent);border-radius:12px;background:color-mix(in srgb,var(--accent) 6%,#fff);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 12%,transparent)}
+.sqm-lock{flex:0 0 38px;height:38px;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:#fff;font-size:15px}
+.sqm-confirm-body{flex:1;min-width:0}
+.sqm-confirm-title{font-size:14px;font-weight:800;color:#0B1F3A}
+.sqm-confirm-sub{font-size:12px;color:#5C6B8A;margin:1px 0 6px}
+.sqm-modal label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:700;color:#405A76}
+.sqm-modal input[type=text],.sqm-modal input[type=password],.sqm-modal select{width:100%;height:38px;padding:0 12px;border:1px solid #B9CDE5;border-radius:10px;font:500 14px Inter,system-ui,sans-serif;color:#0B1F3A;background:#fff}
+.sqm-modal select{appearance:none;-webkit-appearance:none;cursor:pointer;padding-right:34px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%2367819E' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
+.sqm-modal input:focus,.sqm-modal select:focus{outline:2px solid color-mix(in srgb,var(--accent) 35%,transparent);border-color:var(--accent)}
+.sqm-modal select.is-empty{color:var(--accent);font-weight:700}
+.sqm-modal select option{color:#0B1F3A;font-weight:500}
+.sqm-modal select option[value=""]{color:var(--accent);font-weight:700;background:color-mix(in srgb,var(--accent) 12%,#fff)}
+.sqm-modal select option:checked{background:color-mix(in srgb,var(--accent) 12%,#fff)}
+.sqm-modal select option:disabled{color:#A9B8C9}
+.sqm-pw{position:relative}
+.sqm-pw input{padding-right:44px}
+.sqm-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:none;color:#67819E;cursor:pointer;padding:8px;line-height:1}
+.sqm-eye:hover{color:var(--accent)}
+.sqm-eye{display:flex;align-items:center;justify-content:center}.sqm-eye svg,.sqm-lock svg{display:block}
+.sqm-q{display:flex;gap:12px;align-items:flex-start;margin:0 0 8px}
+.sqm-num{flex:0 0 auto;width:28px;height:28px;margin-top:5px;border-radius:50%;display:grid;place-items:center;background:color-mix(in srgb,var(--accent) 12%,#fff);color:var(--accent);font-weight:800;font-size:12.5px}
+.sqm-q-fields{flex:1;min-width:0;display:grid;gap:6px}
+.sqm-chosen{font-size:12.5px;color:#405A76;line-height:1.4;padding:0 2px}
+.sqm-chosen:empty{display:none}
+.sqm-hint{margin-top:4px;padding:9px 13px;border-radius:10px;font-size:12.5px;line-height:1.45;border:1px solid #D8E5F4;background:#F7FAFF;color:#405A76}
+.sqm-hint b{display:block;font-size:13.5px;color:#0B1F3A}
+.sqm-shake{animation:sqmShake .35s ease}
+@keyframes sqmShake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+@media (max-height:720px){.sqm-modal{padding:16px 20px}.sqm-head{top:-16px;margin:-16px -20px 0;padding:16px 20px 4px}.sqm-sec{margin-top:8px}.sqm-modal input[type=text],.sqm-modal input[type=password],.sqm-modal select{height:34px}.sqm-q{margin-bottom:6px}.sqm-q-fields{gap:4px}.sqm-num{margin-top:3px}.sqm-confirm{padding:8px 12px}.sqm-hint{padding:6px 12px}}
+</style>
+<div class="sqm-overlay" id="sqmOverlay" hidden>
+  <div class="sqm-modal" id="sqmModal" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="sqmTitle">
+    <form id="sqmForm" autocomplete="off" novalidate>
+      <input type="hidden" name="sq_ajax" value="1">
+      <input type="hidden" name="csrf_token" value="<?= $pfE($settingsCsrf) ?>">
+      <div class="sqm-head">
+        <div class="sqm-head-row">
+          <div class="sqm-head-text">
+            <h3 id="sqmTitle"><?= $sq_status === 'none' ? 'Set security questions' : 'Update security questions' ?></h3>
+            <p class="sqm-text">Used to recover your account if you forget your password. Choose 3 different questions.</p>
+          </div>
+          <div class="sqm-head-actions">
+            <button type="button" class="sqm-btn" id="sqmCancel">Cancel</button>
+            <button type="submit" class="sqm-btn primary" id="sqmSave" disabled>Save questions</button>
+          </div>
+        </div>
+        <div class="sqm-discard" id="sqmDiscard" hidden>
+          <span>You have unsaved changes. Discard them?</span>
+          <button type="button" class="sqm-btn" id="sqmKeep">Keep editing</button>
+          <button type="button" class="sqm-btn danger" id="sqmDiscardGo">Discard</button>
+        </div>
+        <div class="sqm-error" id="sqmError" role="alert" hidden></div>
+      </div>
+
+      <div class="sqm-sec">
+        <div class="sqm-sec-title">Confirm it&rsquo;s you</div>
+        <div class="sqm-confirm">
+          <span class="sqm-lock"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>
+          <div class="sqm-confirm-body">
+            <div class="sqm-confirm-title">Enter your current password first</div>
+            <div class="sqm-confirm-sub">Required to save any changes.</div>
+            <label>Current password
+              <span class="sqm-pw">
+                <input type="password" id="sqmPw" name="current_password" autocomplete="current-password" placeholder="Enter your current password">
+                <button type="button" class="sqm-eye" id="sqmEye" aria-label="Show password" title="Show password"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.9 10.9 0 0 1 12 19C5.5 19 2 12 2 12a18.6 18.6 0 0 1 5.06-5.94"/><path d="M9.9 4.24A10.9 10.9 0 0 1 12 4c6.5 0 10 8 10 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12A3 3 0 1 1 9.88 9.88"/><path d="M1 1l22 22"/></svg></button>
+              </span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="sqm-sec">
+        <div class="sqm-sec-title">Your questions</div>
+        <?php for ($n = 1; $n <= 3; $n++): ?>
+        <div class="sqm-q">
+          <span class="sqm-num"><?= $n ?></span>
+          <div class="sqm-q-fields">
+            <select name="sq_question[<?= $n ?>]" id="sqmQ<?= $n ?>" class="is-empty" aria-label="Question <?= $n ?>">
+              <option value="">Choose a question</option>
+              <?php foreach ($sqQuestions as $k => $q): ?><option value="<?= $pfE($k) ?>"><?= $pfE($q) ?></option><?php endforeach; ?>
+            </select>
+            <div class="sqm-chosen" id="sqmChosen<?= $n ?>" aria-live="polite"></div>
+            <input type="text" name="sq_answer[<?= $n ?>]" id="sqmA<?= $n ?>" maxlength="100" placeholder="Your answer" autocomplete="off" aria-label="Answer <?= $n ?>">
+          </div>
+        </div>
+        <?php endfor; ?>
+        <div class="sqm-hint"><b><?= $sq_status === 'none' ? 'Pick a question and give an answer only you would know.' : 'Saving replaces your current questions and answers.' ?></b>For your security, existing answers are never shown.</div>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+(function(){
+  var ov=document.getElementById('sqmOverlay'), md=document.getElementById('sqmModal'), form=document.getElementById('sqmForm');
+  var openBtn=document.getElementById('sqOpen'); if(!ov||!form||!openBtn) return;
+  var save=document.getElementById('sqmSave'), err=document.getElementById('sqmError'), disc=document.getElementById('sqmDiscard');
+  var pw=document.getElementById('sqmPw'), qs=[1,2,3].map(function(n){return document.getElementById('sqmQ'+n);}), as=[1,2,3].map(function(n){return document.getElementById('sqmA'+n);});
+  var busy=false;
+  var SQM_EYE='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>', SQM_SLASH='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.9 10.9 0 0 1 12 19C5.5 19 2 12 2 12a18.6 18.6 0 0 1 5.06-5.94"/><path d="M9.9 4.24A10.9 10.9 0 0 1 12 4c6.5 0 10 8 10 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12A3 3 0 1 1 9.88 9.88"/><path d="M1 1l22 22"/></svg>';
+  function dirty(){ return !!pw.value || qs.some(function(s){return s.value;}) || as.some(function(a){return a.value.trim();}); }
+  function ready(){ return pw.value!=='' && qs.every(function(s){return s.value;}) && as.every(function(a){return a.value.trim()!=='';}); }
+  function sync(){
+    var chosen=qs.map(function(s){return s.value;}).filter(Boolean);
+    qs.forEach(function(s,i){
+      Array.prototype.forEach.call(s.options,function(o){ o.disabled=o.value!==''&&chosen.indexOf(o.value)!==-1&&o.value!==s.value; });
+      s.classList.toggle('is-empty',!s.value);
+      document.getElementById('sqmChosen'+(i+1)).textContent=s.value?s.options[s.selectedIndex].text:'';
+    });
+    save.disabled=busy||!ready();
+  }
+  /* ---- Full-screen dim: also cover the dashboard sidebar/header that live OUTSIDE this iframe ---- */
+  var DIM='rgba(11,31,58,.55)', pdoc=null, pstrips=[], praf=0, frameEl=null;
+  function pdRadius(){
+    var el=frameEl, cs;
+    for(var i=0;i<5&&el&&el.nodeType===1;i++,el=el.parentElement){
+      cs=pdoc.defaultView.getComputedStyle(el);
+      var v=parseFloat(cs.borderTopLeftRadius)||0;
+      if(v>0) return v;
+    }
+    return 0;
+  }
+  function pdPaint(){
+    if(!pstrips.length||!frameEl) return;
+    var w=pdoc.defaultView, W=w.innerWidth, H=w.innerHeight, r=frameEl.getBoundingClientRect();
+    var x1=Math.round(r.left)+1, y1=Math.round(r.top)+1, x2=Math.round(r.right)-1, y2=Math.round(r.bottom)-1; /* 1px overlap hides the hairline seam */
+    var c=Math.max(0,Math.min(pdRadius()-1,(x2-x1)/2,(y2-y1)/2));
+    var d='M0 0H'+W+'V'+H+'H0Z'+
+      'M'+(x1+c)+' '+y1+'H'+(x2-c)+'A'+c+' '+c+' 0 0 1 '+x2+' '+(y1+c)+
+      'V'+(y2-c)+'A'+c+' '+c+' 0 0 1 '+(x2-c)+' '+y2+
+      'H'+(x1+c)+'A'+c+' '+c+' 0 0 1 '+x1+' '+(y2-c)+
+      'V'+(y1+c)+'A'+c+' '+c+' 0 0 1 '+(x1+c)+' '+y1+'Z';
+    pstrips[0].style.cssText=pdBase()+'left:0;top:0;width:'+W+'px;height:'+H+'px;clip-path:path(evenodd,"'+d+'")';
+  }
+  function pdBase(){ return 'position:fixed;z-index:2147483000;background:'+DIM+';overscroll-behavior:contain;'; }
+  function pdCenter(){
+    /* centre the dialog on the whole screen (not just inside the iframe) */
+    if(!frameEl||!md) return;
+    var w=pdoc.defaultView, r=frameEl.getBoundingClientRect();
+    var iw=window.innerWidth, ih=window.innerHeight, mw=md.offsetWidth, mh=md.offsetHeight, m=20;
+    var dx=w.innerWidth/2-(r.left+r.right)/2, dy=w.innerHeight/2-(r.top+r.bottom)/2;
+    var nl=(iw-mw)/2, nt=(ih-mh)/2;
+    dx=Math.max(m-nl,Math.min(dx,iw-m-nl-mw)); dy=Math.max(m-nt,Math.min(dy,ih-m-nt-mh));
+    var v=Math.round(dx)+'px '+Math.round(dy)+'px';
+    if(md.style.translate!==v) md.style.translate=v;
+  }
+  function pdLoop(){ pdPaint(); pdCenter(); praf=requestAnimationFrame(pdLoop); }
+  function parentDimOn(){
+    try{
+      if(window.parent===window||!window.frameElement) return;
+      pdoc=window.parent.document; frameEl=window.frameElement;
+      if(pstrips.length) return;
+      for(var i=0;i<1;i++){
+        var d=pdoc.createElement('div'); d.className='sqm-parent-dim'; d.setAttribute('aria-hidden','true');
+        d.addEventListener('mousedown',function(){ requestClose(); });
+        pdoc.body.appendChild(d); pstrips.push(d);
+      }
+      pdLoop();
+    }catch(e){
+      /* cross-origin parent: ask it to dim itself (optional listener in the dashboard) */
+      try{ window.parent.postMessage({type:'pbi-modal-dim',open:true},'*'); }catch(_){}
+    }
+  }
+  function parentDimOff(){
+    cancelAnimationFrame(praf); praf=0; md.style.translate='';
+    pstrips.forEach(function(d){ if(d.parentNode) d.parentNode.removeChild(d); }); pstrips=[];
+    try{ if(window.parent!==window) window.parent.postMessage({type:'pbi-modal-dim',open:false},'*'); }catch(_){}
+  }
+  window.addEventListener('pagehide',parentDimOff);
+  function showErr(m){ err.textContent=m; err.hidden=!m; }
+  function open(){ form.reset(); showErr(''); disc.hidden=true; pw.type='password'; document.getElementById('sqmEye').innerHTML=SQM_SLASH; sync(); ov.hidden=false; parentDimOn(); md.scrollTop=0; setTimeout(function(){ pw.focus({preventScroll:true}); },30); }
+  function close(){ ov.hidden=true; parentDimOff(); openBtn.focus(); }
+  function requestClose(){ if(busy) return; if(dirty()){ disc.hidden=false; md.scrollTop=0; md.classList.remove('sqm-shake'); void md.offsetWidth; md.classList.add('sqm-shake'); } else close(); }
+  openBtn.addEventListener('click',open);
+  document.getElementById('sqmCancel').addEventListener('click',requestClose);
+  document.getElementById('sqmKeep').addEventListener('click',function(){ disc.hidden=true; });
+  document.getElementById('sqmDiscardGo').addEventListener('click',close);
+  ov.addEventListener('mousedown',function(e){ if(e.target===ov) requestClose(); });
+  document.addEventListener('keydown',function(e){ if(!ov.hidden&&e.key==='Escape'){ e.preventDefault(); requestClose(); } });
+  form.addEventListener('input',sync); form.addEventListener('change',sync);
+  document.getElementById('sqmEye').addEventListener('click',function(){
+    var show=pw.type==='password'; pw.type=show?'text':'password';
+    this.innerHTML=show?SQM_EYE:SQM_SLASH; this.setAttribute('aria-label',show?'Hide password':'Show password');
+  });
+  form.addEventListener('submit',function(e){
+    e.preventDefault(); if(busy||!ready()) return;
+    busy=true; save.disabled=true; save.textContent='Saving…'; showErr('');
+    fetch('settings.php',{method:'POST',body:new FormData(form),credentials:'same-origin',headers:{'X-Requested-With':'XMLHttpRequest'}})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(d&&d.ok){ location.href='settings.php?tab=profile'; return; }
+        showErr((d&&d.message)||'The security questions could not be saved. Please try again.'); md.scrollTop=0;
+      })
+      .catch(function(){ showErr('Could not reach the server. Please try again.'); })
+      .then(function(){ busy=false; save.textContent='Save questions'; sync(); });
+  });
+})();
 </script>
 <script src="admin_ajax.php"></script>
 </body></html>

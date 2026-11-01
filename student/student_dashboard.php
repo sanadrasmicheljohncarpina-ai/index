@@ -426,7 +426,7 @@ if ($period_is_open) {
 // gate function so a display change here can never affect the actual
 // open/closed decision.
 $periodSettings = [];
-$psRes = $mysqli->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('control_mode','eval_start','eval_end','schedule_timezone','year_level_edit_mode')");
+$psRes = $mysqli->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('control_mode','eval_start','eval_end','schedule_timezone','year_level_edit_mode','rule_countdown','maintenance')");
 if ($psRes) {
     while ($row = $psRes->fetch_assoc()) { $periodSettings[$row['setting_key']] = (string)($row['setting_value'] ?? ''); }
     $psRes->free();
@@ -460,6 +460,31 @@ $year_level_editable   = $year_level_edit_open && !$period_is_open;
 $year_level_locked_reason = !$year_level_edit_open
     ? 'Year level updates are currently closed. Contact the EA if this needs correcting.'
     : ($period_is_open ? 'Year level can\'t be changed while an evaluation period is open. Contact the EA if this is incorrect.' : '');
+
+
+// Countdown chip shown next to the "Evaluation period is currently open/closed" status.
+// Before the evaluation opens it counts down to the opening; once open it counts down to the closing.
+if (!function_exists('pbi_cd_chip')) {
+    function pbi_cd_chip(string $phase, int $targetMs, int $nowMs): string {
+        $label = $phase === 'soon' ? 'Opens in' : 'Closes in';
+        return '<style>.pbi-cd{display:inline-flex;align-items:center;gap:6px;margin-left:10px;padding-left:10px;border-left:1px solid currentColor;'
+            . 'border-left-color:color-mix(in srgb,currentColor 35%,transparent);font-weight:700;color:inherit;white-space:nowrap}'
+            . '.pbi-cd .pbi-cd-l{opacity:.8;font-weight:600}'
+            . '.pbi-cd .pbi-cd-t{font-variant-numeric:tabular-nums}</style>'
+            . '<span class="pbi-cd" role="timer" aria-live="off" id="pbiCd" data-target="' . $targetMs . '" data-now="' . $nowMs . '">'
+            . '<i class="fa-regular fa-clock" aria-hidden="true"></i>'
+            . '<span class="pbi-cd-l" id="pbiCdLabel">' . $label . '</span><span class="pbi-cd-t" id="pbiCdTime">&mdash;</span></span>'
+            . '<script>(function(){var el=document.getElementById("pbiCd");if(!el)return;'
+            . 'var target=+el.dataset.target,off=(+el.dataset.now)-Date.now();'
+            . 'function p(n){return n<10?"0"+n:""+n}'
+            . 'function tick(){var s=Math.max(0,Math.floor((target-(Date.now()+off))/1000));'
+            . 'var d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60),x=s%60;'
+            . 'document.getElementById("pbiCdTime").textContent=(d>0?d+"d ":"")+p(h)+"h "+p(m)+"m "+p(x)+"s";'
+            . 'if(s<=0){clearInterval(t);try{var k="pbiCdReload",l=+sessionStorage.getItem(k)||0;'
+            . 'if(Date.now()-l>15000){sessionStorage.setItem(k,String(Date.now()));setTimeout(function(){location.reload()},1500);}}catch(e){setTimeout(function(){location.reload()},1500);}}}'
+            . 'tick();var t=setInterval(tick,1000);})();</script>';
+    }
+}
 
 function student_dashboard_parse_period_dt(string $raw, DateTimeZone $tz): ?DateTimeImmutable {
     $raw = trim($raw);
@@ -2795,9 +2820,28 @@ body:not(.light-theme) .leave-dlg-stay{background:var(--inner);border-color:var(
         <div class="view-content<?= $land_on_settings ? '' : ' active' ?>" id="view-dashboard">
           <div class="sd-shell">
             <div class="sd-kick-top"><i class="fa-solid fa-chart-line"></i> Dashboard Overview</div>
+            <?php
+            $studentCd = '';
+            $__cdOn = !isset($periodSettings['rule_countdown']) || $periodSettings['rule_countdown'] !== '0';
+            if ($__cdOn && empty($periodSettings['maintenance']) && $period_control_mode === 'schedule') {
+                $__s = student_dashboard_parse_period_dt($periodSettings['eval_start'] ?? '', $period_tz);
+                $__e = student_dashboard_parse_period_dt($periodSettings['eval_end'] ?? '', $period_tz);
+                $__n = new DateTimeImmutable('now', $period_tz);
+                // Only count toward a window this student can actually use: the active period's type must
+                // match the student's level (College = semesters, Basic Ed = School Year). Otherwise the
+                // status stays "closed" and a countdown would contradict it.
+                $__lvlOk = !empty($activePeriodRow)
+                    && (isCollegeEducationLevel($student_level) !== (trim((string)$active_period_semester) === 'School Year'));
+                if ($__s && $__e && $__e > $__s) {
+                    if ($__n < $__s)      { if ($__lvlOk)        $studentCd = pbi_cd_chip('soon', (int)($__s->getTimestamp() * 1000), (int)($__n->getTimestamp() * 1000)); }
+                    elseif ($__n < $__e)  { if ($period_is_open) $studentCd = pbi_cd_chip('open', (int)($__e->getTimestamp() * 1000), (int)($__n->getTimestamp() * 1000)); }
+                }
+            }
+            ?>
             <div class="sd-open-pill <?= $period_is_open ? 'open' : 'closed' ?>">
                 <i class="fa-solid <?= $period_is_open ? 'fa-lock-open' : 'fa-lock' ?>"></i>
                 Evaluation period is currently <?= $period_is_open ? 'open' : 'closed' ?>
+                <?= $studentCd ?>
             </div>
 
             <div class="sd-period">

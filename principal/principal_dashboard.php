@@ -11,6 +11,31 @@ session_set_cookie_params([
 session_start();
 require_once 'db.php';
 require_once dirname(__DIR__) . '/shared/system_settings_service.php';
+
+// Countdown chip shown next to the "Evaluation period is currently open/closed" status.
+// Before the evaluation opens it counts down to the opening; once open it counts down to the closing.
+if (!function_exists('pbi_cd_chip')) {
+    function pbi_cd_chip(string $phase, int $targetMs, int $nowMs): string {
+        $label = $phase === 'soon' ? 'Opens in' : 'Closes in';
+        return '<style>.pbi-cd{display:inline-flex;align-items:center;gap:6px;margin-left:10px;padding-left:10px;border-left:1px solid currentColor;'
+            . 'border-left-color:color-mix(in srgb,currentColor 35%,transparent);font-weight:700;color:inherit;white-space:nowrap}'
+            . '.pbi-cd .pbi-cd-l{opacity:.8;font-weight:600}'
+            . '.pbi-cd .pbi-cd-t{font-variant-numeric:tabular-nums}</style>'
+            . '<span class="pbi-cd" role="timer" aria-live="off" id="pbiCd" data-target="' . $targetMs . '" data-now="' . $nowMs . '">'
+            . '<i class="fa-regular fa-clock" aria-hidden="true"></i>'
+            . '<span class="pbi-cd-l" id="pbiCdLabel">' . $label . '</span><span class="pbi-cd-t" id="pbiCdTime">&mdash;</span></span>'
+            . '<script>(function(){var el=document.getElementById("pbiCd");if(!el)return;'
+            . 'var target=+el.dataset.target,off=(+el.dataset.now)-Date.now();'
+            . 'function p(n){return n<10?"0"+n:""+n}'
+            . 'function tick(){var s=Math.max(0,Math.floor((target-(Date.now()+off))/1000));'
+            . 'var d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60),x=s%60;'
+            . 'document.getElementById("pbiCdTime").textContent=(d>0?d+"d ":"")+p(h)+"h "+p(m)+"m "+p(x)+"s";'
+            . 'if(s<=0){clearInterval(t);try{var k="pbiCdReload",l=+sessionStorage.getItem(k)||0;'
+            . 'if(Date.now()-l>15000){sessionStorage.setItem(k,String(Date.now()));setTimeout(function(){location.reload()},1500);}}catch(e){setTimeout(function(){location.reload()},1500);}}}'
+            . 'tick();var t=setInterval(tick,1000);})();</script>';
+    }
+}
+
 require_once 'principal_notifications_feed.php';   // safe_scalar(), esc_list(), principal_build_notifications()
 require_once 'school_head_structure_gate.php';
 require_once __DIR__ . '/principal_sidebar.php';
@@ -122,6 +147,18 @@ $formatScheduleDateTime = static function ($value) use ($displayTimezone): strin
 $evalOpenDisplay = $structureActive && $evalOpen;
 $dashboardStatusLabel = $evalOpenDisplay ? 'Open' : ($hasPeriod ? 'Scheduled' : 'Closed');
 $dashboardStatusClass = $evalOpenDisplay ? 'open' : 'closed';
+
+// Countdown shown inside the status line: "Opens in" before the evaluation opens, "Closes in" while it is open.
+$pbiCdHtml = '';
+if ($structureActive && $hasPeriod && !empty($settings['countdown_enabled']) && empty($settings['maintenance'])
+    && ($settings['control_mode'] ?? 'schedule') === 'schedule') {
+    $__st = ss_schedule_state($settings);
+    if ($__st['reason'] === 'before_start' && $__st['start']) {
+        $pbiCdHtml = pbi_cd_chip('soon', (int)($__st['start']->getTimestamp() * 1000), (int)($__st['now']->getTimestamp() * 1000));
+    } elseif ($__st['reason'] === 'scheduled_open' && $__st['end'] && $evalOpen) {
+        $pbiCdHtml = pbi_cd_chip('open', (int)($__st['end']->getTimestamp() * 1000), (int)($__st['now']->getTimestamp() * 1000));
+    }
+}
 $dashboardStatusHeadline = !$structureActive
     ? 'Basic Education is not the active evaluation structure.'
     : ($evalOpen
@@ -882,6 +919,7 @@ body{background:#FFFFFF!important;background-image:none!important;color:#172033!
         <div class="schedule-status <?= htmlspecialchars($dashboardStatusClass, ENT_QUOTES, 'UTF-8') ?>">
             <i class="fa-solid <?= !$structureActive ? 'fa-circle-info' : ($evalOpen ? 'fa-lock-open' : 'fa-lock') ?>"></i>
             <strong><?= htmlspecialchars($dashboardStatusHeadline, ENT_QUOTES, 'UTF-8') ?></strong>
+            <?= $pbiCdHtml ?>
         </div>
 
         <section class="period-strip evaluation-schedule-strip" id="principalSchedule" aria-label="Evaluation schedule">

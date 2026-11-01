@@ -235,7 +235,7 @@ function ss_period_columns(mysqli $mysqli): array {
  * term and schedule dates.  is_active identifies the current period; it is
  * not used as the submission-open flag.
  */
-function ss_sync_evaluation_period(mysqli $mysqli, array $sys): int {
+function ss_sync_evaluation_period(mysqli $mysqli, array $sys, bool $newRoundIfArchived = false): int {
     $exists = @$mysqli->query("SHOW TABLES LIKE 'evaluation_periods'");
     if (!$exists || $exists->num_rows === 0) return 0;
 
@@ -248,15 +248,36 @@ function ss_sync_evaluation_period(mysqli $mysqli, array $sys): int {
     }
 
     $label = trim($year . ' — ' . $term, ' —');
-    $stmt = @$mysqli->prepare("SELECT id FROM evaluation_periods WHERE school_year=? AND semester=? ORDER BY id DESC LIMIT 1");
+
+    // Prefer a period that has NOT been archived, so a finished (archived) round is never
+    // reused for a new one that happens to have the same school year and term.
+    $hasArchive = @$mysqli->query("SHOW TABLES LIKE 'system_archives'");
+    $hasArchive = $hasArchive && $hasArchive->num_rows > 0;
     $periodId = 0;
+    if ($hasArchive) {
+        $stmt = @$mysqli->prepare("SELECT ep.id FROM evaluation_periods ep
+            LEFT JOIN system_archives sa ON sa.period_id = ep.id AND sa.status = 'archived'
+            WHERE ep.school_year=? AND ep.semester=? AND sa.id IS NULL
+            ORDER BY ep.id DESC LIMIT 1");
+        if ($stmt) {
+            $stmt->bind_param('ss', $year, $term);
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc();
+            $periodId = (int)($row['id'] ?? 0);
+            $stmt->close();
+        }
+    }
+    // Any matching period at all (archived or not) - used as a fallback.
+    $anyId = 0;
+    $stmt = @$mysqli->prepare("SELECT id FROM evaluation_periods WHERE school_year=? AND semester=? ORDER BY id DESC LIMIT 1");
     if ($stmt) {
         $stmt->bind_param('ss', $year, $term);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
-        $periodId = (int)($row['id'] ?? 0);
+        $anyId = (int)($row['id'] ?? 0);
         $stmt->close();
     }
+    if ($periodId <= 0 && !($newRoundIfArchived && $anyId > 0)) $periodId = $anyId;
 
     $start = ss_parse_datetime($sys['eval_start'] ?? '');
     $end = ss_parse_datetime($sys['eval_end'] ?? '');
@@ -269,6 +290,9 @@ function ss_sync_evaluation_period(mysqli $mysqli, array $sys): int {
         $stmt->execute();
         $periodId = (int)$mysqli->insert_id;
         $stmt->close();
+        // If the database refuses a second period with the same year/term, fall back to the
+        // existing one rather than leaving no active period at all.
+        if ($periodId <= 0) $periodId = $anyId;
     }
 
     if ($periodId > 0 && $cols['start'] && $cols['end'] && $start && $end) {

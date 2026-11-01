@@ -16,6 +16,14 @@ if (empty($_SESSION['user_id'])) {
 
 mysqli_report(MYSQLI_REPORT_OFF);
 
+// Embedded mode: this page is shown inside System & Period > Schedule history.
+// Only the archived schedules are shown; the archive picker appears only when the
+// "Create new evaluation schedule" step sends the admin here to archive the finished round.
+$embed = isset($_GET['embed']);
+$embedView = (($_GET['embed'] ?? '') === 'previous') ? 'previous' : 'history';   // previous = not yet archived, history = archived
+$showPicker  = !$embed || $embedView === 'previous';
+$showHistory = !$embed || $embedView === 'history';
+
 // ── CSRF protection ────────────────────────────────────────────────────────
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -891,7 +899,7 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST' && !headers_sent()) {
     @session_start();                       // re-open only long enough to store the message
     $_SESSION['sa_flash'] = ['msg' => (string)$flash, 'type' => (string)$flashType];
     session_write_close();
-    header('Location: system_archive.php', true, 303);
+    header('Location: system_archive.php' . ($embed ? '?embed=' . $embedView : ''), true, 303);
     exit;
 }
 
@@ -1069,6 +1077,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
 .sa-archive .actions .btn.primary{padding:13px 22px;font-size:14px;border-radius:12px}
 .sa-archive .warn{margin-top:14px}
 </style>
+<?php if ($embed): ?><style>body{background:transparent}.wrap{max-width:none;padding:4px 2px 24px}.back{display:none}</style><?php endif; ?>
 </head>
 <body class="feature-compact ux-nested">
 <div class="wrap">
@@ -1078,7 +1087,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
 <?php if ($flash): ?><div class="notice" style="border-color:<?= $flashType==='ok'?'#BDE9D4':'#F1B7C0' ?>;background:<?= $flashType==='ok'?'#EAF9F2':'#FFF0F2' ?>;color:<?= $flashType==='ok'?'#08734F':'#A62A42' ?>;"><i class="fa-solid <?= $flashType==='ok'?'fa-circle-check':'fa-circle-exclamation' ?>"></i><span><?= e($flash) ?></span></div><?php endif; ?>
 <?php $sa_live_total = array_sum(array_map(fn($p) => (int)$p['live_count'], $periods));
 $sa_live_periods = count(array_filter($periods, fn($p) => (int)$p['live_count'] > 0)); ?>
-<section class="sa-hero <?= $sa_live_total > 0 ? 'attn' : 'clear' ?>">
+<section class="sa-hero <?= $sa_live_total > 0 ? 'attn' : 'clear' ?>"<?= $embed ? ' hidden style="display:none"' : '' ?>>
   <div class="sa-hero-main">
     <span class="sa-hero-icon"><i class="fa-solid <?= $sa_live_total > 0 ? 'fa-box-archive' : 'fa-circle-check' ?>"></i></span>
     <div>
@@ -1094,18 +1103,12 @@ $sa_live_periods = count(array_filter($periods, fn($p) => (int)$p['live_count'] 
   </div>
 </section>
 
-<div class="card sa-archive">
-<h2>Archive a finished evaluation</h2>
-<div class="sub">Save a finished round to Archived Records and clear it from the live dashboards, so the next round starts fresh.</div>
-<div class="sa-flow">
-  <div><i class="fa-solid fa-box-archive"></i><b>Saved</b><span>Submissions and results are kept in Archived Records.</span></div>
-  <div><i class="fa-solid fa-broom"></i><b>Cleared</b><span>Live dashboards start empty for the next round.</span></div>
-  <div><i class="fa-solid fa-rotate-left"></i><b>Restorable</b><span>Bring it back any time from Archived Records.</span></div>
-</div>
+<div class="card sa-archive"<?= $showPicker ? '' : ' hidden style="display:none"' ?>>
+<h2><?= $embed ? 'Previous evaluation schedules' : 'Archive a finished evaluation' ?></h2>
 <div class="sa-step-head"><span class="sa-num">1</span><div><h3>Choose what to archive</h3><p>Tick each finished period. Use &ldquo;Select year&rdquo; to pick a whole school year.</p></div></div>
 <?php $byYear = []; foreach ($periods as $p) $byYear[$p['school_year']][] = $p;
 $preselectIds = array_values(array_filter(array_map('intval', explode(',', (string)($_GET['preselect'] ?? ''))))); ?>
-<?php if ($preselectIds): ?><div class="pick-summary ready" style="margin:0 0 12px"><i class="fa-solid fa-circle-info"></i> Opened from <b>Create new evaluation schedule</b>. The current evaluation is already selected: archive it, then go back to System &amp; Period to create the new schedule.</div><?php endif; ?>
+<?php if ($preselectIds): ?><div class="pick-summary ready" style="margin:0 0 12px"><i class="fa-solid fa-circle-info"></i> Opened from <b>Create new evaluation schedule</b>. The current evaluation is already selected: archive it, then switch back to <b>Current schedule</b> to create the new one.</div><?php endif; ?>
 <?php if (!$periods): ?>
 <div class="pick-empty"><i class="fa-regular fa-folder-open"></i><div><strong>No evaluation periods to archive</strong><br>Periods you create in System &amp; Period will appear here. Already-archived periods are listed under Archived Records.</div></div>
 <?php else: ?>
@@ -1127,15 +1130,15 @@ $preselectIds = array_values(array_filter(array_map('intval', explode(',', (stri
 <div class="pick-warn" id="activeWarn" hidden></div>
 <?php endif; ?>
 <div class="actions"<?= $periods ? '' : ' style="display:none"' ?>><form method="POST" id="archiveForm" onsubmit="return confirmArchive(this)"><?= csrf_field() ?><input type="hidden" name="action" value="archive"><div id="archivePeriodInputs"></div><button class="btn primary" type="submit" id="archiveBtn" disabled><i class="fa-solid fa-box-archive"></i> <span id="archiveBtnText">Archive selected</span></button></form></div>
-<?php if ($periods): ?><div class="warn"><i class="fa-solid fa-triangle-exclamation"></i><span><strong>Heads up:</strong> the live dashboards and results for the selected period(s) are cleared once archived. Everything is saved first and can be restored. Questions, users, assignments, permissions, settings and system logs are not touched.</span></div><?php endif; ?>
 </div>
 
+<div<?= $showHistory ? '' : ' hidden style="display:none"' ?>>
 <?php if ($viewArchive): ?>
 <div class="card detail"><h2>Archived Evaluation Data — <?= e($viewArchive['school_year']) ?></h2><div class="sub">Archive #<?= (int)$viewArchive['id'] ?> · Archived <?= e($viewArchive['archived_at']) ?> by <?= e($viewArchive['archived_by_name']) ?> · Status: <span class="status <?= e($viewArchive['status']) ?>"><?= ucfirst(e($viewArchive['status'])) ?></span></div>
 <div class="detail-grid" style="margin-top:12px">
 <?php foreach (($viewArchive['summary']??[]) as $k=>$v): ?><div class="mini"><span><?= e(ucwords(str_replace('_',' ',$k))) ?></span><b><?= number_format((int)$v) ?></b></div><?php endforeach; ?>
 </div>
-<div class="actions"><a class="btn" href="system_archive.php"><i class="fa-solid fa-arrow-left"></i> Back to Archive</a><?php if ($viewArchive['status']==='archived'): ?><form method="POST" onsubmit="return confirmRestore(this)"><?= csrf_field() ?><input type="hidden" name="action" value="restore"><input type="hidden" name="archive_id" value="<?= (int)$viewArchive['id'] ?>"><button class="btn danger" type="submit"><i class="fa-solid fa-box-open"></i> Restore This Archive</button></form><?php endif; ?><form method="POST" onsubmit="return confirmDelete(this, <?= e(json_encode($viewArchive['school_year'] . ' — ' . $viewArchive['period_label'])) ?>, <?= e(json_encode($viewArchive['status'])) ?>)"><?= csrf_field() ?><input type="hidden" name="action" value="delete"><input type="hidden" name="archive_id" value="<?= (int)$viewArchive['id'] ?>"><button class="btn danger" type="submit"><i class="fa-solid fa-trash"></i> Delete This Archive</button></form></div>
+<div class="actions"><a class="btn" href="system_archive.php<?= $embed ? '?embed=' . $embedView : '' ?>"><i class="fa-solid fa-arrow-left"></i> Back to Archive</a><?php if ($viewArchive['status']==='archived'): ?><form method="POST" onsubmit="return confirmRestore(this)"><?= csrf_field() ?><input type="hidden" name="action" value="restore"><input type="hidden" name="archive_id" value="<?= (int)$viewArchive['id'] ?>"><button class="btn danger" type="submit"><i class="fa-solid fa-box-open"></i> Restore This Archive</button></form><?php endif; ?><form method="POST" onsubmit="return confirmDelete(this, <?= e(json_encode($viewArchive['school_year'] . ' — ' . $viewArchive['period_label'])) ?>, <?= e(json_encode($viewArchive['status'])) ?>)"><?= csrf_field() ?><input type="hidden" name="action" value="delete"><input type="hidden" name="archive_id" value="<?= (int)$viewArchive['id'] ?>"><button class="btn danger" type="submit"><i class="fa-solid fa-trash"></i> Delete This Archive</button></form></div>
 </div>
 <?php endif; ?>
 
@@ -1182,6 +1185,7 @@ $preselectIds = array_values(array_filter(array_map('intval', explode(',', (stri
 <?php endif; ?>
 </div>
 
+</div><!-- /history wrap -->
 <?php endif; ?>
 </div>
 <script>

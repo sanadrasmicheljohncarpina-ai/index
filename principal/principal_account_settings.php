@@ -16,6 +16,7 @@ $csrfToken = $_SESSION['principal_settings_csrf'];
 
 $errors = [];
 $success = null;
+if (!empty($_SESSION['sq_flash'])) { $success = (string)$_SESSION['sq_flash']; unset($_SESSION['sq_flash']); }
 $userId = (int)$_SESSION['user_id'];
 
 // ── SECURITY QUESTIONS STATUS (for the Settings card) ────────

@@ -23,6 +23,31 @@ if (!function_exists('dean_strip_tz_label')) {
     }
 }
 
+
+// Countdown chip shown next to the "Evaluation period is currently open/closed" status.
+// Before the evaluation opens it counts down to the opening; once open it counts down to the closing.
+if (!function_exists('pbi_cd_chip')) {
+    function pbi_cd_chip(string $phase, int $targetMs, int $nowMs): string {
+        $label = $phase === 'soon' ? 'Opens in' : 'Closes in';
+        return '<style>.pbi-cd{display:inline-flex;align-items:center;gap:6px;margin-left:10px;padding-left:10px;border-left:1px solid currentColor;'
+            . 'border-left-color:color-mix(in srgb,currentColor 35%,transparent);font-weight:700;color:inherit;white-space:nowrap}'
+            . '.pbi-cd .pbi-cd-l{opacity:.8;font-weight:600}'
+            . '.pbi-cd .pbi-cd-t{font-variant-numeric:tabular-nums}</style>'
+            . '<span class="pbi-cd" role="timer" aria-live="off" id="pbiCd" data-target="' . $targetMs . '" data-now="' . $nowMs . '">'
+            . '<i class="fa-regular fa-clock" aria-hidden="true"></i>'
+            . '<span class="pbi-cd-l" id="pbiCdLabel">' . $label . '</span><span class="pbi-cd-t" id="pbiCdTime">&mdash;</span></span>'
+            . '<script>(function(){var el=document.getElementById("pbiCd");if(!el)return;'
+            . 'var target=+el.dataset.target,off=(+el.dataset.now)-Date.now();'
+            . 'function p(n){return n<10?"0"+n:""+n}'
+            . 'function tick(){var s=Math.max(0,Math.floor((target-(Date.now()+off))/1000));'
+            . 'var d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60),x=s%60;'
+            . 'document.getElementById("pbiCdTime").textContent=(d>0?d+"d ":"")+p(h)+"h "+p(m)+"m "+p(x)+"s";'
+            . 'if(s<=0){clearInterval(t);try{var k="pbiCdReload",l=+sessionStorage.getItem(k)||0;'
+            . 'if(Date.now()-l>15000){sessionStorage.setItem(k,String(Date.now()));setTimeout(function(){location.reload()},1500);}}catch(e){setTimeout(function(){location.reload()},1500);}}}'
+            . 'tick();var t=setInterval(tick,1000);})();</script>';
+    }
+}
+
 // ── AUTH GUARD ────────────────────────────────────────────
 if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'dean') {
     header("Location: dean_login.php");
@@ -809,6 +834,18 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
     <section class="dean-dashboard-intro">
         <div class="dean-dashboard-kicker"><i class="fa-solid fa-chart-line" aria-hidden="true"></i> Dashboard Overview</div>
         
+        <?php
+        $deanCd = '';
+        if ($hasCurrentEvaluationPeriod && $structureActive && !empty($settings['countdown_enabled'])
+            && empty($settings['maintenance']) && ($settings['control_mode'] ?? 'schedule') === 'schedule') {
+            $__st = ss_schedule_state($settings);
+            if ($__st['reason'] === 'before_start' && $__st['start']) {
+                $deanCd = pbi_cd_chip('soon', (int)($__st['start']->getTimestamp() * 1000), (int)($__st['now']->getTimestamp() * 1000));
+            } elseif ($__st['reason'] === 'scheduled_open' && $__st['end'] && $evalOpen) {
+                $deanCd = pbi_cd_chip('open', (int)($__st['end']->getTimestamp() * 1000), (int)($__st['now']->getTimestamp() * 1000));
+            }
+        }
+        ?>
         <span class="dean-dashboard-status <?= ($hasCurrentEvaluationPeriod && $evalOpen) ? '' : 'closed' ?>">
             <i class="fa-solid <?= ($hasCurrentEvaluationPeriod && $evalOpen) ? 'fa-lock-open' : 'fa-lock' ?>" aria-hidden="true"></i>
             <?php if (!$structureActive): ?>
@@ -820,6 +857,7 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
             <?php else: ?>
                 Evaluation period is currently closed
             <?php endif; ?>
+            <?= $deanCd ?>
         </span>
     </section>
 
@@ -851,19 +889,12 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
         $periodHeadline = is_array($periodMessage) ? ($periodMessage['headline'] ?? '') : (string)$periodMessage;
         $periodSub = is_array($periodMessage) ? ($periodMessage['sub'] ?? '') : '';
         ?>
-        <?php if ($hasCurrentEvaluationPeriod && (trim((string)$periodHeadline) !== '' || trim((string)$periodSub) !== '' || (!empty($settings['countdown_enabled']) && $evalOpen && !empty($settings['eval_end'])))): ?>
+        <?php if ($hasCurrentEvaluationPeriod && (trim((string)$periodHeadline) !== '' || trim((string)$periodSub) !== '')): ?>
         <div class="dean-schedule-extras">
             <?php if (trim((string)$periodHeadline) !== '' || trim((string)$periodSub) !== ''): ?>
             <div class="period-message">
                 <strong><?= htmlspecialchars(dean_strip_tz_label($periodHeadline)) ?></strong>
                 <?= htmlspecialchars(dean_strip_tz_label($periodSub)) ?>
-            </div>
-            <?php endif; ?>
-            <?php if ($hasCurrentEvaluationPeriod && !empty($settings['countdown_enabled']) && $evalOpen && !empty($settings['eval_end'])): ?>
-            <div class="countdown-row" id="countdownRow" data-end="<?= htmlspecialchars(ss_parse_datetime($settings['eval_end'])->format('c')) ?>">
-                <div class="countdown-box"><div class="num" id="cd-days">—</div><div class="lbl">Days</div></div>
-                <div class="countdown-box"><div class="num" id="cd-hours">—</div><div class="lbl">Hours</div></div>
-                <div class="countdown-box"><div class="num" id="cd-mins">—</div><div class="lbl">Minutes</div></div>
             </div>
             <?php endif; ?>
         </div>
