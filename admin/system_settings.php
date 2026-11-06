@@ -243,6 +243,17 @@ function ss_h($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>System & Period Settings</title>
+<script>
+// Apply the saved appearance theme before first paint, so this iframe matches
+// the parent Settings shell instead of flashing white first.
+(function(){
+  try{
+    var t = localStorage.getItem('pbiTheme') || 'light';
+    var resolved = t === 'system' ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : t;
+    document.documentElement.setAttribute('data-theme', resolved);
+  }catch(e){}
+})();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -942,6 +953,221 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
 .ss-subtab:focus-visible{outline:3px solid rgba(242,140,40,.35);outline-offset:1px}
 .ss-history-frame{display:block;width:100%;height:calc(100vh - 120px);min-height:420px;border:0;background:transparent}
 </style>
+<style id="ss-dark-mode">
+/* ── DARK MODE — mirrors every light surface/text/border declared above,
+     scoped to html[data-theme="dark"] so it wins on specificity over the
+     plain-selector !important rules without needing source-order games. ── */
+html[data-theme="dark"]{
+  color-scheme: dark;
+  --page-bg:#0b1626; --card-bg:#121f33; --card-border:#22344d;
+  --inner:#16243a; --text-dark:#e7eef8; --text-dim:#8ba0bd;
+  --light:#e7eef8; --muted:#8ba0bd; --dark:#121f33; --mid:#16243a;
+  --border:#22344d; --accent:#3b82f6; --blue:#3b82f6;
+  --gold:#e2a33b; --gold-h:#f0b429; --teal:#22b8cf; --violet:#8b9dff;
+  --danger:#f87171; --success:#34d399;
+  --card-shadow:0 2px 4px rgba(0,0,0,.25),0 6px 16px rgba(0,0,0,.3);
+}
+html[data-theme="dark"]{ background:#0b1626; }
+html[data-theme="dark"] body{ background:#0b1626 !important; color:#e7eef8 !important; }
+html[data-theme="dark"] h1,
+html[data-theme="dark"] h2,
+html[data-theme="dark"] h3,
+html[data-theme="dark"] h4,
+html[data-theme="dark"] h5,
+html[data-theme="dark"] h6{ color:#e7eef8; }
+html[data-theme="dark"] .page-header h1,
+html[data-theme="dark"] .page-title,
+html[data-theme="dark"] .et-title,
+html[data-theme="dark"] .section-title{ color:#e7eef8 !important; }
+html[data-theme="dark"] .page-header p,
+html[data-theme="dark"] .page-sub,
+html[data-theme="dark"] .et-sub,
+html[data-theme="dark"] .et-updated,
+html[data-theme="dark"] .muted,
+html[data-theme="dark"] .hint,
+html[data-theme="dark"] p,
+html[data-theme="dark"] .subtitle,
+html[data-theme="dark"] .description,
+html[data-theme="dark"] .helper,
+html[data-theme="dark"] small{ color:#8ba0bd !important; }
+html[data-theme="dark"] label,
+html[data-theme="dark"] th{ color:#aebfd8 !important; }
+html[data-theme="dark"] td{ color:#e7eef8 !important; }
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea{
+  background:#16243a !important; color:#e7eef8 !important; border-color:#2a3b56 !important;
+}
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder{ color:#6b84a6 !important; }
+html[data-theme="dark"] .table-wrap, html[data-theme="dark"] .content-panel,
+html[data-theme="dark"] .create-panel, html[data-theme="dark"] .period-card,
+html[data-theme="dark"] .stat-card, html[data-theme="dark"] .sector-card,
+html[data-theme="dark"] .person-row, html[data-theme="dark"] .sum-card,
+html[data-theme="dark"] .standing-panel, html[data-theme="dark"] .eval-card,
+html[data-theme="dark"] .eval-banner, html[data-theme="dark"] .info-banner,
+html[data-theme="dark"] .section, html[data-theme="dark"] .shell .section,
+html[data-theme="dark"] .history-card, html[data-theme="dark"] .gl-card,
+html[data-theme="dark"] .amber-card, html[data-theme="dark"] .green-card,
+html[data-theme="dark"] .red-card,
+html[data-theme="dark"] .card, html[data-theme="dark"] .panel,
+html[data-theme="dark"] .table-card, html[data-theme="dark"] .content-card{
+  background:#121f33 !important; border-color:#22344d !important;
+  box-shadow:0 2px 4px rgba(0,0,0,.25),0 6px 16px rgba(0,0,0,.3) !important;
+}
+html[data-theme="dark"] .sector-tabs, html[data-theme="dark"] .eval-switcher,
+html[data-theme="dark"] .tabs, html[data-theme="dark"] .level-tabs,
+html[data-theme="dark"] .status-tabs{
+  background:#121f33 !important; border-color:#22344d !important; box-shadow:0 2px 4px rgba(0,0,0,.25) !important;
+}
+html[data-theme="dark"] .sector-tab, html[data-theme="dark"] .eval-tab,
+html[data-theme="dark"] .tab, html[data-theme="dark"] .level-tab,
+html[data-theme="dark"] .status-tab{ color:#8ba0bd !important; }
+html[data-theme="dark"] .sector-tab:hover, html[data-theme="dark"] .eval-tab:hover,
+html[data-theme="dark"] .tab:hover, html[data-theme="dark"] .level-tab:hover,
+html[data-theme="dark"] .status-tab:hover{ color:#e7eef8 !important; background:#16243a !important; }
+html[data-theme="dark"] thead tr{ background:#16243a !important; }
+html[data-theme="dark"] tbody tr:hover{ background:#16243a !important; }
+html[data-theme="dark"] .btn-cancel, html[data-theme="dark"] .btn-icon,
+html[data-theme="dark"] .btn-back{ background:#16243a !important; color:#e7eef8 !important; border-color:#2a3b56 !important; }
+html[data-theme="dark"] .empty-state, html[data-theme="dark"] .empty-cta{ color:#8ba0bd !important; }
+html[data-theme="dark"] ::-webkit-scrollbar-track{ background:#0b1626; }
+html[data-theme="dark"] ::-webkit-scrollbar-thumb{ background:#2a3b56; border:2px solid #0b1626; }
+html[data-theme="dark"] .maint-banner{ background:rgba(251,191,36,.12) !important; color:#fbbf24 !important; border-color:rgba(251,191,36,.35) !important; }
+html[data-theme="dark"] .control-option, html[data-theme="dark"] .toggle-row{ background:#16243a !important; border-color:#22344d !important; }
+html[data-theme="dark"] a{ color:inherit; }
+html[data-theme="dark"] button, html[data-theme="dark"] .btn{ font-weight:700; }
+html[data-theme="dark"] .btn{ background:#16243a; color:#e7eef8; border-color:#2a3b56; }
+html[data-theme="dark"] .btn:hover{ border-color:#3a4f6f; }
+
+/* status colours stay legible on dark cards */
+html[data-theme="dark"] .stat-value.green{ color:#34d399 !important; }
+html[data-theme="dark"] .stat-value.amber{ color:#e2a33b !important; }
+html[data-theme="dark"] .stat-value.red{ color:#f87171 !important; }
+html[data-theme="dark"] .stat-card.tone-green{ border-left:4px solid #34d399 !important; }
+html[data-theme="dark"] .stat-card.tone-amber{ border-left:4px solid #e2a33b !important; }
+html[data-theme="dark"] .stat-card.tone-red{ border-left:4px solid #f87171 !important; }
+html[data-theme="dark"] .stat-explain{ color:#aebfd8; }
+html[data-theme="dark"] .ss-alert.amber{ background:rgba(226,163,59,.14) !important; border-color:rgba(226,163,59,.4) !important; color:#f0c674 !important; }
+html[data-theme="dark"] .ss-alert.red{ background:rgba(214,69,93,.14) !important; border-color:rgba(214,69,93,.4) !important; color:#f3a3b0 !important; }
+html[data-theme="dark"] .ss-alert button{ background:#121f33 !important; border-color:currentColor !important; color:inherit !important; }
+html[data-theme="dark"] .ss-alert button:hover{ background:rgba(255,255,255,.06) !important; }
+html[data-theme="dark"] .field-note{ color:#8ba0bd; }
+html[data-theme="dark"] .field-note.warn{ color:#e2a33b; }
+html[data-theme="dark"] input.has-warn{ border-color:#e2a33b !important; }
+html[data-theme="dark"] .control-option:hover{ border-color:#3a4f6f !important; }
+html[data-theme="dark"] .control-option.selected{ box-shadow:0 0 0 3px rgba(59,130,246,.2) !important; }
+html[data-theme="dark"] .control-option.selected[data-mode="schedule"]{ background:rgba(59,130,246,.14) !important; border-color:#3b82f6 !important; }
+html[data-theme="dark"] .control-option.selected[data-mode="open"]{ background:rgba(226,163,59,.14) !important; border-color:#e2a33b !important; box-shadow:0 0 0 3px rgba(226,163,59,.22) !important; }
+html[data-theme="dark"] .control-option.selected[data-mode="closed"]{ background:rgba(214,69,93,.14) !important; border-color:#d6455d !important; box-shadow:0 0 0 3px rgba(214,69,93,.2) !important; }
+html[data-theme="dark"] .actions{ background:linear-gradient(to bottom, rgba(11,22,38,0), #0b1626 35%) !important; }
+html[data-theme="dark"] .dirty-note{ color:#8ba0bd; }
+html[data-theme="dark"] .dirty-note::before{ background:#34d399; }
+html[data-theme="dark"] .dirty-note.dirty{ color:#f0c674; }
+html[data-theme="dark"] .dirty-note.dirty::before{ background:#f0b429; box-shadow:0 0 0 3px rgba(240,180,41,.3); }
+html[data-theme="dark"] .btn-primary:disabled{ background:#2c3f63 !important; border-color:#2c3f63 !important; color:#8ba0bd !important; }
+
+/* schedule / notification modal */
+html[data-theme="dark"] .newsched-banner{ border-color:#2a3b56 !important; background:#16243a !important; }
+html[data-theme="dark"] .newsched-copy strong{ color:#e7eef8 !important; }
+html[data-theme="dark"] .newsched-copy span{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ns-overlay{ background:rgba(0,0,0,.65) !important; }
+html[data-theme="dark"] .ns-modal{ background:#121f33 !important; box-shadow:0 24px 60px rgba(0,0,0,.55) !important; }
+html[data-theme="dark"] .ns-modal h3{ color:#e7eef8 !important; }
+html[data-theme="dark"] .ns-text{ color:#aebfd8 !important; }
+html[data-theme="dark"] .ns-note{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ns-busy{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ns-badge.warn{ background:rgba(226,163,59,.16) !important; color:#e2a33b !important; }
+html[data-theme="dark"] .ns-badge.bad{ background:rgba(214,69,93,.16) !important; color:#f87171 !important; }
+html[data-theme="dark"] .ns-badge.ok{ background:rgba(52,211,153,.16) !important; color:#34d399 !important; }
+html[data-theme="dark"] .ns-list li{ border-color:rgba(226,163,59,.4) !important; background:rgba(226,163,59,.1) !important; color:#f0c674 !important; }
+html[data-theme="dark"] .ns-grid input, html[data-theme="dark"] .ns-grid select{
+  border-color:#2a3b56 !important; color:#e7eef8 !important; background:#16243a !important;
+}
+html[data-theme="dark"] .ns-grid input:focus, html[data-theme="dark"] .ns-grid select:focus{ border-color:#3b82f6 !important; }
+html[data-theme="dark"] .ns-q{ border-color:#2a3b56 !important; background:#16243a !important; color:#6fa8ff !important; }
+html[data-theme="dark"] .ns-q:hover{ background:rgba(59,130,246,.16) !important; border-color:#3b82f6 !important; }
+html[data-theme="dark"] .ns-error{ background:rgba(214,69,93,.14) !important; border-color:rgba(214,69,93,.4) !important; color:#f3a3b0 !important; }
+html[data-theme="dark"] .ns-btn{ border-color:#2a3b56 !important; background:#16243a !important; color:#e7eef8 !important; }
+html[data-theme="dark"] .ns-btn:hover{ border-color:#3b82f6 !important; }
+html[data-theme="dark"] .ns-btn.primary{ background:#3b82f6 !important; border-color:#3b82f6 !important; color:#fff !important; }
+html[data-theme="dark"] .ns-btn.primary:hover{ background:#2563eb !important; }
+html[data-theme="dark"] .ns-btn.danger{ background:#d6455d !important; border-color:#d6455d !important; color:#fff !important; }
+html[data-theme="dark"] .ns-btn.danger:hover{ background:#b8364c !important; }
+html[data-theme="dark"] .sched-current{ border-color:#22344d !important; background:#121f33 !important; }
+html[data-theme="dark"] .sched-current-label{ color:#8ba0bd !important; }
+html[data-theme="dark"] .sched-cell span{ color:#8ba0bd !important; }
+html[data-theme="dark"] .sched-cell b{ color:#e7eef8 !important; }
+html[data-theme="dark"] .sched-arrow{ color:#3a4f6f !important; }
+html[data-theme="dark"] .ss-success{ background:rgba(52,211,153,.14) !important; border-color:rgba(52,211,153,.4) !important; color:#6ee7b7 !important; box-shadow:0 8px 22px rgba(0,0,0,.35) !important; }
+html[data-theme="dark"] .ss-success-text strong{ color:#a7f3d0 !important; }
+html[data-theme="dark"] .ss-success-close{ color:#6ee7b7 !important; }
+html[data-theme="dark"] .ss-success-close:hover{ background:rgba(52,211,153,.16) !important; }
+html[data-theme="dark"] .sched-chip.green{ background:rgba(52,211,153,.16) !important; color:#6ee7b7 !important; }
+html[data-theme="dark"] .sched-chip.amber{ background:rgba(226,163,59,.16) !important; color:#f0c674 !important; }
+html[data-theme="dark"] .sched-chip.red{ background:rgba(214,69,93,.16) !important; color:#f3a3b0 !important; }
+html[data-theme="dark"] .sched-chip.gray{ background:#16243a !important; color:#8ba0bd !important; }
+html[data-theme="dark"] .ns-head{ background:#121f33 !important; }
+html[data-theme="dark"] .ns-discard{ border-color:rgba(226,163,59,.4) !important; background:rgba(226,163,59,.1) !important; color:#f0c674 !important; }
+html[data-theme="dark"] .ns-sec-title{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ns-quick-label{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ns-preview{ border-color:#22344d !important; background:#16243a !important; color:#aebfd8 !important; }
+html[data-theme="dark"] .ns-preview b{ color:#e7eef8 !important; }
+html[data-theme="dark"] .ns-preview.good{ background:rgba(52,211,153,.12) !important; border-color:rgba(52,211,153,.4) !important; color:#6ee7b7 !important; }
+html[data-theme="dark"] .ns-preview.good b{ color:#a7f3d0 !important; }
+html[data-theme="dark"] .ns-preview.bad{ background:rgba(214,69,93,.12) !important; border-color:rgba(214,69,93,.4) !important; color:#f3a3b0 !important; }
+html[data-theme="dark"] .ns-preview.bad b{ color:#f3a3b0 !important; }
+
+/* status hero + numbered cards (ss-v2) */
+html[data-theme="dark"] .ss2-hero{ background:#121f33 !important; border-color:#22344d !important; box-shadow:0 2px 4px rgba(0,0,0,.25),0 8px 20px rgba(0,0,0,.3) !important; }
+html[data-theme="dark"] .ss2-eyebrow{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ss2-hero .stat-explain{ color:#aebfd8 !important; }
+html[data-theme="dark"] .ss2-fact span{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ss2-fact b{ color:#e7eef8 !important; }
+html[data-theme="dark"] .ss2-fact small{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ss2-timeline{ border-top-color:#22344d !important; }
+html[data-theme="dark"] .ss2-tl-ends span{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ss2-tl-ends b{ color:#e7eef8 !important; }
+html[data-theme="dark"] .ss2-tl-bar{ background:#1b2940 !important; }
+html[data-theme="dark"] .ss2-tl-note{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ss2-card{ background:#121f33 !important; border-color:#22344d !important; box-shadow:0 1px 3px rgba(0,0,0,.25) !important; }
+html[data-theme="dark"] .ss2-num{ background:rgba(59,130,246,.16) !important; color:#6fa8ff !important; }
+html[data-theme="dark"] .ss2-card-head h2{ color:#e7eef8 !important; }
+html[data-theme="dark"] .ss2-card-head p{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ss2-field label{ color:#aebfd8 !important; }
+html[data-theme="dark"] .ss2-help{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ss2-steps{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ss2-steps b{ background:rgba(59,130,246,.16) !important; color:#6fa8ff !important; }
+html[data-theme="dark"] .ss2-card .toggle-row, html[data-theme="dark"] .ss2-card .toggle-row:last-child{ border-color:#22344d !important; }
+html[data-theme="dark"] .ss2-tag{ background:rgba(52,211,153,.16) !important; color:#6ee7b7 !important; }
+html[data-theme="dark"] .ss2-danger{ border-color:rgba(214,69,93,.35) !important; }
+html[data-theme="dark"] .ss2-danger .ss2-num{ background:rgba(214,69,93,.16) !important; color:#f87171 !important; }
+
+/* sub-tabs */
+html[data-theme="dark"] .ss-subtabs{ background:#16243a !important; border-color:#22344d !important; }
+html[data-theme="dark"] .ss-subtab{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ss-subtab:hover{ color:#e7eef8 !important; }
+html[data-theme="dark"] .ss-subtab.active{ background:#121f33 !important; color:#f0a95f !important; box-shadow:0 1px 3px rgba(0,0,0,.3) !important; }
+
+/* form fields */
+html[data-theme="dark"] input[type="text"],
+html[data-theme="dark"] input[type="datetime-local"],
+html[data-theme="dark"] select{
+  background:#16243a; color:#e7eef8; border-color:#2a3b56;
+}
+html[data-theme="dark"] input[type="datetime-local"]{ color-scheme: dark; }
+html[data-theme="dark"] input[type="datetime-local"]::-webkit-calendar-picker-indicator{
+  filter: invert(1) brightness(1.6);
+}
+html[data-theme="dark"] input:focus, html[data-theme="dark"] select:focus{
+  border-color:#3b82f6; box-shadow:0 0 0 3px rgba(59,130,246,.25);
+}
+html[data-theme="dark"] .select-wrap::after{ border-color:#aebfd8; }
+html[data-theme="dark"] .select-wrap:hover::after{ border-color:#6fa8ff; }
+html[data-theme="dark"] .switch .track{ background:#1b2940; border-color:#2a3b56; }
+html[data-theme="dark"] .toast{ background:#16243a; border-color:#2a3b56; color:#e7eef8; box-shadow:0 8px 24px rgba(0,0,0,.5); }
+html[data-theme="dark"] ::-webkit-scrollbar-thumb{ background:#2a3b56; }
+</style>
 </head>
 <body class="feature-compact ux-nested">
 <div class="shell">
@@ -1190,10 +1416,17 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
         </div>
         <div class="ns-quick-label">Stays open for</div>
         <div class="ns-quick">
+          <button type="button" class="ns-q" data-hours="1">1 hour</button>
+          <button type="button" class="ns-q" data-hours="5">5 hours</button>
+          <button type="button" class="ns-q" data-hours="12">12 hours</button>
+          <button type="button" class="ns-q" data-hours="24">1 day</button>
           <button type="button" class="ns-q" data-days="7">1 week</button>
           <button type="button" class="ns-q" data-days="14">2 weeks</button>
           <button type="button" class="ns-q" data-days="30">1 month</button>
         </div>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12.5px">Or a custom number of hours
+          <input type="number" id="nsCustomHours" min="0.25" step="0.25" placeholder="e.g. 5" style="width:90px">
+        </label>
         <div class="ns-preview" id="nsPreview"></div>
       </div>
 
@@ -1590,7 +1823,7 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
       const y=$('nsYear').value.trim(), ym=y.match(/^(\d{4})-(\d{4})$/);
       const oV=$('nsOpens').value, cV=$('nsCloses').value;
       if(!ym||Number(ym[2])!==Number(ym[1])+1) return {ok:false,tone:'bad',title:'Check the academic year',msg:'Enter it like 2026-2027.'};
-      if(!oV||!cV) return {ok:false,tone:'muted',title:'Set the evaluation window',msg:'Pick the opening and closing time, or use the quick buttons above.'};
+      if(!oV||!cV) return {ok:false,tone:'muted',title:'Set the evaluation window',msg:'Pick the opening and closing time (even a few hours apart), or use the quick buttons above.'};
       const o=parseManilaLocal(oV), c=parseManilaLocal(cV);
       if(!Number.isFinite(o)||!Number.isFinite(c)) return {ok:false,tone:'bad',title:'Check the dates',msg:'One of the dates is not valid.'};
       if(c<=o) return {ok:false,tone:'bad',title:'Check the dates',msg:'The closing time must be after the opening time.'};
@@ -1601,7 +1834,7 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
     function update(keepError){
       const r=check(), pv=$('nsPreview');
       if(!keepError) $('nsError').hidden=true;
-      $('nsCloses').min=$('nsOpens').value||'';
+      $('nsCloses').min=$('nsOpens').value||''; $('nsCloses').step=60;
       pv.className='ns-preview '+r.tone;
       pv.textContent='';
       const b=document.createElement('b'); b.textContent=r.title;
@@ -1618,9 +1851,22 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
       }
       let base=parseManilaLocal($('nsOpens').value);
       if(!Number.isFinite(base)){ base=now; $('nsOpens').value=ms(now); }
-      $('nsCloses').value=ms(base+Number(b.dataset.days)*86400000);
+      const span=b.dataset.hours ? Number(b.dataset.hours)*3600000 : Number(b.dataset.days)*86400000;
+      $('nsCloses').value=ms(base+span);
+      const ch=$('nsCustomHours'); if(ch) ch.value='';
       update();
     }));
+    (function(){
+      const ch=$('nsCustomHours'); if(!ch) return;
+      ch.addEventListener('input',()=>{
+        const h=parseFloat(ch.value); if(!(h>0)) return;
+        formDirty=true;
+        let base=parseManilaLocal($('nsOpens').value);
+        if(!Number.isFinite(base)){ base=Date.now(); $('nsOpens').value=ms(base); }
+        $('nsCloses').value=ms(base+Math.round(h*3600000));
+        update();
+      });
+    })();
     ['nsYear','nsTerm','nsOpens','nsCloses'].forEach(id=>{ const el=$(id); const h=()=>{ formDirty=true; update(); }; el.addEventListener('input',h); el.addEventListener('change',h); });
 
     // Confirmation for Force open / Force closed / back to the schedule.

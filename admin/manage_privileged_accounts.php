@@ -230,6 +230,9 @@ if ($ylFilter !== '' && !in_array($ylFilter, $year_levels, true)) $ylFilter = ''
 
 $levelFilter = trim($_GET['level'] ?? '');
 if ($levelFilter !== '' && !array_key_exists($levelFilter, $school_levels)) $levelFilter = '';
+// A year level that doesn't belong to the selected school level is dropped,
+// so a stale ?yl= can never contradict the level tab that is active.
+if ($levelFilter !== '' && $ylFilter !== '' && classify_student_level($ylFilter) !== $levelFilter) $ylFilter = '';
 
 $toast       = $_SESSION['toast']       ?? ''; unset($_SESSION['toast']);
 $toast_error = $_SESSION['toast_error'] ?? ''; unset($_SESSION['toast_error']);
@@ -656,6 +659,13 @@ if (($viewRole === 'teacher' || $viewRole === 'staff') && $entries) {
 
     if ($ylFilter !== '') {
         $entries = array_values(array_filter($entries, fn($u) => in_array($ylFilter, $u['year_levels'], true)));
+    } elseif ($levelFilter !== '') {
+        $entries = array_values(array_filter($entries, function ($u) use ($levelFilter) {
+            foreach ($u['year_levels'] as $yl) {
+                if (classify_student_level($yl) === $levelFilter) return true;
+            }
+            return false;
+        }));
     }
 }
 
@@ -665,6 +675,9 @@ if (($viewRole === 'teacher' || $viewRole === 'staff') && $entries) {
 // year_level is stored as "4th Year" (not "4th Year College") still count.
 if ($viewRole === 'student' && $entries && $levelFilter !== '') {
     $entries = array_values(array_filter($entries, fn($u) => classify_student_level($u['year_level']) === $levelFilter));
+}
+if ($viewRole === 'student' && $entries && $ylFilter !== '') {
+    $entries = array_values(array_filter($entries, fn($u) => normalize_year_level($u['year_level']) === $ylFilter));
 }
 
 // Counts: role x status grid, in one query. The tab a person appears under
@@ -765,6 +778,13 @@ body{font-family:'Inter',sans-serif;background:var(--page-bg);color:var(--text-d
 .status-tab.active[data-s="approved"]{background:var(--success-bg);color:var(--success);}
 .status-tab.active[data-s="blocked"]{background:var(--danger-bg);color:var(--danger);}
 .status-tab:not(.active):hover{color:var(--text-dark);background:rgba(37,99,235,.05);}
+.level-filter-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+.level-filter-row .level-filter-tabs{margin-bottom:0;}
+.level-filter-right{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+.level-filter-select{background:#fff;border:1px solid #B9CDE5;border-radius:10px;padding:9px 14px;color:#0B1F3A;font-size:13px;font-family:'Inter',sans-serif;cursor:pointer;}
+.level-filter-select:focus{outline:none;border-color:#2563EB;box-shadow:0 0 0 3px rgba(37,99,235,.15);}
+.level-filter-clear{font-size:12.5px;font-weight:700;color:#2563EB;text-decoration:none;}
+.level-filter-clear:hover{text-decoration:underline;}
 html.pbi-parent-dims .modal-overlay{background:transparent !important;}
 .archive-panel{background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;padding:22px 24px 24px;margin-bottom:24px;box-shadow:var(--card-shadow);}
 .archive-panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:16px;}
@@ -1119,46 +1139,39 @@ html.dark-theme body .sector-tabs,html.dark-theme body .status-tabs{background:t
 </div>
 <?php endif; ?>
 
-<?php if ($viewRole === 'student'): ?>
-<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
-    <label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);">Filter by School Level</label>
-    <select id="levelFilterSelect" onchange="applyLevelFilter(this.value)" style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:8px;padding:8px 12px;color:var(--text-dark);font-size:13px;font-family:'Inter',sans-serif;">
-        <option value="">All Students</option>
+<?php if (in_array($viewRole, ['student', 'teacher', 'staff'], true)):
+    $lvlBase = 'manage_privileged_accounts.php?role=' . urlencode($viewRole) . '&status=' . urlencode($viewStatus) . ($viewArchived ? '&archived=1' : '');
+    $ylLabel = fn(string $lv): string => preg_replace('/ College$/', '', $lv);
+?>
+<!-- School-level tabs + year-level dropdown (same layout as Evaluation Tracker) -->
+<div class="level-filter-row">
+    <div class="status-tabs level-filter-tabs">
+        <a class="status-tab <?= $levelFilter === '' ? 'active' : '' ?>" href="<?= $lvlBase ?>">All Levels</a>
         <?php foreach ($school_levels as $key => $sl): ?>
-        <option value="<?= $key ?>" <?= $levelFilter===$key?'selected':'' ?>><?= htmlspecialchars($sl['label']) ?></option>
+        <a class="status-tab <?= $levelFilter === $key ? 'active' : '' ?>" href="<?= $lvlBase ?>&amp;level=<?= urlencode($key) ?>"><?= htmlspecialchars($sl['label']) ?></a>
         <?php endforeach; ?>
-    </select>
-    <?php if ($levelFilter !== ''): ?>
-    <a href="manage_privileged_accounts.php?role=student&status=<?= $viewStatus ?><?= $viewArchived ? '&archived=1' : '' ?>" style="font-size:12px;color:var(--text-dim);text-decoration:none;">Clear</a>
-    <?php endif; ?>
-</div>
-<?php endif; ?>
-
-<?php if ($viewRole === 'teacher' || $viewRole === 'staff'): ?>
-<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
-    <label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);">Filter by Year Level</label>
-    <select id="ylFilterSelect" onchange="applyYlFilter(this.value)" style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:8px;padding:8px 12px;color:var(--text-dark);font-size:13px;font-family:'Inter',sans-serif;">
-        <option value="">All Year Levels</option>
-        <optgroup label="Junior High School">
-            <option value="Grade 7" <?= $ylFilter==='Grade 7'?'selected':'' ?>>Grade 7</option>
-            <option value="Grade 8" <?= $ylFilter==='Grade 8'?'selected':'' ?>>Grade 8</option>
-            <option value="Grade 9" <?= $ylFilter==='Grade 9'?'selected':'' ?>>Grade 9</option>
-            <option value="Grade 10" <?= $ylFilter==='Grade 10'?'selected':'' ?>>Grade 10</option>
-        </optgroup>
-        <optgroup label="Senior High School">
-            <option value="Grade 11" <?= $ylFilter==='Grade 11'?'selected':'' ?>>Grade 11</option>
-            <option value="Grade 12" <?= $ylFilter==='Grade 12'?'selected':'' ?>>Grade 12</option>
-        </optgroup>
-        <optgroup label="College">
-            <option value="1st Year College" <?= $ylFilter==='1st Year College'?'selected':'' ?>>1st Year</option>
-            <option value="2nd Year College" <?= $ylFilter==='2nd Year College'?'selected':'' ?>>2nd Year</option>
-            <option value="3rd Year College" <?= $ylFilter==='3rd Year College'?'selected':'' ?>>3rd Year</option>
-            <option value="4th Year College" <?= $ylFilter==='4th Year College'?'selected':'' ?>>4th Year</option>
-        </optgroup>
-    </select>
-    <?php if ($ylFilter !== ''): ?>
-    <a href="manage_privileged_accounts.php?role=<?= $viewRole ?>&status=<?= $viewStatus ?>" style="font-size:12px;color:var(--text-dim);text-decoration:none;">Clear</a>
-    <?php endif; ?>
+    </div>
+    <div class="level-filter-right">
+        <select id="ylFilterSelect" class="level-filter-select" aria-label="Filter by year level" onchange="applyYlFilter(this.value)">
+            <option value="">All Year Levels</option>
+            <?php if ($levelFilter === ''): ?>
+                <?php foreach ($school_levels as $key => $sl): ?>
+                <optgroup label="<?= htmlspecialchars($sl['label']) ?>">
+                    <?php foreach ($sl['levels'] as $lv): ?>
+                    <option value="<?= htmlspecialchars($lv) ?>" <?= $ylFilter === $lv ? 'selected' : '' ?>><?= htmlspecialchars($ylLabel($lv)) ?></option>
+                    <?php endforeach; ?>
+                </optgroup>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <?php foreach ($school_levels[$levelFilter]['levels'] as $lv): ?>
+                <option value="<?= htmlspecialchars($lv) ?>" <?= $ylFilter === $lv ? 'selected' : '' ?>><?= htmlspecialchars($ylLabel($lv)) ?></option>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </select>
+        <?php if ($levelFilter !== '' || $ylFilter !== ''): ?>
+        <a class="level-filter-clear" href="<?= $lvlBase ?>">Clear filters</a>
+        <?php endif; ?>
+    </div>
 </div>
 <?php endif; ?>
 

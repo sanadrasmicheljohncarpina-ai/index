@@ -199,7 +199,7 @@ if ($showData) {
         ? [$principalId]
         : [$principalId, $selPeriod];
     $rawHistory = safe_rows($mysqli, "
-        SELECT et.id, et.remarks AS comment, et.submitted_at, ep.period_label, ep.semester, ep.school_year,
+        SELECT et.id, et.remarks AS comment, et.submitted_at, et.period_id, ep.period_label, ep.semester, ep.school_year,
                (SELECT SUM(qa2.answer_score)   FROM questionnaire_answers qa2 WHERE qa2.tracker_id = et.id) AS score_sum,
                (SELECT COUNT(qa2.answer_score) FROM questionnaire_answers qa2 WHERE qa2.tracker_id = et.id) AS score_count
         FROM evaluation_tracker et
@@ -215,6 +215,7 @@ if ($showData) {
             'submitted_at' => $r['submitted_at'],
             'score_sum'    => (float)($r['score_sum'] ?? 0),
             'score_count'  => (int)($r['score_count'] ?? 0),
+            'period_id'    => (int)($r['period_id'] ?? 0),
             'school_year'  => $r['school_year'] ?? '',
             'semester'     => $r['semester'] ?? '',
             'period_label' => $r['period_label'] ?? '',
@@ -226,7 +227,7 @@ if ($showData) {
     $keptTypes = $allPeriodsSelected ? 'i' : 'ii';
     $keptParams = $allPeriodsSelected ? [$principalId] : [$principalId, $selPeriod];
     $keptRows = safe_rows($mysqli, "
-        SELECT id, remarks, submitted_at, school_year, semester, period_label, score_sum, score_count
+        SELECT id, remarks, submitted_at, school_year, semester, period_label, period_id, score_sum, score_count
         FROM feedback_received_keep
         WHERE target_user_id=?" . $keptPeriodFilter . "
     ", $keptTypes, $keptParams);
@@ -238,6 +239,7 @@ if ($showData) {
             'submitted_at' => $r['submitted_at'],
             'score_sum'    => (float)$r['score_sum'],
             'score_count'  => (int)$r['score_count'],
+            'period_id'    => (int)($r['period_id'] ?? 0),
             'school_year'  => $r['school_year'] ?? '',
             'semester'     => $r['semester'] ?? '',
             'period_label' => $r['period_label'] ?? '',
@@ -265,6 +267,7 @@ foreach ($items as $it) {
         'idx'                => $n,
         'comment_ok'         => $commentOk,
         '_source'            => $it['source'],
+        '_period_id'         => $it['period_id'] ?? 0,
         'label'              => 'Evaluation #' . $n,
         'score'              => $it['score_count'] > 0 ? round($it['score_sum'] / $it['score_count'], 2) : null,
         'comment'            => $commentOk ? $cleanComment : '',
@@ -370,12 +373,13 @@ $reportMode = false;
 if (($_GET['report'] ?? '') === '1') {
     $reportMode = true;
     $escape = static fn($v) => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
-    $repLive = []; $repKept = []; $repDates = []; $repComments = []; $repEvals = [];
+    $repLive = []; $repKept = []; $repDates = []; $repComments = []; $repEvals = []; $repPeriodIds = [];
     foreach ($history as $h) {
         if ($h['score'] === null) continue;
         $repEvals[] = ['ts' => (int)$h['ts'], 'score' => (float)$h['score']];
         if ($h['_source'] === 'kept') { $repKept[] = (int)($h['_tracker_id'] ?? $h['_key']); } else { $repLive[] = (int)($h['_tracker_id'] ?? $h['_key']); }
         if ($h['ts']) $repDates[] = (int)$h['ts'];
+        if (!empty($h['_period_id'])) $repPeriodIds[] = (int)$h['_period_id'];
         if ($h['comment_ok']) $repComments[] = $h['comment'];
     }
     $repCount = count($repLive) + count($repKept);
@@ -431,10 +435,56 @@ if (($_GET['report'] ?? '') === '1') {
     $repOverall = $repN > 0 ? round($repSum / $repN, 2) : null;
 
     $repTermLabel = (!$allPeriodsSelected && isset($terms[$selPeriod])) ? $terms[$selPeriod]['label'] : 'All Evaluation Terms';
-    if ($repDates) {
-        $dFrom = min($repDates); $dTo = max($repDates);
-        $repDateText = date('Y-m-d', $dFrom) === date('Y-m-d', $dTo) ? date('F d, Y', $dTo) : date('M d, Y', $dFrom) . ' – ' . date('M d, Y', $dTo);
-    } else { $repDateText = '—'; }
+
+    // Date evaluated = the evaluation's actual OPENS and CLOSES date-times
+    // (same values shown on the evaluation period card), looked up through
+    // evaluation_tracker.period_id / feedback_received_keep.period_id. The
+    // periods table and its open/close columns are detected at runtime. If
+    // nothing is found it falls back to the first/last submission dates.
+    // Mirrors admin/admin_analytics.php's cumulative report exactly.
+    $repOpenText = ''; $repCloseText = ''; $repDateText = '';
+    $repPeriodIds = array_values(array_unique(array_filter(array_map('intval', $repPeriodIds))));
+    if ($repPeriodIds) {
+        $pTables = ['evaluation_periods','evaluation_period','eval_periods','eval_period','evaluation_schedules','evaluation_schedule'];
+        foreach (['%period%','%schedule%','%window%'] as $like) {
+            $tl = $mysqli->query("SHOW TABLES LIKE '$like'");
+            if ($tl) while ($tr = $tl->fetch_row()) $pTables[] = $tr[0];
+        }
+        $pTables = array_values(array_unique($pTables));
+        $openPref  = ['opens_at','open_at','opened_at','open_date','date_open','open_datetime','start_at','start_date','date_start','start_datetime','start_time','opens'];
+        $closePref = ['closes_at','close_at','closed_at','close_date','date_close','close_datetime','end_at','end_date','date_end','end_datetime','end_time','deadline','closes'];
+        $isDateType = fn($t) => (bool)preg_match('/date|time/i', (string)$t);
+        foreach ($pTables as $pt) {
+            if (!preg_match('/^[A-Za-z0-9_]+$/', $pt)) continue;
+            $have = []; $types = [];
+            $cr = $mysqli->query("SHOW COLUMNS FROM `$pt`");
+            if (!$cr) continue;
+            while ($c = $cr->fetch_assoc()) { $have[strtolower($c['Field'])] = $c['Field']; $types[strtolower($c['Field'])] = $c['Type']; }
+            if (!isset($have['id'])) continue;
+            $oc = null; $cc = null;
+            foreach ($openPref  as $c) if (isset($have[$c]) && $isDateType($types[$c])) { $oc = $have[$c]; break; }
+            foreach ($closePref as $c) if (isset($have[$c]) && $isDateType($types[$c])) { $cc = $have[$c]; break; }
+            if (!$oc) foreach ($have as $lc => $real) if ($isDateType($types[$lc]) && preg_match('/open|start/', $lc)) { $oc = $real; break; }
+            if (!$cc) foreach ($have as $lc => $real) if ($isDateType($types[$lc]) && preg_match('/close|end|deadline/', $lc)) { $cc = $real; break; }
+            if (!$oc) continue;
+            $idList = implode(',', $repPeriodIds);
+            $selClose = $cc ? "MAX(`$cc`)" : "NULL";
+            $pr = $mysqli->query("SELECT MIN(`$oc`) AS d_open, $selClose AS d_close FROM `$pt` WHERE id IN ($idList)");
+            $prow = $pr ? $pr->fetch_assoc() : null;
+            if ($prow && $prow['d_open']) {
+                $repOpenText  = date('M j, Y, g:i A', strtotime($prow['d_open']));
+                $repCloseText = $prow['d_close'] ? date('M j, Y, g:i A', strtotime($prow['d_close'])) : '';
+                break;
+            }
+        }
+    }
+    if ($repOpenText === '') {
+        // Fallback: first/last submission dates.
+        if ($repDates) {
+            $dFrom = min($repDates); $dTo = max($repDates);
+            $repDateText = date('Y-m-d', $dFrom) === date('Y-m-d', $dTo) ? date('F d, Y', $dTo) : date('M d, Y', $dFrom) . ' – ' . date('M d, Y', $dTo);
+        } else { $repDateText = '—'; }
+    }
 
     $scoreColor = static function ($s) {
         if ($s === null) return '#6b7280';
@@ -611,6 +661,7 @@ html.principal-theme-dark .rep-wrap{--panel:#172A45;--border:#24395A;--text:#E7E
 .rep-wrap .cum-date{margin-left:auto;text-align:right}
 .rep-wrap .cum-date-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:2px}
 .rep-wrap .cum-date-val{font-size:14px;font-weight:700}
+.rep-wrap .cum-date-k{font-size:11px;font-weight:600;opacity:.65;margin-right:2px}
 .rep-wrap .cat-section{margin-bottom:16px}
 .rep-wrap .cat-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:7px}
 .rep-wrap table.q-table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--border)}
@@ -623,13 +674,14 @@ html.principal-theme-dark .rep-wrap{--panel:#172A45;--border:#24395A;--text:#E7E
 .rep-wrap .rating-badge{display:inline-flex;align-items:center;justify-content:center;width:110px;height:36px;border-radius:8px;background:var(--inner)}
 .rep-wrap .rating-num{font-size:15px;font-weight:700}
 .rep-wrap .avg-summary{background:var(--panel);border:1px solid var(--border);padding:16px 22px;display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:14px}
-.rep-wrap .cum-total-label{font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:1px}
-.rep-wrap .cum-total-result{text-align:right}
+.rep-wrap .cum-total{margin-bottom:12px;flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:8px}
+.rep-wrap .cum-total-label{font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:1px;align-self:flex-start}
+.rep-wrap .cum-total-result{text-align:left}
 .rep-wrap .cum-legend-rows{display:flex;flex-direction:column;gap:5px;min-width:340px}
 .rep-wrap .cum-legend-row{display:flex;align-items:center;gap:10px;font-size:13px}
 .rep-wrap .cum-legend-dot{width:12px;height:12px;border-radius:3px;flex-shrink:0;background-color:var(--c);-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .rep-wrap .cum-legend-range{font-weight:700;width:92px;flex-shrink:0}
-.rep-wrap .cum-legend-text{flex:1;text-align:right}
+.rep-wrap .cum-legend-text{flex:none;text-align:left}
 .rep-wrap .avg-score-big{font-family:Rajdhani,sans-serif;font-size:46px;font-weight:700;line-height:1}
 .rep-wrap .avg-score-label{font-size:13px;font-weight:700;margin-top:4px}
 .rep-wrap .avg-out-of{font-size:12px;color:var(--muted);margin-top:4px}
@@ -681,7 +733,12 @@ html.principal-theme-dark .rep-wrap{--panel:#172A45;--border:#24395A;--text:#E7E
     </div>
     <div class="cum-date">
         <div class="cum-date-label">Date Evaluated</div>
+        <?php if ($repOpenText !== ''): ?>
+        <div class="cum-date-val"><span class="cum-date-k">Opens:</span> <?= $escape($repOpenText) ?></div>
+        <?php if ($repCloseText !== ''): ?><div class="cum-date-val"><span class="cum-date-k">Closes:</span> <?= $escape($repCloseText) ?></div><?php endif; ?>
+        <?php else: ?>
         <div class="cum-date-val"><?= $escape($repDateText) ?></div>
+        <?php endif; ?>
     </div>
 </div>
 
@@ -705,35 +762,9 @@ html.principal-theme-dark .rep-wrap{--panel:#172A45;--border:#24395A;--text:#E7E
 
 <?php if (!$repByCat): ?><div class="empty-rep">No scored answers found for this selection.</div><?php endif; ?>
 
-<?php if ($repEvals): ?>
-<div class="cat-section">
-    <div class="cat-title"><i class="fa-solid fa-users" style="font-size:10px"></i> Overall Average per Evaluator</div>
-    <table class="q-table">
-        <thead><tr><th style="width:44px">No.</th><th>Evaluator</th><th>Date Evaluated</th><th class="rating-col">Overall Average</th></tr></thead>
-        <tbody>
-        <?php foreach ($repEvals as $ei => $ev): $ec = $scoreColor($ev['score']); ?>
-        <tr>
-            <td class="q-num"><?= $ei + 1 ?></td>
-            <td>Anonymous Evaluator <?= $ei + 1 ?></td>
-            <td><?= $ev['ts'] ? $escape(date('M d, Y', $ev['ts'])) : '—' ?></td>
-            <td class="rating-cell"><div class="rating-badge" style="border:1px solid <?= $ec ?>33"><span class="rating-num" style="color:<?= $ec ?>"><?= number_format($ev['score'], 2) ?></span></div></td>
-        </tr>
-        <?php endforeach; ?>
-        <?php if ($repOverall !== null): $oc = $scoreColor($repOverall); ?>
-        <tr style="background:var(--inner)">
-            <td></td>
-            <td colspan="2" style="font-weight:700;text-transform:uppercase;letter-spacing:.6px;font-size:12px">Combined Overall Average (all <?= count($repEvals) ?> evaluators)</td>
-            <td class="rating-cell"><div class="rating-badge" style="border:1px solid <?= $oc ?>55"><span class="rating-num" style="color:<?= $oc ?>"><?= number_format($repOverall, 2) ?></span></div></td>
-        </tr>
-        <?php endif; ?>
-        </tbody>
-    </table>
-</div>
-<?php endif; ?>
-
 <?php if ($repOverall !== null): ?>
 <!-- RATING LEGEND: same card style as Total Score, placed right before it (satisfaction wording) -->
-<div class="avg-summary cum-legend">
+<div class="avg-summary cum-total cum-legend">
     <div class="cum-total-label">Rating Legend</div>
     <div class="cum-legend-rows">
         <?php foreach ([
@@ -752,7 +783,7 @@ html.principal-theme-dark .rep-wrap{--panel:#172A45;--border:#24395A;--text:#E7E
     </div>
 </div>
 
-<div class="avg-summary">
+<div class="avg-summary cum-total">
     <div class="cum-total-label">Total Score</div>
     <div class="cum-total-result">
         <div class="avg-score-big" style="color:<?= $scoreColor($repOverall) ?>"><?= number_format($repOverall, 2) ?></div>

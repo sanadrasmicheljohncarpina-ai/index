@@ -40,9 +40,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['sq_ajax'] ?? '') === '1') 
                 $uname = (string)($u['username'] ?? ''); $stored = (string)($u['password_hash'] ?? '');
             }
             $given = (string)($_POST['current_password'] ?? '');
-            if ($stored === '' || $given === '' || !password_verify($given, $stored)) {
+            if ((int)($_SESSION['sq_lock_until'] ?? 0) > time()) {
+                $out['message'] = 'Too many incorrect attempts. Please wait a minute and try again.';
+            } elseif ($stored === '' || $given === '' || !password_verify($given, $stored)) {
+                $_SESSION['sq_fail'] = (int)($_SESSION['sq_fail'] ?? 0) + 1;
+                if ($_SESSION['sq_fail'] >= 5) { $_SESSION['sq_lock_until'] = time() + 60; $_SESSION['sq_fail'] = 0; }
                 $out['message'] = 'Your current password is not correct.';
+            } elseif (($_POST['sq_verify'] ?? '') === '1') {
+                // Step 1: the password is confirmed; the questions can now be shown.
+                unset($_SESSION['sq_fail']);
+                $out = ['ok' => true, 'message' => 'Password confirmed.'];
             } else {
+                unset($_SESSION['sq_fail']);
                 [$sqErr, $sqRows] = sq_validate($_POST['sq_question'] ?? [], $_POST['sq_answer'] ?? [], $uname);
                 if ($sqErr !== null) {
                     $out['message'] = $sqErr;
@@ -314,6 +323,20 @@ html.density-comfortable .choice{padding:10px 14px}
 .pf-status{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;margin-bottom:14px;border-radius:999px;font-size:11.5px;font-weight:600;background:var(--accent-soft);border:1px solid var(--panel-border);color:var(--muted)}
 .pf-status.ok{color:#10B981;border-color:rgba(16,185,129,.4)}
 .pf-status.warn{color:#D97706;border-color:rgba(217,119,6,.45)}
+.pf-sq-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.pf-sq-icon{flex:0 0 40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:17px;background:var(--accent-soft);color:var(--accent)}
+.pf-sq-text{flex:1;min-width:240px}
+.pf-sq-text .pf-sub{margin-bottom:10px}
+.pf-sq-text .pf-status{margin-bottom:0}
+.pf-sq-action{flex:0 0 auto}
+.pf-sq.is-unset{border:2px solid #E2A33B;background:color-mix(in srgb,#F0B429 8%,var(--panel-bg));box-shadow:0 0 0 4px rgba(240,180,41,.15)}
+.pf-sq.is-unset .pf-sq-icon{background:#FFF3D6;color:#D97706}
+/* Tab buttons styled like Account Management: separate pills, orange when active */
+.settings-page .side{background:transparent;border:0;box-shadow:none;border-radius:0;padding:2px;gap:10px}
+.settings-page .side button{background:var(--panel-bg);border:1px solid var(--panel-border);border-radius:10px;padding:10px 16px;color:var(--muted);font:700 13px Inter;gap:9px;transition:background .15s,border-color .15s,color .15s}
+.settings-page .side button:hover{background:var(--panel-bg);border-color:#B9CDE5;color:var(--text)}
+.settings-page .side button.active{background:#E8792B;border-color:#2563EB;color:#fff;box-shadow:0 2px 6px rgba(232,121,43,.3)}
+.settings-page .side button.active i{color:#fff!important}
 @media(max-width:820px){.pf-body,.pf-grid{grid-template-columns:1fr}}
 </style>
 <style id="pbi-feature-scrollbar">
@@ -375,6 +398,22 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
         <div class="pf-alert error"><i class="fa-solid fa-circle-exclamation"></i><span>Please sign in again to manage your profile.</span></div>
         <?php else: ?>
         <div class="pf-body">
+          <div class="pf-card full pf-sq <?= $sq_status === 'ok' ? 'is-set' : 'is-unset' ?>" id="security-questions-settings">
+            <div class="pf-sq-row">
+              <div class="pf-sq-icon"><i class="fa-solid <?= $sq_status === 'ok' ? 'fa-shield-halved' : 'fa-triangle-exclamation' ?>"></i></div>
+              <div class="pf-sq-text">
+                <h3>Security Questions</h3>
+                <p class="pf-sub">These questions are used to recover your account if you forget your password.</p>
+                <?php if ($sq_status === 'ok'): ?>
+                <div class="pf-status ok"><i class="fa-solid fa-circle-check"></i> Security questions are set</div>
+                <?php else: ?>
+                <div class="pf-status warn"><i class="fa-solid fa-triangle-exclamation"></i> Not set up yet &mdash; you won&rsquo;t be able to recover your account without them</div>
+                <?php endif; ?>
+              </div>
+              <div class="pf-sq-action"><button type="button" class="pf-btn" id="sqOpen"><i class="fa-solid fa-pen-to-square"></i> <?= $sq_status === 'none' ? 'Set Security Questions' : 'Update Security Questions' ?></button></div>
+            </div>
+          </div>
+
           <div class="pf-card full">
             <h3>Profile Photo</h3><p class="pf-sub">Update the photo shown in your sidebar and profile.</p>
             <div class="pf-photo">
@@ -412,16 +451,6 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
               </div>
               <button class="pf-btn" type="submit"><i class="fa-solid fa-key"></i> Update Password</button>
             </form>
-          </div>
-
-          <div class="pf-card full" id="security-questions-settings">
-            <h3>Security Questions</h3><p class="pf-sub">These questions are used to recover your account if you forget your password.</p>
-            <?php if ($sq_status === 'ok'): ?>
-            <div class="pf-status ok"><i class="fa-solid fa-circle-check"></i> Security questions are set</div>
-            <?php else: ?>
-            <div class="pf-status warn"><i class="fa-solid fa-triangle-exclamation"></i> Not set up yet</div>
-            <?php endif; ?>
-            <div><button type="button" class="pf-btn" id="sqOpen"><i class="fa-solid fa-pen-to-square"></i> <?= $sq_status === 'none' ? 'Set Security Questions' : 'Update Security Questions' ?></button></div>
           </div>
         </div>
         <?php endif; ?>
@@ -621,7 +650,7 @@ if(pfPw) pfPw.addEventListener('submit',function(e){
 .sqm-error{margin-top:12px;padding:10px 12px;border-radius:10px;background:#FFF0F2;border:1px solid #F1B7C0;color:#A62A42;font-size:12.5px;line-height:1.45}
 .sqm-discard{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;padding:10px 12px;border:1px solid #F5D48A;background:#FFFBF0;border-radius:10px;color:#7A5200;font-size:13px}
 .sqm-discard span{flex:1;min-width:180px}
-.sqm-sec{margin:12px 0 0}
+.sqm-sec{margin:18px 0 0}
 .sqm-sec-title{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#67819E;margin:0 0 6px}
 .sqm-confirm{display:flex;gap:12px;align-items:center;padding:12px 14px;border:2px solid var(--accent);border-radius:12px;background:color-mix(in srgb,var(--accent) 6%,#fff);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 12%,transparent)}
 .sqm-lock{flex:0 0 38px;height:38px;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:#fff;font-size:15px}
@@ -642,13 +671,15 @@ if(pfPw) pfPw.addEventListener('submit',function(e){
 .sqm-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:none;color:#67819E;cursor:pointer;padding:8px;line-height:1}
 .sqm-eye:hover{color:var(--accent)}
 .sqm-eye{display:flex;align-items:center;justify-content:center}.sqm-eye svg,.sqm-lock svg{display:block}
-.sqm-q{display:flex;gap:12px;align-items:flex-start;margin:0 0 8px}
+.sqm-q{display:flex;gap:12px;align-items:flex-start;margin:0 0 18px}
 .sqm-num{flex:0 0 auto;width:28px;height:28px;margin-top:5px;border-radius:50%;display:grid;place-items:center;background:color-mix(in srgb,var(--accent) 12%,#fff);color:var(--accent);font-weight:800;font-size:12.5px}
-.sqm-q-fields{flex:1;min-width:0;display:grid;gap:6px}
+.sqm-q-fields{flex:1;min-width:0;display:grid;gap:10px}
 .sqm-chosen{font-size:12.5px;color:#405A76;line-height:1.4;padding:0 2px}
 .sqm-chosen:empty{display:none}
-.sqm-hint{margin-top:4px;padding:9px 13px;border-radius:10px;font-size:12.5px;line-height:1.45;border:1px solid #D8E5F4;background:#F7FAFF;color:#405A76}
+.sqm-hint{margin-top:10px;padding:9px 13px;border-radius:10px;font-size:12.5px;line-height:1.45;border:1px solid #D8E5F4;background:#F7FAFF;color:#405A76}
 .sqm-hint b{display:block;font-size:13.5px;color:#0B1F3A}
+.sqm-verify-row{display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap}
+.sqm-verified{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:#0F9F6E}
 .sqm-shake{animation:sqmShake .35s ease}
 @keyframes sqmShake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
 @media (max-height:720px){.sqm-modal{padding:16px 20px}.sqm-head{top:-16px;margin:-16px -20px 0;padding:16px 20px 4px}.sqm-sec{margin-top:8px}.sqm-modal input[type=text],.sqm-modal input[type=password],.sqm-modal select{height:34px}.sqm-q{margin-bottom:6px}.sqm-q-fields{gap:4px}.sqm-num{margin-top:3px}.sqm-confirm{padding:8px 12px}.sqm-hint{padding:6px 12px}}
@@ -677,24 +708,28 @@ if(pfPw) pfPw.addEventListener('submit',function(e){
         <div class="sqm-error" id="sqmError" role="alert" hidden></div>
       </div>
 
-      <div class="sqm-sec">
+      <div class="sqm-sec" id="sqmConfirmSec">
         <div class="sqm-sec-title">Confirm it&rsquo;s you</div>
         <div class="sqm-confirm">
           <span class="sqm-lock"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>
           <div class="sqm-confirm-body">
             <div class="sqm-confirm-title">Enter your current password first</div>
-            <div class="sqm-confirm-sub">Required to save any changes.</div>
+            <div class="sqm-confirm-sub">Confirm your password to unlock your questions.</div>
             <label>Current password
               <span class="sqm-pw">
                 <input type="password" id="sqmPw" name="current_password" autocomplete="current-password" placeholder="Enter your current password">
                 <button type="button" class="sqm-eye" id="sqmEye" aria-label="Show password" title="Show password"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.9 10.9 0 0 1 12 19C5.5 19 2 12 2 12a18.6 18.6 0 0 1 5.06-5.94"/><path d="M9.9 4.24A10.9 10.9 0 0 1 12 4c6.5 0 10 8 10 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12A3 3 0 1 1 9.88 9.88"/><path d="M1 1l22 22"/></svg></button>
               </span>
             </label>
+            <div class="sqm-verify-row">
+              <button type="button" class="sqm-btn primary" id="sqmVerify" disabled>Continue</button>
+              <span class="sqm-verified" id="sqmVerified" hidden>&#10003; Password confirmed</span>
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="sqm-sec">
+      <div class="sqm-sec" id="sqmQsec" hidden>
         <div class="sqm-sec-title">Your questions</div>
         <?php for ($n = 1; $n <= 3; $n++): ?>
         <div class="sqm-q">
@@ -720,10 +755,17 @@ if(pfPw) pfPw.addEventListener('submit',function(e){
   var openBtn=document.getElementById('sqOpen'); if(!ov||!form||!openBtn) return;
   var save=document.getElementById('sqmSave'), err=document.getElementById('sqmError'), disc=document.getElementById('sqmDiscard');
   var pw=document.getElementById('sqmPw'), qs=[1,2,3].map(function(n){return document.getElementById('sqmQ'+n);}), as=[1,2,3].map(function(n){return document.getElementById('sqmA'+n);});
-  var busy=false;
+  var busy=false, verified=false;
+  function resetGate(){
+    verified=false; pw.readOnly=false;
+    document.getElementById('sqmConfirmSec').hidden=false;
+    document.getElementById('sqmQsec').hidden=true;
+    document.getElementById('sqmVerified').hidden=true;
+    document.getElementById('sqmVerify').hidden=false;
+  }
   var SQM_EYE='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>', SQM_SLASH='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.9 10.9 0 0 1 12 19C5.5 19 2 12 2 12a18.6 18.6 0 0 1 5.06-5.94"/><path d="M9.9 4.24A10.9 10.9 0 0 1 12 4c6.5 0 10 8 10 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12A3 3 0 1 1 9.88 9.88"/><path d="M1 1l22 22"/></svg>';
   function dirty(){ return !!pw.value || qs.some(function(s){return s.value;}) || as.some(function(a){return a.value.trim();}); }
-  function ready(){ return pw.value!=='' && qs.every(function(s){return s.value;}) && as.every(function(a){return a.value.trim()!=='';}); }
+  function ready(){ return verified && pw.value!=='' && qs.every(function(s){return s.value;}) && as.every(function(a){return a.value.trim()!=='';}); }
   function sync(){
     var chosen=qs.map(function(s){return s.value;}).filter(Boolean);
     qs.forEach(function(s,i){
@@ -732,6 +774,7 @@ if(pfPw) pfPw.addEventListener('submit',function(e){
       document.getElementById('sqmChosen'+(i+1)).textContent=s.value?s.options[s.selectedIndex].text:'';
     });
     save.disabled=busy||!ready();
+    document.getElementById('sqmVerify').disabled=busy||verified||pw.value==='';
   }
   /* ---- Full-screen dim: also cover the dashboard sidebar/header that live OUTSIDE this iframe ---- */
   var DIM='rgba(11,31,58,.55)', pdoc=null, pstrips=[], praf=0, frameEl=null;
@@ -792,7 +835,7 @@ if(pfPw) pfPw.addEventListener('submit',function(e){
   }
   window.addEventListener('pagehide',parentDimOff);
   function showErr(m){ err.textContent=m; err.hidden=!m; }
-  function open(){ form.reset(); showErr(''); disc.hidden=true; pw.type='password'; document.getElementById('sqmEye').innerHTML=SQM_SLASH; sync(); ov.hidden=false; parentDimOn(); md.scrollTop=0; setTimeout(function(){ pw.focus({preventScroll:true}); },30); }
+  function open(){ form.reset(); resetGate(); showErr(''); disc.hidden=true; pw.type='password'; document.getElementById('sqmEye').innerHTML=SQM_SLASH; sync(); ov.hidden=false; parentDimOn(); md.scrollTop=0; setTimeout(function(){ pw.focus({preventScroll:true}); },30); }
   function close(){ ov.hidden=true; parentDimOff(); openBtn.focus(); }
   function requestClose(){ if(busy) return; if(dirty()){ disc.hidden=false; md.scrollTop=0; md.classList.remove('sqm-shake'); void md.offsetWidth; md.classList.add('sqm-shake'); } else close(); }
   openBtn.addEventListener('click',open);
@@ -806,6 +849,29 @@ if(pfPw) pfPw.addEventListener('submit',function(e){
     var show=pw.type==='password'; pw.type=show?'text':'password';
     this.innerHTML=show?SQM_EYE:SQM_SLASH; this.setAttribute('aria-label',show?'Hide password':'Show password');
   });
+  /* Step 1: the password must be confirmed on the server before the questions appear. */
+  function verifyPw(){
+    var vb=document.getElementById('sqmVerify');
+    if(busy||verified||pw.value==='') return;
+    busy=true; vb.disabled=true; vb.textContent='Checking\u2026'; showErr('');
+    var fd=new FormData(form); fd.append('sq_verify','1');
+    fetch('settings.php',{method:'POST',body:fd,credentials:'same-origin',headers:{'X-Requested-With':'XMLHttpRequest'}})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(d&&d.ok){
+          verified=true; pw.readOnly=true;
+          document.getElementById('sqmConfirmSec').hidden=true;
+          document.getElementById('sqmQsec').hidden=false;
+          document.getElementById('sqmVerified').hidden=false;
+          vb.hidden=true;
+          setTimeout(function(){ qs[0].focus({preventScroll:true}); },30);
+        } else { showErr((d&&d.message)||'Your current password is not correct.'); pw.select(); }
+      })
+      .catch(function(){ showErr('Could not reach the server. Please try again.'); })
+      .then(function(){ busy=false; vb.textContent='Continue'; sync(); });
+  }
+  document.getElementById('sqmVerify').addEventListener('click',verifyPw);
+  pw.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); verifyPw(); } });
   form.addEventListener('submit',function(e){
     e.preventDefault(); if(busy||!ready()) return;
     busy=true; save.disabled=true; save.textContent='Saving…'; showErr('');

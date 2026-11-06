@@ -165,10 +165,18 @@ function dean_nonteaching_staff_sql(string $a = 'u'): string {
 }
 const DEAN_PEER_TYPES_SQL = "'peer','faculty_peer','staff_peer'";
 const DEAN_EA_ROLES_SQL   = "'ea','executive_assistant','admin'";
+/** Executive Assistant account(s). Role strings vary ("ea", "executive_assistant",
+ *  "Executive Assistant", "exec_assistant"...), so normalise case/spaces/underscores
+ *  and also fall back to the designation. */
+function dean_ea_sql(string $a = 'u'): string {
+    return "($a.is_active=1 AND (
+        LOWER(REPLACE(REPLACE(COALESCE($a.role,''),'_',''),' ','')) IN ('ea','executiveassistant','execassistant','admin','administrator')
+        OR LOWER(COALESCE($a.designation,'')) LIKE '%executive assistant%'))";
+}
 
 // ── PER-TARGET HELPERS (expandable row breakdown) ─────────────────────
 function dean_type_rank(string $type): int {
-    return ['Faculty' => 1, 'Staff' => 2, 'Multi-Role' => 3, 'Dean' => 4, 'Executive Assistant' => 5][$type] ?? 9;
+    return ['Faculty' => 1, 'Staff' => 2, 'Multi-Role' => 3, 'Dean' => 4, 'Principal' => 4, 'Executive Assistant' => 5][$type] ?? 9;
 }
 /** Every required target for one row and where the person stands on it. */
 function dean_build_details(array $defs, array $contexts): array {
@@ -321,17 +329,68 @@ if ($structureActive) {
             'i', [$deanId]
         ) ?? 0) > 0;
 
-        $studentTargetDefs = [];
-        foreach ($facultyIds as $uid => $_) $studentTargetDefs['faculty:' . $uid] = ['label' => $targetNames[$uid], 'type' => 'Faculty'];
-        foreach ($staffIds   as $uid => $_) $studentTargetDefs['staff:' . $uid]   = ['label' => $targetNames[$uid], 'type' => 'Staff'];
-        foreach ($multiIds   as $uid => $_) $studentTargetDefs['multi:' . $uid]   = ['label' => $targetNames[$uid], 'type' => 'Multi-Role'];
-        if ($deanHeadRequired) $studentTargetDefs['school_head:' . $deanId] = ['label' => $deanName, 'type' => 'Dean'];
-        $requiredTotal = count($studentTargetDefs);
+        // ── PER-STUDENT TARGETS (mirrors student_dashboard.php) ─────────
+        // A student only evaluates Faculty assigned to THEIR year level and the
+        // active semester, non-teaching Staff (no year-level assignment), and the
+        // Dean. Required therefore differs per student; it is NOT one global count.
+        $semester = (string)(safe_scalar($mysqli, "SELECT semester FROM evaluation_periods WHERE id=?", 'i', [$period_id_int]) ?? '');
+
+        $evalPeople = safe_rows($mysqli, "SELECT id, full_name, role, secondary_role, assigned_period
+            FROM users
+            WHERE role IN ('teacher','staff','faculty') AND is_active=1
+              AND (account_status='approved' OR source='admin_nologin')");
+
+        $assignLevels = [];   // [user_id][lowercased year_level] => true (College assignments)
+        foreach (safe_rows($mysqli, "SELECT user_id, year_level FROM teaching_assignments
+                WHERE LOWER(TRIM(education_level)) IN ('college','higher education','college / university','college/university')") as $r) {
+            $assignLevels[(int)$r['user_id']][strtolower(trim((string)$r['year_level']))] = true;
+        }
+        foreach (safe_rows($mysqli, "SELECT user_id, year_level FROM user_year_levels") as $r) {
+            $assignLevels[(int)$r['user_id']][strtolower(trim((string)$r['year_level']))] = true;
+        }
+        $hasAnyAssign = [];   // any assignment at all (same as hasAnyYearLevelAssignment)
+        foreach (safe_rows($mysqli, "SELECT user_id FROM teaching_assignments UNION SELECT user_id FROM user_year_levels") as $r) {
+            $hasAnyAssign[(int)$r['user_id']] = true;
+        }
+
+        // Classification maps for dean_context_for_submission(): Faculty = has an
+        // assignment, Staff = none. They are disjoint, so nobody is counted twice.
+        // Multi-Role is not a separate student target.
+        $facultyIds = []; $staffIds = []; $multiIds = [];
+        foreach ($evalPeople as $p) {
+            $id = (int)$p['id'];
+            $isTeacher = in_array($p['role'], ['teacher','faculty'], true) || strtolower((string)$p['secondary_role']) === 'teacher';
+            $isStaff   = $p['role'] === 'staff' || strtolower((string)$p['secondary_role']) === 'staff';
+            $hasAssign = isset($hasAnyAssign[$id]);
+            if ($hasAssign && ($isTeacher || $isStaff)) $facultyIds[$id] = true;
+            if ($isStaff && !$hasAssign)                $staffIds[$id]   = true;
+        }
+
+        $deanTarget = $deanHeadRequired ? ['school_head:' . $deanId => ['label' => $deanName, 'type' => 'Dean']] : [];
+        $studentTargetsFor = function (string $yearLevel) use ($evalPeople, $assignLevels, $hasAnyAssign, $semester, $deanTarget): array {
+            $defs = [];
+            $yl = strtolower(trim($yearLevel));
+            foreach ($evalPeople as $p) {
+                $id = (int)$p['id'];
+                $isTeacher = in_array($p['role'], ['teacher','faculty'], true) || strtolower((string)$p['secondary_role']) === 'teacher';
+                $isStaff   = $p['role'] === 'staff' || strtolower((string)$p['secondary_role']) === 'staff';
+                $hasAssign = isset($hasAnyAssign[$id]);
+                if (($isTeacher || ($isStaff && $hasAssign)) && $hasAssign
+                    && $yl !== '' && isset($assignLevels[$id][$yl])
+                    && trim((string)$p['assigned_period']) === trim($semester)) {
+                    $defs['faculty:' . $id] = ['label' => (string)$p['full_name'], 'type' => 'Faculty'];
+                }
+                if ($isStaff && !$hasAssign) {
+                    $defs['staff:' . $id] = ['label' => (string)$p['full_name'], 'type' => 'Staff'];
+                }
+            }
+            return $defs + $deanTarget;
+        };
 
         // ── PER-STUDENT, PER-TARGET PROGRESS ───────────────────────────
         $studentContextMap = [];
         $allIds = array_map('intval', array_column($studentRoster, 'id'));
-        if ($hasPeriod && $requiredTotal > 0 && !empty($allIds)) {
+        if ($hasPeriod && !empty($allIds)) {
             $ph = implode(',', array_fill(0, count($allIds), '?'));
             $submissionRows = safe_rows($mysqli, "
                 SELECT et.id, et.evaluator_id, et.target_user_id, et.eval_bucket,
@@ -379,21 +438,24 @@ if ($structureActive) {
                 }
             }
             $contexts = $studentContextMap[$sid] ?? [];
+            $studentTargetDefs  = $studentTargetsFor($rawYear);
+            $requiredForStudent = count($studentTargetDefs);
             $completed = 0; $started = false; $latest = null;
-            foreach ($contexts as $c) {
+            foreach ($contexts as $key => $c) {
+                if (!isset($studentTargetDefs[$key])) continue;   // not required of this student
                 if ($c['state'] === 'completed') $completed++;
                 if ($c['state'] === 'in_progress') $started = true;
                 if (!empty($c['at']) && (!$latest || strtotime((string)$c['at']) > strtotime((string)$latest))) $latest = $c['at'];
             }
-            $completed = min($requiredTotal, $completed);
-            [$state, $stateLabel] = $stateOf($completed, $requiredTotal, $started);
+            $completed = min($requiredForStudent, $completed);
+            [$state, $stateLabel] = $stateOf($completed, $requiredForStudent, $started);
             $rowsAll[] = [
                 'key' => 's' . $sid, 'noun' => 'student',
                 'id' => $sid, 'name' => $s['full_name'],
                 'sub' => $collegeYear, 'level' => $collegeYear, 'year_key' => $yearKey,
                 'status' => $state, 'status_label' => $stateLabel,
-                'required' => $requiredTotal, 'completed' => $completed,
-                'progress' => $requiredTotal > 0 ? min(100, (int)round($completed / $requiredTotal * 100)) : 0,
+                'required' => $requiredForStudent, 'completed' => $completed,
+                'progress' => $requiredForStudent > 0 ? min(100, (int)round($completed / $requiredForStudent * 100)) : 0,
                 'submitted_at' => $latest,
                 'details' => dean_build_details($studentTargetDefs, $contexts),
             ];
@@ -419,10 +481,66 @@ if ($structureActive) {
         // Targets: Faculty peer-to-peer (every OTHER College teacher), or the
         // Executive Assistant(s) for non-teaching staff.
         $personTargets = [];
+        $facultyDefsFor = null;
+        $collegePeerPeriodId = 0;
         if ($isFaculty) {
-            foreach ($facultyRoster as $f) $personTargets[(int)$f['id']] = ['label' => (string)$f['full_name'], 'type' => 'Faculty'];
+            // Mirror faculty_dashboard.php (Evaluate Others): a faculty member evaluates
+            //   • every other Faculty / Teaching Staff (teacher, faculty, or staff WITH a year level)
+            //   • every Non-Teaching Staff (role staff, NO year level)
+            //   • the Dean if they hold a College year level, the Principal if Grade 7-12
+            $ylByUser = [];
+            foreach (safe_rows($mysqli, "SELECT user_id, year_level FROM user_year_levels") as $r) {
+                $ylByUser[(int)$r['user_id']][] = (string)$r['year_level'];
+            }
+            $pool = [];
+            foreach (safe_rows($mysqli, "SELECT id, full_name, role FROM users
+                    WHERE role IN ('teacher','staff','faculty') AND is_active=1 AND account_status='approved'") as $u) {
+                $uid  = (int)$u['id'];
+                $role = strtolower(trim((string)$u['role']));
+                $isTeachingPerson = in_array($role, ['teacher','faculty'], true) || ($role === 'staff' && !empty($ylByUser[$uid]));
+                $pool[$uid] = ['label' => (string)$u['full_name'], 'type' => $isTeachingPerson ? 'Faculty' : 'Staff'];
+            }
+            $heads = [];
+            foreach (safe_rows($mysqli, "SELECT id, full_name, role FROM users
+                    WHERE role IN ('dean','principal') AND is_active=1 AND account_status='approved'") as $u) {
+                $heads[(int)$u['id']] = ['label' => (string)$u['full_name'], 'role' => strtolower((string)$u['role']),
+                                         'type' => strtolower((string)$u['role']) === 'dean' ? 'Dean' : 'Principal'];
+            }
+            $collegeLevels = ['1st Year College','2nd Year College','3rd Year College','4th Year College'];
+            $basicLevels   = ['Grade 7','Grade 8','Grade 9','Grade 10','Grade 11','Grade 12'];
+            $facultyDefsFor = function (int $evaluatorId) use ($pool, $heads, $ylByUser, $collegeLevels, $basicLevels): array {
+                $defs = $pool;
+                unset($defs[$evaluatorId]);                       // nobody evaluates themselves
+                $mine = $ylByUser[$evaluatorId] ?? [];
+                $canDean      = (bool)array_intersect($mine, $collegeLevels);
+                $canPrincipal = (bool)array_intersect($mine, $basicLevels);
+                foreach ($heads as $hid => $h) {
+                    if ($hid === $evaluatorId) continue;
+                    if (($h['role'] === 'dean' && $canDean) || ($h['role'] === 'principal' && $canPrincipal)) {
+                        $defs[$hid] = ['label' => $h['label'], 'type' => $h['type']];
+                    }
+                }
+                return $defs;
+            };
+            $personTargets = $pool;
+            foreach ($heads as $hid => $h) $personTargets[$hid] = ['label' => $h['label'], 'type' => $h['type']];
+
+            // Faculty-group submissions are filed under the College semester period,
+            // the others under the active period (same selection as faculty_dashboard.php).
+            $collegePeerPeriodId = (int)(safe_scalar($mysqli, "SELECT id FROM evaluation_periods
+                WHERE semester IN ('1st Semester','2nd Semester','Summer')
+                ORDER BY
+                  (CONVERT(TRIM(school_year) USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+                     CONVERT(TRIM((SELECT setting_value FROM system_settings WHERE setting_key='acad_year' LIMIT 1)) USING utf8mb4) COLLATE utf8mb4_unicode_ci) DESC,
+                  (CONVERT(TRIM(semester) USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+                     CONVERT(TRIM((SELECT setting_value FROM system_settings WHERE setting_key='acad_term' LIMIT 1)) USING utf8mb4) COLLATE utf8mb4_unicode_ci) DESC,
+                  is_active DESC, id DESC LIMIT 1") ?? 0);
         } else {
-            foreach (safe_rows($mysqli, "SELECT id, full_name FROM users WHERE role IN (" . DEAN_EA_ROLES_SQL . ") AND is_active=1 ORDER BY full_name ASC") as $ea) {
+            // The Executive Assistant is the active superadmin account (same rule the
+            // Principal tracker / Evaluate Others page use); fall back to role/designation.
+            $eaRows = safe_rows($mysqli, "SELECT id, full_name FROM users WHERE role='superadmin' AND is_active=1 AND account_status='approved' ORDER BY updated_at DESC, id DESC LIMIT 1");
+            if (!$eaRows) $eaRows = safe_rows($mysqli, "SELECT u.id, u.full_name FROM users u WHERE " . dean_ea_sql('u') . " ORDER BY u.full_name ASC");
+            foreach ($eaRows as $ea) {
                 $personTargets[(int)$ea['id']] = ['label' => (string)$ea['full_name'], 'type' => 'Executive Assistant'];
             }
         }
@@ -431,25 +549,29 @@ if ($structureActive) {
         if ($hasPeriod && $ids && $personTargets) {
             $ph = implode(',', array_fill(0, count($ids), '?'));
             if ($isFaculty) {
+                $periodIds = array_values(array_unique(array_filter([(int)$period_id_int, (int)$collegePeerPeriodId])));
+                $tids      = array_map('intval', array_keys($personTargets));
+                $phP = implode(',', array_fill(0, count($periodIds), '?'));
+                $phT = implode(',', array_fill(0, count($tids), '?'));
                 $sql = "SELECT et.evaluator_id, et.target_user_id, et.status, et.submitted_at, et.updated_at
                         FROM evaluation_tracker et
-                        WHERE et.period_id=? AND et.eval_type IN (" . DEAN_PEER_TYPES_SQL . ")
+                        WHERE et.period_id IN ($phP) AND et.eval_type IN (" . DEAN_PEER_TYPES_SQL . ")
                           AND et.status IN ('submitted','approved','in_progress')
-                          AND et.evaluator_id IN ($ph) AND et.target_user_id IN ($ph)
+                          AND et.evaluator_id IN ($ph) AND et.target_user_id IN ($phT)
                           AND et.target_user_id<>et.evaluator_id
                         ORDER BY et.updated_at DESC, et.id DESC";
-                $types  = 'i' . str_repeat('i', count($ids) * 2);
-                $params = array_merge([$period_id_int], $ids, $ids);
+                $types  = str_repeat('i', count($periodIds) + count($ids) + count($tids));
+                $params = array_merge($periodIds, $ids, $tids);
             } else {
                 $sql = "SELECT et.evaluator_id, et.target_user_id, et.status, et.submitted_at, et.updated_at
                         FROM evaluation_tracker et
                         WHERE et.period_id=? AND et.eval_type<>'student'
                           AND et.status IN ('submitted','approved','in_progress')
                           AND et.evaluator_id IN ($ph)
-                          AND et.target_user_id IN (SELECT id FROM users WHERE role IN (" . DEAN_EA_ROLES_SQL . "))
+                          AND et.target_user_id IN (" . implode(',', array_fill(0, count($personTargets), '?')) . ")
                         ORDER BY et.updated_at DESC, et.id DESC";
-                $types  = 'i' . str_repeat('i', count($ids));
-                $params = array_merge([$period_id_int], $ids);
+                $types  = 'i' . str_repeat('i', count($ids) + count($personTargets));
+                $params = array_merge([$period_id_int], $ids, array_map('intval', array_keys($personTargets)));
             }
             foreach (safe_rows($mysqli, $sql, $types, $params) as $r) {
                 $eid = (int)$r['evaluator_id']; $tid = (int)$r['target_user_id'];
@@ -466,7 +588,7 @@ if ($structureActive) {
 
         foreach ($people as $p) {
             $pid  = (int)$p['id'];
-            $defs = $personTargets;
+            $defs = $isFaculty ? $facultyDefsFor($pid) : $personTargets;
             unset($defs[$pid]);                       // nobody evaluates themselves
             $contexts = $stateMap[$pid] ?? [];
             $req = count($defs);
@@ -923,6 +1045,8 @@ html.dark-theme .ea-export{background:rgba(124,95,217,.14)!important;border-colo
 
 /* Dean violet accents for the shared table components */
 .tracker-card .level-pill{background:#F1EDFC;border-color:#CFC2F4;color:#6A4CC4}
+/* Compact rounded level pill (same shape as the Principal tracker) */
+.tracker-card .level-pill{height:auto;min-width:0;padding:5px 13px;border-radius:849px;font-size:11px;font-weight:700;white-space:nowrap}
 .tracker-card .stu-avatar{background:#F1EDFC;border-color:#D9CFF7;color:#7C5FD9}
 .tracker-card .progress-fill{background:#7C5FD9}
 .tracker-card .page-btn.active{background:#F1EDFC;border-color:#CFC2F4;color:#6A4CC4}

@@ -474,7 +474,6 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid rgb
 		for (let i = 0; i < 3; i++) {
 			if (ans[i].length < 3) { document.getElementById('sq_a' + (i + 1)).focus(); return 'Answer ' + (i + 1) + ' is too short. Use at least 3 letters or numbers.'; }
 		}
-		if (new Set(ans).size !== 3) return 'Each security answer must be different.';
 		return '';
 	}
 

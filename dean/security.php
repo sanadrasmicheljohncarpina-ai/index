@@ -1,5 +1,5 @@
 <?php
-// faculty/security.php
+// dean/security.php
 // Shared helpers for the faculty & staff portal: sessions, CSRF, recovery throttling
 // and the security-question ("forgot password") system. Same logic as student/security.php;
 // answers live in the shared student_security_answers table, keyed by users.id.
@@ -209,7 +209,7 @@ function sq_validate($qs, $as, string $username): array {
     $qs = is_array($qs) ? $qs : [];
     $as = is_array($as) ? $as : [];
     $all = sq_questions();
-    $rows = []; $seenQ = []; $seenA = [];
+    $rows = []; $seenQ = [];
     for ($slot = 1; $slot <= 3; $slot++) {
         $k   = (string)($qs[$slot] ?? '');
         $raw = (string)($as[$slot] ?? '');
@@ -219,10 +219,40 @@ function sq_validate($qs, $as, string $username): array {
         $n = sq_normalize($raw);
         if (mb_strlen($n) < 3)           return ["Answer $slot is too short. Use at least 3 letters or numbers.", []];
         if (sq_is_weak($n, $username))   return ["Answer $slot is too easy to guess. Please be more specific.", []];
-        if (isset($seenA[$n]))           return ['Each answer must be different.', []];
-        $seenQ[$k] = 1; $seenA[$n] = 1;
+        $seenQ[$k] = 1;
         $rows[] = ['slot' => $slot, 'key' => $k, 'hash' => password_hash($n, PASSWORD_DEFAULT)];
     }
+    return [null, $rows];
+}
+
+// Like sq_validate(), but lets a person change only some of their questions.
+// A slot whose question is unchanged and whose answer is left blank keeps its stored
+// (hashed) answer. A changed question, or a newly typed answer, is validated in full.
+// $existing = sq_load() rows keyed by slot. Returns [errorOrNull, rowsToStore].
+function sq_validate_update($qs, $as, string $username, array $existing): array {
+    $qs = is_array($qs) ? $qs : [];
+    $as = is_array($as) ? $as : [];
+    $all = sq_questions();
+    $rows = []; $seenQ = []; $changed = false;
+    for ($slot = 1; $slot <= 3; $slot++) {
+        $k   = (string)($qs[$slot] ?? '');
+        $raw = (string)($as[$slot] ?? '');
+        if (!isset($all[$k]))            return ["Please choose security question $slot.", []];
+        if (isset($seenQ[$k]))           return ['Please choose three different security questions.', []];
+        $seenQ[$k] = 1;
+        $old = $existing[$slot] ?? null;
+        if (trim($raw) === '' && $old && (string)($old['question_key'] ?? '') === $k && !empty($old['answer_hash'])) {
+            $rows[] = ['slot' => $slot, 'key' => $k, 'hash' => $old['answer_hash']];   // unchanged: keep it
+            continue;
+        }
+        if (mb_strlen($raw) > 100)       return ["Answer $slot is too long (100 characters max).", []];
+        $n = sq_normalize($raw);
+        if (mb_strlen($n) < 3)           return ["Answer $slot is too short. Use at least 3 letters or numbers.", []];
+        if (sq_is_weak($n, $username))   return ["Answer $slot is too easy to guess. Please be more specific.", []];
+        $rows[] = ['slot' => $slot, 'key' => $k, 'hash' => password_hash($n, PASSWORD_DEFAULT)];
+        $changed = true;
+    }
+    if (!$changed) return ['Change at least one question or answer before saving.', []];
     return [null, $rows];
 }
 

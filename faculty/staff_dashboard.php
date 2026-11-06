@@ -81,13 +81,12 @@ qn_migrate_legacy_once($mysqli);
 $sq_status = 'none';
 if ($page === 'settings') {
     try {
-        $sqStmt = $mysqli->prepare("SELECT COUNT(*) AS c FROM student_security_answers WHERE user_id = ?");
-        $sqUid  = (int)$user_id;
-        $sqStmt->bind_param('i', $sqUid);
-        $sqStmt->execute();
-        $sqRow = $sqStmt->get_result()->fetch_assoc();
-        $sqStmt->close();
-        if ((int)($sqRow['c'] ?? 0) >= 3) { $sq_status = 'ok'; }
+        if (!function_exists('sq_load')) { require_once 'security.php'; }
+        security_ensure_tables($mysqli);
+        $sqExisting = sq_load($mysqli, (int)$user_id);
+        if (count($sqExisting) === 3) {
+            $sq_status = (function_exists('sq_needs_update') && sq_needs_update($sqExisting)) ? 'retired' : 'ok';
+        }
     } catch (Throwable $e) { error_log('settings security-questions status failed: ' . $e->getMessage()); }
 }
 
@@ -96,6 +95,72 @@ if ($page === 'settings') {
             $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
         }
         $csrf_token = $_SESSION['csrf_token'];
+
+// ── SECURITY QUESTIONS POPUP: save (AJAX, returns JSON) ───────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['sq_ajax'] ?? '') === '1') {
+    $out = ['ok' => false, 'message' => 'Something went wrong. Please try again.'];
+    try {
+        $sqRole = (string)($_SESSION['role'] ?? '');
+        $sqUid  = (int)$user_id;
+        $sqKind = 'sqchange_' . $sqRole;
+        if (!hash_equals((string)($_SESSION['csrf_token'] ?? ''), (string)($_POST['csrf_token'] ?? ''))) {
+            $out['message'] = 'Your session expired. Please reload the page and try again.';
+        } else {
+            if (!function_exists('sq_validate')) { require_once 'security.php'; }
+            security_ensure_tables($mysqli);
+
+            $sqSt = $mysqli->prepare("SELECT username, password_hash FROM users WHERE id = ? AND role = ? AND is_active = 1 LIMIT 1");
+            $sqSt->bind_param('is', $sqUid, $sqRole);
+            $sqSt->execute();
+            $sqMe = $sqSt->get_result()->fetch_assoc();
+            $sqSt->close();
+            $sqGiven = (string)($_POST['current_password'] ?? '');
+
+            if (!$sqMe) {
+                $out['message'] = 'Your account could not be found. Please sign in again.';
+            } elseif (auth_is_locked($mysqli, $sqKind, (string)$sqUid)) {
+                $out['message'] = AUTH_LOCK_MESSAGE;
+            } elseif ($sqGiven === '' || !password_verify($sqGiven, (string)$sqMe['password_hash'])) {
+                auth_record($mysqli, $sqKind, (string)$sqUid, false);
+                $out['message'] = 'Your current password is not correct.';
+            } elseif (($_POST['sq_verify'] ?? '') === '1') {
+                // Step 1: the password is confirmed; the questions can now be shown.
+                $sqQsOut = [];
+                try { foreach (sq_load($mysqli, $sqUid) as $sqSlot => $sqRow) { $sqQsOut[(int)$sqSlot] = (string)$sqRow['question_key']; } } catch (Throwable $sqE) {}
+                $out = ['ok' => true, 'message' => 'Password confirmed.', 'questions' => $sqQsOut];
+            } else {
+                [$sqErr, $sqRows] = sq_validate_update($_POST['sq_question'] ?? [], $_POST['sq_answer'] ?? [], (string)$sqMe['username'], sq_load($mysqli, $sqUid));
+                if ($sqErr !== null) {
+                    $out['message'] = $sqErr;
+                } else {
+                    try {
+                        $mysqli->begin_transaction();
+                        $sqDel = $mysqli->prepare('DELETE FROM student_security_answers WHERE user_id = ?');
+                        $sqDel->bind_param('i', $sqUid);
+                        if (!$sqDel->execute()) { throw new RuntimeException('delete failed'); }
+                        $sqDel->close();
+                        sq_save($mysqli, $sqUid, $sqRows);
+                        $mysqli->commit();
+                        auth_clear($mysqli, $sqKind, (string)$sqUid);
+                        $_SESSION['toast'] = 'Security questions updated successfully.';
+                        $out = ['ok' => true, 'message' => 'Security questions updated successfully.'];
+                    } catch (Throwable $e) {
+                        try { $mysqli->rollback(); } catch (Throwable $ignored) {}
+                        error_log('security questions save failed: ' . $e->getMessage());
+                        $out['message'] = 'The security questions could not be saved. Please try again.';
+                    }
+                }
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('security questions failed: ' . $e->getMessage());
+    }
+    while (ob_get_level() > 0) { ob_end_clean(); }
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    echo json_encode($out);
+    exit;
+}
 
 // ── PROFILE PHOTO UPLOAD (handled inside the authenticated portal) ──
 // Posting to this dashboard keeps the user's existing portal session and
@@ -961,6 +1026,10 @@ $up->bind_param('iiii', $user_id, $n1, $n2, $n3); $up->execute(); $up->close();
                     }
                 }
 
+                if ($comments === '') {
+                    $errors[] = 'A comment is required before you can submit this evaluation.';
+                }
+
                 if (!$errors && in_array($target['target_type'], ['Dean','Principal','EA'], true)) {
                     $dup = $mysqli->prepare("
                         SELECT id
@@ -1272,6 +1341,12 @@ $up->bind_param('iiii', $user_id, $n1, $n2, $n3); $up->execute(); $up->close();
 
             if (empty($ratings) || count($ratings) !== count($valid_question_ids)) {
                 $_SESSION['toast_error'] = "Please rate all questions before submitting.";
+                header("Location: staff_dashboard.php?page=peer_eval&tid=" . $tid . "&group=" . urlencode($submitted_group)); exit;
+            }
+
+            // Comments are mandatory on every evaluation.
+            if ($comments === '') {
+                $_SESSION['toast_error'] = "A comment is required before you can submit this evaluation.";
                 header("Location: staff_dashboard.php?page=peer_eval&tid=" . $tid . "&group=" . urlencode($submitted_group)); exit;
             }
 
@@ -3331,18 +3406,14 @@ html body:not(.light-theme):not(#fxp) .ea-fact.is-pending > i{background:rgba(24
                 <p><?= htmlspecialchars($designation) ?> &nbsp;·&nbsp;
                 <?= $period ? htmlspecialchars($period['period_label']) : 'No active evaluation period' ?></p>
             </div>
-            <div class="score-chip">
-                <div class="big"><?= $my_avg !== null ? number_format($my_avg, 2) : '—' ?></div>
-                <div class="lbl">Your Avg Score</div>
-            </div>
         </div>
 
         <div class="stats-grid">
             <a class="stat-box stat-box-link" href="staff_dashboard.php?page=my_results" aria-label="View Evaluations Received" title="View Evaluations Received"><div class="stat-box-icon green"><i class="fa-solid fa-users" aria-hidden="true"></i></div><div class="stat-box-lbl">Evaluations Received</div><div class="stat-box-val teal"><?= $my_total ?></div></a>
             <div class="stat-box"><div class="stat-box-icon mint"><i class="fa-solid fa-circle-check"></i></div><div class="stat-box-lbl">Overall Average</div><div class="stat-box-val gold"><?= $my_avg !== null ? number_format($my_avg,2).' / 5' : '—' ?></div></div>
             <div class="stat-box"><div class="stat-box-icon gold"><i class="fa-solid fa-award"></i></div><div class="stat-box-lbl">Performance Level</div>
-                <div class="stat-box-val" style="font-size:18px;color:<?= $my_avg===null?'#6b7280':($my_avg>=4?'#4ade80':($my_avg>=3?'#facc15':'#f87171')) ?>">
-                    <?= $my_avg===null?'—':($my_avg>=4?'Excellent':($my_avg>=3?'Good':'Needs Improvement')) ?>
+                <div class="stat-box-val" style="font-size:18px;color:<?= $my_avg===null?'#6b7280':(round($my_avg,2)>=4.5?'#34C08F':(round($my_avg,2)>=3.5?'#6FD3B0':(round($my_avg,2)>=2.5?'#F5C518':(round($my_avg,2)>=1.5?'#FF9A3C':'#EE7B8C')))) ?>">
+                    <?= $my_avg===null?'—':(round($my_avg,2)>=4.5?'Very Satisfied':(round($my_avg,2)>=3.5?'Satisfied':(round($my_avg,2)>=2.5?'Neither Satisfied nor Dissatisfied':(round($my_avg,2)>=1.5?'Dissatisfied':'Very Dissatisfied')))) ?>
                 </div></div>
             <div class="stat-box"><div class="stat-box-icon sky"><i class="fa-solid fa-calendar"></i></div><div class="stat-box-lbl">Current Period</div>
                 <div class="stat-box-val" style="font-size:16px;color:var(--teal-hover)"><?= $period?htmlspecialchars($period['semester']):'None' ?></div></div>
@@ -3497,22 +3568,276 @@ html body:not(.light-theme):not(#fxp) .ea-fact.is-pending > i{background:rgba(24
     </div>
 
     <div class="settings-layout-grid settings-tab-panel" id="settingsPanelProfile" role="tabpanel" aria-labelledby="settingsTabProfile">
+        <div class="settings-card full ac-card sq-top-card <?= $sq_status === 'ok' ? 'is-set' : 'is-unset' ?>" id="security-questions-settings">
+        <div class="sq-top-row">
+            <div class="ac-head">
+                <span class="ac-icon"><i class="fa-solid <?= $sq_status === 'ok' ? 'fa-shield-halved' : 'fa-triangle-exclamation' ?>"></i></span>
+                <div>
+                    <h2>Security Questions</h2>
+                    <p class="ac-sub">These questions are used to recover your account if you forget your password.</p>
+                    <?php if ($sq_status === 'ok'): ?>
+                    <div class="sq-status ok"><i class="fa-solid fa-circle-check"></i> Security questions are set</div>
+                    <?php elseif ($sq_status === 'retired'): ?>
+                    <div class="sq-status warn"><i class="fa-solid fa-triangle-exclamation"></i> One of your questions is no longer offered &mdash; please update them</div>
+                    <?php else: ?>
+                    <div class="sq-status warn"><i class="fa-solid fa-triangle-exclamation"></i> Not set up yet &mdash; you won&rsquo;t be able to recover your account without them</div>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div class="sq-top-action">
+                <button type="button" class="btn-primary" id="sqOpen"><i class="fa-solid fa-pen-to-square"></i> <?= $sq_status === 'none' ? 'Set Security Questions' : 'Update Security Questions' ?></button>
+            </div>
+        </div>
+    </div>
+
         <section class="settings-card full ac-card ac-c2"><div class="ac-head"><span class="ac-icon"><i class="fa-solid fa-id-badge"></i></span><div><h2>Profile Photo</h2><p class="ac-sub">Update the photo shown in your sidebar and profile.</p></div></div><div class="profile-card"><?php if ($staff_photo && $photo_url): ?><img class="profile-photo-lg" src="<?= htmlspecialchars($photo_url) ?>" alt="Staff profile photo"/><?php else: ?><div class="profile-photo-lg profile-photo-fallback"><i class="fa-solid fa-user"></i></div><?php endif; ?><div class="photo-form-wrap"><button class="btn-primary" type="button" onclick="openPhotoModal()"><i class="fa-solid fa-upload"></i> Upload New Photo</button><div class="photo-help">JPG, PNG, WEBP, or GIF only. Maximum file size: 10MB.</div></div></div></section>
 
         <section class="settings-card full ac-card ac-c3"><div class="ac-head"><span class="ac-icon"><i class="fa-solid fa-user-pen"></i></span><div><h2>Profile Details</h2><p class="ac-sub">Update your name, username, and designation.</p></div></div><form method="post" action="staff_dashboard.php?page=settings" class="profile-details-form"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>"><input type="hidden" name="update_account_name" value="1"><div class="form-grid"><div class="form-group"><label for="staffSettingsName">Full Name</label><input id="staffSettingsName" type="text" name="full_name" maxlength="150" required value="<?= htmlspecialchars($full_name) ?>" autocomplete="name"></div><div class="form-group"><label for="staffSettingsUsername">Username</label><input id="staffSettingsUsername" type="text" name="username" maxlength="50" pattern="\S+" title="Username cannot contain spaces" required value="<?= htmlspecialchars($account_username) ?>" autocomplete="username"></div><div class="form-group"><label for="staffSettingsDesignation">Designation</label><input id="staffSettingsDesignation" type="text" name="designation" maxlength="100" required value="<?= htmlspecialchars($designation) ?>"></div></div><button class="btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button></form></section>
 
         <section class="settings-card full ac-card ac-c4"><div class="ac-head"><span class="ac-icon"><i class="fa-solid fa-lock"></i></span><div><h2>Change Password</h2><p class="ac-sub">Your new password must be at least 8 characters and different from your current password.</p></div></div><form method="post" action="staff_dashboard.php?page=settings" class="profile-details-form" id="staffSettingsPasswordForm" autocomplete="off"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>"><input type="hidden" name="update_password" value="1"><div class="form-grid"><div class="form-group"><label for="staffCurrentPassword">Current Password</label><input id="staffCurrentPassword" type="password" name="current_password" required autocomplete="current-password"></div><div class="form-group"></div><div class="form-group"><label for="staffNewPassword">New Password</label><input id="staffNewPassword" type="password" name="new_password" minlength="8" required autocomplete="new-password"></div><div class="form-group"><label for="staffConfirmPassword">Confirm New Password</label><input id="staffConfirmPassword" type="password" name="confirm_password" minlength="8" required autocomplete="new-password"></div></div><button class="btn-primary" type="submit"><i class="fa-solid fa-key"></i> Update Password</button></form></section>
 
-        <section class="settings-card full ac-card ac-c5" id="security-questions-settings">
-            <div class="ac-head"><span class="ac-icon"><i class="fa-solid fa-shield-halved"></i></span><div><h2>Security Questions</h2><p class="ac-sub">These questions are used to recover your account if you forget your password.</p></div></div>
-            <?php if ($sq_status === 'ok'): ?>
-            <div class="sq-status ok"><i class="fa-solid fa-circle-check"></i> Security questions are set</div>
-            <?php else: ?>
-            <div class="sq-status warn"><i class="fa-solid fa-triangle-exclamation"></i> Not set up yet</div>
-            <?php endif; ?>
-            <div><a class="btn-primary" href="security_questions.php"><i class="fa-solid fa-pen-to-square"></i> <?= $sq_status === 'none' ? 'Set Security Questions' : 'Update Security Questions' ?></a></div>
-        </section>
     </div>
+
+<?php
+if (!function_exists('sq_questions')) { try { require_once 'security.php'; } catch (Throwable $e) {} }
+$sqIsNew = ($sq_status === 'none');
+$sqQuestionList = [];
+try { $sqQuestionList = sq_questions(); } catch (Throwable $e) { error_log('sq_questions failed: ' . $e->getMessage()); }
+?>
+<style id="sqm-styles">
+.sq-top-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.sq-top-row .ac-head{flex:1;min-width:260px;margin-bottom:0 !important}
+.sq-top-row .sq-top-action{flex:0 0 auto}
+.sq-top-row .sq-status{margin:10px 0 0}
+.sq-top-card.is-unset{border:2px solid #E2A33B !important;box-shadow:0 0 0 4px rgba(226,163,59,.16) !important}
+.sq-top-card.is-unset::before{background:#E2A33B !important}
+.sq-top-card.is-set{--ac-c:#16A34A}
+.sq-top-card.is-unset{--ac-c:#E2A33B}
+.sq-status{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:999px;font-size:12px;font-weight:600;background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.3)}
+.sq-status.ok{color:#10B981;border-color:rgba(16,185,129,.4)}
+.sq-status.warn{color:#D97706;border-color:rgba(217,119,6,.45)}
+.sq-top-card.is-unset .ac-icon{background:rgba(226,163,59,.18) !important;color:#D97706 !important}
+.sq-top-card.is-unset .ac-icon i{color:#D97706 !important}
+
+.sqm-overlay{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(11,31,58,.55);overscroll-behavior:contain}
+.sqm-overlay[hidden]{display:none}
+.sqm-modal{--sq-acc:#16A34A;--sq-acc-h:#22C55E;--sq-line:rgba(128,140,160,.30);width:min(620px,100%);max-height:calc(100vh - 40px);overflow:auto;background:var(--mid,#fff);border:1px solid var(--sq-line);border-radius:16px;padding:20px 22px;box-shadow:0 24px 60px rgba(11,31,58,.35);color:var(--light,#0B1F3A)}
+.sqm-modal,.sqm-modal *{box-sizing:border-box;font-family:'DM Sans',system-ui,-apple-system,"Segoe UI",sans-serif}
+.sqm-modal:focus{outline:none}
+.sqm-modal [hidden]{display:none !important}
+.sqm-head{position:sticky;top:-20px;z-index:2;margin:-20px -22px 0;padding:20px 22px 6px;background:var(--mid,#fff);border-radius:16px 16px 0 0}
+.sqm-head-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.sqm-head-text{flex:1;min-width:220px}
+.sqm-modal h3{font-size:18px;font-weight:700;line-height:1.25;color:var(--light,#0B1F3A);margin:0 0 4px}
+.sqm-text{font-size:13.5px;line-height:1.5;color:var(--muted,#405A76);margin:0}
+.sqm-head-actions{display:flex;gap:10px;flex:0 0 auto}
+.sqm-btn{height:40px;padding:0 16px;border:1px solid var(--sq-line);background:transparent;color:var(--light,#0B1F3A);border-radius:10px;font-weight:700;font-size:13px;cursor:pointer}
+.sqm-btn:hover{border-color:var(--sq-acc)}
+.sqm-btn.primary{background:var(--sq-acc);border-color:var(--sq-acc);color:#fff}
+.sqm-btn.primary:hover:not(:disabled){background:var(--sq-acc-h);border-color:var(--sq-acc-h)}
+.sqm-btn.danger{background:#D6455D;border-color:#D6455D;color:#fff}
+.sqm-btn:disabled{opacity:.55;cursor:not-allowed}
+.sqm-error{margin-top:12px;padding:10px 12px;border-radius:10px;background:rgba(240,84,84,.12);border:1px solid rgba(240,84,84,.35);color:#E05252;font-size:12.5px;line-height:1.45;font-weight:600}
+.sqm-discard{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;padding:10px 12px;border:1px solid #F5D48A;background:rgba(245,212,138,.16);border-radius:10px;color:#B07400;font-size:13px}
+.sqm-discard span{flex:1;min-width:180px}
+.sqm-sec{margin:12px 0 0}
+.sqm-sec-title{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#67819E);margin:0 0 6px}
+.sqm-confirm{display:flex;gap:12px;align-items:center;padding:12px 14px;border:2px solid var(--sq-acc);border-radius:12px;background:color-mix(in srgb,var(--sq-acc) 10%,transparent);box-shadow:0 0 0 4px color-mix(in srgb,var(--sq-acc) 12%,transparent)}
+.sqm-lock{flex:0 0 38px;height:38px;border-radius:50%;display:grid;place-items:center;background:var(--sq-acc);color:#fff;font-size:15px}
+.sqm-confirm-body{flex:1;min-width:0}
+.sqm-confirm-title{font-size:14px;font-weight:800;color:var(--light,#0B1F3A)}
+.sqm-confirm-sub{font-size:12px;color:var(--muted,#5C6B8A);margin:1px 0 6px}
+.sqm-modal label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:700;color:var(--muted,#405A76)}
+.sqm-modal input[type=text],.sqm-modal input[type=password],.sqm-modal select{width:100%;height:38px;padding:0 12px;border:1px solid var(--sq-line);border-radius:10px;font:500 14px 'DM Sans',system-ui,sans-serif;color:var(--light,#0B1F3A);background:var(--inner,#fff)}
+.sqm-modal select{appearance:none;-webkit-appearance:none;cursor:pointer;padding-right:34px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%2367819E' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
+.sqm-modal input:focus,.sqm-modal select:focus{outline:2px solid color-mix(in srgb,var(--sq-acc) 35%,transparent);border-color:var(--sq-acc)}
+.sqm-modal select.is-empty{color:var(--sq-acc);font-weight:700}
+.sqm-modal select option{background:var(--mid,#fff);color:var(--light,#0B1F3A);font-weight:500}
+.sqm-modal select option[value=""]{color:var(--sq-acc);font-weight:700}
+.sqm-modal select option:disabled{color:#8A97A8}
+.sqm-pw{position:relative}
+.sqm-pw input{padding-right:44px !important}
+.sqm-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:none;color:var(--muted,#67819E);cursor:pointer;padding:8px;line-height:1;display:flex;align-items:center;justify-content:center}
+.sqm-eye:hover{color:var(--sq-acc)}
+.sqm-q{display:flex;gap:12px;align-items:flex-start;margin:0 0 8px}
+.sqm-num{flex:0 0 auto;width:28px;height:28px;margin-top:5px;border-radius:50%;display:grid;place-items:center;background:color-mix(in srgb,var(--sq-acc) 14%,transparent);color:var(--sq-acc);font-weight:800;font-size:12.5px}
+.sqm-q-fields{flex:1;min-width:0;display:grid;gap:6px}
+.sqm-chosen{font-size:12.5px;color:var(--muted,#405A76);line-height:1.4;padding:0 2px}
+.sqm-chosen:empty{display:none}
+.sqm-hint{margin-top:4px;padding:9px 13px;border-radius:10px;font-size:12.5px;line-height:1.45;border:1px solid var(--sq-line);background:var(--inner,#F7FAFF);color:var(--muted,#405A76)}
+.sqm-hint b{display:block;font-size:13.5px;color:var(--light,#0B1F3A)}
+.sqm-verify-row{display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap}
+.sqm-verified{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:#10B981}
+.sqm-shake{animation:sqmShake .35s ease}
+@keyframes sqmShake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+@media (max-height:720px){.sqm-modal{padding:16px 20px}.sqm-head{top:-16px;margin:-16px -20px 0;padding:16px 20px 4px}.sqm-sec{margin-top:8px}.sqm-modal input[type=text],.sqm-modal input[type=password],.sqm-modal select{height:34px}.sqm-q{margin-bottom:6px}.sqm-q-fields{gap:4px}.sqm-num{margin-top:3px}.sqm-confirm{padding:8px 12px}.sqm-hint{padding:6px 12px}}
+</style>
+<div class="sqm-overlay" id="sqmOverlay" hidden>
+  <div class="sqm-modal" id="sqmModal" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="sqmTitle">
+    <form id="sqmForm" autocomplete="off" novalidate>
+      <input type="hidden" name="sq_ajax" value="1">
+      <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
+      <div class="sqm-head">
+        <div class="sqm-head-row">
+          <div class="sqm-head-text">
+            <h3 id="sqmTitle"><?= $sqIsNew ? 'Set security questions' : 'Update security questions' ?></h3>
+            <p class="sqm-text">Used to recover your account if you forget your password. Choose 3 different questions.</p>
+          </div>
+          <div class="sqm-head-actions">
+            <button type="button" class="sqm-btn" id="sqmCancel">Cancel</button>
+            <button type="submit" class="sqm-btn primary" id="sqmSave" disabled>Save questions</button>
+          </div>
+        </div>
+        <div class="sqm-discard" id="sqmDiscard" hidden>
+          <span>You have unsaved changes. Discard them?</span>
+          <button type="button" class="sqm-btn" id="sqmKeep">Keep editing</button>
+          <button type="button" class="sqm-btn danger" id="sqmDiscardGo">Discard</button>
+        </div>
+        <div class="sqm-error" id="sqmError" role="alert" hidden></div>
+      </div>
+
+      <div class="sqm-sec" id="sqmConfirmSec">
+        <div class="sqm-sec-title">Confirm it&rsquo;s you</div>
+        <div class="sqm-confirm">
+          <span class="sqm-lock"><i class="fa-solid fa-lock"></i></span>
+          <div class="sqm-confirm-body">
+            <div class="sqm-confirm-title">Enter your current password first</div>
+            <div class="sqm-confirm-sub">Confirm your password to unlock your questions.</div>
+            <label>Current password
+              <span class="sqm-pw">
+                <input type="password" id="sqmPw" name="current_password" autocomplete="current-password" placeholder="Enter your current password">
+                <button type="button" class="sqm-eye" id="sqmEye" aria-label="Show password" title="Show password"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.9 10.9 0 0 1 12 19C5.5 19 2 12 2 12a18.6 18.6 0 0 1 5.06-5.94"/><path d="M9.9 4.24A10.9 10.9 0 0 1 12 4c6.5 0 10 8 10 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12A3 3 0 1 1 9.88 9.88"/><path d="M1 1l22 22"/></svg></button>
+              </span>
+            </label>
+            <div class="sqm-verify-row">
+              <button type="button" class="sqm-btn primary" id="sqmVerify" disabled>Continue</button>
+              <span class="sqm-verified" id="sqmVerified" hidden>&#10003; Password confirmed</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sqm-sec" id="sqmQsec" hidden>
+        <div class="sqm-sec-title">Your questions</div>
+        <?php for ($n = 1; $n <= 3; $n++): ?>
+        <div class="sqm-q">
+          <span class="sqm-num"><?= $n ?></span>
+          <div class="sqm-q-fields">
+            <select name="sq_question[<?= $n ?>]" id="sqmQ<?= $n ?>" class="is-empty" aria-label="Question <?= $n ?>">
+              <option value="">Choose a question</option>
+              <?php foreach ($sqQuestionList as $k => $q): ?><option value="<?= htmlspecialchars((string)$k) ?>"><?= htmlspecialchars($q) ?></option><?php endforeach; ?>
+            </select>
+            <div class="sqm-chosen" id="sqmChosen<?= $n ?>" aria-live="polite"></div>
+            <input type="text" name="sq_answer[<?= $n ?>]" id="sqmA<?= $n ?>" maxlength="100" placeholder="Your answer" autocomplete="off" aria-label="Answer <?= $n ?>">
+          </div>
+        </div>
+        <?php endfor; ?>
+        <div class="sqm-hint"><b><?= $sqIsNew ? 'Pick a question and give an answer only you would know.' : 'You can change just one. Anything you leave as it is stays saved.' ?></b>For your security, existing answers are never shown.</div>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+(function(){
+  var ov=document.getElementById('sqmOverlay'), md=document.getElementById('sqmModal'), form=document.getElementById('sqmForm');
+  var openBtn=document.getElementById('sqOpen'); if(!ov||!form||!openBtn) return;
+  document.body.appendChild(ov); /* lift above sidebar / header stacking contexts */
+  var save=document.getElementById('sqmSave'), err=document.getElementById('sqmError'), disc=document.getElementById('sqmDiscard');
+  var pw=document.getElementById('sqmPw'), eye=document.getElementById('sqmEye');
+  var qs=[1,2,3].map(function(n){return document.getElementById('sqmQ'+n);}), as=[1,2,3].map(function(n){return document.getElementById('sqmA'+n);});
+  var busy=false, verified=false, saved=['','',''];
+  function resetGate(){
+    verified=false; pw.readOnly=false; saved=['','',''];
+    document.getElementById('sqmConfirmSec').hidden=false;
+    document.getElementById('sqmQsec').hidden=true;
+    document.getElementById('sqmVerified').hidden=true;
+    document.getElementById('sqmVerify').hidden=false;
+  }
+  var SQM_EYE='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+  var SQM_SLASH='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.9 10.9 0 0 1 12 19C5.5 19 2 12 2 12a18.6 18.6 0 0 1 5.06-5.94"/><path d="M9.9 4.24A10.9 10.9 0 0 1 12 4c6.5 0 10 8 10 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12A3 3 0 1 1 9.88 9.88"/><path d="M1 1l22 22"/></svg>';
+  function dirty(){ return !!pw.value || qs.some(function(s,i){return s.value!==saved[i];}) || as.some(function(a){return a.value.trim();}); }
+  /* A slot is fine when it has a question and either a new answer or is still the saved question (its saved answer is kept). */
+  function slotOk(i){ return !!qs[i].value && (as[i].value.trim()!=='' || qs[i].value===saved[i]); }
+  function slotChanged(i){ return qs[i].value!==saved[i] || as[i].value.trim()!==''; }
+  function ready(){ return verified && pw.value!=='' && [0,1,2].every(slotOk) && [0,1,2].some(slotChanged); }
+  function sync(){
+    var chosen=qs.map(function(s){return s.value;}).filter(Boolean);
+    qs.forEach(function(s,i){
+      Array.prototype.forEach.call(s.options,function(o){ o.disabled=o.value!==''&&chosen.indexOf(o.value)!==-1&&o.value!==s.value; });
+      s.classList.toggle('is-empty',!s.value);
+      document.getElementById('sqmChosen'+(i+1)).textContent=s.value?s.options[s.selectedIndex].text:'';
+      as[i].placeholder=(s.value && s.value===saved[i]) ? 'Saved \u2014 leave blank to keep it, or type a new answer' : 'Your answer';
+    });
+    save.disabled=busy||!ready();
+    document.getElementById('sqmVerify').disabled=busy||verified||pw.value==='';
+  }
+  function showErr(m){ err.textContent=m; err.hidden=!m; }
+  function open(){
+    form.reset(); resetGate(); showErr(''); disc.hidden=true; pw.type='password';
+    eye.innerHTML=SQM_SLASH; eye.setAttribute('aria-label','Show password');
+    sync(); ov.hidden=false; md.scrollTop=0;
+    setTimeout(function(){ pw.focus({preventScroll:true}); },30);
+  }
+  function close(){ ov.hidden=true; openBtn.focus(); }
+  function requestClose(){
+    if(busy) return;
+    if(dirty()){ disc.hidden=false; md.scrollTop=0; md.classList.remove('sqm-shake'); void md.offsetWidth; md.classList.add('sqm-shake'); }
+    else close();
+  }
+  openBtn.addEventListener('click',open);
+  document.getElementById('sqmCancel').addEventListener('click',requestClose);
+  document.getElementById('sqmKeep').addEventListener('click',function(){ disc.hidden=true; });
+  document.getElementById('sqmDiscardGo').addEventListener('click',close);
+  ov.addEventListener('mousedown',function(e){ if(e.target===ov) requestClose(); });
+  document.addEventListener('keydown',function(e){ if(!ov.hidden&&e.key==='Escape'){ e.preventDefault(); requestClose(); } });
+  form.addEventListener('input',sync); form.addEventListener('change',sync);
+  eye.addEventListener('click',function(){
+    var show=pw.type==='password'; pw.type=show?'text':'password';
+    eye.innerHTML=show?SQM_EYE:SQM_SLASH;
+    eye.setAttribute('aria-label',show?'Hide password':'Show password');
+  });
+  /* Step 1: the password must be confirmed on the server before the questions appear. */
+  function verifyPw(){
+    var vb=document.getElementById('sqmVerify');
+    if(busy||verified||pw.value==='') return;
+    busy=true; vb.disabled=true; vb.textContent='Checking\u2026'; showErr('');
+    var fd=new FormData(form); fd.append('sq_verify','1');
+    fetch('staff_dashboard.php?page=settings',{method:'POST',body:fd,credentials:'same-origin',headers:{'X-Requested-With':'XMLHttpRequest'}})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(d&&d.ok){
+          verified=true; pw.readOnly=true;
+          document.getElementById('sqmConfirmSec').hidden=true; /* password is confirmed: hide this step; the value is still submitted with the form */
+          var sv=(d&&d.questions)||{};
+          qs.forEach(function(s,i){
+            var k=sv[i+1]||'';
+            if(k && Array.prototype.some.call(s.options,function(o){return o.value===k;})){ s.value=k; saved[i]=k; }
+          });
+          document.getElementById('sqmQsec').hidden=false;
+          document.getElementById('sqmVerified').hidden=false;
+          vb.hidden=true;
+          setTimeout(function(){ qs[0].focus({preventScroll:true}); },30);
+        } else { showErr((d&&d.message)||'Your current password is not correct.'); pw.select(); }
+      })
+      .catch(function(){ showErr('Could not reach the server. Please try again.'); })
+      .then(function(){ busy=false; vb.textContent='Continue'; sync(); });
+  }
+  document.getElementById('sqmVerify').addEventListener('click',verifyPw);
+  pw.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); verifyPw(); } });
+  form.addEventListener('submit',function(e){
+    e.preventDefault(); if(busy||!ready()) return;
+    busy=true; save.disabled=true; save.textContent='Saving\u2026'; showErr('');
+    fetch('staff_dashboard.php?page=settings',{method:'POST',body:new FormData(form),credentials:'same-origin',headers:{'X-Requested-With':'XMLHttpRequest'}})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(d&&d.ok){ location.href='staff_dashboard.php?page=settings'; return; }
+        showErr((d&&d.message)||'The security questions could not be saved. Please try again.'); md.scrollTop=0;
+      })
+      .catch(function(){ showErr('Could not reach the server. Please try again.'); })
+      .then(function(){ busy=false; save.textContent='Save questions'; sync(); });
+  });
+})();
+</script>
 
     <div class="settings-layout-grid settings-tab-panel" id="settingsPanelAppearance" role="tabpanel" aria-labelledby="settingsTabAppearance" hidden>
         <section class="settings-card full ac-card ac-c1" id="principal-style-appearance">
@@ -3796,9 +4121,10 @@ html body:not(.light-theme):not(#fxp) .ea-fact.is-pending > i{background:rgba(24
                                 </div>
                             <?php endforeach; ?>
 
-                            <div class="staff-eval-comments-card">
-                                <label class="staff-eval-comments-label" for="staffEvalComments"><i class="fa-solid fa-comment-dots"></i> Comments &amp; Suggestions</label>
-                                <textarea class="comments-box" id="staffEvalComments" name="comments" placeholder="Share your thoughts, suggestions, or concerns about this person's performance."></textarea>
+                            <div class="staff-eval-comments-card" data-comment-card>
+                                <label class="staff-eval-comments-label" for="staffEvalComments"><i class="fa-solid fa-comment-dots"></i> Comments, Suggestions &amp; Areas for Improvement <span class="comment-req-star" aria-hidden="true">*</span></label>
+                                <textarea class="comments-box" id="staffEvalComments" name="comments" required aria-required="true" aria-describedby="staffEvalCommentsMsg" placeholder="Share your thoughts, suggestions, or concerns about this person's performance."></textarea>
+                                <div class="comment-required-msg" id="staffEvalCommentsMsg" role="alert">Required &mdash; you can't submit this evaluation without a comment.</div>
                             </div>
                         </div>
                         <footer class="staff-eval-modal-foot">
@@ -4144,9 +4470,10 @@ if(peerEvalForm){
                 </div>
                 <?php endforeach; ?>
 
-                <div class="comments-card">
-                    <div style="font-size:13px;font-weight:700;color:var(--teal-hover);margin-bottom:10px;"><i class="fa-solid fa-comment-dots"></i> Comments &amp; Suggestions</div>
-                    <textarea class="comments-box" name="comments" placeholder="Share your thoughts, suggestions, or concerns about this person's performance."></textarea>
+                <div class="comments-card" data-comment-card>
+                    <div style="font-size:13px;font-weight:700;color:var(--teal-hover);margin-bottom:10px;"><i class="fa-solid fa-comment-dots"></i> Comments, Suggestions &amp; Areas for Improvement <span class="comment-req-star" aria-hidden="true">*</span></div>
+                    <textarea class="comments-box" name="comments" required aria-required="true" placeholder="Share your thoughts, suggestions, or concerns about this person's performance."></textarea>
+                    <div class="comment-required-msg" role="alert">Required &mdash; you can't submit this evaluation without a comment.</div>
                 </div>
               </div>
               <footer class="peer-eval-footer">
@@ -4988,6 +5315,43 @@ html body .peer-eval-dialog .peer-eval-footer{padding:16px 28px 24px;}
  html body .staff-eval-modal-body,html body .peer-eval-dialog .peer-eval-scroll{padding:18px;}
  html body .staff-eval-table col.c-rate,html body .peer-eval-dialog .compact-eval-table col.c-rate{width:40px;}
 }
+
+/* Required comment box (matches the Dean evaluation behaviour) */
+.comment-required-msg{display:none;margin-top:8px;font-size:12.5px;font-weight:600;color:#f87171;}
+.is-comment-invalid{border-color:#ef4444 !important;box-shadow:0 0 0 3px rgba(239,68,68,.10);background:rgba(239,68,68,.04) !important;}
+.is-comment-invalid textarea{border-color:#ef4444 !important;}
+.is-comment-invalid .comment-required-msg{display:block;}
+.comment-req-star{color:#ef4444;margin-left:3px;}
+body.light-theme .comment-required-msg,.staff-eval-modal .comment-required-msg{color:#dc2626;}
 </style>
+
+<script>
+// Comments are mandatory: block submit when the comment box is empty.
+(function(){
+    var TEXTAREA_NAME = 'comments';
+    function bind(form){
+        if(!form) return;
+        var ta = form.querySelector('textarea[name="'+TEXTAREA_NAME+'"]');
+        if(!ta) return;
+        var card = ta.closest('[data-comment-card]');
+        function setInvalid(on){ if(card) card.classList.toggle('is-comment-invalid', on); ta.setAttribute('aria-invalid', on ? 'true' : 'false'); }
+        ta.addEventListener('input', function(){ if(ta.value.trim() !== '') setInvalid(false); });
+        form.addEventListener('submit', function(e){
+            if(ta.value.trim() !== '') { setInvalid(false); return; }
+            e.preventDefault();
+            setInvalid(true);
+            // Only jump to the comment box once every rating is answered; otherwise the
+            // rating validation already scrolls to the first unanswered question.
+            var names = {}; form.querySelectorAll('input[type="radio"][name^="ratings["]').forEach(function(r){ names[r.name] = true; });
+            var allRated = Object.keys(names).every(function(n){ return form.querySelector('input[name="'+CSS.escape(n)+'"]:checked'); });
+            if(allRated){
+                (card || ta).scrollIntoView({behavior:'smooth', block:'center'});
+                try { ta.focus({preventScroll:true}); } catch(_) { ta.focus(); }
+            }
+        });
+    }
+    ['staffEvalForm','evalForm'].forEach(function(id){ bind(document.getElementById(id)); });
+})();
+</script>
 </body>
         </html>

@@ -311,10 +311,10 @@ $deanOverallAverage = $deanOverallAnswerCount > 0
 // A fresh/empty cycle has no performance rating yet.
 $deanPerformanceLabel = $deanOverallAverage === null
     ? 'No Ratings Yet'
-    : ($deanOverallAverage >= 4 ? 'Excellent' : ($deanOverallAverage >= 3 ? 'Good' : 'Needs Improvement'));
+    : (round($deanOverallAverage, 2) >= 4.5 ? 'Very Satisfied' : (round($deanOverallAverage, 2) >= 3.5 ? 'Satisfied' : (round($deanOverallAverage, 2) >= 2.5 ? 'Neither Satisfied nor Dissatisfied' : (round($deanOverallAverage, 2) >= 1.5 ? 'Dissatisfied' : 'Very Dissatisfied'))));
 $deanPerformanceClass = $deanOverallAverage === null
     ? 'neutral'
-    : ($deanOverallAverage >= 4 ? 'excellent' : ($deanOverallAverage >= 3 ? 'good' : 'needs-work'));
+    : (round($deanOverallAverage, 2) >= 4.5 ? 'very-satisfied' : (round($deanOverallAverage, 2) >= 3.5 ? 'satisfied' : (round($deanOverallAverage, 2) >= 2.5 ? 'neither' : (round($deanOverallAverage, 2) >= 1.5 ? 'dissatisfied' : 'very-dissatisfied'))));
 
 $pendingEvaluationsTotal = $facultyPending + $staffPending + $eaPending;
 
@@ -906,10 +906,6 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
             <h2>Welcome, <?= htmlspecialchars($me['full_name'] ?? 'Dean') ?>!</h2>
             <p><strong>Dean</strong> &nbsp;·&nbsp; <?= $hasCurrentEvaluationPeriod ? htmlspecialchars($settings['academic_year'] ?? '—') . ' — ' . htmlspecialchars($settings['academic_term'] ?? 'Current Term') : 'No Active Period' ?> · <?= HIGHER_ED_LABEL ?></p>
         </div>
-        <div class="dean-score-chip">
-            <div class="dean-score-value"><?= number_format($deanOverallAverage ?? 0, 2) ?></div>
-            <div class="dean-score-label">Your Avg Score</div>
-        </div>
     </section>
 
     <section class="dean-faculty-stats-grid" id="dean-performance-summary" aria-label="Evaluation summary metrics">
@@ -920,7 +916,7 @@ include __DIR__ . '/includes/dean_sidebar.php'; if (is_file(__DIR__ . '/dean_hea
         </div>
         <div class="dean-faculty-stat">
             <div class="dean-faculty-stat-icon"><i class="fa-solid fa-circle-check" aria-hidden="true"></i></div>
-            <div class="dean-faculty-stat-label">Overall Average</div>
+            <div class="dean-faculty-stat-label">Average Rating</div>
             <div class="dean-faculty-stat-value"><?= number_format($deanOverallAverage ?? 0, 2) ?> / 5</div>
         </div>
         <div class="dean-faculty-stat">

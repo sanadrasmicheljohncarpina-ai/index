@@ -205,39 +205,78 @@ function sq_is_weak(string $normalized, string $username): bool {
 }
 
 // Validate the 3 submitted question/answer pairs. Returns [errorOrNull, rowsToStore].
-function sq_validate($qs, $as, string $username): array {
+//
+// $existing: the user's currently stored rows, keyed by slot (sq_load()'s return value).
+// Pass [] for a brand-new setup (e.g. registration), where every slot needs a fresh answer.
+//
+// Partial updates: for a slot whose question is UNCHANGED, a blank answer keeps the stored
+// hash (row flagged 'changed' => false and never rewritten). Only a slot whose question was
+// changed, or where a new answer was typed, needs a (new) answer. A retired question that the
+// user already has stored stays valid as long as that slot is left on the same question.
+function sq_validate($qs, $as, string $username, array $existing = []): array {
     $qs = is_array($qs) ? $qs : [];
     $as = is_array($as) ? $as : [];
-    $all = sq_questions();
-    $rows = []; $seenQ = []; $seenA = [];
+    $active  = sq_questions();
+    $retired = sq_retired_questions();
+    $rows = []; $seenQ = []; $changedCount = 0;
     for ($slot = 1; $slot <= 3; $slot++) {
-        $k   = (string)($qs[$slot] ?? '');
-        $raw = (string)($as[$slot] ?? '');
-        if (!isset($all[$k]))            return ["Please choose security question $slot.", []];
-        if (isset($seenQ[$k]))           return ['Please choose three different security questions.', []];
+        $k    = (string)($qs[$slot] ?? '');
+        $raw  = trim((string)($as[$slot] ?? ''));
+        $prev = $existing[$slot] ?? null;
+        $sameQuestion = $prev && $prev['question_key'] === $k;
+
+        if (!isset($active[$k]) && !($sameQuestion && isset($retired[$k])))
+            return ["Please choose security question $slot.", []];
+        if (isset($seenQ[$k]))
+            return ['Please choose three different security questions.', []];
+        $seenQ[$k] = 1;
+
+        if ($raw === '') {
+            if ($sameQuestion) {
+                // Untouched slot: keep the stored answer exactly as it is.
+                $rows[] = ['slot' => $slot, 'key' => $k, 'hash' => (string)$prev['answer_hash'], 'changed' => false];
+                continue;
+            }
+            return $prev
+                ? ["Please give a new answer for question $slot, since you changed it.", []]
+                : ["Please give an answer for question $slot.", []];
+        }
+
         if (mb_strlen($raw) > 100)       return ["Answer $slot is too long (100 characters max).", []];
         $n = sq_normalize($raw);
         if (mb_strlen($n) < 3)           return ["Answer $slot is too short. Use at least 3 letters or numbers.", []];
         if (sq_is_weak($n, $username))   return ["Answer $slot is too easy to guess. Please be more specific.", []];
-        if (isset($seenA[$n]))           return ['Each answer must be different.', []];
-        $seenQ[$k] = 1; $seenA[$n] = 1;
-        $rows[] = ['slot' => $slot, 'key' => $k, 'hash' => password_hash($n, PASSWORD_DEFAULT)];
+        $rows[] = ['slot' => $slot, 'key' => $k, 'hash' => password_hash($n, PASSWORD_DEFAULT), 'changed' => true];
+        $changedCount++;
     }
+    if ($changedCount === 0) return ['You have not changed anything yet.', []];
     return [null, $rows];
 }
 
-// Replace a student's stored questions. Call inside a transaction.
+// Save a student's questions. Upserts ONLY the slots that changed (rows flagged
+// 'changed' => false are skipped), so editing one question never touches the others.
+// Rows without a 'changed' flag (e.g. from registration) are all written.
+// Call inside a transaction.
 function sq_save(mysqli $db, int $userId, array $rows): void {
-    $del = $db->prepare("DELETE FROM student_security_answers WHERE user_id = ?");
-    $del->bind_param('i', $userId);
-    $del->execute();
-    $del->close();
-    $ins = $db->prepare("INSERT INTO student_security_answers (user_id, slot, question_key, answer_hash) VALUES (?,?,?,?)");
+    $st = $db->prepare("INSERT INTO student_security_answers (user_id, slot, question_key, answer_hash)
+                        VALUES (?,?,?,?)
+                        ON DUPLICATE KEY UPDATE question_key = VALUES(question_key), answer_hash = VALUES(answer_hash)");
     foreach ($rows as $r) {
-        $ins->bind_param('iiss', $userId, $r['slot'], $r['key'], $r['hash']);
-        $ins->execute();
+        if (array_key_exists('changed', $r) && !$r['changed']) continue;
+        $st->bind_param('iiss', $userId, $r['slot'], $r['key'], $r['hash']);
+        $st->execute();
     }
-    $ins->close();
+    $st->close();
+}
+
+// What the modal needs per slot, WITHOUT any answer data: [1 => ['key'=>..., 'label'=>..., 'retired'=>bool, 'has_answer'=>true], ...]
+function sq_ui_state(mysqli $db, int $userId): array {
+    $active = sq_questions(); $all = sq_all_questions(); $out = [];
+    foreach (sq_load($db, $userId) as $slot => $r) {
+        $k = $r['question_key'];
+        $out[$slot] = ['key' => $k, 'label' => $all[$k] ?? $k, 'retired' => !isset($active[$k]), 'has_answer' => $r['answer_hash'] !== ''];
+    }
+    return $out;
 }
 
 // Stored rows for a user, keyed by slot: [1 => ['question_key'=>..., 'answer_hash'=>...], ...]

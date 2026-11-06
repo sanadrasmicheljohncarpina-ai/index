@@ -224,7 +224,7 @@ $principalEvaluationScoreSum = 0.0;
 $principalEvaluationScoreCount = 0;
 $principalSummaryTargetId = (int)($_SESSION['user_id'] ?? 0);
 
-try {
+if ($structureActive && $hasPeriod) try {
     $principalLiveSummaryStmt = $mysqli->prepare("
         SELECT COUNT(*) AS response_count,
                COALESCE(SUM(answer_totals.score_sum), 0) AS score_sum,
@@ -236,6 +236,7 @@ try {
             GROUP BY tracker_id
         ) answer_totals ON answer_totals.tracker_id = et.id
         WHERE et.target_user_id = ?
+          AND et.period_id = ?
           AND et.status IN ('submitted', 'approved')
           AND (
               et.eval_type = 'faculty_peer'
@@ -243,7 +244,7 @@ try {
               OR et.eval_type = 'school_head'
           )
     ");
-    $principalLiveSummaryStmt->bind_param('i', $principalSummaryTargetId);
+    $principalLiveSummaryStmt->bind_param('ii', $principalSummaryTargetId, $period_id_int);
     $principalLiveSummaryStmt->execute();
     $principalLiveSummaryRow = $principalLiveSummaryStmt->get_result()->fetch_assoc() ?: [];
     $principalLiveSummaryStmt->close();
@@ -255,32 +256,15 @@ try {
     // Keep the dashboard available on installations whose evaluation schema is older.
 }
 
-try {
-    $principalArchiveSummaryStmt = $mysqli->prepare("
-        SELECT COUNT(*) AS response_count,
-               COALESCE(SUM(score_sum), 0) AS score_sum,
-               COALESCE(SUM(score_count), 0) AS score_count
-        FROM feedback_received_keep
-        WHERE target_user_id = ?
-    ");
-    $principalArchiveSummaryStmt->bind_param('i', $principalSummaryTargetId);
-    $principalArchiveSummaryStmt->execute();
-    $principalArchiveSummaryRow = $principalArchiveSummaryStmt->get_result()->fetch_assoc() ?: [];
-    $principalArchiveSummaryStmt->close();
-
-    $principalEvaluationResponses += (int)($principalArchiveSummaryRow['response_count'] ?? 0);
-    $principalEvaluationScoreSum += (float)($principalArchiveSummaryRow['score_sum'] ?? 0);
-    $principalEvaluationScoreCount += (int)($principalArchiveSummaryRow['score_count'] ?? 0);
-} catch (Throwable $principalArchiveSummaryError) {
-    // The archive table is optional on a fresh deployment.
-}
+// Archived feedback (feedback_received_keep) is intentionally NOT counted here: this card
+// summarises the current evaluation period only. History lives on principal_results.php.
 
 $principalOverallAverage = $principalEvaluationScoreCount > 0
     ? round($principalEvaluationScoreSum / $principalEvaluationScoreCount, 2)
     : null;
 $principalPerformanceLabel = $principalOverallAverage === null
     ? '—'
-    : ($principalOverallAverage >= 4 ? 'Excellent' : ($principalOverallAverage >= 3 ? 'Good' : 'Needs Improvement'));
+    : (round($principalOverallAverage, 2) >= 4.5 ? 'Very Satisfied' : (round($principalOverallAverage, 2) >= 3.5 ? 'Satisfied' : (round($principalOverallAverage, 2) >= 2.5 ? 'Neither Satisfied nor Dissatisfied' : (round($principalOverallAverage, 2) >= 1.5 ? 'Dissatisfied' : 'Very Dissatisfied'))));
 
 $photo_src = !empty($me['photo']) ? '../image/' . $me['photo'] : '../image/pbi_logo';
 

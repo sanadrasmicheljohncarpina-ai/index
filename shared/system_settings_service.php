@@ -231,6 +231,32 @@ function ss_period_columns(mysqli $mysqli): array {
 }
 
 /**
+ * Opening/closing TIME of each schedule. evaluation_periods only has DATE columns, so the
+ * times are kept in two nullable DATETIME columns. Created once if missing; if the database
+ * user may not ALTER tables this silently does nothing and the page just shows dates.
+ */
+function ss_ensure_period_time_columns(mysqli $mysqli): bool {
+    static $done = null;
+    if ($done !== null) return $done;
+    $have = [];
+    $res = @$mysqli->query("SHOW COLUMNS FROM evaluation_periods");
+    if ($res) {
+        while ($r = $res->fetch_assoc()) $have[strtolower($r['Field'])] = true;
+        $res->free();
+    }
+    foreach (['eval_start_at', 'eval_end_at'] as $c) {
+        if (!isset($have[$c])) @$mysqli->query("ALTER TABLE evaluation_periods ADD COLUMN `$c` DATETIME DEFAULT NULL");
+    }
+    $have = [];
+    $res = @$mysqli->query("SHOW COLUMNS FROM evaluation_periods");
+    if ($res) {
+        while ($r = $res->fetch_assoc()) $have[strtolower($r['Field'])] = true;
+        $res->free();
+    }
+    return $done = (isset($have['eval_start_at']) && isset($have['eval_end_at']));
+}
+
+/**
  * Keep the selected academic period synchronized with the configured year /
  * term and schedule dates.  is_active identifies the current period; it is
  * not used as the submission-open flag.
@@ -302,6 +328,18 @@ function ss_sync_evaluation_period(mysqli $mysqli, array $sys, bool $newRoundIfA
             $startDate = $start->format('Y-m-d');
             $endDate = $end->format('Y-m-d');
             $stmt->bind_param('sssi', $startDate, $endDate, $label, $periodId);
+            $stmt->execute();
+            $stmt->close();
+        }
+    }
+
+    // Save the full opening/closing date AND time so Previous schedules can show them.
+    if ($periodId > 0 && $start && $end && ss_ensure_period_time_columns($mysqli)) {
+        $stmt = @$mysqli->prepare("UPDATE evaluation_periods SET eval_start_at=?, eval_end_at=? WHERE id=?");
+        if ($stmt) {
+            $startAt = $start->format('Y-m-d H:i:s');
+            $endAt = $end->format('Y-m-d H:i:s');
+            $stmt->bind_param('ssi', $startAt, $endAt, $periodId);
             $stmt->execute();
             $stmt->close();
         }
