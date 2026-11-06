@@ -16,6 +16,14 @@ if (empty($_SESSION['user_id'])) {
 
 mysqli_report(MYSQLI_REPORT_OFF);
 
+// Embedded mode: this page is shown inside System & Period > Schedule history.
+// Only the archived schedules are shown; the archive picker appears only when the
+// "Create new evaluation schedule" step sends the admin here to archive the finished round.
+$embed = isset($_GET['embed']);
+$embedView = (($_GET['embed'] ?? '') === 'previous') ? 'previous' : 'history';   // previous = not yet archived, history = archived
+$showPicker  = !$embed || $embedView === 'previous';
+$showHistory = !$embed || $embedView === 'history';
+
 // ── CSRF protection ────────────────────────────────────────────────────────
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -115,6 +123,12 @@ $_SESSION['archive_schema_v1'] = true;
 // Rows are tied to the archive: they are removed only when that archive is restored back to
 // the live tables (the live rows then serve the Dean/Principal pages again). Deleting or purging an
 // archive does NOT remove them.
+// NOTE: the Executive Assistant is deliberately left OUT of this keep-copy. On the EA's
+// Evaluation Received page (ea_results.php), an archived term's history and its "Evaluation Term"
+// dropdown entry should both disappear entirely the moment it is archived, and reappear only when
+// that archive is restored (live evaluation_tracker rows come back). Populating
+// feedback_received_keep for the EA would make the archived term linger (flagged "Archived")
+// instead of disappearing, which is the opposite of what ea_results.php is meant to do.
 // Uses its own session flag so sessions that already ran the v1 setup still create it.
 if (empty($_SESSION['archive_schema_keep_v1'])) {
     $keepOk = $mysqli->query("CREATE TABLE IF NOT EXISTS feedback_received_keep (
@@ -149,6 +163,7 @@ if (empty($_SESSION['archive_schema_keep_v1'])) {
  *   Dean      -> student/school_head OR ea
  *   Principal -> faculty_peer (Faculty/Staff -> Principal) OR student/school_head OR school_head
  * The rows are identity-free: no evaluator id/name/photo/department is ever copied.
+ * The Executive Assistant is intentionally excluded — see the note above this function.
  */
 function keep_received_feedback(mysqli $db, int $archiveId, array $period): int {
     $periodId = (int)$period['id'];
@@ -240,6 +255,11 @@ if (!$allowed) {
 // Permanently erase deleted archives that have sat in Recently Deleted past the retention window.
 // The history row stays as a small audit record; only the archived data is removed.
 if ($allowed) {
+    // The anonymous feedback copies of an archive are erased together with the archive itself.
+    $mysqli->query("DELETE FROM feedback_received_keep WHERE archive_id IN (
+        SELECT archive_id FROM system_archive_deletions
+        WHERE recovered_at IS NULL AND purged_at IS NULL AND payload_json IS NOT NULL
+        AND deleted_at < (NOW() - INTERVAL " . (int)ARCHIVE_TRASH_DAYS . " DAY))");
     $mysqli->query("UPDATE system_archive_deletions SET payload_json=NULL, summary_json=NULL, purged_at=NOW(), purge_reason='expired'
         WHERE recovered_at IS NULL AND purged_at IS NULL AND payload_json IS NOT NULL
         AND deleted_at < (NOW() - INTERVAL " . (int)ARCHIVE_TRASH_DAYS . " DAY)");
@@ -248,6 +268,11 @@ if ($allowed) {
         $txt = $mysqli->real_escape_string("Automatically erased $autoPurged deleted archive" . ($autoPurged === 1 ? '' : 's') . " from Recently Deleted (older than " . (int)ARCHIVE_TRASH_DAYS . " days)");
         $mysqli->query("INSERT INTO activity_log (actor_name, actor_type, action_text, icon, color) VALUES ('System','admin','$txt','fa-trash-can','#D6455D')");
     }
+    // Deletion log lines go too once 30 days have passed since the deletion. Only lines whose
+    // data is already gone (erased, expired or restored) are removed, never one that still holds data.
+    $mysqli->query("DELETE FROM system_archive_deletions
+        WHERE payload_json IS NULL
+        AND deleted_at < (NOW() - INTERVAL " . (int)ARCHIVE_TRASH_DAYS . " DAY)");
 }
 
 function e($v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
@@ -262,6 +287,34 @@ function eval_date_range($start, $end): string {
     return date('Y', $ts) === date('Y', $te)
         ? date('M j', $ts) . ' – ' . date('M j, Y', $te)
         : date('M j, Y', $ts) . ' – ' . date('M j, Y', $te);
+}
+// Date AND time of an evaluation schedule, e.g. "Nov 1, 2026 · 8:00 AM – 5:00 PM"
+// or "Nov 1, 2026, 8:00 AM – Nov 3, 2026, 5:00 PM". Schedules saved before the time columns
+// existed only have dates, so they fall back to date-only (both values at 00:00:00).
+function eval_schedule_when($start, $end): string {
+    $ts = $start ? strtotime((string)$start) : false;
+    $te = $end ? strtotime((string)$end) : false;
+    if (!$ts && !$te) return '';
+    $hasTime = ($ts && date('H:i:s', $ts) !== '00:00:00') || ($te && date('H:i:s', $te) !== '00:00:00');
+    if (!$hasTime) return eval_date_range($start, $end);
+    if ($ts && !$te) return date('M j, Y · g:i A', $ts);
+    if (!$ts && $te) return date('M j, Y · g:i A', $te);
+    if (date('Y-m-d', $ts) === date('Y-m-d', $te)) {
+        return date('M j, Y', $ts) . ' · ' . date('g:i A', $ts) . ' – ' . date('g:i A', $te);
+    }
+    return date('M j, Y, g:i A', $ts) . ' – ' . date('M j, Y, g:i A', $te);
+}
+// A period counts as a real evaluation schedule (one the EA created) when it has a term name
+// and a valid opening and closing date/time. Bare placeholder rows (no term or no dates and no
+// evaluations) are left out. A period that holds live evaluations, or one the Create-schedule
+// step asked to archive, is always kept so it can never get stuck un-archivable.
+function is_ea_schedule(array $p, array $forceIds = []): bool {
+    if (in_array((int)$p['id'], $forceIds, true)) return true;
+    if ((int)($p['live_count'] ?? 0) > 0) return true;
+    if (trim((string)($p['semester'] ?? '')) === '' || trim((string)($p['school_year'] ?? '')) === '') return false;
+    $ts = !empty($p['date_start']) ? strtotime((string)$p['date_start']) : false;
+    $te = !empty($p['date_end'])   ? strtotime((string)$p['date_end'])   : false;
+    return $ts && $te && $te >= $ts;
 }
 function json_rows(mysqli_result|false $res): array {
     $rows = [];
@@ -577,10 +630,10 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     );
                     $liveCount = $live ? (int)$live->fetch_assoc()['c'] : 0;
 
-                    if ($liveCount > 0) {
-                        $restoreErrors[] = "Archive #$archiveId was skipped because {$archive['school_year']} already contains live evaluation records.";
-                        continue;
-                    }
+                    // Live rows already under this same period (e.g. evaluations saved after it was
+                    // archived) are kept. The archive is merged in beside them: a row whose id is
+                    // already live is left as it is and is not overwritten.
+                    $existingLive = $liveCount;
 
                     $order = [
                         'evaluation_tracker',
@@ -595,10 +648,22 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         'notifications',
                     ];
 
+                    // Rows whose user (or other parent row) no longer exists cannot be put back.
+                    // They are skipped, and so is anything that hangs off a skipped evaluation.
+                    $skippedTrackerIds = [];
+                    $skippedCount = 0;
+                    $dupCount = 0;
+
                     foreach ($order as $table) {
                         $rows = $payload[$table] ?? [];
                         foreach ($rows as $row) {
                             if (!$row) continue;
+
+                            if ($table !== 'evaluation_tracker' && isset($row['tracker_id'])
+                                && isset($skippedTrackerIds[(int)$row['tracker_id']])) {
+                                $skippedCount++;
+                                continue;
+                            }
 
                             $columns = array_keys($row);
                             $quotedCols = '`' . implode('`,`', array_map(
@@ -626,8 +691,18 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST') {
                             call_user_func_array([$stmt, 'bind_param'], $bind);
 
                             if (!$stmt->execute()) {
+                                $errno = $stmt->errno;
                                 $err = $stmt->error;
                                 $stmt->close();
+                                // 1452 = foreign key parent missing (e.g. the user was deleted).
+                                // A failed single INSERT does not undo the transaction, so carry on.
+                                if ($errno === 1452 || $errno === 1062) {
+                                    if ($errno === 1062) $dupCount++; else $skippedCount++;
+                                    if ($table === 'evaluation_tracker' && isset($row['id'])) {
+                                        $skippedTrackerIds[(int)$row['id']] = true;
+                                    }
+                                    continue;
+                                }
                                 throw new Exception("Restore failed for archive #$archiveId in $table: $err");
                             }
                             if ($stmt->affected_rows !== 1) {
@@ -684,6 +759,16 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST') {
                          VALUES ('$actor','admin','$actionText','fa-box-open','#0F9F6E')"
                     )) {
                         throw new Exception('Could not write the restore audit log: ' . $mysqli->error);
+                    }
+
+                    if ($existingLive > 0 || $dupCount > 0) {
+                        $restoreErrors[] = "Note: Archive #$archiveId: $existingLive live record" . ($existingLive === 1 ? '' : 's')
+                            . " already existed for this period and " . ($existingLive === 1 ? 'was' : 'were') . " kept"
+                            . ($dupCount > 0 ? "; $dupCount archived row" . ($dupCount === 1 ? '' : 's') . " already existed and " . ($dupCount === 1 ? 'was' : 'were') . " not duplicated." : ".");
+                    }
+                    if ($skippedCount > 0) {
+                        $restoreErrors[] = "Note: Archive #$archiveId: $skippedCount record" . ($skippedCount === 1 ? ' was' : 's were')
+                            . " not restored because the user it belongs to no longer exists.";
                     }
 
                     $restored++;
@@ -808,6 +893,11 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $actor = $mysqli->real_escape_string($byName);
         if ($action === 'purge') {
             $histId = (int)($_POST['history_id'] ?? 0);
+            // Erase the kept anonymous feedback copies together with the archive.
+            $kd = $mysqli->prepare("DELETE FROM feedback_received_keep WHERE archive_id IN (SELECT archive_id FROM system_archive_deletions WHERE id=? AND recovered_at IS NULL AND purged_at IS NULL AND payload_json IS NOT NULL)");
+            $kd->bind_param('i', $histId);
+            $kd->execute();
+            $kd->close();
             $stmt = $mysqli->prepare("UPDATE system_archive_deletions SET payload_json=NULL, summary_json=NULL, purged_at=NOW(), purge_reason='manual', purged_by_name=? WHERE id=? AND recovered_at IS NULL AND purged_at IS NULL AND payload_json IS NOT NULL");
             $stmt->bind_param('si', $byName, $histId);
             $stmt->execute();
@@ -822,6 +912,7 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $flashType = 'err';
             }
         } else {
+            $mysqli->query("DELETE FROM feedback_received_keep WHERE archive_id IN (SELECT archive_id FROM system_archive_deletions WHERE recovered_at IS NULL AND purged_at IS NULL AND payload_json IS NOT NULL)");
             $stmt = $mysqli->prepare("UPDATE system_archive_deletions SET payload_json=NULL, summary_json=NULL, purged_at=NOW(), purge_reason='manual', purged_by_name=? WHERE recovered_at IS NULL AND purged_at IS NULL AND payload_json IS NOT NULL");
             $stmt->bind_param('s', $byName);
             $stmt->execute();
@@ -891,7 +982,7 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST' && !headers_sent()) {
     @session_start();                       // re-open only long enough to store the message
     $_SESSION['sa_flash'] = ['msg' => (string)$flash, 'type' => (string)$flashType];
     session_write_close();
-    header('Location: system_archive.php', true, 303);
+    header('Location: system_archive.php' . ($embed ? '?embed=' . $embedView : ''), true, 303);
     exit;
 }
 
@@ -916,17 +1007,30 @@ $activePeriod = null;
 if ($allowed) {
 // List EVERY evaluation period that is not already archived (even ones with 0 live
 // evaluations so far), so any specific period can be picked and archived.
+// Full opening/closing date AND time per period (columns are added automatically if missing).
+$hasTimeCols = false;
+$have = [];
+if ($rc = $mysqli->query("SHOW COLUMNS FROM evaluation_periods")) { while ($c = $rc->fetch_assoc()) $have[strtolower($c['Field'])] = true; }
+foreach (['eval_start_at', 'eval_end_at'] as $col) {
+    if (!isset($have[$col])) $mysqli->query("ALTER TABLE evaluation_periods ADD COLUMN `$col` DATETIME DEFAULT NULL");
+}
+$have = [];
+if ($rc = $mysqli->query("SHOW COLUMNS FROM evaluation_periods")) { while ($c = $rc->fetch_assoc()) $have[strtolower($c['Field'])] = true; }
+$hasTimeCols = isset($have['eval_start_at'], $have['eval_end_at']);
+$timeSel = $hasTimeCols ? ', ep.eval_start_at, ep.eval_end_at' : ', NULL AS eval_start_at, NULL AS eval_end_at';
+$timeGrp = $hasTimeCols ? ', ep.eval_start_at, ep.eval_end_at' : '';
 $res = $mysqli->query("
     SELECT ep.id, ep.period_label, ep.semester, ep.school_year, ep.is_active,
-           ep.date_start, ep.date_end, COUNT(et.id) AS live_count
+           ep.date_start, ep.date_end{$timeSel}, COUNT(et.id) AS live_count
     FROM evaluation_periods ep
     LEFT JOIN evaluation_tracker et ON et.period_id = ep.id
     LEFT JOIN system_archives sa ON sa.period_id = ep.id AND sa.status = 'archived'
     WHERE sa.id IS NULL
-    GROUP BY ep.id, ep.period_label, ep.semester, ep.school_year, ep.is_active, ep.date_start, ep.date_end
+    GROUP BY ep.id, ep.period_label, ep.semester, ep.school_year, ep.is_active, ep.date_start, ep.date_end{$timeGrp}
     ORDER BY ep.school_year DESC, FIELD(ep.semester,'1st Semester','2nd Semester','Summer','School Year'), ep.id DESC
 ");
-if ($res) while ($r = $res->fetch_assoc()) $periods[] = $r;
+$forceIds = array_values(array_filter(array_map('intval', explode(',', (string)($_GET['preselect'] ?? '')))));
+if ($res) while ($r = $res->fetch_assoc()) { if (is_ea_schedule($r, $forceIds)) $periods[] = $r; }
 $archives = [];
 // Only archives that are currently archived are listed. A restored archive drops off this list
     // and reappears only when its period is archived again (that flips the same row back to 'archived').
@@ -1069,6 +1173,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
 .sa-archive .actions .btn.primary{padding:13px 22px;font-size:14px;border-radius:12px}
 .sa-archive .warn{margin-top:14px}
 </style>
+<?php if ($embed): ?><style>body{background:transparent}.wrap{max-width:none;padding:4px 2px 24px}.back{display:none}</style><?php endif; ?>
 </head>
 <body class="feature-compact ux-nested">
 <div class="wrap">
@@ -1078,7 +1183,7 @@ html::-webkit-scrollbar-button, body::-webkit-scrollbar-button,
 <?php if ($flash): ?><div class="notice" style="border-color:<?= $flashType==='ok'?'#BDE9D4':'#F1B7C0' ?>;background:<?= $flashType==='ok'?'#EAF9F2':'#FFF0F2' ?>;color:<?= $flashType==='ok'?'#08734F':'#A62A42' ?>;"><i class="fa-solid <?= $flashType==='ok'?'fa-circle-check':'fa-circle-exclamation' ?>"></i><span><?= e($flash) ?></span></div><?php endif; ?>
 <?php $sa_live_total = array_sum(array_map(fn($p) => (int)$p['live_count'], $periods));
 $sa_live_periods = count(array_filter($periods, fn($p) => (int)$p['live_count'] > 0)); ?>
-<section class="sa-hero <?= $sa_live_total > 0 ? 'attn' : 'clear' ?>">
+<section class="sa-hero <?= $sa_live_total > 0 ? 'attn' : 'clear' ?>"<?= $embed ? ' hidden style="display:none"' : '' ?>>
   <div class="sa-hero-main">
     <span class="sa-hero-icon"><i class="fa-solid <?= $sa_live_total > 0 ? 'fa-box-archive' : 'fa-circle-check' ?>"></i></span>
     <div>
@@ -1094,18 +1199,13 @@ $sa_live_periods = count(array_filter($periods, fn($p) => (int)$p['live_count'] 
   </div>
 </section>
 
-<div class="card sa-archive">
-<h2>Archive a finished evaluation</h2>
-<div class="sub">Save a finished round to Archived Records and clear it from the live dashboards, so the next round starts fresh.</div>
-<div class="sa-flow">
-  <div><i class="fa-solid fa-box-archive"></i><b>Saved</b><span>Submissions and results are kept in Archived Records.</span></div>
-  <div><i class="fa-solid fa-broom"></i><b>Cleared</b><span>Live dashboards start empty for the next round.</span></div>
-  <div><i class="fa-solid fa-rotate-left"></i><b>Restorable</b><span>Bring it back any time from Archived Records.</span></div>
-</div>
-<div class="sa-step-head"><span class="sa-num">1</span><div><h3>Choose what to archive</h3><p>Tick each finished period. Use &ldquo;Select year&rdquo; to pick a whole school year.</p></div></div>
+<div class="card sa-archive"<?= $showPicker ? '' : ' hidden style="display:none"' ?>>
+<h2><?= $embed ? '' : 'Archive a finished evaluation' ?></h2>
+<div class="sa-step-head"><span class="sa-num">1</span><div><h3>Choose what to archive</h3>
+</div></div>
 <?php $byYear = []; foreach ($periods as $p) $byYear[$p['school_year']][] = $p;
 $preselectIds = array_values(array_filter(array_map('intval', explode(',', (string)($_GET['preselect'] ?? ''))))); ?>
-<?php if ($preselectIds): ?><div class="pick-summary ready" style="margin:0 0 12px"><i class="fa-solid fa-circle-info"></i> Opened from <b>Create new evaluation schedule</b>. The current evaluation is already selected: archive it, then go back to System &amp; Period to create the new schedule.</div><?php endif; ?>
+<?php if ($preselectIds): ?><div class="pick-summary ready" style="margin:0 0 12px"><i class="fa-solid fa-circle-info"></i> Opened from <b>Create new evaluation schedule</b>. The current evaluation is already selected: archive it, then switch back to <b>Current schedule</b> to create the new one.</div><?php endif; ?>
 <?php if (!$periods): ?>
 <div class="pick-empty"><i class="fa-regular fa-folder-open"></i><div><strong>No evaluation periods to archive</strong><br>Periods you create in System &amp; Period will appear here. Already-archived periods are listed under Archived Records.</div></div>
 <?php else: ?>
@@ -1113,11 +1213,11 @@ $preselectIds = array_values(array_filter(array_map('intval', explode(',', (stri
 <div class="pick-list" id="periodList">
 <?php foreach ($byYear as $yr => $list): ?>
 <div class="pick-year"><span><i class="fa-regular fa-calendar-days"></i> Academic Year <?= e($yr) ?></span><button type="button" class="pick-year-btn" data-year="<?= e($yr) ?>">Select year</button></div>
-<?php foreach ($list as $p): $live = (int)$p['live_count']; $rng = eval_date_range($p['date_start'] ?? null, $p['date_end'] ?? null); $isAct = (int)$p['is_active'] === 1; ?>
+<?php foreach ($list as $p): $live = (int)$p['live_count']; $rng = eval_schedule_when(!empty($p['eval_start_at']) ? $p['eval_start_at'] : ($p['date_start'] ?? null), !empty($p['eval_end_at']) ? $p['eval_end_at'] : ($p['date_end'] ?? null)); $termName = trim((string)$p['semester']) !== '' ? $p['semester'] : $p['period_label']; $isAct = (int)$p['is_active'] === 1; ?>
 <label class="pick-card<?= $live === 0 ? ' is-empty' : '' ?>">
 <input type="checkbox" class="period-check" value="<?= (int)$p['id'] ?>" data-label="<?= e($p['school_year'] . ' — ' . $p['semester']) ?>" data-live="<?= $live ?>" data-active="<?= $isAct ? 1 : 0 ?>" data-year="<?= e($p['school_year']) ?>" <?= ((!empty($viewArchive) && (int)$viewArchive['period_id']===(int)$p['id']) || in_array((int)$p['id'], $preselectIds, true))?'checked':'' ?>>
-<span class="pick-main"><span class="pick-title"><strong><?= e($p['semester']) ?></strong><?php if ($isAct): ?><span class="chip chip-active">Active</span><?php endif; ?><?php if ($live === 0): ?><span class="chip chip-empty">No evaluations yet</span><?php endif; ?></span>
-<small><?php if ($rng !== ''): ?><i class="fa-regular fa-calendar"></i> <?= e($rng) ?><?php else: ?>No dates set<?php endif; ?><?php if ($p['period_label'] !== $p['semester']): ?> · <?= e($p['period_label']) ?><?php endif; ?></small></span>
+<span class="pick-main"><span class="pick-title"><strong><?= e($termName) ?></strong><?php if ($isAct): ?><span class="chip chip-active">Active</span><?php endif; ?><?php if ($live === 0): ?><span class="chip chip-empty">No evaluations yet</span><?php endif; ?></span>
+<small><?php if ($rng !== ''): ?><i class="fa-regular fa-calendar"></i> <?= e($rng) ?><?php else: ?>No dates set<?php endif; ?></small></span>
 <span class="pick-count"><b><?= number_format($live) ?></b><small>evaluation<?= $live === 1 ? '' : 's' ?></small></span>
 </label>
 <?php endforeach; endforeach; ?>
@@ -1127,19 +1227,20 @@ $preselectIds = array_values(array_filter(array_map('intval', explode(',', (stri
 <div class="pick-warn" id="activeWarn" hidden></div>
 <?php endif; ?>
 <div class="actions"<?= $periods ? '' : ' style="display:none"' ?>><form method="POST" id="archiveForm" onsubmit="return confirmArchive(this)"><?= csrf_field() ?><input type="hidden" name="action" value="archive"><div id="archivePeriodInputs"></div><button class="btn primary" type="submit" id="archiveBtn" disabled><i class="fa-solid fa-box-archive"></i> <span id="archiveBtnText">Archive selected</span></button></form></div>
-<?php if ($periods): ?><div class="warn"><i class="fa-solid fa-triangle-exclamation"></i><span><strong>Heads up:</strong> the live dashboards and results for the selected period(s) are cleared once archived. Everything is saved first and can be restored. Questions, users, assignments, permissions, settings and system logs are not touched.</span></div><?php endif; ?>
 </div>
 
+<div<?= $showHistory ? '' : ' hidden style="display:none"' ?>>
 <?php if ($viewArchive): ?>
 <div class="card detail"><h2>Archived Evaluation Data — <?= e($viewArchive['school_year']) ?></h2><div class="sub">Archive #<?= (int)$viewArchive['id'] ?> · Archived <?= e($viewArchive['archived_at']) ?> by <?= e($viewArchive['archived_by_name']) ?> · Status: <span class="status <?= e($viewArchive['status']) ?>"><?= ucfirst(e($viewArchive['status'])) ?></span></div>
 <div class="detail-grid" style="margin-top:12px">
 <?php foreach (($viewArchive['summary']??[]) as $k=>$v): ?><div class="mini"><span><?= e(ucwords(str_replace('_',' ',$k))) ?></span><b><?= number_format((int)$v) ?></b></div><?php endforeach; ?>
 </div>
-<div class="actions"><a class="btn" href="system_archive.php"><i class="fa-solid fa-arrow-left"></i> Back to Archive</a><?php if ($viewArchive['status']==='archived'): ?><form method="POST" onsubmit="return confirmRestore(this)"><?= csrf_field() ?><input type="hidden" name="action" value="restore"><input type="hidden" name="archive_id" value="<?= (int)$viewArchive['id'] ?>"><button class="btn danger" type="submit"><i class="fa-solid fa-box-open"></i> Restore This Archive</button></form><?php endif; ?><form method="POST" onsubmit="return confirmDelete(this, <?= e(json_encode($viewArchive['school_year'] . ' — ' . $viewArchive['period_label'])) ?>, <?= e(json_encode($viewArchive['status'])) ?>)"><?= csrf_field() ?><input type="hidden" name="action" value="delete"><input type="hidden" name="archive_id" value="<?= (int)$viewArchive['id'] ?>"><button class="btn danger" type="submit"><i class="fa-solid fa-trash"></i> Delete This Archive</button></form></div>
+<div class="actions"><a class="btn" href="system_archive.php<?= $embed ? '?embed=' . $embedView : '' ?>"><i class="fa-solid fa-arrow-left"></i> Back to Archive</a><?php if ($viewArchive['status']==='archived'): ?><form method="POST" onsubmit="return confirmRestore(this)"><?= csrf_field() ?><input type="hidden" name="action" value="restore"><input type="hidden" name="archive_id" value="<?= (int)$viewArchive['id'] ?>"><button class="btn danger" type="submit"><i class="fa-solid fa-box-open"></i> Restore This Archive</button></form><?php endif; ?><form method="POST" onsubmit="return confirmDelete(this, <?= e(json_encode($viewArchive['school_year'] . ' — ' . $viewArchive['period_label'])) ?>, <?= e(json_encode($viewArchive['status'])) ?>)"><?= csrf_field() ?><input type="hidden" name="action" value="delete"><input type="hidden" name="archive_id" value="<?= (int)$viewArchive['id'] ?>"><button class="btn danger" type="submit"><i class="fa-solid fa-trash"></i> Delete This Archive</button></form></div>
 </div>
 <?php endif; ?>
 
-<div class="card" style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:end;gap:12px"><div><h2>Archived Records</h2><div class="sub">Finished evaluations are saved here. Tick one or more to restore them to the live system, or open one to review it.</div></div><div class="bulk-actions"><span class="selection-count" id="selectionCount">0 selected</span><form method="POST" id="bulkRestoreForm" onsubmit="return confirmBulkRestore(this)"><?= csrf_field() ?><input type="hidden" name="action" value="restore_selected"><div id="bulkRestoreInputs"></div><button class="btn primary" type="submit" id="bulkRestoreBtn" disabled><i class="fa-solid fa-box-open"></i> Restore Selected</button></form><div class="sub" id="archiveCountLabel" data-total="<?= count($archives) ?>"><?= count($archives) ?> archive<?= count($archives)===1?'':'s' ?></div></div></div>
+<div class="card" style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:end;gap:12px"><div><h2>Archived Records</h2></div>
+<div class="bulk-actions"><span class="selection-count" id="selectionCount">0 selected</span><form method="POST" id="bulkRestoreForm" onsubmit="return confirmBulkRestore(this)"><?= csrf_field() ?><input type="hidden" name="action" value="restore_selected"><div id="bulkRestoreInputs"></div><button class="btn primary" type="submit" id="bulkRestoreBtn" disabled><i class="fa-solid fa-box-open"></i> Restore Selected</button></form><div class="sub" id="archiveCountLabel" data-total="<?= count($archives) ?>"><?= count($archives) ?> archive<?= count($archives)===1?'':'s' ?></div></div></div>
 <?php if ($archives):
     $archTerms = array_values(array_unique(array_map(fn($a) => (string)$a['period_label'], $archives)));
     $archYears = array_values(array_unique(array_map(fn($a) => (string)$a['school_year'], $archives)));
@@ -1167,7 +1268,7 @@ $preselectIds = array_values(array_filter(array_map('intval', explode(',', (stri
 <tr id="archiveNoMatch" style="display:none"><td colspan="7" class="empty">No archived records match this filter.</td></tr>
 </tbody></table></div></div>
 
-<div class="card" style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:end;gap:12px;flex-wrap:wrap"><div><h2><i class="fa-solid fa-trash-can-arrow-up" style="color:var(--red)"></i> Recently Deleted</h2><div class="sub">Deleted archives stay here for <?= (int)ARCHIVE_TRASH_DAYS ?> days and can be restored. After that they are permanently erased.</div></div><div class="bulk-actions"><span class="selection-count"><?= count($trashItems) ?> item<?= count($trashItems)===1?'':'s' ?></span><?php if ($trashItems): ?><form method="POST" onsubmit="return confirmEmptyTrash(this, <?= count($trashItems) ?>)"><?= csrf_field() ?><input type="hidden" name="action" value="empty_trash"><button class="btn danger" type="submit"><i class="fa-solid fa-trash-can"></i> Empty Recently Deleted</button></form><?php endif; ?></div></div>
+<div class="card" style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:end;gap:12px;flex-wrap:wrap"><div><h2><i class="fa-solid fa-trash-can-arrow-up" style="color:var(--red)"></i> Recently Deleted</h2></div><div class="bulk-actions"><span class="selection-count"><?= count($trashItems) ?> item<?= count($trashItems)===1?'':'s' ?></span><?php if ($trashItems): ?><form method="POST" onsubmit="return confirmEmptyTrash(this, <?= count($trashItems) ?>)"><?= csrf_field() ?><input type="hidden" name="action" value="empty_trash"><button class="btn danger" type="submit"><i class="fa-solid fa-trash-can"></i> Empty Recently Deleted</button></form><?php endif; ?></div></div>
 <div class="archive-table">
 <table><thead><tr><th>Academic Year</th><th>Records</th><th>Deleted By</th><th>Deleted On</th><th>Time Left</th><th>Actions</th></tr></thead><tbody>
 <?php if (!$trashItems): ?><tr><td colspan="6" class="empty">Nothing here. Deleted archives will appear for <?= (int)ARCHIVE_TRASH_DAYS ?> days.</td></tr>
@@ -1182,6 +1283,7 @@ $preselectIds = array_values(array_filter(array_map('intval', explode(',', (stri
 <?php endif; ?>
 </div>
 
+</div><!-- /history wrap -->
 <?php endif; ?>
 </div>
 <script>

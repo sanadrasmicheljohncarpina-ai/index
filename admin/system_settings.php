@@ -109,23 +109,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
     if ($pe <= $ps)   ss_json(['ok' => false, 'message' => 'The closing time must be after the opening time.'], 422);
     if ($pe->getTimestamp() <= time()) ss_json(['ok' => false, 'message' => 'The closing time must be in the future.'], 422);
 
-    // Re-using a year/term that is already archived would attach new evaluations to an archived period.
-    if (ss_table_exists($mysqli, 'system_archives')) {
-        $dup = $mysqli->prepare("SELECT ep.id FROM evaluation_periods ep
-            JOIN system_archives sa ON sa.period_id = ep.id AND sa.status = 'archived'
-            WHERE ep.school_year = ? AND ep.semester = ? LIMIT 1");
-        if ($dup) {
-            $dup->bind_param('ss', $acad_year, $acad_term);
-            $dup->execute();
-            $dup->store_result();
-            $exists = $dup->num_rows > 0;
-            $dup->close();
-            if ($exists) {
-                ss_json(['ok' => false, 'message' => $acad_year . ' · ' . $acad_term . ' is already archived. Choose a different term or year, or restore it from System Archive.'], 422);
-            }
-        }
-    }
-
     try {
     $new = ['acad_year' => $acad_year, 'acad_term' => $acad_term,
             'eval_start' => $eval_start, 'eval_end' => $eval_end,
@@ -135,7 +118,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
         $sv = (string)$v; $stmt->bind_param('ss', $k, $sv); $stmt->execute(); $stmt->close();
     }
     $sys = ss_raw($mysqli);
-    ss_sync_evaluation_period($mysqli, $sys);
+    // true = start a fresh period even if this year/term was archived before.
+    ss_sync_evaluation_period($mysqli, $sys, true);
     ss_notify_faculty_staff($mysqli, 'evaluation_schedule',
         'The Executive Assistant created a new evaluation schedule for ' . $acad_year . ' · ' . $acad_term . ': '
         . ss_fmt_manila($eval_start) . ' – ' . ss_fmt_manila($eval_end) . '.');
@@ -143,6 +127,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
     } catch (Throwable $e) {
         error_log('create_new_schedule failed: ' . $e->getMessage());
         ss_json(['ok' => false, 'message' => 'The schedule could not be saved: ' . $e->getMessage()], 500);
+    }
+}
+
+// ── Force open / Force closed / Follow the schedule: applied immediately ──
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'set_control_mode') {
+    $mode = (string)($_POST['control_mode'] ?? '');
+    if (!in_array($mode, ['schedule', 'open', 'closed'], true)) {
+        ss_json(['ok' => false, 'message' => 'Unknown setting.'], 422);
+    }
+    try {
+        $before = (string)($sys['control_mode'] ?? 'schedule');
+        $new = ['control_mode' => $mode, 'auto_schedule' => 1];
+        foreach ($new as $k => $v) {
+            $stmt = $mysqli->prepare("INSERT INTO system_settings(setting_key,setting_value) VALUES(?,?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)");
+            $sv = (string)$v; $stmt->bind_param('ss', $k, $sv); $stmt->execute(); $stmt->close();
+        }
+        // Students can only submit while an evaluation period is active, so make sure one is.
+        $sys = ss_raw($mysqli);
+        ss_sync_evaluation_period($mysqli, $sys);
+        $state = ss_schedule_state($sys);            // the same decision every page uses
+        $hasActive = false;
+        if ($r = $mysqli->query("SELECT 1 FROM evaluation_periods WHERE is_active = 1 LIMIT 1")) { $hasActive = $r->num_rows > 0; $r->free(); }
+
+        if ($mode !== $before) {
+            $note = [
+                'open'     => 'The Executive Assistant forced the evaluation open. Everyone eligible can submit now.',
+                'closed'   => 'The Executive Assistant forced the evaluation closed. Submissions are blocked for now.',
+                'schedule' => 'The evaluation now follows its schedule again.',
+            ][$mode];
+            ss_notify_faculty_staff($mysqli, 'evaluation_schedule', $note);
+        }
+        $msg = [
+            'open'     => 'Evaluation forced open. Everyone eligible can submit now.',
+            'closed'   => 'Evaluation forced closed. No one can submit.',
+            'schedule' => 'Now following the schedule. Evaluation is currently ' . ($state['open'] ? 'open' : 'closed') . '.',
+        ][$mode];
+        if ($mode === 'open' && !$hasActive) {
+            $msg .= ' There is no active evaluation period yet, so students cannot submit until one is created.';
+        }
+        ss_json(['ok' => true, 'mode' => $mode, 'open' => (bool)$state['open'], 'has_active_period' => $hasActive, 'message' => $msg]);
+    } catch (Throwable $e) {
+        error_log('set_control_mode failed: ' . $e->getMessage());
+        ss_json(['ok' => false, 'message' => 'The setting could not be saved: ' . $e->getMessage()], 500);
     }
 }
 
@@ -216,6 +243,17 @@ function ss_h($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>System & Period Settings</title>
+<script>
+// Apply the saved appearance theme before first paint, so this iframe matches
+// the parent Settings shell instead of flashing white first.
+(function(){
+  try{
+    var t = localStorage.getItem('pbiTheme') || 'light';
+    var resolved = t === 'system' ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : t;
+    document.documentElement.setAttribute('data-theme', resolved);
+  }catch(e){}
+})();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -717,6 +755,8 @@ input.has-warn{border-color:#E2A33B !important}
 .ns-busy{padding:28px 0;text-align:center;color:#67819E;font-size:13.5px}
 .ns-badge{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;margin-bottom:12px}
 .ns-badge.warn{background:#FFF7E6;color:#C77A08}
+.ns-badge.bad{background:#FFF0F2;color:#D6455D}
+.ns-badge.ok{background:#E8F8F1;color:#0A7A55}
 .ns-list{list-style:none;margin:0 0 4px;padding:0;display:grid;gap:8px}
 .ns-list li{padding:10px 12px;border:1px solid #F5D48A;background:#FFFBF0;border-radius:10px;font-size:13px;color:#7A5200}
 .ns-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -747,7 +787,7 @@ input.has-warn{border-color:#E2A33B !important}
 .sched-cell span{font-size:11.5px;color:#67819E;font-weight:600}
 .sched-cell b{font-size:15px;color:#0B1F3A}
 .sched-arrow{color:#9DB6E8;font-size:18px}
-.ss-success{display:flex;align-items:center;gap:14px;margin:0 0 16px;padding:14px 16px;border:1px solid #B9E4D3;border-radius:12px;background:#E8F8F1;color:#0A7A55}
+.ss-success{position:sticky;top:8px;z-index:50;box-shadow:0 8px 22px rgba(15,159,110,.22);display:flex;align-items:center;gap:14px;margin:0 0 16px;padding:14px 16px;border:1px solid #B9E4D3;border-radius:12px;background:#E8F8F1;color:#0A7A55}
 .ss-success[hidden]{display:none}
 .ss-success-icon{flex:0 0 auto;width:30px;height:30px;border-radius:50%;background:#0F9F6E;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px}
 .ss-success-text{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
@@ -905,11 +945,248 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
 <link rel="stylesheet" href="admin_appearance.css">
 <script src="admin_appearance.js"></script>
 <link rel="stylesheet" href="admin_unified_ui.css?v=<?= (int)@filemtime(__DIR__ . '/admin_unified_ui.css') ?>">
+<style id="ss-subtabs-css">
+.ss-subtabs{display:inline-flex;gap:4px;padding:4px;margin:0 0 16px;background:#F1F5FA;border:1px solid #D8E5F4;border-radius:12px}
+.ss-subtab{appearance:none;border:0;background:transparent;color:#49647F;font:600 13px Inter,system-ui,sans-serif;padding:8px 16px;border-radius:9px;cursor:pointer}
+.ss-subtab:hover{color:#102746}
+.ss-subtab.active{background:#fff;color:#C2570C;box-shadow:0 1px 3px rgba(30,82,144,.12)}
+.ss-subtab:focus-visible{outline:3px solid rgba(242,140,40,.35);outline-offset:1px}
+.ss-history-frame{display:block;width:100%;height:calc(100vh - 120px);min-height:420px;border:0;background:transparent}
+</style>
+<style id="ss-dark-mode">
+/* ── DARK MODE — mirrors every light surface/text/border declared above,
+     scoped to html[data-theme="dark"] so it wins on specificity over the
+     plain-selector !important rules without needing source-order games. ── */
+html[data-theme="dark"]{
+  color-scheme: dark;
+  --page-bg:#0b1626; --card-bg:#121f33; --card-border:#22344d;
+  --inner:#16243a; --text-dark:#e7eef8; --text-dim:#8ba0bd;
+  --light:#e7eef8; --muted:#8ba0bd; --dark:#121f33; --mid:#16243a;
+  --border:#22344d; --accent:#3b82f6; --blue:#3b82f6;
+  --gold:#e2a33b; --gold-h:#f0b429; --teal:#22b8cf; --violet:#8b9dff;
+  --danger:#f87171; --success:#34d399;
+  --card-shadow:0 2px 4px rgba(0,0,0,.25),0 6px 16px rgba(0,0,0,.3);
+}
+html[data-theme="dark"]{ background:#0b1626; }
+html[data-theme="dark"] body{ background:#0b1626 !important; color:#e7eef8 !important; }
+html[data-theme="dark"] h1,
+html[data-theme="dark"] h2,
+html[data-theme="dark"] h3,
+html[data-theme="dark"] h4,
+html[data-theme="dark"] h5,
+html[data-theme="dark"] h6{ color:#e7eef8; }
+html[data-theme="dark"] .page-header h1,
+html[data-theme="dark"] .page-title,
+html[data-theme="dark"] .et-title,
+html[data-theme="dark"] .section-title{ color:#e7eef8 !important; }
+html[data-theme="dark"] .page-header p,
+html[data-theme="dark"] .page-sub,
+html[data-theme="dark"] .et-sub,
+html[data-theme="dark"] .et-updated,
+html[data-theme="dark"] .muted,
+html[data-theme="dark"] .hint,
+html[data-theme="dark"] p,
+html[data-theme="dark"] .subtitle,
+html[data-theme="dark"] .description,
+html[data-theme="dark"] .helper,
+html[data-theme="dark"] small{ color:#8ba0bd !important; }
+html[data-theme="dark"] label,
+html[data-theme="dark"] th{ color:#aebfd8 !important; }
+html[data-theme="dark"] td{ color:#e7eef8 !important; }
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea{
+  background:#16243a !important; color:#e7eef8 !important; border-color:#2a3b56 !important;
+}
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder{ color:#6b84a6 !important; }
+html[data-theme="dark"] .table-wrap, html[data-theme="dark"] .content-panel,
+html[data-theme="dark"] .create-panel, html[data-theme="dark"] .period-card,
+html[data-theme="dark"] .stat-card, html[data-theme="dark"] .sector-card,
+html[data-theme="dark"] .person-row, html[data-theme="dark"] .sum-card,
+html[data-theme="dark"] .standing-panel, html[data-theme="dark"] .eval-card,
+html[data-theme="dark"] .eval-banner, html[data-theme="dark"] .info-banner,
+html[data-theme="dark"] .section, html[data-theme="dark"] .shell .section,
+html[data-theme="dark"] .history-card, html[data-theme="dark"] .gl-card,
+html[data-theme="dark"] .amber-card, html[data-theme="dark"] .green-card,
+html[data-theme="dark"] .red-card,
+html[data-theme="dark"] .card, html[data-theme="dark"] .panel,
+html[data-theme="dark"] .table-card, html[data-theme="dark"] .content-card{
+  background:#121f33 !important; border-color:#22344d !important;
+  box-shadow:0 2px 4px rgba(0,0,0,.25),0 6px 16px rgba(0,0,0,.3) !important;
+}
+html[data-theme="dark"] .sector-tabs, html[data-theme="dark"] .eval-switcher,
+html[data-theme="dark"] .tabs, html[data-theme="dark"] .level-tabs,
+html[data-theme="dark"] .status-tabs{
+  background:#121f33 !important; border-color:#22344d !important; box-shadow:0 2px 4px rgba(0,0,0,.25) !important;
+}
+html[data-theme="dark"] .sector-tab, html[data-theme="dark"] .eval-tab,
+html[data-theme="dark"] .tab, html[data-theme="dark"] .level-tab,
+html[data-theme="dark"] .status-tab{ color:#8ba0bd !important; }
+html[data-theme="dark"] .sector-tab:hover, html[data-theme="dark"] .eval-tab:hover,
+html[data-theme="dark"] .tab:hover, html[data-theme="dark"] .level-tab:hover,
+html[data-theme="dark"] .status-tab:hover{ color:#e7eef8 !important; background:#16243a !important; }
+html[data-theme="dark"] thead tr{ background:#16243a !important; }
+html[data-theme="dark"] tbody tr:hover{ background:#16243a !important; }
+html[data-theme="dark"] .btn-cancel, html[data-theme="dark"] .btn-icon,
+html[data-theme="dark"] .btn-back{ background:#16243a !important; color:#e7eef8 !important; border-color:#2a3b56 !important; }
+html[data-theme="dark"] .empty-state, html[data-theme="dark"] .empty-cta{ color:#8ba0bd !important; }
+html[data-theme="dark"] ::-webkit-scrollbar-track{ background:#0b1626; }
+html[data-theme="dark"] ::-webkit-scrollbar-thumb{ background:#2a3b56; border:2px solid #0b1626; }
+html[data-theme="dark"] .maint-banner{ background:rgba(251,191,36,.12) !important; color:#fbbf24 !important; border-color:rgba(251,191,36,.35) !important; }
+html[data-theme="dark"] .control-option, html[data-theme="dark"] .toggle-row{ background:#16243a !important; border-color:#22344d !important; }
+html[data-theme="dark"] a{ color:inherit; }
+html[data-theme="dark"] button, html[data-theme="dark"] .btn{ font-weight:700; }
+html[data-theme="dark"] .btn{ background:#16243a; color:#e7eef8; border-color:#2a3b56; }
+html[data-theme="dark"] .btn:hover{ border-color:#3a4f6f; }
+
+/* status colours stay legible on dark cards */
+html[data-theme="dark"] .stat-value.green{ color:#34d399 !important; }
+html[data-theme="dark"] .stat-value.amber{ color:#e2a33b !important; }
+html[data-theme="dark"] .stat-value.red{ color:#f87171 !important; }
+html[data-theme="dark"] .stat-card.tone-green{ border-left:4px solid #34d399 !important; }
+html[data-theme="dark"] .stat-card.tone-amber{ border-left:4px solid #e2a33b !important; }
+html[data-theme="dark"] .stat-card.tone-red{ border-left:4px solid #f87171 !important; }
+html[data-theme="dark"] .stat-explain{ color:#aebfd8; }
+html[data-theme="dark"] .ss-alert.amber{ background:rgba(226,163,59,.14) !important; border-color:rgba(226,163,59,.4) !important; color:#f0c674 !important; }
+html[data-theme="dark"] .ss-alert.red{ background:rgba(214,69,93,.14) !important; border-color:rgba(214,69,93,.4) !important; color:#f3a3b0 !important; }
+html[data-theme="dark"] .ss-alert button{ background:#121f33 !important; border-color:currentColor !important; color:inherit !important; }
+html[data-theme="dark"] .ss-alert button:hover{ background:rgba(255,255,255,.06) !important; }
+html[data-theme="dark"] .field-note{ color:#8ba0bd; }
+html[data-theme="dark"] .field-note.warn{ color:#e2a33b; }
+html[data-theme="dark"] input.has-warn{ border-color:#e2a33b !important; }
+html[data-theme="dark"] .control-option:hover{ border-color:#3a4f6f !important; }
+html[data-theme="dark"] .control-option.selected{ box-shadow:0 0 0 3px rgba(59,130,246,.2) !important; }
+html[data-theme="dark"] .control-option.selected[data-mode="schedule"]{ background:rgba(59,130,246,.14) !important; border-color:#3b82f6 !important; }
+html[data-theme="dark"] .control-option.selected[data-mode="open"]{ background:rgba(226,163,59,.14) !important; border-color:#e2a33b !important; box-shadow:0 0 0 3px rgba(226,163,59,.22) !important; }
+html[data-theme="dark"] .control-option.selected[data-mode="closed"]{ background:rgba(214,69,93,.14) !important; border-color:#d6455d !important; box-shadow:0 0 0 3px rgba(214,69,93,.2) !important; }
+html[data-theme="dark"] .actions{ background:linear-gradient(to bottom, rgba(11,22,38,0), #0b1626 35%) !important; }
+html[data-theme="dark"] .dirty-note{ color:#8ba0bd; }
+html[data-theme="dark"] .dirty-note::before{ background:#34d399; }
+html[data-theme="dark"] .dirty-note.dirty{ color:#f0c674; }
+html[data-theme="dark"] .dirty-note.dirty::before{ background:#f0b429; box-shadow:0 0 0 3px rgba(240,180,41,.3); }
+html[data-theme="dark"] .btn-primary:disabled{ background:#2c3f63 !important; border-color:#2c3f63 !important; color:#8ba0bd !important; }
+
+/* schedule / notification modal */
+html[data-theme="dark"] .newsched-banner{ border-color:#2a3b56 !important; background:#16243a !important; }
+html[data-theme="dark"] .newsched-copy strong{ color:#e7eef8 !important; }
+html[data-theme="dark"] .newsched-copy span{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ns-overlay{ background:rgba(0,0,0,.65) !important; }
+html[data-theme="dark"] .ns-modal{ background:#121f33 !important; box-shadow:0 24px 60px rgba(0,0,0,.55) !important; }
+html[data-theme="dark"] .ns-modal h3{ color:#e7eef8 !important; }
+html[data-theme="dark"] .ns-text{ color:#aebfd8 !important; }
+html[data-theme="dark"] .ns-note{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ns-busy{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ns-badge.warn{ background:rgba(226,163,59,.16) !important; color:#e2a33b !important; }
+html[data-theme="dark"] .ns-badge.bad{ background:rgba(214,69,93,.16) !important; color:#f87171 !important; }
+html[data-theme="dark"] .ns-badge.ok{ background:rgba(52,211,153,.16) !important; color:#34d399 !important; }
+html[data-theme="dark"] .ns-list li{ border-color:rgba(226,163,59,.4) !important; background:rgba(226,163,59,.1) !important; color:#f0c674 !important; }
+html[data-theme="dark"] .ns-grid input, html[data-theme="dark"] .ns-grid select{
+  border-color:#2a3b56 !important; color:#e7eef8 !important; background:#16243a !important;
+}
+html[data-theme="dark"] .ns-grid input:focus, html[data-theme="dark"] .ns-grid select:focus{ border-color:#3b82f6 !important; }
+html[data-theme="dark"] .ns-q{ border-color:#2a3b56 !important; background:#16243a !important; color:#6fa8ff !important; }
+html[data-theme="dark"] .ns-q:hover{ background:rgba(59,130,246,.16) !important; border-color:#3b82f6 !important; }
+html[data-theme="dark"] .ns-error{ background:rgba(214,69,93,.14) !important; border-color:rgba(214,69,93,.4) !important; color:#f3a3b0 !important; }
+html[data-theme="dark"] .ns-btn{ border-color:#2a3b56 !important; background:#16243a !important; color:#e7eef8 !important; }
+html[data-theme="dark"] .ns-btn:hover{ border-color:#3b82f6 !important; }
+html[data-theme="dark"] .ns-btn.primary{ background:#3b82f6 !important; border-color:#3b82f6 !important; color:#fff !important; }
+html[data-theme="dark"] .ns-btn.primary:hover{ background:#2563eb !important; }
+html[data-theme="dark"] .ns-btn.danger{ background:#d6455d !important; border-color:#d6455d !important; color:#fff !important; }
+html[data-theme="dark"] .ns-btn.danger:hover{ background:#b8364c !important; }
+html[data-theme="dark"] .sched-current{ border-color:#22344d !important; background:#121f33 !important; }
+html[data-theme="dark"] .sched-current-label{ color:#8ba0bd !important; }
+html[data-theme="dark"] .sched-cell span{ color:#8ba0bd !important; }
+html[data-theme="dark"] .sched-cell b{ color:#e7eef8 !important; }
+html[data-theme="dark"] .sched-arrow{ color:#3a4f6f !important; }
+html[data-theme="dark"] .ss-success{ background:rgba(52,211,153,.14) !important; border-color:rgba(52,211,153,.4) !important; color:#6ee7b7 !important; box-shadow:0 8px 22px rgba(0,0,0,.35) !important; }
+html[data-theme="dark"] .ss-success-text strong{ color:#a7f3d0 !important; }
+html[data-theme="dark"] .ss-success-close{ color:#6ee7b7 !important; }
+html[data-theme="dark"] .ss-success-close:hover{ background:rgba(52,211,153,.16) !important; }
+html[data-theme="dark"] .sched-chip.green{ background:rgba(52,211,153,.16) !important; color:#6ee7b7 !important; }
+html[data-theme="dark"] .sched-chip.amber{ background:rgba(226,163,59,.16) !important; color:#f0c674 !important; }
+html[data-theme="dark"] .sched-chip.red{ background:rgba(214,69,93,.16) !important; color:#f3a3b0 !important; }
+html[data-theme="dark"] .sched-chip.gray{ background:#16243a !important; color:#8ba0bd !important; }
+html[data-theme="dark"] .ns-head{ background:#121f33 !important; }
+html[data-theme="dark"] .ns-discard{ border-color:rgba(226,163,59,.4) !important; background:rgba(226,163,59,.1) !important; color:#f0c674 !important; }
+html[data-theme="dark"] .ns-sec-title{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ns-quick-label{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ns-preview{ border-color:#22344d !important; background:#16243a !important; color:#aebfd8 !important; }
+html[data-theme="dark"] .ns-preview b{ color:#e7eef8 !important; }
+html[data-theme="dark"] .ns-preview.good{ background:rgba(52,211,153,.12) !important; border-color:rgba(52,211,153,.4) !important; color:#6ee7b7 !important; }
+html[data-theme="dark"] .ns-preview.good b{ color:#a7f3d0 !important; }
+html[data-theme="dark"] .ns-preview.bad{ background:rgba(214,69,93,.12) !important; border-color:rgba(214,69,93,.4) !important; color:#f3a3b0 !important; }
+html[data-theme="dark"] .ns-preview.bad b{ color:#f3a3b0 !important; }
+
+/* status hero + numbered cards (ss-v2) */
+html[data-theme="dark"] .ss2-hero{ background:#121f33 !important; border-color:#22344d !important; box-shadow:0 2px 4px rgba(0,0,0,.25),0 8px 20px rgba(0,0,0,.3) !important; }
+html[data-theme="dark"] .ss2-eyebrow{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ss2-hero .stat-explain{ color:#aebfd8 !important; }
+html[data-theme="dark"] .ss2-fact span{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ss2-fact b{ color:#e7eef8 !important; }
+html[data-theme="dark"] .ss2-fact small{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ss2-timeline{ border-top-color:#22344d !important; }
+html[data-theme="dark"] .ss2-tl-ends span{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ss2-tl-ends b{ color:#e7eef8 !important; }
+html[data-theme="dark"] .ss2-tl-bar{ background:#1b2940 !important; }
+html[data-theme="dark"] .ss2-tl-note{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ss2-card{ background:#121f33 !important; border-color:#22344d !important; box-shadow:0 1px 3px rgba(0,0,0,.25) !important; }
+html[data-theme="dark"] .ss2-num{ background:rgba(59,130,246,.16) !important; color:#6fa8ff !important; }
+html[data-theme="dark"] .ss2-card-head h2{ color:#e7eef8 !important; }
+html[data-theme="dark"] .ss2-card-head p{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ss2-field label{ color:#aebfd8 !important; }
+html[data-theme="dark"] .ss2-help{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ss2-steps{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ss2-steps b{ background:rgba(59,130,246,.16) !important; color:#6fa8ff !important; }
+html[data-theme="dark"] .ss2-card .toggle-row, html[data-theme="dark"] .ss2-card .toggle-row:last-child{ border-color:#22344d !important; }
+html[data-theme="dark"] .ss2-tag{ background:rgba(52,211,153,.16) !important; color:#6ee7b7 !important; }
+html[data-theme="dark"] .ss2-danger{ border-color:rgba(214,69,93,.35) !important; }
+html[data-theme="dark"] .ss2-danger .ss2-num{ background:rgba(214,69,93,.16) !important; color:#f87171 !important; }
+
+/* sub-tabs */
+html[data-theme="dark"] .ss-subtabs{ background:#16243a !important; border-color:#22344d !important; }
+html[data-theme="dark"] .ss-subtab{ color:#8ba0bd !important; }
+html[data-theme="dark"] .ss-subtab:hover{ color:#e7eef8 !important; }
+html[data-theme="dark"] .ss-subtab.active{ background:#121f33 !important; color:#f0a95f !important; box-shadow:0 1px 3px rgba(0,0,0,.3) !important; }
+
+/* form fields */
+html[data-theme="dark"] input[type="text"],
+html[data-theme="dark"] input[type="datetime-local"],
+html[data-theme="dark"] select{
+  background:#16243a; color:#e7eef8; border-color:#2a3b56;
+}
+html[data-theme="dark"] input[type="datetime-local"]{ color-scheme: dark; }
+html[data-theme="dark"] input[type="datetime-local"]::-webkit-calendar-picker-indicator{
+  filter: invert(1) brightness(1.6);
+}
+html[data-theme="dark"] input:focus, html[data-theme="dark"] select:focus{
+  border-color:#3b82f6; box-shadow:0 0 0 3px rgba(59,130,246,.25);
+}
+html[data-theme="dark"] .select-wrap::after{ border-color:#aebfd8; }
+html[data-theme="dark"] .select-wrap:hover::after{ border-color:#6fa8ff; }
+html[data-theme="dark"] .switch .track{ background:#1b2940; border-color:#2a3b56; }
+html[data-theme="dark"] .toast{ background:#16243a; border-color:#2a3b56; color:#e7eef8; box-shadow:0 8px 24px rgba(0,0,0,.5); }
+html[data-theme="dark"] ::-webkit-scrollbar-thumb{ background:#2a3b56; }
+</style>
 </head>
 <body class="feature-compact ux-nested">
 <div class="shell">
 
+  <!-- Sub-tabs: the current schedule, and every earlier schedule that has been archived -->
+  <nav class="ss-subtabs" role="tablist" aria-label="System and period sections">
+    <button type="button" class="ss-subtab active" id="subCurrent" role="tab" aria-selected="true" data-pane="current">Current schedule</button>
+    <button type="button" class="ss-subtab" id="subPrevious" role="tab" aria-selected="false" data-pane="previous">Previous schedules</button>
+    <button type="button" class="ss-subtab" id="subHistory" role="tab" aria-selected="false" data-pane="history">Schedule history</button>
+  </nav>
+  <div id="paneCurrent">
+
   <?php if ($saveMsg): ?><div class="maint-banner show" style="margin-bottom:14px"><strong><?=ss_h($saveMsg)?></strong></div><?php endif; ?>
+
+  <div class="ss-success" id="ssSuccess" role="status" aria-live="polite" hidden>
+    <span class="ss-success-icon" aria-hidden="true">&#10003;</span>
+    <div class="ss-success-text"><strong>New evaluation schedule created successfully</strong><span id="ssSuccessDetail"></span></div>
+    <button type="button" class="ss-success-close" id="ssSuccessClose" aria-label="Dismiss">&times;</button>
+  </div>
 
   <!-- Hidden hook: the script below attaches a click handler to this button -->
   <button class="btn btn-primary" id="saveBtnTop" style="display:none">Save System Settings</button>
@@ -936,12 +1213,6 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
       <div class="ss2-tl-note" id="tlNote"></div>
     </div>
   </section>
-
-  <div class="ss-success" id="ssSuccess" role="status" aria-live="polite" hidden>
-    <span class="ss-success-icon" aria-hidden="true">&#10003;</span>
-    <div class="ss-success-text"><strong>Schedule created successfully</strong><span id="ssSuccessDetail"></span></div>
-    <button type="button" class="ss-success-close" id="ssSuccessClose" aria-label="Dismiss">&times;</button>
-  </div>
 
   <div class="ss-alerts" id="ssAlerts"></div>
 
@@ -1011,7 +1282,7 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
     <section class="ss2-card">
       <header class="ss2-card-head">
         <span class="ss2-num">3</span>
-        <div><h2>Who can submit evaluations?</h2><p>Leave this on &ldquo;Follow the schedule&rdquo; unless you need to override it.</p></div>
+        <div><h2>Who can submit evaluations?</h2><p>Normally leave this on &ldquo;Follow the schedule&rdquo;. Force open and Force closed override it and apply immediately.</p></div>
       </header>
       <div class="control-modes" id="controlModes">
         <label class="control-option" data-mode="schedule">
@@ -1024,28 +1295,20 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
         <label class="control-option" data-mode="open">
           <input type="radio" name="controlMode" value="open" <?=($sys['control_mode']??'schedule')==='open'?'checked':''?> >
           <div>
-            <div class="co-title">Keep open</div>
-            <div class="co-desc">Everyone can submit right now, even outside the schedule.</div>
+            <div class="co-title">Force open</div>
+            <div class="co-desc">Everyone eligible can submit right now, even outside the schedule.</div>
           </div>
         </label>
         <label class="control-option" data-mode="closed">
           <input type="radio" name="controlMode" value="closed" <?=($sys['control_mode']??'schedule')==='closed'?'checked':''?> >
           <div>
-            <div class="co-title">Keep closed</div>
-            <div class="co-desc">No one can submit, even during the schedule.</div>
+            <div class="co-title">Force closed</div>
+            <div class="co-desc">No one can submit right now, even during the schedule.</div>
           </div>
         </label>
       </div>
-      <div class="toggle-row ss2-auto" id="autoRow">
-        <div class="toggle-copy">
-          <div class="field-label">Open and close automatically</div>
-          <span class="field-help">Turn off to keep evaluations closed until you choose &ldquo;Keep open&rdquo;.</span>
-        </div>
-        <label class="switch">
-          <input type="checkbox" id="autoSchedule" <?=!empty($sys['auto_schedule'])?'checked':''?> >
-          <span class="track"><span class="thumb"></span></span>
-        </label>
-      </div>
+      <!-- Always on: the schedule itself decides when evaluations open and close. -->
+      <input type="checkbox" id="autoSchedule" checked hidden>
     </section>
 
     <!-- 4 · MAINTENANCE -->
@@ -1074,6 +1337,16 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
     <button class="btn btn-primary" id="saveBtn" disabled>Save System Settings</button>
   </div>
 
+  </div><!-- /paneCurrent -->
+
+  <div id="panePrevious" hidden>
+    <iframe id="previousFrame" class="ss-history-frame" title="Previous schedules" data-src="system_archive.php?embed=previous" frameborder="0"></iframe>
+  </div>
+
+  <div id="paneHistory" hidden>
+    <iframe id="historyFrame" class="ss-history-frame" title="Schedule history" data-src="system_archive.php?embed=history" frameborder="0"></iframe>
+  </div>
+
 </div>
 
 <div class="ns-overlay" id="nsOverlay" hidden>
@@ -1088,7 +1361,17 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
       <p class="ns-note">Archiving saves every submission and result to System Archive and clears them from the live dashboards. You can restore them later.</p>
       <div class="ns-actions">
         <button type="button" class="ns-btn" data-ns-close>Cancel</button>
-        <button type="button" class="ns-btn primary" id="nsGoArchive">Go to System Archive</button>
+        <button type="button" class="ns-btn primary" id="nsGoArchive">Archive it now</button>
+      </div>
+    </div>
+
+    <div id="nsMode" hidden>
+      <div class="ns-badge warn" id="nsModeBadge" aria-hidden="true">!</div>
+      <h3 id="nsModeTitle"></h3>
+      <p class="ns-text" id="nsModeText"></p>
+      <div class="ns-actions">
+        <button type="button" class="ns-btn" id="nsModeCancel">Cancel</button>
+        <button type="button" class="ns-btn primary" id="nsModeOk">Confirm</button>
       </div>
     </div>
 
@@ -1133,10 +1416,17 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
         </div>
         <div class="ns-quick-label">Stays open for</div>
         <div class="ns-quick">
+          <button type="button" class="ns-q" data-hours="1">1 hour</button>
+          <button type="button" class="ns-q" data-hours="5">5 hours</button>
+          <button type="button" class="ns-q" data-hours="12">12 hours</button>
+          <button type="button" class="ns-q" data-hours="24">1 day</button>
           <button type="button" class="ns-q" data-days="7">1 week</button>
           <button type="button" class="ns-q" data-days="14">2 weeks</button>
           <button type="button" class="ns-q" data-days="30">1 month</button>
         </div>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12.5px">Or a custom number of hours
+          <input type="number" id="nsCustomHours" min="0.25" step="0.25" placeholder="e.g. 5" style="width:90px">
+        </label>
         <div class="ns-preview" id="nsPreview"></div>
       </div>
 
@@ -1177,11 +1467,11 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
     toastText: document.getElementById('toastText'),
   };
 
-  const MODE_LABEL = { schedule: 'Follow the schedule', open: 'Keep open', closed: 'Keep closed' };
+  const MODE_LABEL = { schedule: 'Follow the schedule', open: 'Force open', closed: 'Force closed' };
   // Plain-language names for the status codes used internally.
   const FRIENDLY_STATUS = {
-    'OPEN': 'Open now', 'UPCOMING': 'Not open yet', 'FORCED OPEN': 'Open (manual)',
-    'FORCED CLOSED': 'Closed (manual)', 'NOT CONFIGURED': 'No schedule yet',
+    'OPEN': 'Open now', 'UPCOMING': 'Not open yet', 'FORCED OPEN': 'Open (forced)',
+    'FORCED CLOSED': 'Closed (forced)', 'NOT CONFIGURED': 'No schedule yet',
     'INVALID SCHEDULE': 'Check the dates', 'MAINTENANCE': 'Maintenance mode',
     'CLOSED \u00B7 MANUAL': 'Closed', 'CLOSED \u00B7 ENDED': 'Closed'
   };
@@ -1382,9 +1672,9 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
     let text='';
     switch(status.label){
       case 'MAINTENANCE': text='Maintenance mode is on. Only administrators can use the system right now.'; break;
-      case 'FORCED OPEN': text='Everyone can submit because \u201CKeep open\u201D is on'+(ended?'. The schedule has already ended, so this is the only reason it is still open.':', regardless of the schedule.'); break;
-      case 'FORCED CLOSED': text='No one can submit because \u201CKeep closed\u201D is on, regardless of the schedule.'; break;
-      case 'CLOSED \u00B7 MANUAL': text='Automatic opening is off, so evaluations stay closed until you choose \u201CKeep open\u201D.'; break;
+      case 'FORCED OPEN': text='Everyone eligible can submit because \u201CForce open\u201D is on'+(ended?'. The schedule has already ended, so this is the only reason it is still open.':', regardless of the schedule.'); break;
+      case 'FORCED CLOSED': text='No one can submit because \u201CForce closed\u201D is on, regardless of the schedule.'; break;
+      case 'CLOSED \u00B7 MANUAL': text='Automatic opening is off, so evaluations stay closed until you choose \u201CForce open\u201D.'; break;
       case 'NOT CONFIGURED': text='No evaluation window has been set yet. Use \u201CCreate new evaluation schedule\u201D to set one.'; break;
       case 'INVALID SCHEDULE': text='The closing time is before the opening time. Create the schedule again with valid dates.'; break;
       case 'UPCOMING': text='Not open yet. Evaluations will open automatically in '+relTime(opens-now)+'.'; break;
@@ -1401,7 +1691,6 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
       : (now < opens ? 'Opens in ' + relTime(opens-now) + ' \u00B7 stays open for ' + relTime(closes-opens)
       : (now >= closes ? 'Ended ' + relTime(now-closes) + ' ago' : relTime(closes-now) + ' left of ' + relTime(closes-opens)));
     // The automatic-opening switch only matters while following the schedule.
-    const autoRow=document.getElementById('autoRow'); if (autoRow) autoRow.hidden = mode!=='schedule';
     const cta=document.getElementById('newScheduleBtn'); if (cta) cta.classList.toggle('attn', ended || !valid);
     const card=els.statStatus.closest('.stat-card');
     if (card) { card.classList.remove('tone-green','tone-amber','tone-red'); if (status.color) card.classList.add('tone-'+status.color); }
@@ -1409,7 +1698,7 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
     // Heads-up alerts that offer a one-click fix
     const alerts=[];
     if (!els.maintenance.checked && mode==='open' && (ended||!valid))
-      alerts.push({tone:'amber',text:'\u201CKeep open\u201D is on and the schedule '+(ended?'has already ended':'is not set')+'. Evaluations stay open for everyone until you switch back.',action:'Switch to \u201CFollow the schedule\u201D',fn:()=>setMode('schedule')});
+      alerts.push({tone:'amber',text:'\u201CForce open\u201D is on and the schedule '+(ended?'has already ended':'is not set')+'. Evaluations stay open for everyone until you switch back.',action:'Switch to \u201CFollow the schedule\u201D',fn:()=>setMode('schedule')});
     if (!els.maintenance.checked && mode==='schedule' && els.auto.checked && ended)
       alerts.push({tone:'red',text:'The evaluation window ended '+relTime(now-closes)+' ago.',action:'Create new schedule',fn:()=>{const nb=document.getElementById('newScheduleBtn'); if(nb) nb.click();}});
     const box=document.getElementById('ssAlerts');
@@ -1467,10 +1756,14 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
       window.addEventListener('pagehide',()=>{ try{ overlay.remove(); st.remove(); }catch(e){} });
     }
     const $=id=>host.getElementById(id);
-    function show(which){ ['nsBusy','nsGate','nsForm'].forEach(id=>{ $(id).hidden=(id!==which); }); }
+    function show(which){ ['nsBusy','nsGate','nsForm','nsMode'].forEach(id=>{ $(id).hidden=(id!==which); }); }
     function open(){ overlay.hidden=false; const m=$('nsModal'); if(m) m.focus({preventScroll:true}); }
     let formDirty=false;
-    function close(){ overlay.hidden=true; const d=$('nsDiscard'); if(d) d.hidden=true; }
+    let modeCb=null;
+    function close(){
+      overlay.hidden=true; const d=$('nsDiscard'); if(d) d.hidden=true;
+      if(modeCb){ const cb=modeCb; modeCb=null; if(cb.cancel) cb.cancel(); }   // dismissed without confirming
+    }
     // Clicking the dim area or pressing Esc must not throw away what was typed:
     // ask first when the form has been changed.
     function requestClose(){
@@ -1506,7 +1799,7 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
       $('nsGoArchive').hidden = !gatePeriods.length;
     }
     $('nsGoArchive').addEventListener('click',()=>{
-      try{ parent.postMessage({type:'pbi-open-tab',tab:'archive',preselect:gatePeriods.map(p=>p.id)},window.location.origin); }catch(e){}
+      try{ window.ssShowPane('previous', gatePeriods.map(p=>p.id)); }catch(e){}
       close();
     });
 
@@ -1530,7 +1823,7 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
       const y=$('nsYear').value.trim(), ym=y.match(/^(\d{4})-(\d{4})$/);
       const oV=$('nsOpens').value, cV=$('nsCloses').value;
       if(!ym||Number(ym[2])!==Number(ym[1])+1) return {ok:false,tone:'bad',title:'Check the academic year',msg:'Enter it like 2026-2027.'};
-      if(!oV||!cV) return {ok:false,tone:'muted',title:'Set the evaluation window',msg:'Pick the opening and closing time, or use the quick buttons above.'};
+      if(!oV||!cV) return {ok:false,tone:'muted',title:'Set the evaluation window',msg:'Pick the opening and closing time (even a few hours apart), or use the quick buttons above.'};
       const o=parseManilaLocal(oV), c=parseManilaLocal(cV);
       if(!Number.isFinite(o)||!Number.isFinite(c)) return {ok:false,tone:'bad',title:'Check the dates',msg:'One of the dates is not valid.'};
       if(c<=o) return {ok:false,tone:'bad',title:'Check the dates',msg:'The closing time must be after the opening time.'};
@@ -1538,10 +1831,10 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
       const when=o<=Date.now()?'Opens immediately':'Opens in '+relTime(o-Date.now());
       return {ok:true,tone:'good',title:formatDateTime(oV)+'  \u2192  '+formatDateTime(cV),msg:when+' \u00B7 stays open for '+relTime(c-o)+'.'};
     }
-    function update(){
+    function update(keepError){
       const r=check(), pv=$('nsPreview');
-      $('nsError').hidden=true;
-      $('nsCloses').min=$('nsOpens').value||'';
+      if(!keepError) $('nsError').hidden=true;
+      $('nsCloses').min=$('nsOpens').value||''; $('nsCloses').step=60;
       pv.className='ns-preview '+r.tone;
       pv.textContent='';
       const b=document.createElement('b'); b.textContent=r.title;
@@ -1558,10 +1851,48 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
       }
       let base=parseManilaLocal($('nsOpens').value);
       if(!Number.isFinite(base)){ base=now; $('nsOpens').value=ms(now); }
-      $('nsCloses').value=ms(base+Number(b.dataset.days)*86400000);
+      const span=b.dataset.hours ? Number(b.dataset.hours)*3600000 : Number(b.dataset.days)*86400000;
+      $('nsCloses').value=ms(base+span);
+      const ch=$('nsCustomHours'); if(ch) ch.value='';
       update();
     }));
+    (function(){
+      const ch=$('nsCustomHours'); if(!ch) return;
+      ch.addEventListener('input',()=>{
+        const h=parseFloat(ch.value); if(!(h>0)) return;
+        formDirty=true;
+        let base=parseManilaLocal($('nsOpens').value);
+        if(!Number.isFinite(base)){ base=Date.now(); $('nsOpens').value=ms(base); }
+        $('nsCloses').value=ms(base+Math.round(h*3600000));
+        update();
+      });
+    })();
     ['nsYear','nsTerm','nsOpens','nsCloses'].forEach(id=>{ const el=$(id); const h=()=>{ formDirty=true; update(); }; el.addEventListener('input',h); el.addEventListener('change',h); });
+
+    // Confirmation for Force open / Force closed / back to the schedule.
+    window.ssConfirmMode=function(mode,onOk,onCancel){
+      const level=(STRUCTURE_LABEL[els.structure.value]||'the selected level');
+      const cfg={
+        open:{badge:'warn',icon:'!',title:'Force open the evaluation?',
+          text:'Everyone eligible can submit evaluations right now, even outside the scheduled dates. It applies to the level set in step 1 ('+level+'). It stays open until you switch back to \u201CFollow the schedule\u201D or choose \u201CForce closed\u201D.',
+          ok:'Force open now',okClass:'ns-btn primary'},
+        closed:{badge:'bad',icon:'!',title:'Force close the evaluation?',
+          text:'No one can submit evaluations right now, even during the scheduled dates. It stays closed until you switch back to \u201CFollow the schedule\u201D or choose \u201CForce open\u201D.',
+          ok:'Force close now',okClass:'ns-btn danger'},
+        schedule:{badge:'ok',icon:'\u2713',title:'Follow the schedule again?',
+          text:'Evaluations will open and close by themselves at the scheduled dates.',
+          ok:'Follow the schedule',okClass:'ns-btn primary'}
+      }[mode];
+      if(!cfg){ if(onCancel) onCancel(); return; }
+      const b=$('nsModeBadge'); b.className='ns-badge '+cfg.badge; b.textContent=cfg.icon;
+      $('nsModeTitle').textContent=cfg.title;
+      $('nsModeText').textContent=cfg.text;
+      const ok=$('nsModeOk'); ok.textContent=cfg.ok; ok.className=cfg.okClass;
+      modeCb={ok:onOk,cancel:onCancel};
+      show('nsMode'); open();
+    };
+    $('nsModeOk').addEventListener('click',()=>{ const cb=modeCb; modeCb=null; close(); if(cb&&cb.ok) cb.ok(); });
+    $('nsModeCancel').addEventListener('click',()=>{ close(); });
 
     btn.addEventListener('click',()=>{
       if(isDirty){ showToast('Save or discard your current changes first.'); return; }
@@ -1591,21 +1922,56 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
       fd.append('eval_start',$('nsOpens').value); fd.append('eval_end',$('nsCloses').value);
       sb.disabled=true; sb.textContent='Creating…';
       fetch('system_settings.php',{method:'POST',body:fd,credentials:'same-origin'})
-        .then(async r=>({status:r.status,d:await r.json().catch(()=>null)}))
+        .then(async r=>{ const raw=await r.text(); let d=null; try{ d=JSON.parse(raw); }catch(e){ console.error('create_new_schedule: non-JSON response', r.status, raw); } return {status:r.status,d}; })
         .then(({status,d})=>{
           if(status===409&&d&&d.code==='archive_required'){ fillGate(d); show('nsGate'); return; }
           if(d&&d.ok){ close(); location.replace('system_settings.php?created='+encodeURIComponent(d.message||'The new schedule is now active.')); return; }
-          fail((d&&d.message)||'Could not create the schedule. Please try again.');
+          fail((d&&d.message)||('The server returned an unexpected response (HTTP '+status+'). Check the PHP error log or the browser console.'));
         })
-        .catch(()=>fail('Could not reach the server. Please try again.'))
-        .finally(()=>{ sb.textContent='Create schedule'; update(); });
+        .catch(e=>{ console.error(e); fail('Could not reach the server. Please try again.'); })
+        .finally(()=>{ sb.textContent='Create schedule'; update(true); });
     });
   })();
+
+  // ── FORCE OPEN / FORCE CLOSED: applied immediately, after a confirmation ──
+  // The three choices are real switches, not form fields waiting for "Save": picking one asks
+  // for confirmation, saves it on the server straight away, and the status above updates.
+  let savedMode = getControlMode();
+  let modeBusy = false, modeRevert = false;
+  function revertMode(){ modeRevert = true; setMode(savedMode); modeRevert = false; }
+  function rebaselineField(label){
+    const i = FIELD_DEFS.findIndex(d => d.label === label);
+    if (i >= 0 && baseline) baseline[i] = FIELD_DEFS[i].get();
+    markDirty();
+  }
+  function applyMode(mode){
+    modeBusy = true; els.controlModes.style.pointerEvents = 'none';
+    const fd = new FormData(); fd.append('action','set_control_mode'); fd.append('control_mode', mode);
+    fetch('system_settings.php',{method:'POST',body:fd,credentials:'same-origin',cache:'no-store'})
+      .then(async r => ({ok:r.ok, d: await r.json().catch(() => null)}))
+      .then(({ok,d}) => {
+        if (ok && d && d.ok) {
+          savedMode = mode; rebaselineField('Who can submit'); render();
+          showToast(d.message || 'Saved');
+        } else {
+          revertMode(); showToast((d && d.message) || 'Could not change this setting.');
+        }
+      })
+      .catch(() => { revertMode(); showToast('Could not reach the server. Nothing was changed.'); })
+      .finally(() => { modeBusy = false; els.controlModes.style.pointerEvents = ''; });
+  }
+  els.controlModes.addEventListener('change', () => {
+    if (modeRevert || modeBusy) return;
+    const next = getControlMode();
+    if (next === savedMode) return;
+    const ask = window.ssConfirmMode || ((m, ok, cancel) => (window.confirm('Change who can submit evaluations?') ? ok() : cancel()));
+    ask(next, () => applyMode(next), revertMode);
+  });
 
   function showToast(text) {
     els.toastText.textContent = text;
     els.toast.classList.add('show');
-    setTimeout(() => els.toast.classList.remove('show'), 2200);
+    setTimeout(() => els.toast.classList.remove('show'), 4200);
   }
   function saveSystemSettings(){
     const fd = new FormData();
@@ -1643,6 +2009,34 @@ body::-webkit-scrollbar-button:single-button:horizontal:increment,
   document.getElementById('cancelBtn').addEventListener('click', () => location.reload());
 
   setInterval(render, 60000);
+</script>
+<script>
+(function(){
+  var panes={
+    current:{pane:document.getElementById('paneCurrent'),btn:document.getElementById('subCurrent')},
+    previous:{pane:document.getElementById('panePrevious'),btn:document.getElementById('subPrevious'),frame:document.getElementById('previousFrame')},
+    history:{pane:document.getElementById('paneHistory'),btn:document.getElementById('subHistory'),frame:document.getElementById('historyFrame')}
+  };
+  window.ssShowPane=function(which, preselectIds){
+    if(!panes[which]) which='current';
+    Object.keys(panes).forEach(function(k){
+      var on=k===which;
+      panes[k].pane.hidden=!on;
+      panes[k].btn.classList.toggle('active',on);
+      panes[k].btn.setAttribute('aria-selected',String(on));
+    });
+    var f=panes[which].frame;
+    if(f){   // reload each time so the lists always reflect the latest archive / restore
+      var url=f.getAttribute('data-src');
+      if(which==='previous' && preselectIds && preselectIds.length) url+='&preselect='+encodeURIComponent(preselectIds.join(','));
+      f.src=url;
+    }
+  };
+  Object.keys(panes).forEach(function(k){ panes[k].btn.addEventListener('click',function(){ window.ssShowPane(k); }); });
+  // Opened straight to a list (e.g. old settings.php?tab=archive links)
+  var m=location.search.match(/[?&]view=(previous|history)\b/);
+  if(m) window.ssShowPane(m[1]);
+})();
 </script>
 </body>
 </html>

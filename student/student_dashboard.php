@@ -426,7 +426,7 @@ if ($period_is_open) {
 // gate function so a display change here can never affect the actual
 // open/closed decision.
 $periodSettings = [];
-$psRes = $mysqli->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('control_mode','eval_start','eval_end','schedule_timezone','year_level_edit_mode')");
+$psRes = $mysqli->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('control_mode','eval_start','eval_end','schedule_timezone','year_level_edit_mode','rule_countdown','maintenance')");
 if ($psRes) {
     while ($row = $psRes->fetch_assoc()) { $periodSettings[$row['setting_key']] = (string)($row['setting_value'] ?? ''); }
     $psRes->free();
@@ -460,6 +460,31 @@ $year_level_editable   = $year_level_edit_open && !$period_is_open;
 $year_level_locked_reason = !$year_level_edit_open
     ? 'Year level updates are currently closed. Contact the EA if this needs correcting.'
     : ($period_is_open ? 'Year level can\'t be changed while an evaluation period is open. Contact the EA if this is incorrect.' : '');
+
+
+// Countdown chip shown next to the "Evaluation period is currently open/closed" status.
+// Before the evaluation opens it counts down to the opening; once open it counts down to the closing.
+if (!function_exists('pbi_cd_chip')) {
+    function pbi_cd_chip(string $phase, int $targetMs, int $nowMs): string {
+        $label = $phase === 'soon' ? 'Opens in' : 'Closes in';
+        return '<style>.pbi-cd{display:inline-flex;align-items:center;gap:6px;margin-left:10px;padding-left:10px;border-left:1px solid currentColor;'
+            . 'border-left-color:color-mix(in srgb,currentColor 35%,transparent);font-weight:700;color:inherit;white-space:nowrap}'
+            . '.pbi-cd .pbi-cd-l{opacity:.8;font-weight:600}'
+            . '.pbi-cd .pbi-cd-t{font-variant-numeric:tabular-nums}</style>'
+            . '<span class="pbi-cd" role="timer" aria-live="off" id="pbiCd" data-target="' . $targetMs . '" data-now="' . $nowMs . '">'
+            . '<i class="fa-regular fa-clock" aria-hidden="true"></i>'
+            . '<span class="pbi-cd-l" id="pbiCdLabel">' . $label . '</span><span class="pbi-cd-t" id="pbiCdTime">&mdash;</span></span>'
+            . '<script>(function(){var el=document.getElementById("pbiCd");if(!el)return;'
+            . 'var target=+el.dataset.target,off=(+el.dataset.now)-Date.now();'
+            . 'function p(n){return n<10?"0"+n:""+n}'
+            . 'function tick(){var s=Math.max(0,Math.floor((target-(Date.now()+off))/1000));'
+            . 'var d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60),x=s%60;'
+            . 'document.getElementById("pbiCdTime").textContent=(d>0?d+"d ":"")+p(h)+"h "+p(m)+"m "+p(x)+"s";'
+            . 'if(s<=0){clearInterval(t);try{var k="pbiCdReload",l=+sessionStorage.getItem(k)||0;'
+            . 'if(Date.now()-l>15000){sessionStorage.setItem(k,String(Date.now()));setTimeout(function(){location.reload()},1500);}}catch(e){setTimeout(function(){location.reload()},1500);}}}'
+            . 'tick();var t=setInterval(tick,1000);})();</script>';
+    }
+}
 
 function student_dashboard_parse_period_dt(string $raw, DateTimeZone $tz): ?DateTimeImmutable {
     $raw = trim($raw);
@@ -859,6 +884,74 @@ try {
     if (count($sq_existing) === 3) { $sq_status = sq_needs_update($sq_existing) ? 'retired' : 'ok'; }
 } catch (Throwable $e) { error_log('dashboard sq_load failed: ' . $e->getMessage()); }
 
+// ── SECURITY QUESTIONS POPUP: save (AJAX, returns JSON) ───────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['sq_ajax'] ?? '') === '1') {
+    $out = ['ok' => false, 'message' => 'Something went wrong. Please try again.'];
+    try {
+        $sqUid  = (int)$student_id;
+        $sqKind = 'sqchange_student';
+        if (!csrf_valid($_POST['csrf_token'] ?? '')) {
+            $out['message'] = 'Your session expired. Please reload the page and try again.';
+        } else {
+            security_ensure_tables($mysqli);
+            $sqSt = $mysqli->prepare("SELECT username, password_hash FROM users WHERE id = ? AND role = 'student' LIMIT 1");
+            $sqSt->bind_param('i', $sqUid);
+            $sqSt->execute();
+            $sqMe = $sqSt->get_result()->fetch_assoc();
+            $sqSt->close();
+            $sqGiven = (string)($_POST['current_password'] ?? '');
+
+            if (!$sqMe) {
+                $out['message'] = 'Your account could not be found. Please sign in again.';
+            } elseif (auth_is_locked($mysqli, $sqKind, (string)$sqUid)) {
+                $out['message'] = AUTH_LOCK_MESSAGE;
+            } elseif ($sqGiven === '' || !password_verify($sqGiven, (string)$sqMe['password_hash'])) {
+                auth_record($mysqli, $sqKind, (string)$sqUid, false);
+                $out['message'] = 'Your current password is not correct.';
+            } elseif (($_POST['sq_verify'] ?? '') === '1') {
+                // Step 1: the password is confirmed; the questions can now be shown.
+                $sqQsOut = [];
+                try { foreach (sq_load($mysqli, $sqUid) as $sqSlot => $sqRow) { $sqQsOut[(int)$sqSlot] = (string)$sqRow['question_key']; } } catch (Throwable $sqE) {}
+                $out = ['ok' => true, 'message' => 'Password confirmed.', 'questions' => $sqQsOut];
+            } else {
+                [$sqErr, $sqRows] = sq_validate_update($_POST['sq_question'] ?? [], $_POST['sq_answer'] ?? [], (string)$sqMe['username'], sq_load($mysqli, $sqUid));
+                if ($sqErr !== null) {
+                    $out['message'] = $sqErr;
+                } else {
+                    try {
+                        $mysqli->begin_transaction();
+                        $sqDel = $mysqli->prepare('DELETE FROM student_security_answers WHERE user_id = ?');
+                        $sqDel->bind_param('i', $sqUid);
+                        if (!$sqDel->execute()) { throw new RuntimeException('delete failed'); }
+                        $sqDel->close();
+                        sq_save($mysqli, $sqUid, $sqRows);
+                        $mysqli->commit();
+                        auth_clear($mysqli, $sqKind, (string)$sqUid);
+                        $_SESSION['sq_flash'] = 'Security questions updated successfully.';
+                        $out = ['ok' => true, 'message' => 'Security questions updated successfully.'];
+                    } catch (Throwable $e) {
+                        try { $mysqli->rollback(); } catch (Throwable $ignored) {}
+                        error_log('student security questions save failed: ' . $e->getMessage());
+                        $out['message'] = 'The security questions could not be saved. Please try again.';
+                    }
+                }
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('student security questions failed: ' . $e->getMessage());
+    }
+    while (ob_get_level() > 0) { ob_end_clean(); }
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    echo json_encode($out);
+    exit;
+}
+
+// Success message after the modal saves, and ?view=settings links (old security_questions.php redirects here).
+$sq_flash = '';
+if (!empty($_SESSION['sq_flash'])) { $sq_flash = (string)$_SESSION['sq_flash']; unset($_SESSION['sq_flash']); }
+if ($sq_flash !== '' || ($_GET['view'] ?? '') === 'settings') { $land_on_settings = true; }
+
 // ── FETCH QUESTIONS FOR A TARGET (AJAX) ──────────────────────
 // Reads from the same question source the admin assigns for this
 // person's student-evaluation context:
@@ -1204,10 +1297,13 @@ if($period_is_open){
 $history = [];
 $hres = $mysqli->prepare(
     "SELECT et.id, et.target_user_id, u.full_name, u.designation, u.photo,
-            et.remarks, et.status, et.submitted_at,
+            et.remarks, et.status, et.submitted_at, et.period_id,
+            MAX(ep.school_year) AS school_year, MAX(ep.period_label) AS period_label,
+            MAX(ep.semester) AS semester, MAX(ep.date_start) AS date_start,
             AVG(qa.answer_score) AS avg_score, COUNT(qa.id) AS answer_count
      FROM evaluation_tracker et
      JOIN users u ON u.id = et.target_user_id
+     LEFT JOIN evaluation_periods ep ON ep.id = et.period_id
      LEFT JOIN questionnaire_answers qa ON qa.tracker_id = et.id
      WHERE et.evaluator_id = ?
      GROUP BY et.id
@@ -1217,6 +1313,38 @@ $hres->bind_param("i", $student_id);
 $hres->execute();
 $history = $hres->get_result()->fetch_all(MYSQLI_ASSOC);
 $hres->close();
+
+// ── EVALUATION TERMS FOR THE HISTORY FILTER ──────────────────
+// Same idea as the Evaluation Term picker on admin/ea_results.php: one
+// entry per evaluation period the student has submitted in, labelled
+// "School Year — Semester", current term first, then newest to oldest.
+$historyTerms = [];
+$currentPeriodId = (int)($activePeriodRow['id'] ?? 0);
+foreach ($history as &$hRow) {
+    $pid = (int)($hRow['period_id'] ?? 0);
+    $sy  = trim((string)($hRow['school_year'] ?? ''));
+    $pl  = trim((string)($hRow['period_label'] ?: ($hRow['semester'] ?? '')));
+    $label = ($sy !== '' && $pl !== '')
+        ? (stripos($pl, $sy) !== false ? $pl : $sy . ' — ' . $pl)
+        : ($pl !== '' ? $pl : ($sy !== '' ? $sy : 'Unspecified term'));
+    $hRow['term_label'] = $label;
+    $hRow['term_key']   = $pid > 0 ? (string)$pid : 'none';
+    if (!isset($historyTerms[$hRow['term_key']])) {
+        $historyTerms[$hRow['term_key']] = [
+            'key'     => $hRow['term_key'],
+            'label'   => $label,
+            'current' => ($pid > 0 && $pid === $currentPeriodId),
+            'start'   => (string)($hRow['date_start'] ?? ''),
+            'id'      => $pid,
+        ];
+    }
+}
+unset($hRow);
+uasort($historyTerms, function ($a, $b) {
+    if ($a['current'] !== $b['current']) return $a['current'] ? -1 : 1;
+    $c = strcmp($b['start'], $a['start']);
+    return $c ?: ($b['id'] <=> $a['id']);
+});
 
 // ── GROUP ICONS / COLORS ──
 $group_icons = [
@@ -1234,10 +1362,22 @@ $group_colors = [
 ];
 
 // Progress counts evaluation contexts, not unique accounts.
-$total_evaluatees=count($grouped['Faculty']??[])+count($grouped['Staff']??[])+count($grouped['Principal']??[])+count($grouped['Dean']??[]);
-$total_done=count($done_ids);
+// "Completed" is counted against the CURRENT roster only. $done_ids holds every
+// submission this student made in the active period, including people who are no
+// longer listed (roster/level changes, a schedule re-created for the same period,
+// or a different context), so counting it directly could exceed the number of people
+// to evaluate (e.g. 11 of 10 = 110%). Only roster members with a matching submission count.
+$roster_contexts=['Faculty'=>'teacher','Staff'=>'staff','Principal'=>'school_head','Dean'=>'school_head'];
+$total_evaluatees=0; $total_done=0;
+foreach($roster_contexts as $grp=>$ctx){
+    foreach(($grouped[$grp]??[]) as $rp){
+        $total_evaluatees++;
+        if(isset($done_ids[$rp['id'].'|'.$ctx])) $total_done++;
+    }
+}
+$total_done        = min($total_done, $total_evaluatees);
 $total_pending     = max(0, $total_evaluatees - $total_done);
-$pct              = $total_evaluatees > 0 ? round(($total_done / $total_evaluatees) * 100) : 0;
+$pct              = $total_evaluatees > 0 ? (int)min(100, max(0, round(($total_done / $total_evaluatees) * 100))) : 0;
 
 // ── LIVE NOTICES (bell): evaluation status + the student's own progress ──
 // Ids embed the values they announce, so a change (opened/closed, one more
@@ -2223,6 +2363,13 @@ body .sd-shell .eval-main-card{background:none!important;border:0!important;box-
 .sd-shell .history-name{font-size:13.5px;color:var(--sd-ink)!important;}
 .sd-shell .history-desig{font-size:11px;}.sd-shell .history-comment{font-size:11.5px;}
 .sd-shell .history-score{font-size:14px;color:var(--gold-d);}.sd-shell .history-date{font-size:11px;}
+.hist-filter{display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:14px 0 16px;}
+.hist-term{display:flex;flex-direction:column;gap:5px;min-width:240px;}
+.hist-term label{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--sd-sub,var(--muted));display:flex;align-items:center;gap:6px;}
+.hist-term select{width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--sd-line,var(--border));background:var(--sd-card,var(--inner));color:var(--sd-ink,#0f172a);font:inherit;font-size:13px;font-weight:600;cursor:pointer;}
+.hist-term select:hover{border-color:var(--gold-d,#b45309);}
+.hist-term select:focus{outline:3px solid rgba(217,154,43,.28);outline-offset:1px;}
+.hist-count{font-size:12px;color:var(--sd-sub,var(--muted));}
 /* Guidelines + Settings cards */
 .sd-shell .gl-card{padding:16px 18px;margin-bottom:12px;}
 .sd-shell .gl-card h3{font-size:15px;margin-bottom:9px;color:var(--sd-ink)!important;}
@@ -2795,9 +2942,28 @@ body:not(.light-theme) .leave-dlg-stay{background:var(--inner);border-color:var(
         <div class="view-content<?= $land_on_settings ? '' : ' active' ?>" id="view-dashboard">
           <div class="sd-shell">
             <div class="sd-kick-top"><i class="fa-solid fa-chart-line"></i> Dashboard Overview</div>
+            <?php
+            $studentCd = '';
+            $__cdOn = !isset($periodSettings['rule_countdown']) || $periodSettings['rule_countdown'] !== '0';
+            if ($__cdOn && empty($periodSettings['maintenance']) && $period_control_mode === 'schedule') {
+                $__s = student_dashboard_parse_period_dt($periodSettings['eval_start'] ?? '', $period_tz);
+                $__e = student_dashboard_parse_period_dt($periodSettings['eval_end'] ?? '', $period_tz);
+                $__n = new DateTimeImmutable('now', $period_tz);
+                // Only count toward a window this student can actually use: the active period's type must
+                // match the student's level (College = semesters, Basic Ed = School Year). Otherwise the
+                // status stays "closed" and a countdown would contradict it.
+                $__lvlOk = !empty($activePeriodRow)
+                    && (isCollegeEducationLevel($student_level) !== (trim((string)$active_period_semester) === 'School Year'));
+                if ($__s && $__e && $__e > $__s) {
+                    if ($__n < $__s)      { if ($__lvlOk)        $studentCd = pbi_cd_chip('soon', (int)($__s->getTimestamp() * 1000), (int)($__n->getTimestamp() * 1000)); }
+                    elseif ($__n < $__e)  { if ($period_is_open) $studentCd = pbi_cd_chip('open', (int)($__e->getTimestamp() * 1000), (int)($__n->getTimestamp() * 1000)); }
+                }
+            }
+            ?>
             <div class="sd-open-pill <?= $period_is_open ? 'open' : 'closed' ?>">
                 <i class="fa-solid <?= $period_is_open ? 'fa-lock-open' : 'fa-lock' ?>"></i>
                 Evaluation period is currently <?= $period_is_open ? 'open' : 'closed' ?>
+                <?= $studentCd ?>
             </div>
 
             <div class="sd-period">
@@ -3038,11 +3204,23 @@ body:not(.light-theme) .leave-dlg-stay{background:var(--inner);border-color:var(
             <?php if (empty($history)): ?>
             <div class="empty"><i class="fa-solid fa-clock-rotate-left"></i><p>You haven't submitted any evaluations yet.</p></div>
             <?php else: ?>
+            <div class="hist-filter">
+                <div class="hist-term">
+                    <label for="historyTermSelect"><i class="fa-solid fa-calendar-days"></i> Evaluation Term</label>
+                    <select id="historyTermSelect" onchange="filterHistoryByTerm(this.value)">
+                        <option value="all">All Evaluation Terms &mdash; Past &amp; Current</option>
+                        <?php foreach ($historyTerms as $t): ?>
+                        <option value="<?= htmlspecialchars($t['key']) ?>"><?= htmlspecialchars($t['label']) ?><?= $t['current'] ? ' (Current)' : '' ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="hist-count" id="historyCount">Showing <?= count($history) ?> of <?= count($history) ?></div>
+            </div>
             <div class="history-list">
                 <?php foreach ($history as $h):
                     $avg = $h['avg_score'] !== null ? round($h['avg_score'], 1) : null;
                 ?>
-                <div class="history-card">
+                <div class="history-card" data-term="<?= htmlspecialchars($h['term_key']) ?>">
                     <?php if ($h['photo']): ?>
                     <img class="history-avatar" src="../image/<?= htmlspecialchars($h['photo']) ?>" alt=""/>
                     <?php else: ?>
@@ -3059,11 +3237,12 @@ body:not(.light-theme) .leave-dlg-stay{background:var(--inner);border-color:var(
                         <?php if ($avg !== null): ?>
                         <div class="history-score"><i class="fa-solid fa-star"></i> <?= $avg ?> / 5</div>
                         <?php endif; ?>
-                        <div class="history-date"><?= htmlspecialchars(date('M j, Y', strtotime($h['submitted_at']))) ?></div>
+                        <div class="history-date"><?= htmlspecialchars(date('M j, Y', strtotime($h['submitted_at']))) ?> &middot; <?= htmlspecialchars($h['term_label']) ?></div>
                     </div>
                 </div>
                 <?php endforeach; ?>
             </div>
+            <div class="empty" id="historyTermEmpty" hidden><i class="fa-solid fa-clock-rotate-left"></i><p>You haven't submitted any evaluations for this term.</p></div>
             <?php endif; ?>
           </div>
         </div>
@@ -3074,6 +3253,11 @@ body:not(.light-theme) .leave-dlg-stay{background:var(--inner);border-color:var(
             <div class="sd-kick-top"><i class="fa-solid fa-circle-info"></i> Guidelines</div>
             <div class="sd-page-sub">How to evaluate faculty and staff fairly and accurately.</div>
 
+
+            <div class="gl-card">
+                <h3><i class="fa-solid fa-shield-halved"></i> Confidentiality</h3>
+                <p>Your individual ratings and comments are used to help faculty and staff improve. Your name is not shown in evaluation results. Please answer honestly and constructively.</p>
+            </div>
 
             <div class="gl-card">
                 <h3><i class="fa-solid fa-scale-balanced"></i> Rating Scale</h3>
@@ -3087,16 +3271,12 @@ body:not(.light-theme) .leave-dlg-stay{background:var(--inner);border-color:var(
             <div class="gl-card">
                 <h3><i class="fa-solid fa-circle-check"></i> Rules</h3>
                 <ul>
-                    <li>You can only evaluate faculty and staff assigned to your education level.</li>
-                    <li>Each person can only be evaluated once per evaluation period.</li>
-                    <li>Submissions cannot be edited once submitted, so review your ratings before sending.</li>
+                    <li>Teachers and teaching staff appear only if they are assigned to your education level and year level.</li>
+                    <li>Non-teaching staff are institution-wide, so they appear for every year level.</li>
+                    <li>Each person can only be evaluated once per evaluation period for each evaluation context.</li>
+                    <li>Your evaluation cannot be edited once sent, so review your ratings before sending.</li>
                     <li>Evaluations can only be submitted while an evaluation period is open.</li>
                 </ul>
-            </div>
-
-            <div class="gl-card">
-                <h3><i class="fa-solid fa-shield-halved"></i> Confidentiality</h3>
-                <p>Your individual ratings and comments are used to help faculty and staff improve. Please answer honestly and constructively.</p>
             </div>
           </div>
         </div>
@@ -3114,6 +3294,31 @@ body:not(.light-theme) .leave-dlg-stay{background:var(--inner);border-color:var(
             </div>
 
             <div class="settings-tabpanel" role="tabpanel" id="tabPanelProfile" aria-labelledby="tabBtnProfile" data-panel="profile">
+            <?php if (!empty($sq_flash)): ?>
+            <div class="alert alert-success"><i class="fa-solid fa-circle-check"></i> <?= htmlspecialchars($sq_flash) ?></div>
+            <?php endif; ?>
+            <div class="ac-card sq-top-card <?= $sq_status === 'ok' ? 'is-set' : 'is-unset' ?>" id="security-questions-settings">
+        <div class="sq-top-row">
+            <div class="ac-head">
+                <span class="ac-icon"><i class="fa-solid <?= $sq_status === 'ok' ? 'fa-shield-halved' : 'fa-triangle-exclamation' ?>"></i></span>
+                <div>
+                    <h2>Security Questions</h2>
+                    <p class="ac-sub">These questions are used to recover your account if you forget your password.</p>
+                    <?php if ($sq_status === 'ok'): ?>
+                    <div class="sq-status ok"><i class="fa-solid fa-circle-check"></i> Security questions are set</div>
+                    <?php elseif ($sq_status === 'retired'): ?>
+                    <div class="sq-status warn"><i class="fa-solid fa-triangle-exclamation"></i> One of your questions is no longer offered &mdash; please update them</div>
+                    <?php else: ?>
+                    <div class="sq-status warn"><i class="fa-solid fa-triangle-exclamation"></i> Not set up yet &mdash; you won&rsquo;t be able to recover your account without them</div>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div class="sq-top-action">
+                <button type="button" class="ac-btn" id="sqOpen"><i class="fa-solid fa-pen-to-square"></i> <?= $sq_status === 'none' ? 'Set Security Questions' : 'Update Security Questions' ?></button>
+            </div>
+        </div>
+    </div>
+
             <div class="ac-card ac-c2">
                 <div class="ac-head">
                     <span class="ac-icon"><i class="fa-solid fa-id-badge"></i></span>
@@ -3225,26 +3430,248 @@ body:not(.light-theme) .leave-dlg-stay{background:var(--inner);border-color:var(
                 </form>
             </div>
 
-            <div class="ac-card ac-c5" id="student-security-questions">
-                <div class="ac-head">
-                    <span class="ac-icon"><i class="fa-solid fa-shield-halved"></i></span>
-                    <div>
-                        <h2>Security Questions</h2>
-                        <p class="ac-sub">These questions are used to recover your account if you forget your password.</p>
-                    </div>
-                </div>
-                <?php if ($sq_status === 'ok'): ?>
-                <div class="sq-status ok"><i class="fa-solid fa-circle-check"></i> Security questions are set</div>
-                <?php elseif ($sq_status === 'retired'): ?>
-                <div class="sq-status warn"><i class="fa-solid fa-triangle-exclamation"></i> One of your questions is no longer offered &mdash; please update them</div>
-                <?php else: ?>
-                <div class="sq-status warn"><i class="fa-solid fa-triangle-exclamation"></i> Not set up yet</div>
-                <?php endif; ?>
-                <div>
-                    <a class="ac-btn" href="security_questions.php"><i class="fa-solid fa-pen-to-square"></i> <?= $sq_status === 'none' ? 'Set Security Questions' : 'Update Security Questions' ?></a>
-                </div>
             </div>
+
+<?php
+if (!function_exists('sq_questions')) { try { require_once 'security.php'; } catch (Throwable $e) {} }
+$sqIsNew = ($sq_status === 'none');
+$sqQuestionList = [];
+try { $sqQuestionList = sq_questions(); } catch (Throwable $e) { error_log('sq_questions failed: ' . $e->getMessage()); }
+?>
+<style id="sqm-styles">
+.sq-top-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.sq-top-row .ac-head{flex:1;min-width:260px;margin-bottom:0 !important}
+.sq-top-row .sq-top-action{flex:0 0 auto}
+.sq-top-row .sq-status{margin:10px 0 0}
+.sq-top-card.is-unset{border:2px solid #E2A33B !important;box-shadow:0 0 0 4px rgba(226,163,59,.16) !important}
+.sq-top-card.is-unset::before{background:#E2A33B !important}
+.sq-top-card.is-set{--ac-c:#D97706}
+.sq-top-card.is-unset{--ac-c:#E2A33B}
+.sq-status{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:999px;font-size:12px;font-weight:600;background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.3)}
+.sq-status.ok{color:#10B981;border-color:rgba(16,185,129,.4)}
+.sq-status.warn{color:#D97706;border-color:rgba(217,119,6,.45)}
+.sq-top-card.is-unset .ac-icon{background:rgba(226,163,59,.18) !important;color:#D97706 !important}
+.sq-top-card.is-unset .ac-icon i{color:#D97706 !important}
+
+.sqm-overlay{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(11,31,58,.55);overscroll-behavior:contain}
+.sqm-overlay[hidden]{display:none}
+.sqm-modal{--sq-acc:#D97706;--sq-acc-h:#B45309;--sq-line:rgba(128,140,160,.30);width:min(620px,100%);max-height:calc(100vh - 40px);overflow:auto;background:var(--mid,#fff);border:1px solid var(--sq-line);border-radius:16px;padding:20px 22px;box-shadow:0 24px 60px rgba(11,31,58,.35);color:var(--light,#0B1F3A)}
+.sqm-modal,.sqm-modal *{box-sizing:border-box;font-family:'DM Sans',system-ui,-apple-system,"Segoe UI",sans-serif}
+.sqm-modal:focus{outline:none}
+.sqm-modal [hidden]{display:none !important}
+.sqm-head{position:sticky;top:-20px;z-index:2;margin:-20px -22px 0;padding:20px 22px 6px;background:var(--mid,#fff);border-radius:16px 16px 0 0}
+.sqm-head-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.sqm-head-text{flex:1;min-width:220px}
+.sqm-modal h3{font-size:18px;font-weight:700;line-height:1.25;color:var(--light,#0B1F3A);margin:0 0 4px}
+.sqm-text{font-size:13.5px;line-height:1.5;color:var(--muted,#405A76);margin:0}
+.sqm-head-actions{display:flex;gap:10px;flex:0 0 auto}
+.sqm-btn{height:40px;padding:0 16px;border:1px solid var(--sq-line);background:transparent;color:var(--light,#0B1F3A);border-radius:10px;font-weight:700;font-size:13px;cursor:pointer}
+.sqm-btn:hover{border-color:var(--sq-acc)}
+.sqm-btn.primary{background:var(--sq-acc);border-color:var(--sq-acc);color:#fff}
+.sqm-btn.primary:hover:not(:disabled){background:var(--sq-acc-h);border-color:var(--sq-acc-h)}
+.sqm-btn.danger{background:#D6455D;border-color:#D6455D;color:#fff}
+.sqm-btn:disabled{opacity:.55;cursor:not-allowed}
+.sqm-error{margin-top:12px;padding:10px 12px;border-radius:10px;background:rgba(240,84,84,.12);border:1px solid rgba(240,84,84,.35);color:#E05252;font-size:12.5px;line-height:1.45;font-weight:600}
+.sqm-discard{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;padding:10px 12px;border:1px solid #F5D48A;background:rgba(245,212,138,.16);border-radius:10px;color:#B07400;font-size:13px}
+.sqm-discard span{flex:1;min-width:180px}
+.sqm-sec{margin:12px 0 0}
+.sqm-sec-title{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#67819E);margin:0 0 6px}
+.sqm-confirm{display:flex;gap:12px;align-items:center;padding:12px 14px;border:2px solid var(--sq-acc);border-radius:12px;background:color-mix(in srgb,var(--sq-acc) 10%,transparent);box-shadow:0 0 0 4px color-mix(in srgb,var(--sq-acc) 12%,transparent)}
+.sqm-lock{flex:0 0 38px;height:38px;border-radius:50%;display:grid;place-items:center;background:var(--sq-acc);color:#fff;font-size:15px}
+.sqm-confirm-body{flex:1;min-width:0}
+.sqm-confirm-title{font-size:14px;font-weight:800;color:var(--light,#0B1F3A)}
+.sqm-confirm-sub{font-size:12px;color:var(--muted,#5C6B8A);margin:1px 0 6px}
+.sqm-modal label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:700;color:var(--muted,#405A76)}
+.sqm-modal input[type=text],.sqm-modal input[type=password],.sqm-modal select{width:100%;height:38px;padding:0 12px;border:1px solid var(--sq-line);border-radius:10px;font:500 14px 'DM Sans',system-ui,sans-serif;color:var(--light,#0B1F3A);background:var(--inner,#fff)}
+.sqm-modal select{appearance:none;-webkit-appearance:none;cursor:pointer;padding-right:34px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%2367819E' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
+.sqm-modal input:focus,.sqm-modal select:focus{outline:2px solid color-mix(in srgb,var(--sq-acc) 35%,transparent);border-color:var(--sq-acc)}
+.sqm-modal select.is-empty{color:var(--sq-acc);font-weight:700}
+.sqm-modal select option{background:var(--mid,#fff);color:var(--light,#0B1F3A);font-weight:500}
+.sqm-modal select option[value=""]{color:var(--sq-acc);font-weight:700}
+.sqm-modal select option:disabled{color:#8A97A8}
+.sqm-pw{position:relative}
+.sqm-pw input{padding-right:44px !important}
+.sqm-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:none;color:var(--muted,#67819E);cursor:pointer;padding:8px;line-height:1;display:flex;align-items:center;justify-content:center}
+.sqm-eye:hover{color:var(--sq-acc)}
+.sqm-q{display:flex;gap:12px;align-items:flex-start;margin:0 0 8px}
+.sqm-num{flex:0 0 auto;width:28px;height:28px;margin-top:5px;border-radius:50%;display:grid;place-items:center;background:color-mix(in srgb,var(--sq-acc) 14%,transparent);color:var(--sq-acc);font-weight:800;font-size:12.5px}
+.sqm-q-fields{flex:1;min-width:0;display:grid;gap:6px}
+.sqm-chosen{font-size:12.5px;color:var(--muted,#405A76);line-height:1.4;padding:0 2px}
+.sqm-chosen:empty{display:none}
+.sqm-hint{margin-top:4px;padding:9px 13px;border-radius:10px;font-size:12.5px;line-height:1.45;border:1px solid var(--sq-line);background:var(--inner,#F7FAFF);color:var(--muted,#405A76)}
+.sqm-hint b{display:block;font-size:13.5px;color:var(--light,#0B1F3A)}
+.sqm-verify-row{display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap}
+.sqm-verified{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:#10B981}
+.sqm-shake{animation:sqmShake .35s ease}
+@keyframes sqmShake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+@media (max-height:720px){.sqm-modal{padding:16px 20px}.sqm-head{top:-16px;margin:-16px -20px 0;padding:16px 20px 4px}.sqm-sec{margin-top:8px}.sqm-modal input[type=text],.sqm-modal input[type=password],.sqm-modal select{height:34px}.sqm-q{margin-bottom:6px}.sqm-q-fields{gap:4px}.sqm-num{margin-top:3px}.sqm-confirm{padding:8px 12px}.sqm-hint{padding:6px 12px}}
+</style>
+<div class="sqm-overlay" id="sqmOverlay" hidden>
+  <div class="sqm-modal" id="sqmModal" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="sqmTitle">
+    <form id="sqmForm" autocomplete="off" novalidate>
+      <input type="hidden" name="sq_ajax" value="1">
+      <?= csrf_field() ?>
+      <div class="sqm-head">
+        <div class="sqm-head-row">
+          <div class="sqm-head-text">
+            <h3 id="sqmTitle"><?= $sqIsNew ? 'Set security questions' : 'Update security questions' ?></h3>
+            <p class="sqm-text">Used to recover your account if you forget your password. Choose 3 different questions.</p>
+          </div>
+          <div class="sqm-head-actions">
+            <button type="button" class="sqm-btn" id="sqmCancel">Cancel</button>
+            <button type="submit" class="sqm-btn primary" id="sqmSave" disabled>Save questions</button>
+          </div>
+        </div>
+        <div class="sqm-discard" id="sqmDiscard" hidden>
+          <span>You have unsaved changes. Discard them?</span>
+          <button type="button" class="sqm-btn" id="sqmKeep">Keep editing</button>
+          <button type="button" class="sqm-btn danger" id="sqmDiscardGo">Discard</button>
+        </div>
+        <div class="sqm-error" id="sqmError" role="alert" hidden></div>
+      </div>
+
+      <div class="sqm-sec" id="sqmConfirmSec">
+        <div class="sqm-sec-title">Confirm it&rsquo;s you</div>
+        <div class="sqm-confirm">
+          <span class="sqm-lock"><i class="fa-solid fa-lock"></i></span>
+          <div class="sqm-confirm-body">
+            <div class="sqm-confirm-title">Enter your current password first</div>
+            <div class="sqm-confirm-sub">Confirm your password to unlock your questions.</div>
+            <label>Current password
+              <span class="sqm-pw">
+                <input type="password" id="sqmPw" name="current_password" autocomplete="current-password" placeholder="Enter your current password">
+                <button type="button" class="sqm-eye" id="sqmEye" aria-label="Show password" title="Show password"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.9 10.9 0 0 1 12 19C5.5 19 2 12 2 12a18.6 18.6 0 0 1 5.06-5.94"/><path d="M9.9 4.24A10.9 10.9 0 0 1 12 4c6.5 0 10 8 10 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12A3 3 0 1 1 9.88 9.88"/><path d="M1 1l22 22"/></svg></button>
+              </span>
+            </label>
+            <div class="sqm-verify-row">
+              <button type="button" class="sqm-btn primary" id="sqmVerify" disabled>Continue</button>
+              <span class="sqm-verified" id="sqmVerified" hidden>&#10003; Password confirmed</span>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sqm-sec" id="sqmQsec" hidden>
+        <div class="sqm-sec-title">Your questions</div>
+        <?php for ($n = 1; $n <= 3; $n++): ?>
+        <div class="sqm-q">
+          <span class="sqm-num"><?= $n ?></span>
+          <div class="sqm-q-fields">
+            <select name="sq_question[<?= $n ?>]" id="sqmQ<?= $n ?>" class="is-empty" aria-label="Question <?= $n ?>">
+              <option value="">Choose a question</option>
+              <?php foreach ($sqQuestionList as $k => $q): ?><option value="<?= htmlspecialchars((string)$k) ?>"><?= htmlspecialchars($q) ?></option><?php endforeach; ?>
+            </select>
+            <div class="sqm-chosen" id="sqmChosen<?= $n ?>" aria-live="polite"></div>
+            <input type="text" name="sq_answer[<?= $n ?>]" id="sqmA<?= $n ?>" maxlength="100" placeholder="Your answer" autocomplete="off" aria-label="Answer <?= $n ?>">
+          </div>
+        </div>
+        <?php endfor; ?>
+        <div class="sqm-hint"><b><?= $sqIsNew ? 'Pick a question and give an answer only you would know.' : 'You can change just one. Anything you leave as it is stays saved.' ?></b>For your security, existing answers are never shown.</div>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+(function(){
+  var ov=document.getElementById('sqmOverlay'), md=document.getElementById('sqmModal'), form=document.getElementById('sqmForm');
+  var openBtn=document.getElementById('sqOpen'); if(!ov||!form||!openBtn) return;
+  document.body.appendChild(ov); /* lift above sidebar / header stacking contexts */
+  var save=document.getElementById('sqmSave'), err=document.getElementById('sqmError'), disc=document.getElementById('sqmDiscard');
+  var pw=document.getElementById('sqmPw'), eye=document.getElementById('sqmEye');
+  var qs=[1,2,3].map(function(n){return document.getElementById('sqmQ'+n);}), as=[1,2,3].map(function(n){return document.getElementById('sqmA'+n);});
+  var busy=false, verified=false, saved=['','',''];
+  function resetGate(){
+    verified=false; pw.readOnly=false; saved=['','',''];
+    document.getElementById('sqmConfirmSec').hidden=false;
+    document.getElementById('sqmQsec').hidden=true;
+    document.getElementById('sqmVerified').hidden=true;
+    document.getElementById('sqmVerify').hidden=false;
+  }
+  var SQM_EYE='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+  var SQM_SLASH='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.9 10.9 0 0 1 12 19C5.5 19 2 12 2 12a18.6 18.6 0 0 1 5.06-5.94"/><path d="M9.9 4.24A10.9 10.9 0 0 1 12 4c6.5 0 10 8 10 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12A3 3 0 1 1 9.88 9.88"/><path d="M1 1l22 22"/></svg>';
+  function dirty(){ return !!pw.value || qs.some(function(s,i){return s.value!==saved[i];}) || as.some(function(a){return a.value.trim();}); }
+  /* A slot is fine when it has a question and either a new answer or is still the saved question (its saved answer is kept). */
+  function slotOk(i){ return !!qs[i].value && (as[i].value.trim()!=='' || qs[i].value===saved[i]); }
+  function slotChanged(i){ return qs[i].value!==saved[i] || as[i].value.trim()!==''; }
+  function ready(){ return verified && pw.value!=='' && [0,1,2].every(slotOk) && [0,1,2].some(slotChanged); }
+  function sync(){
+    var chosen=qs.map(function(s){return s.value;}).filter(Boolean);
+    qs.forEach(function(s,i){
+      Array.prototype.forEach.call(s.options,function(o){ o.disabled=o.value!==''&&chosen.indexOf(o.value)!==-1&&o.value!==s.value; });
+      s.classList.toggle('is-empty',!s.value);
+      document.getElementById('sqmChosen'+(i+1)).textContent=s.value?s.options[s.selectedIndex].text:'';
+      as[i].placeholder=(s.value && s.value===saved[i]) ? 'Saved \u2014 leave blank to keep it, or type a new answer' : 'Your answer';
+    });
+    save.disabled=busy||!ready();
+    document.getElementById('sqmVerify').disabled=busy||verified||pw.value==='';
+  }
+  function showErr(m){ err.textContent=m; err.hidden=!m; }
+  function open(){
+    form.reset(); resetGate(); showErr(''); disc.hidden=true; pw.type='password';
+    eye.innerHTML=SQM_SLASH; eye.setAttribute('aria-label','Show password');
+    sync(); ov.hidden=false; md.scrollTop=0;
+    setTimeout(function(){ pw.focus({preventScroll:true}); },30);
+  }
+  function close(){ ov.hidden=true; openBtn.focus(); }
+  function requestClose(){
+    if(busy) return;
+    if(dirty()){ disc.hidden=false; md.scrollTop=0; md.classList.remove('sqm-shake'); void md.offsetWidth; md.classList.add('sqm-shake'); }
+    else close();
+  }
+  openBtn.addEventListener('click',open);
+  document.getElementById('sqmCancel').addEventListener('click',requestClose);
+  document.getElementById('sqmKeep').addEventListener('click',function(){ disc.hidden=true; });
+  document.getElementById('sqmDiscardGo').addEventListener('click',close);
+  ov.addEventListener('mousedown',function(e){ if(e.target===ov) requestClose(); });
+  document.addEventListener('keydown',function(e){ if(!ov.hidden&&e.key==='Escape'){ e.preventDefault(); requestClose(); } });
+  form.addEventListener('input',sync); form.addEventListener('change',sync);
+  eye.addEventListener('click',function(){
+    var show=pw.type==='password'; pw.type=show?'text':'password';
+    eye.innerHTML=show?SQM_EYE:SQM_SLASH;
+    eye.setAttribute('aria-label',show?'Hide password':'Show password');
+  });
+  /* Step 1: the password must be confirmed on the server before the questions appear. */
+  function verifyPw(){
+    var vb=document.getElementById('sqmVerify');
+    if(busy||verified||pw.value==='') return;
+    busy=true; vb.disabled=true; vb.textContent='Checking\u2026'; showErr('');
+    var fd=new FormData(form); fd.append('sq_verify','1');
+    fetch('student_dashboard.php',{method:'POST',body:fd,credentials:'same-origin',headers:{'X-Requested-With':'XMLHttpRequest'}})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(d&&d.ok){
+          verified=true; pw.readOnly=true;
+          document.getElementById('sqmConfirmSec').hidden=true; /* password is confirmed: hide this step; the value is still submitted with the form */
+          var sv=(d&&d.questions)||{};
+          qs.forEach(function(s,i){
+            var k=sv[i+1]||'';
+            if(k && Array.prototype.some.call(s.options,function(o){return o.value===k;})){ s.value=k; saved[i]=k; }
+          });
+          document.getElementById('sqmQsec').hidden=false;
+          document.getElementById('sqmVerified').hidden=false;
+          vb.hidden=true;
+          setTimeout(function(){ qs[0].focus({preventScroll:true}); },30);
+        } else { showErr((d&&d.message)||'Your current password is not correct.'); pw.select(); }
+      })
+      .catch(function(){ showErr('Could not reach the server. Please try again.'); })
+      .then(function(){ busy=false; vb.textContent='Continue'; sync(); });
+  }
+  document.getElementById('sqmVerify').addEventListener('click',verifyPw);
+  pw.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); verifyPw(); } });
+  form.addEventListener('submit',function(e){
+    e.preventDefault(); if(busy||!ready()) return;
+    busy=true; save.disabled=true; save.textContent='Saving\u2026'; showErr('');
+    fetch('student_dashboard.php',{method:'POST',body:new FormData(form),credentials:'same-origin',headers:{'X-Requested-With':'XMLHttpRequest'}})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(d&&d.ok){ location.href='student_dashboard.php?view=settings'; return; }
+        showErr((d&&d.message)||'The security questions could not be saved. Please try again.'); md.scrollTop=0;
+      })
+      .catch(function(){ showErr('Could not reach the server. Please try again.'); })
+      .then(function(){ busy=false; save.textContent='Save questions'; sync(); });
+  });
+})();
+</script>
 
             <div class="settings-tabpanel" role="tabpanel" id="tabPanelAppearance" aria-labelledby="tabBtnAppearance" data-panel="appearance" hidden>
             <div class="ac-card ac-c1" id="student-appearance-settings">
@@ -4045,5 +4472,21 @@ document.addEventListener('DOMContentLoaded', function () {
 })();
 </script>
 <script src="../admin/eval_status_poll.js" data-busy-selector="#evalModal.open" defer></script>
+<script>
+// Evaluation History: filter cards by evaluation term (client-side, no reload).
+function filterHistoryByTerm(key) {
+    var cards = document.querySelectorAll('#view-history .history-card');
+    var shown = 0;
+    cards.forEach(function (c) {
+        var match = (key === 'all' || c.getAttribute('data-term') === key);
+        c.style.display = match ? '' : 'none';
+        if (match) shown++;
+    });
+    var count = document.getElementById('historyCount');
+    if (count) count.textContent = 'Showing ' + shown + ' of ' + cards.length;
+    var empty = document.getElementById('historyTermEmpty');
+    if (empty) empty.hidden = shown !== 0;
+}
+</script>
 </body>
 </html>

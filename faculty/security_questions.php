@@ -208,7 +208,6 @@ document.getElementById('sqForm').addEventListener('submit', function(e){
     if (qs.some(v => !v)) msg = 'Please choose all three questions.';
     else if (new Set(qs).size !== 3) msg = 'Please choose three different questions.';
     else if (ans.some(v => v.length < 3)) msg = 'Each answer needs at least 3 letters or numbers.';
-    else if (new Set(ans).size !== 3) msg = 'Each answer must be different.';
     if (msg) { e.preventDefault(); txt.textContent = msg; box.style.display = 'flex'; }
     else box.style.display = 'none';
 });

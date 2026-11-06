@@ -297,6 +297,19 @@ function trackerEvaluatorRows(mysqli $db, string $tab, int $periodId, array $peo
     return $rows;
 }
 
+/** Level pill(s) for an evaluator row: JHS/SHS, College, both, or no assignment. */
+function trackerScopePills(string $scopeKey): string {
+    $hs  = '<span class="et-level-pill lvl-jhs">JHS/SHS</span>';
+    $col = '<span class="et-level-pill lvl-col">College</span>';
+    if ($scopeKey === 'both')    return '<span class="et-level-group">' . $hs . $col . '</span>';
+    if ($scopeKey === 'college') return $col;
+    if ($scopeKey === 'hs')      return $hs;
+    return '<span class="et-level-pill lvl-none">No level</span>';
+}
+function trackerScopeSortValue(string $scopeKey): string {
+    return ['hs' => 'JHS/SHS', 'college' => 'College', 'both' => 'JHS/SHS + College'][$scopeKey] ?? 'zzz';
+}
+
 function statusFor(int $done, int $required, bool $started = false): string {
     if ($required > 0 && $done >= $required) return 'completed';
     if ($done > 0 || ($started && $required > 0)) return 'in_progress';
@@ -626,7 +639,7 @@ html body nav.et-tabs,html[data-theme="dark"] body nav.et-tabs,html.dark-theme b
 /* Level filter buttons + level pills: compact, not tall ovals/boxes */
 .et-levels{align-items:center !important;}
 .et-btn{display:inline-flex !important;align-items:center !important;height:auto !important;min-height:0 !important;width:auto !important;aspect-ratio:auto !important;flex:0 0 auto !important;line-height:1.2 !important;padding:9px 16px !important;border-radius:999px !important;font-size:12px !important;}
-.et-level-pill{display:inline-block !important;height:auto !important;min-height:0 !important;width:auto !important;aspect-ratio:auto !important;line-height:1.3 !important;padding:4px 12px !important;font-size:11px !important;}
+.et-level-pill{display:inline-block !important;height:auto !important;min-height:0 !important;width:auto !important;aspect-ratio:auto !important;line-height:1.3 !important;padding:5px 13px !important;border-radius:849px !important;font-size:11px !important;font-weight:700 !important;white-space:nowrap !important;}
 
 /* Readability */
 .et-mini{font-size:12px !important;color:#5B7490 !important;}
@@ -664,6 +677,17 @@ a.et-total.t-prog.active{background:#FFFBEB}
 .et-table th[data-sort]::after{content:"\2195";margin-left:6px;font-size:11px;opacity:.35}
 .et-table th[data-sort][data-dir="asc"]::after{content:"\2191";opacity:1;color:var(--et-g)}
 .et-table th[data-sort][data-dir="desc"]::after{content:"\2193";opacity:1;color:var(--et-g)}
+
+/* Level filter tabs + table level pills: same compact shapes as the Dean / Principal trackers,
+   keeping this page's own colours. Selectors are deliberately specific (repeated classes) so the
+   shared admin_unified_ui.css / admin_appearance.css cannot stretch them back into tall ovals. */
+html body .et-levels a.et-btn.et-btn.et-btn,
+html body .et-levels button.et-btn.et-btn.et-btn{display:inline-flex !important;align-items:center !important;justify-content:center !important;height:38px !important;min-height:0 !important;max-height:none !important;width:auto !important;min-width:0 !important;aspect-ratio:auto !important;flex:0 0 auto !important;margin:0 !important;padding:0 16px !important;border-radius:10px !important;font-size:12px !important;font-weight:700 !important;line-height:1 !important;white-space:nowrap !important;box-sizing:border-box !important}
+html body span.et-level-pill.et-level-pill.et-level-pill{display:inline-block !important;vertical-align:middle !important;height:auto !important;min-height:0 !important;max-height:none !important;width:auto !important;min-width:0 !important;aspect-ratio:auto !important;margin:0 !important;padding:5px 13px !important;border-radius:849px !important;font-size:11px !important;font-weight:700 !important;line-height:1.3 !important;white-space:nowrap !important;box-sizing:border-box !important}
+
+/* Evaluator-table level cell (Faculty / Dean / Principal tabs) */
+.et-level-group{display:inline-flex;flex-wrap:wrap;gap:6px}
+html body span.et-level-pill.lvl-none{color:#67819E;border-color:#C9D7E2;background:rgba(103,129,158,.10)}
 </style>
 
 <div class="et-wrap">
@@ -749,14 +773,14 @@ a.et-total.t-prog.active{background:#FFFBEB}
             <div class="et-empty">No <?= $tab==='faculty' ? 'faculty' : htmlspecialchars($tab) ?> accounts match the selected filters.</div>
         <?php else: ?>
             <table>
-                <thead><tr><th style="width:38%" data-sort="name">EVALUATOR</th><th style="width:12%" data-sort="req">REQUIRED</th><th style="width:14%" data-sort="done">COMPLETED</th><th style="width:16%" data-sort="state">STATUS</th><th style="width:17%" data-sort="pct">PROGRESS</th><th style="width:3%"></th></tr></thead>
+                <thead><tr><th style="width:30%" data-sort="name">EVALUATOR</th><th style="width:15%" data-sort="level">LEVEL</th><th style="width:10%" data-sort="req">REQUIRED</th><th style="width:12%" data-sort="done">COMPLETED</th><th style="width:14%" data-sort="state">STATUS</th><th style="width:16%" data-sort="pct">PROGRESS</th><th style="width:3%"></th></tr></thead>
                 <tbody>
                 <?php foreach ($rows as $r):
                     $photo = trim((string)($r['photo'] ?? ''));
                     $stateClass = $r['state']==='completed' ? 'st-completed' : ($r['state']==='in_progress' ? 'st-progress' : 'st-start');
                     $stateLabel = $r['state']==='completed' ? 'Completed' : ($r['state']==='in_progress' ? 'In Progress' : 'Not Started');
                 ?>
-                    <tr class="et-row" data-key="<?=htmlspecialchars($tab . '-' . (int)$r['id'])?>" data-name="<?=htmlspecialchars(mb_strtolower((string)$r['full_name']))?>" data-level="<?=htmlspecialchars((string)($r['education_level'] ?? ''))?>" data-req="<?=(float)$r['required']?>" data-done="<?=(float)$r['done']?>" data-pct="<?=(float)$r['pct']?>" data-state="<?=htmlspecialchars((string)$r['state'])?>" tabindex="0" aria-expanded="false">
+                    <tr class="et-row" data-key="<?=htmlspecialchars($tab . '-' . (int)$r['id'])?>" data-name="<?=htmlspecialchars(mb_strtolower((string)$r['full_name']))?>" data-level="<?=htmlspecialchars(trackerScopeSortValue((string)($r['scope_key'] ?? 'none')))?>" data-req="<?=(float)$r['required']?>" data-done="<?=(float)$r['done']?>" data-pct="<?=(float)$r['pct']?>" data-state="<?=htmlspecialchars((string)$r['state'])?>" tabindex="0" aria-expanded="false">
                         <td>
                             <div class="et-student">
                                 <div class="et-avatar">
@@ -765,6 +789,7 @@ a.et-total.t-prog.active{background:#FFFBEB}
                                 <div><div class="et-name"><?=htmlspecialchars($r['full_name'])?></div><div class="et-mini"><?=htmlspecialchars($r['sub'])?></div></div>
                             </div>
                         </td>
+                        <td><?= trackerScopePills((string)($r['scope_key'] ?? 'none')) ?></td>
                         <td><?=$r['required']?></td>
                         <td><?=$r['done']?> / <?=$r['required']?></td>
                         <td><span class="et-status <?=$stateClass?>"><?=$stateLabel?></span></td>
@@ -774,7 +799,7 @@ a.et-total.t-prog.active{background:#FFFBEB}
                         </td>
                         <td class="et-arrow"><span class="et-chev">›</span></td>
                     </tr>
-                    <tr class="et-detail" data-key="<?=htmlspecialchars($tab . '-' . (int)$r['id'])?>" hidden><td colspan="6"><?= trackerRenderDetail($r) ?></td></tr>
+                    <tr class="et-detail" data-key="<?=htmlspecialchars($tab . '-' . (int)$r['id'])?>" hidden><td colspan="7"><?= trackerRenderDetail($r) ?></td></tr>
                 <?php endforeach; ?>
                 </tbody>
             </table>

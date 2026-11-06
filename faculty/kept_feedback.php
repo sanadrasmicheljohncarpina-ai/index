@@ -21,12 +21,9 @@ if (!function_exists('kept_feedback_ready')) {
 
     /** True when the archive has created portal_feedback_keep. */
     function kept_feedback_ready(mysqli $db): bool {
-        static $ready = null;
-        if ($ready === null) {
-            $r = $db->query("SHOW TABLES LIKE 'portal_feedback_keep'");
-            $ready = $r && $r->num_rows > 0;
-        }
-        return $ready;
+        // Archived feedback is no longer merged into faculty/staff pages, so the dashboards
+        // reset to zero after an archive.
+        return false;
     }
 
     /**

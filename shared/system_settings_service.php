@@ -231,11 +231,37 @@ function ss_period_columns(mysqli $mysqli): array {
 }
 
 /**
+ * Opening/closing TIME of each schedule. evaluation_periods only has DATE columns, so the
+ * times are kept in two nullable DATETIME columns. Created once if missing; if the database
+ * user may not ALTER tables this silently does nothing and the page just shows dates.
+ */
+function ss_ensure_period_time_columns(mysqli $mysqli): bool {
+    static $done = null;
+    if ($done !== null) return $done;
+    $have = [];
+    $res = @$mysqli->query("SHOW COLUMNS FROM evaluation_periods");
+    if ($res) {
+        while ($r = $res->fetch_assoc()) $have[strtolower($r['Field'])] = true;
+        $res->free();
+    }
+    foreach (['eval_start_at', 'eval_end_at'] as $c) {
+        if (!isset($have[$c])) @$mysqli->query("ALTER TABLE evaluation_periods ADD COLUMN `$c` DATETIME DEFAULT NULL");
+    }
+    $have = [];
+    $res = @$mysqli->query("SHOW COLUMNS FROM evaluation_periods");
+    if ($res) {
+        while ($r = $res->fetch_assoc()) $have[strtolower($r['Field'])] = true;
+        $res->free();
+    }
+    return $done = (isset($have['eval_start_at']) && isset($have['eval_end_at']));
+}
+
+/**
  * Keep the selected academic period synchronized with the configured year /
  * term and schedule dates.  is_active identifies the current period; it is
  * not used as the submission-open flag.
  */
-function ss_sync_evaluation_period(mysqli $mysqli, array $sys): int {
+function ss_sync_evaluation_period(mysqli $mysqli, array $sys, bool $newRoundIfArchived = false): int {
     $exists = @$mysqli->query("SHOW TABLES LIKE 'evaluation_periods'");
     if (!$exists || $exists->num_rows === 0) return 0;
 
@@ -248,15 +274,36 @@ function ss_sync_evaluation_period(mysqli $mysqli, array $sys): int {
     }
 
     $label = trim($year . ' — ' . $term, ' —');
-    $stmt = @$mysqli->prepare("SELECT id FROM evaluation_periods WHERE school_year=? AND semester=? ORDER BY id DESC LIMIT 1");
+
+    // Prefer a period that has NOT been archived, so a finished (archived) round is never
+    // reused for a new one that happens to have the same school year and term.
+    $hasArchive = @$mysqli->query("SHOW TABLES LIKE 'system_archives'");
+    $hasArchive = $hasArchive && $hasArchive->num_rows > 0;
     $periodId = 0;
+    if ($hasArchive) {
+        $stmt = @$mysqli->prepare("SELECT ep.id FROM evaluation_periods ep
+            LEFT JOIN system_archives sa ON sa.period_id = ep.id AND sa.status = 'archived'
+            WHERE ep.school_year=? AND ep.semester=? AND sa.id IS NULL
+            ORDER BY ep.id DESC LIMIT 1");
+        if ($stmt) {
+            $stmt->bind_param('ss', $year, $term);
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc();
+            $periodId = (int)($row['id'] ?? 0);
+            $stmt->close();
+        }
+    }
+    // Any matching period at all (archived or not) - used as a fallback.
+    $anyId = 0;
+    $stmt = @$mysqli->prepare("SELECT id FROM evaluation_periods WHERE school_year=? AND semester=? ORDER BY id DESC LIMIT 1");
     if ($stmt) {
         $stmt->bind_param('ss', $year, $term);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
-        $periodId = (int)($row['id'] ?? 0);
+        $anyId = (int)($row['id'] ?? 0);
         $stmt->close();
     }
+    if ($periodId <= 0 && !($newRoundIfArchived && $anyId > 0)) $periodId = $anyId;
 
     $start = ss_parse_datetime($sys['eval_start'] ?? '');
     $end = ss_parse_datetime($sys['eval_end'] ?? '');
@@ -269,6 +316,9 @@ function ss_sync_evaluation_period(mysqli $mysqli, array $sys): int {
         $stmt->execute();
         $periodId = (int)$mysqli->insert_id;
         $stmt->close();
+        // If the database refuses a second period with the same year/term, fall back to the
+        // existing one rather than leaving no active period at all.
+        if ($periodId <= 0) $periodId = $anyId;
     }
 
     if ($periodId > 0 && $cols['start'] && $cols['end'] && $start && $end) {
@@ -278,6 +328,18 @@ function ss_sync_evaluation_period(mysqli $mysqli, array $sys): int {
             $startDate = $start->format('Y-m-d');
             $endDate = $end->format('Y-m-d');
             $stmt->bind_param('sssi', $startDate, $endDate, $label, $periodId);
+            $stmt->execute();
+            $stmt->close();
+        }
+    }
+
+    // Save the full opening/closing date AND time so Previous schedules can show them.
+    if ($periodId > 0 && $start && $end && ss_ensure_period_time_columns($mysqli)) {
+        $stmt = @$mysqli->prepare("UPDATE evaluation_periods SET eval_start_at=?, eval_end_at=? WHERE id=?");
+        if ($stmt) {
+            $startAt = $start->format('Y-m-d H:i:s');
+            $endAt = $end->format('Y-m-d H:i:s');
+            $stmt->bind_param('ssi', $startAt, $endAt, $periodId);
             $stmt->execute();
             $stmt->close();
         }

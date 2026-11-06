@@ -481,7 +481,7 @@ regForm.addEventListener('submit', function(e){
     }
 
 
-    // Security questions: three different questions, answers long enough and different from each other
+    // Security questions: three different questions, answers long enough (answers may repeat)
     const sqSelects = [1,2,3].map(n => document.getElementById('sq_q' + n));
     const sqAnswers = [1,2,3].map(n => document.getElementById('sq_a' + n));
     if (new Set(sqSelects.map(s => s.value)).size !== 3) {
@@ -490,7 +490,7 @@ regForm.addEventListener('submit', function(e){
     }
     const sqNorm = sqAnswers.map(a => a.value.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ''));
     sqNorm.forEach(function(v, i){
-        if (v.length < 3 || sqNorm.indexOf(v) !== i) {
+        if (v.length < 3) {
             sqAnswers[i].classList.add('field-invalid');
             if (!firstInvalid) firstInvalid = sqAnswers[i];
         }
