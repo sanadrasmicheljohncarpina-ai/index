@@ -392,11 +392,32 @@ if ($isMultiRole) {
 $basicEdYears  = ['Grade 7','Grade 8','Grade 9','Grade 10','Grade 11','Grade 12'];
 $higherEdYears = ['1st Year College','2nd Year College','3rd Year College','4th Year College'];
 $allYearLevels = array_merge($basicEdYears, $higherEdYears);
+// Level tabs (All Levels / Junior High / Senior High / College) narrow the
+// Year Level dropdown, exactly like the Evaluation Tracker.
+$levelGroups = [
+    'jhs'     => ['label'=>'Junior High School','years'=>['Grade 7','Grade 8','Grade 9','Grade 10']],
+    'shs'     => ['label'=>'Senior High School','years'=>['Grade 11','Grade 12']],
+    'college' => ['label'=>'College','years'=>$higherEdYears],
+];
 $yearLevel = $_GET['year_level'] ?? 'All';
 if ($yearLevel !== 'All' && !in_array($yearLevel, $allYearLevels, true)) $yearLevel = 'All';
-if ($activeEval !== 'student') $yearLevel = 'All';
+$levelTab = $_GET['level'] ?? 'All';
+if ($levelTab !== 'All' && !isset($levelGroups[$levelTab])) $levelTab = 'All';
+if ($activeEval !== 'student') { $yearLevel = 'All'; $levelTab = 'All'; }
+// A specific year level decides the level tab; a year that doesn't belong to the chosen tab is dropped.
+if ($yearLevel !== 'All') {
+    foreach ($levelGroups as $k => $g) { if (in_array($yearLevel, $g['years'], true)) { $levelTab = $k; break; } }
+}
 $educationLevel = $yearLevel === 'All' ? 'All' : (in_array($yearLevel, $basicEdYears, true) ? 'basic_ed' : 'higher_ed');
-$yearLevelSql = ($activeEval === 'student' && $yearLevel !== 'All') ? " AND u.year_level=" . $sqlQuote($yearLevel) : "";
+if ($activeEval !== 'student') {
+    $yearLevelSql = "";
+} elseif ($yearLevel !== 'All') {
+    $yearLevelSql = " AND u.year_level=" . $sqlQuote($yearLevel);
+} elseif ($levelTab !== 'All') {
+    $yearLevelSql = " AND u.year_level IN (" . implode(',', array_map($sqlQuote, $levelGroups[$levelTab]['years'])) . ")";
+} else {
+    $yearLevelSql = "";
+}
 
 // ── VIEWS ─────────────────────────────────────────────────────
 $view       = $_GET['view']       ?? 'list';
@@ -896,7 +917,7 @@ if ($view === 'sheet' && $target_id && ($tracker_id || ($_GET['report'] ?? '') =
     // the Evaluators List, so totals always agree with it.
     $cumTrackers = [];
     $cq = $mysqli->query("
-        SELECT et.id AS tracker_id, et.submitted_at, et.remarks, u.role AS evaluator_role
+        SELECT et.id AS tracker_id, et.period_id, et.submitted_at, et.remarks, u.role AS evaluator_role
         FROM evaluation_tracker et
         JOIN users u ON u.id = et.evaluator_id
         WHERE et.target_user_id = $target_id AND $evalTypeSql $yearLevelSql AND " . aa_scored_tracker_sql('et', (int)$target_id) . "
@@ -963,16 +984,60 @@ if ($view === 'sheet' && $target_id && ($tracker_id || ($_GET['report'] ?? '') =
         }
     }
 
-    // Date(s) this person was evaluated.
-    $cumDates = array_filter(array_column($cumTrackers, 'submitted_at'));
-    if ($cumDates) {
-        $cumFrom = strtotime(min($cumDates));
-        $cumTo   = strtotime(max($cumDates));
-        $cumDateText = (date('Y-m-d', $cumFrom) === date('Y-m-d', $cumTo))
-            ? date('F d, Y', $cumTo)
-            : date('M d, Y', $cumFrom) . ' – ' . date('M d, Y', $cumTo);
-    } else {
-        $cumDateText = '—';
+    // Date evaluated = the evaluation's actual OPENS and CLOSES date-times
+    // (same values shown on the evaluation period card, e.g.
+    // "Nov 4, 2026, 4:39 PM" -> "Nov 5, 2026, 11:37 AM"), looked up through
+    // evaluation_tracker.period_id. The periods table and its open/close
+    // columns are detected at runtime. If nothing is found it falls back to
+    // the first/last submission dates.
+    $cumOpenText = ''; $cumCloseText = ''; $cumDateText = '';
+    $cumPeriodIds = array_values(array_unique(array_filter(array_map('intval', array_column($cumTrackers, 'period_id')))));
+    if ($cumPeriodIds) {
+        $pTables = ['evaluation_periods','evaluation_period','eval_periods','eval_period','evaluation_schedules','evaluation_schedule'];
+        foreach (['%period%','%schedule%','%window%'] as $like) {
+            $tl = $mysqli->query("SHOW TABLES LIKE '$like'");
+            if ($tl) while ($tr = $tl->fetch_row()) $pTables[] = $tr[0];
+        }
+        $pTables = array_values(array_unique($pTables));
+        $openPref  = ['opens_at','open_at','opened_at','open_date','date_open','open_datetime','start_at','start_date','date_start','start_datetime','start_time','opens'];
+        $closePref = ['closes_at','close_at','closed_at','close_date','date_close','close_datetime','end_at','end_date','date_end','end_datetime','end_time','deadline','closes'];
+        $isDateType = fn($t) => (bool)preg_match('/date|time/i', (string)$t);
+        foreach ($pTables as $pt) {
+            if (!preg_match('/^[A-Za-z0-9_]+$/', $pt)) continue;
+            $have = []; $types = [];
+            $cr = $mysqli->query("SHOW COLUMNS FROM `$pt`");
+            if (!$cr) continue;
+            while ($c = $cr->fetch_assoc()) { $have[strtolower($c['Field'])] = $c['Field']; $types[strtolower($c['Field'])] = $c['Type']; }
+            if (!isset($have['id'])) continue;
+            $oc = null; $cc = null;
+            foreach ($openPref  as $c) if (isset($have[$c]) && $isDateType($types[$c])) { $oc = $have[$c]; break; }
+            foreach ($closePref as $c) if (isset($have[$c]) && $isDateType($types[$c])) { $cc = $have[$c]; break; }
+            if (!$oc) foreach ($have as $lc => $real) if ($isDateType($types[$lc]) && preg_match('/open|start/', $lc)) { $oc = $real; break; }
+            if (!$cc) foreach ($have as $lc => $real) if ($isDateType($types[$lc]) && preg_match('/close|end|deadline/', $lc)) { $cc = $real; break; }
+            if (!$oc) continue;
+            $idList = implode(',', $cumPeriodIds);
+            $selClose = $cc ? "MAX(`$cc`)" : "NULL";
+            $pr = $mysqli->query("SELECT MIN(`$oc`) AS d_open, $selClose AS d_close FROM `$pt` WHERE id IN ($idList)");
+            $prow = $pr ? $pr->fetch_assoc() : null;
+            if ($prow && $prow['d_open']) {
+                $cumOpenText  = date('M j, Y, g:i A', strtotime($prow['d_open']));
+                $cumCloseText = $prow['d_close'] ? date('M j, Y, g:i A', strtotime($prow['d_close'])) : '';
+                break;
+            }
+        }
+    }
+    if ($cumOpenText === '') {
+        // Fallback: first/last submission dates.
+        $cumDates = array_filter(array_column($cumTrackers, 'submitted_at'));
+        if ($cumDates) {
+            $cumFrom = strtotime(min($cumDates));
+            $cumTo   = strtotime(max($cumDates));
+            $cumDateText = (date('Y-m-d', $cumFrom) === date('Y-m-d', $cumTo))
+                ? date('F d, Y', $cumTo)
+                : date('M d, Y', $cumFrom) . ' – ' . date('M d, Y', $cumTo);
+        } else {
+            $cumDateText = '—';
+        }
     }
 
     // Who evaluated (Students, Faculty, Staff, Dean, Principal ...).
@@ -1087,17 +1152,18 @@ if ($view === 'sheet' && $target_id && ($tracker_id || ($_GET['report'] ?? '') =
 .cum-date{margin-left:auto;text-align:right;}
 .cum-date-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:2px;}
 .cum-date-val{font-size:14px;font-weight:700;}
+.cum-date-k{font-size:11px;font-weight:600;opacity:.65;margin-right:2px;}
 .cumulative-sheet .rating-badge{width:128px;height:38px;box-sizing:border-box;justify-content:center;align-items:center;padding:2px 6px!important;gap:0!important;}
 .cumulative-sheet .rating-num{font-size:14px!important;line-height:1.1;}
 .cumulative-sheet .rating-lbl{font-size:8px!important;text-align:center;line-height:1.1;}
-.cum-total{margin-bottom:12px;justify-content:space-between;}
-.cum-total-label{font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:1px;align-self:center;}
-.cum-total-result{text-align:right;margin-right:-2px;}
+.cum-total{margin-bottom:12px;flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:8px;}
+.cum-total-label{font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:1px;align-self:flex-start;}
+.cum-total-result{text-align:left;}
 .cum-legend-rows{display:flex;flex-direction:column;gap:5px;min-width:340px;}
 .cum-legend-row{display:flex;align-items:center;gap:10px;font-size:13px;}
 .cum-legend-dot{width:12px;height:12px;border-radius:3px;flex-shrink:0;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
 .cum-legend-range{font-weight:700;width:92px;flex-shrink:0;}
-.cum-legend-text{flex:1;text-align:right;}
+.cum-legend-text{flex:none;text-align:left;}
 .cum-remark{font-size:13px;line-height:1.4;font-style:italic;margin-bottom:5px;}
 @media print{
   .individual-sheet{display:none!important;}
@@ -1523,7 +1589,7 @@ html[data-theme="dark"] .avg-summary{background:#fff!important;border-color:#ddd
   body .cumulative-sheet .q-table td.rating-cell{padding-top:2px!important;}
   body .cumulative-sheet .rating-badge{width:62px!important;height:18px!important;padding:0 4px!important;border-radius:5px!important;}
   body .cumulative-sheet .rating-num{font-size:11px!important;line-height:1!important;}
-  body .cumulative-sheet .cum-total{margin:0 0 5px!important;padding:6px 12px!important;}
+  body .cumulative-sheet .cum-total{margin:0 0 5px!important;padding:6px 12px!important;gap:3px!important;}
   body .cumulative-sheet .cum-total-label{font-size:11px!important;}
   body .cumulative-sheet .cum-legend-rows{gap:1px!important;min-width:300px!important;}
   body .cumulative-sheet .cum-legend-row{font-size:9.5px!important;gap:6px!important;}
@@ -1632,7 +1698,7 @@ function confirmNav(link, message, opts){
 </script>
 
 <div class="person-actions no-print" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-    <a href="?view=students&target_id=<?= $target_id ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>&evaluator=<?= urlencode($evaluatorFilter) ?>&year_level=<?= urlencode($yearLevel) ?>" class="back-btn">
+    <a href="?view=students&target_id=<?= $target_id ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>&evaluator=<?= urlencode($evaluatorFilter) ?>&year_level=<?= urlencode($yearLevel) ?>&level=<?= urlencode($levelTab) ?>" class="back-btn">
         <i class="fa-solid fa-arrow-left"></i> Back to <?= ucfirst($evaluatorNounP) ?> List
     </a>
     <button class="btn-print no-print" onclick="window.print()"><i class="fa-solid fa-print"></i> Print</button>
@@ -1772,7 +1838,12 @@ function confirmNav(link, message, opts){
         </div>
         <div class="cum-date">
             <div class="cum-date-label">Date Evaluated</div>
+            <?php if ($cumOpenText !== ''): ?>
+            <div class="cum-date-val"><span class="cum-date-k">Opens:</span> <?= htmlspecialchars($cumOpenText) ?></div>
+            <?php if ($cumCloseText !== ''): ?><div class="cum-date-val"><span class="cum-date-k">Closes:</span> <?= htmlspecialchars($cumCloseText) ?></div><?php endif; ?>
+            <?php else: ?>
             <div class="cum-date-val"><?= htmlspecialchars($cumDateText) ?></div>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -1962,8 +2033,8 @@ if ($view === 'students' && $target_id) {
 .tstat-lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
 .score-legend{background:var(--inner);border:1px solid var(--border);border-radius:10px;padding:12px 16px;font-size:12px;min-width:180px;}
 .score-legend-title{font-weight:700;color:var(--light);margin-bottom:6px;}
-.score-legend-row{display:flex;justify-content:space-between;gap:10px;color:var(--muted);padding:1px 0;}
-.score-legend-row span{font-weight:700;}
+.score-legend-row{display:flex;justify-content:flex-start;align-items:baseline;gap:12px;color:var(--muted);padding:1px 0;text-align:left;}
+.score-legend-row span{font-weight:700;width:84px;flex-shrink:0;}
 .results-table-wrap{overflow-x:auto;}
 table.results-table{width:100%;border-collapse:collapse;font-size:13px;}
 table.results-table th{text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap;}
@@ -2222,7 +2293,7 @@ function confirmNav(link, message, opts){
     <!-- One Generate Report button for the whole list: opens the cumulative
          report (average rating per question across ALL evaluators + overall).
          Carries the current year-level filter so the report matches the list. -->
-    <a class="rt-generate-top" href="?view=sheet&target_id=<?= $target_id ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>&evaluator=<?= urlencode($evaluatorFilter) ?>&year_level=<?= urlencode($yearLevel) ?>&report=1">
+    <a class="rt-generate-top" href="?view=sheet&target_id=<?= $target_id ?>&group=<?= urlencode($groupFilter) ?>&eval_type=<?= $activeEval ?>&evaluator=<?= urlencode($evaluatorFilter) ?>&year_level=<?= urlencode($yearLevel) ?>&level=<?= urlencode($levelTab) ?>&report=1">
         <i class="fa-solid fa-file-lines"></i> Generate Report
     </a>
     <style>
@@ -2235,34 +2306,67 @@ function confirmNav(link, message, opts){
     html body a.rt-generate-top i{color:#fff !important;}
     </style>
     <?php endif; ?>
-    <?php if ($activeEval === 'student'): ?>
-    <span style="display:flex;align-items:center;gap:8px;">
-        <label for="yearLevelSelect" style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">Year Level</label>
-        <select id="yearLevelSelect" onchange="applyYearLevelFilter(this.value)" style="padding:8px 14px;border-radius:8px;border:1px solid var(--border);font-size:13px;font-weight:600;background:var(--mid);color:var(--light);">
-            <option value="All" <?= $yearLevel==='All' ? 'selected' : '' ?>>All Year Levels</option>
-            <optgroup label="Basic Education">
-                <?php foreach ($basicEdYears as $g): ?>
-                <option value="<?= htmlspecialchars($g) ?>" <?= $yearLevel===$g ? 'selected' : '' ?>><?= htmlspecialchars($g) ?></option>
-                <?php endforeach; ?>
-            </optgroup>
-            <optgroup label="Higher Education">
-                <?php foreach ($higherEdYears as $y): ?>
-                <option value="<?= htmlspecialchars($y) ?>" <?= $yearLevel===$y ? 'selected' : '' ?>><?= htmlspecialchars($y) ?></option>
-                <?php endforeach; ?>
-            </optgroup>
-        </select>
-    </span>
-    <script>
-    function applyYearLevelFilter(val) {
-        const url = new URL(window.location.href);
-        if (val === 'All') { url.searchParams.delete('year_level'); }
-        else { url.searchParams.set('year_level', val); }
-        window.location.href = url.toString();
-    }
-    </script>
-    <?php endif; ?>
     </span>
 </div>
+
+<?php if ($activeEval === 'student'): ?>
+<?php
+$ylHref = function ($level, $year) {
+    $q = $_GET;
+    unset($q['level'], $q['year_level']);
+    if ($level !== 'All') $q['level'] = $level;
+    if ($year !== 'All') $q['year_level'] = $year;
+    return '?' . http_build_query($q);
+};
+$ddYears = $levelTab === 'All' ? $allYearLevels : $levelGroups[$levelTab]['years'];
+?>
+<style>
+/* Copied from evaluation_tracker.php (.et-levels / .et-btn / .et-select / .et-clear) */
+.yl-bar{--yl-g:var(--accent,#2563EB);
+    --yl-g-bg:color-mix(in srgb,var(--accent,#2563EB) 11%,#fff);
+    --yl-g-bd:color-mix(in srgb,var(--accent,#2563EB) 30%,#fff);
+    display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 14px;}
+.yl-levels{display:flex;gap:7px;flex-wrap:wrap;align-items:center;}
+html body .yl-levels a.yl-btn.yl-btn.yl-btn{display:inline-flex !important;align-items:center !important;justify-content:center !important;
+    height:38px !important;padding:0 16px !important;margin:0 !important;border-radius:10px !important;
+    border:1px solid #B9CDE5 !important;background:#FFFFFF !important;color:#294765 !important;
+    font-size:12px !important;font-weight:700 !important;line-height:1 !important;white-space:nowrap !important;
+    text-decoration:none !important;box-sizing:border-box !important;font-family:'Inter',sans-serif;}
+html body .yl-levels a.yl-btn.yl-btn.yl-btn:hover{background:var(--yl-g-bg) !important;border-color:var(--yl-g-bd) !important;color:var(--yl-g) !important;}
+html body .yl-levels a.yl-btn.yl-btn.yl-btn.active{background:var(--yl-g) !important;border-color:var(--yl-g) !important;color:#FFFFFF !important;}
+.yl-right{display:flex;gap:8px;align-items:center;margin-left:auto;}
+.yl-select{border:1px solid #B9CDE5 !important;background:#fff !important;color:#0B1F3A !important;border-radius:8px;
+    padding:10px 12px;font-size:12px;outline:none;font-family:'Inter',sans-serif;cursor:pointer;}
+.yl-select:focus{border-color:var(--yl-g) !important;}
+.yl-clear{font-size:12px;font-weight:700;color:var(--yl-g) !important;text-decoration:none;white-space:nowrap;padding:0 4px;}
+.yl-clear:hover{text-decoration:underline;}
+</style>
+<div class="yl-bar no-print">
+    <div class="yl-levels">
+        <a class="yl-btn <?= $levelTab==='All' ? 'active' : '' ?>" href="<?= htmlspecialchars($ylHref('All','All')) ?>">All Levels</a>
+        <?php foreach ($levelGroups as $lk => $lg): ?>
+        <a class="yl-btn <?= $levelTab===$lk ? 'active' : '' ?>" href="<?= htmlspecialchars($ylHref($lk,'All')) ?>"><?= htmlspecialchars($lg['label']) ?></a>
+        <?php endforeach; ?>
+    </div>
+    <div class="yl-right">
+        <select class="yl-select" id="yearLevelSelect" onchange="location.href=this.value" aria-label="Year level">
+            <option value="<?= htmlspecialchars($ylHref($levelTab,'All')) ?>" <?= $yearLevel==='All' ? 'selected' : '' ?>>All Year Levels</option>
+            <?php if ($levelTab === 'All'): foreach ($levelGroups as $lk => $lg): ?>
+            <optgroup label="<?= htmlspecialchars($lg['label']) ?>">
+                <?php foreach ($lg['years'] as $yv): ?>
+                <option value="<?= htmlspecialchars($ylHref($levelTab,$yv)) ?>" <?= $yearLevel===$yv ? 'selected' : '' ?>><?= htmlspecialchars($yv) ?></option>
+                <?php endforeach; ?>
+            </optgroup>
+            <?php endforeach; else: foreach ($ddYears as $yv): ?>
+            <option value="<?= htmlspecialchars($ylHref($levelTab,$yv)) ?>" <?= $yearLevel===$yv ? 'selected' : '' ?>><?= htmlspecialchars($yv) ?></option>
+            <?php endforeach; endif; ?>
+        </select>
+        <?php if ($levelTab !== 'All' || $yearLevel !== 'All'): ?>
+        <a class="yl-clear" href="<?= htmlspecialchars($ylHref('All','All')) ?>">Clear filters</a>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
 
 <?php if (empty($resultRows)): ?>
 <div class="no-eval">

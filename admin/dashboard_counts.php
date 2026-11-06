@@ -184,9 +184,9 @@ $periodResult = dashboard_query($mysqli, "SELECT id FROM evaluation_periods WHER
 if ($periodResult) $activePeriodId = (int)($periodResult->fetch_assoc()['id'] ?? 0);
 
 $rows = [
-    ['teacher',  "SELECT COUNT(*) AS c FROM users WHERE role='teacher' AND is_active=1"],
-    ['staff',    "SELECT COUNT(*) AS c FROM users WHERE role='staff' AND is_active=1"],
-    ['students', "SELECT COUNT(*) AS c FROM users WHERE role='student' AND is_active=1"],
+['teacher',  "SELECT COUNT(*) AS c FROM users WHERE role='teacher' AND is_active=1 AND account_status='approved'"],
+['staff',    "SELECT COUNT(*) AS c FROM users WHERE role='staff' AND is_active=1 AND account_status='approved'"],
+['students', "SELECT COUNT(*) AS c FROM users WHERE role='student' AND is_active=1 AND account_status='approved'"],
 ];
 foreach ($rows as [$key, $sql]) {
     $r = dashboard_query($mysqli, $sql);
@@ -201,7 +201,7 @@ if ($activePeriodId > 0) {
         $stmt->close();
     }
 
-    $stmt = $mysqli->prepare("SELECT COUNT(DISTINCT et.evaluator_id) AS c FROM evaluation_tracker et INNER JOIN users u ON u.id=et.evaluator_id WHERE et.period_id=? AND et.status='submitted' AND u.role='student' AND u.is_active=1");
+    $stmt = $mysqli->prepare("SELECT COUNT(DISTINCT et.evaluator_id) AS c FROM evaluation_tracker et INNER JOIN users u ON u.id=et.evaluator_id WHERE et.period_id=? AND et.status='submitted' AND u.role='student' AND u.is_active=1 AND u.account_status='approved'");
     if ($stmt) {
         $stmt->bind_param('i', $activePeriodId);
         if ($stmt->execute()) $counts['submitted'] = (int)($stmt->get_result()->fetch_assoc()['c'] ?? 0);
@@ -305,13 +305,13 @@ $evSubQ = dashboard_query($mysqli, "
     LEFT JOIN users evaluator ON evaluator.id = et.evaluator_id
     LEFT JOIN users target ON target.id = et.target_user_id
     WHERE et.status IN ('submitted','approved','archived')
-      -- Confidential: evaluations OF the Executive Assistant (upward_to_ea, or
-      -- school_head rows whose target is the EA account) must not reveal the
-      -- evaluator in System Logs or the live bell notifications. The rows stay
-      -- in evaluation_tracker, so results/analytics are unaffected.
-      AND et.eval_type <> 'upward_to_ea'
-      AND NOT (et.eval_type = 'school_head'
-               AND COALESCE(target.role, '') IN ('admin','superadmin','executive_assistant'))" . $levelClause . "
+      -- Confidential: ANY evaluation whose target is the Executive Assistant (or
+      -- an admin/superadmin account) must not reveal the evaluator in System Logs
+      -- or the live bell notifications, no matter which eval_type wrote it
+      -- (upward_to_ea, school_head, staff, staff_peer, etc. all land on the EA
+      -- when a Staff member or anyone else evaluates her). The rows stay in
+      -- evaluation_tracker, so results/analytics are unaffected.
+      AND COALESCE(target.role, '') NOT IN ('admin','superadmin','executive_assistant')" . $levelClause . "
     ORDER BY et.submitted_at DESC
     LIMIT " . $queryLimit . "
 ");

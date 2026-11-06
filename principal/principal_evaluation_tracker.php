@@ -166,7 +166,7 @@ function ptk_teacher_context(array $row, array $targetDefs): ?string {
     $evaluator = (int)$row['evaluator_id'];
     $tid = (int)$row['target_user_id'];
     if ($tid === $evaluator) return null;
-    foreach (['principal', 'faculty', 'staff'] as $prefix) {
+    foreach (['principal', 'dean', 'faculty', 'staff'] as $prefix) {
         $key = $prefix . ':' . $tid;
         if (isset($targetDefs[$key])) return $key;
     }
@@ -187,7 +187,7 @@ function ptk_status(int $completed, int $required, bool $started): array {
 }
 
 function ptk_type_rank(string $type): int {
-    return ['Faculty' => 1, 'Staff' => 2, 'Multi-Role' => 3, 'Principal' => 4, 'Executive Assistant' => 5][$type] ?? 9;
+    return ['Faculty' => 1, 'Staff' => 2, 'Multi-Role' => 3, 'Principal' => 4, 'Dean' => 4, 'Executive Assistant' => 5][$type] ?? 9;
 }
 
 /** Per-row breakdown: every required target and where the person stands. */
@@ -472,22 +472,111 @@ if ($structureActive) {
     $requiredPrincipal = $principalQuestionCount > 0 ? 1 : 0;
     $principalName = trim((string)($me['full_name'] ?? '')) ?: 'Principal';
 
-    // ── REQUIRED TARGETS ────────────────────────────────────────────
-    // Students: Faculty + Staff + Multi-Role (+ Principal).
-    $studentTargetDefs = [];
-    foreach ($facultyIds as $uid => $_) $studentTargetDefs['faculty:' . $uid]    = ['label' => $personnel[$uid]['full_name'], 'type' => 'Faculty'];
-    foreach ($staffIds   as $uid => $_) $studentTargetDefs['staff:' . $uid]      = ['label' => $personnel[$uid]['full_name'], 'type' => 'Staff'];
-    foreach ($multiIds   as $uid => $_) $studentTargetDefs['multi:' . $uid]      = ['label' => $personnel[$uid]['full_name'], 'type' => 'Multi-Role'];
-    if ($requiredPrincipal > 0)          $studentTargetDefs['school_head:' . $principalId] = ['label' => $principalName, 'type' => 'Principal'];
-    $requiredTotal = count($studentTargetDefs);
+    // ── REQUIRED TARGETS (mirror the student / faculty dashboards) ───
+    // Student  (student_dashboard.php): Faculty assigned to THEIR grade, Non-Teaching
+    //          Staff (no year-level assignment), and the Principal.
+    // Teacher  (faculty_dashboard.php, Evaluate Others): every other Faculty / Teaching
+    //          Staff, every Non-Teaching Staff, plus Dean (College level) / Principal
+    //          (Grade 7-12 level). So "required" differs per person.
+    $evalPeople = safe_rows($mysqli, "SELECT id, full_name, role, secondary_role FROM users
+        WHERE role IN ('teacher','staff','faculty') AND is_active=1
+          AND (account_status='approved' OR source='admin_nologin')");
 
-    // Teachers: every other JHS/SHS teacher + Non-Teaching Staff (+ Principal).
-    $teacherTargetDefs = [];
-    if ($peerFacultyQuestionCount > 0) {
-        foreach ($teachers as $t) $teacherTargetDefs['faculty:' . $t['id']] = ['label' => $t['name'], 'type' => 'Faculty'];
+    $assignLevels = [];   // [user_id][lowercased year_level] => true  (Basic Education assignments)
+    foreach (safe_rows($mysqli, "SELECT user_id, year_level FROM teaching_assignments
+            WHERE LOWER(TRIM(education_level)) = 'basic education'") as $r) {
+        $assignLevels[(int)$r['user_id']][strtolower(trim((string)$r['year_level']))] = true;
     }
-    foreach ($staffIds as $uid => $_) $teacherTargetDefs['staff:' . $uid] = ['label' => $personnel[$uid]['full_name'], 'type' => 'Staff'];
-    if ($requiredPrincipal > 0)       $teacherTargetDefs['principal:' . $principalId] = ['label' => $principalName, 'type' => 'Principal'];
+    $ylByUser = [];       // [user_id] => [year_level, ...]  (user_year_levels)
+    foreach (safe_rows($mysqli, "SELECT user_id, year_level FROM user_year_levels") as $r) {
+        $assignLevels[(int)$r['user_id']][strtolower(trim((string)$r['year_level']))] = true;
+        $ylByUser[(int)$r['user_id']][] = (string)$r['year_level'];
+    }
+    $hasAnyAssign = [];
+    foreach (safe_rows($mysqli, "SELECT user_id FROM teaching_assignments UNION SELECT user_id FROM user_year_levels") as $r) {
+        $hasAnyAssign[(int)$r['user_id']] = true;
+    }
+
+    // Classification maps for ptr_context_for_submission(): Faculty = has an
+    // assignment, Staff = none (disjoint, so nobody is counted twice).
+    $facultyIds = []; $staffIds = []; $multiIds = [];
+    foreach ($evalPeople as $p) {
+        $id = (int)$p['id'];
+        $isTeacher = in_array($p['role'], ['teacher','faculty'], true) || strtolower((string)$p['secondary_role']) === 'teacher';
+        $isStaffFn = $p['role'] === 'staff' || strtolower((string)$p['secondary_role']) === 'staff';
+        $hasAssign = isset($hasAnyAssign[$id]);
+        if ($hasAssign && ($isTeacher || $isStaffFn)) $facultyIds[$id] = true;
+        if ($isStaffFn && !$hasAssign)                $staffIds[$id]   = true;
+    }
+
+    $principalTarget = $requiredPrincipal > 0
+        ? ['school_head:' . $principalId => ['label' => $principalName, 'type' => 'Principal']] : [];
+    $studentTargetsFor = function (string $yearLevel) use ($evalPeople, $assignLevels, $hasAnyAssign, $principalTarget): array {
+        $defs = [];
+        $yl = strtolower(trim($yearLevel));
+        foreach ($evalPeople as $p) {
+            $id = (int)$p['id'];
+            $isTeacher = in_array($p['role'], ['teacher','faculty'], true) || strtolower((string)$p['secondary_role']) === 'teacher';
+            $isStaffFn = $p['role'] === 'staff' || strtolower((string)$p['secondary_role']) === 'staff';
+            $hasAssign = isset($hasAnyAssign[$id]);
+            if (($isTeacher || ($isStaffFn && $hasAssign)) && $hasAssign && $yl !== '' && isset($assignLevels[$id][$yl])) {
+                $defs['faculty:' . $id] = ['label' => (string)$p['full_name'], 'type' => 'Faculty'];
+            }
+            if ($isStaffFn && !$hasAssign) {
+                $defs['staff:' . $id] = ['label' => (string)$p['full_name'], 'type' => 'Staff'];
+            }
+        }
+        return $defs + $principalTarget;
+    };
+
+    // Teacher peer targets
+    $peerPool = [];       // everyone a teacher can evaluate as a peer (Faculty or Staff group)
+    foreach ($evalPeople as $p) {
+        $id = (int)$p['id'];
+        $role = strtolower(trim((string)$p['role']));
+        $isTeachingPerson = in_array($role, ['teacher','faculty'], true) || ($role === 'staff' && !empty($ylByUser[$id]));
+        $peerPool[$id] = ['label' => (string)$p['full_name'], 'type' => $isTeachingPerson ? 'Faculty' : 'Staff'];
+    }
+    $headRows = [];
+    foreach (safe_rows($mysqli, "SELECT id, full_name, role FROM users
+            WHERE role IN ('dean','principal') AND is_active=1 AND account_status='approved'") as $h) {
+        $headRows[(int)$h['id']] = ['label' => (string)$h['full_name'], 'role' => strtolower((string)$h['role'])];
+    }
+    $collegeLevels = ['1st Year College','2nd Year College','3rd Year College','4th Year College'];
+    $basicLevels   = ['Grade 7','Grade 8','Grade 9','Grade 10','Grade 11','Grade 12'];
+    $teacherDefsFor = function (int $evaluatorId) use ($peerPool, $headRows, $ylByUser, $collegeLevels, $basicLevels): array {
+        $defs = [];
+        foreach ($peerPool as $id => $d) {
+            if ($id === $evaluatorId) continue;                       // nobody evaluates themselves
+            $defs[($d['type'] === 'Faculty' ? 'faculty:' : 'staff:') . $id] = $d;
+        }
+        $mine = $ylByUser[$evaluatorId] ?? [];
+        $canDean = (bool)array_intersect($mine, $collegeLevels);
+        $canPrin = (bool)array_intersect($mine, $basicLevels);
+        foreach ($headRows as $hid => $h) {
+            if ($hid === $evaluatorId) continue;
+            if ($h['role'] === 'principal' && $canPrin) $defs['principal:' . $hid] = ['label' => $h['label'], 'type' => 'Principal'];
+            if ($h['role'] === 'dean'      && $canDean) $defs['dean:'      . $hid] = ['label' => $h['label'], 'type' => 'Dean'];
+        }
+        return $defs;
+    };
+    // Union of every possible peer target (used to classify submitted rows).
+    $teacherTargetDefs = [];
+    foreach ($peerPool as $id => $d) $teacherTargetDefs[($d['type'] === 'Faculty' ? 'faculty:' : 'staff:') . $id] = $d;
+    foreach ($headRows as $hid => $h) {
+        $teacherTargetDefs[($h['role'] === 'dean' ? 'dean:' : 'principal:') . $hid] = ['label' => $h['label'], 'type' => $h['role'] === 'dean' ? 'Dean' : 'Principal'];
+    }
+
+    // Faculty-group submissions are filed under the College semester period; the
+    // others under the active period (same selection as faculty_dashboard.php).
+    $collegePeerPeriodId = (int)(safe_scalar($mysqli, "SELECT id FROM evaluation_periods
+        WHERE semester IN ('1st Semester','2nd Semester','Summer')
+        ORDER BY
+          (CONVERT(TRIM(school_year) USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+             CONVERT(TRIM((SELECT setting_value FROM system_settings WHERE setting_key='acad_year' LIMIT 1)) USING utf8mb4) COLLATE utf8mb4_unicode_ci) DESC,
+          (CONVERT(TRIM(semester) USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+             CONVERT(TRIM((SELECT setting_value FROM system_settings WHERE setting_key='acad_term' LIMIT 1)) USING utf8mb4) COLLATE utf8mb4_unicode_ci) DESC,
+          is_active DESC, id DESC LIMIT 1") ?? 0);
 
     // ── STUDENT ROSTER: ONLY JHS/SHS, NEVER COLLEGE ─────────────────
     $rawStudents = safe_rows($mysqli, "
@@ -520,13 +609,13 @@ if ($structureActive) {
         }
         $eligibleStudents[$sid] = [
             'id' => $sid, 'name' => (string)$s['full_name'], 'photo' => (string)($s['photo'] ?? ''),
-            'grade' => $g, 'level' => $level,
+            'grade' => $g, 'level' => $level, 'raw' => $raw,
         ];
     }
 
     // ── STUDENT PROGRESS ────────────────────────────────────────────
     $studentContextMap = [];
-    if ($hasPeriod && $requiredTotal > 0 && !empty($eligibleStudents)) {
+    if ($hasPeriod && !empty($eligibleStudents)) {
         $ids = array_keys($eligibleStudents);
         $ph = implode(',', array_fill(0, count($ids), '?'));
         $submissionRows = safe_rows($mysqli, "
@@ -567,14 +656,17 @@ if ($structureActive) {
 
     foreach ($eligibleStudents as $sid => $s) {
         $contexts = $studentContextMap[$sid] ?? [];
+        $studentTargetDefs  = $studentTargetsFor((string)($s['raw'] ?? ''));
+        $requiredForStudent = count($studentTargetDefs);
         $completed = 0; $started = false; $latest = null;
-        foreach ($contexts as $c) {
+        foreach ($contexts as $ckey => $c) {
+            if (!isset($studentTargetDefs[$ckey])) continue;      // not required of this student
             if ($c['state'] === 'completed') $completed++;
             if ($c['state'] === 'in_progress') $started = true;
             if (!empty($c['at']) && (!$latest || strtotime((string)$c['at']) > strtotime((string)$latest))) $latest = $c['at'];
         }
-        $completed = min($requiredTotal, $completed);
-        [$state, $label] = ptk_status($completed, $requiredTotal, $started);
+        $completed = min($requiredForStudent, $completed);
+        [$state, $label] = ptk_status($completed, $requiredForStudent, $started);
 
         $studentRows[] = [
             'key' => 's' . $sid, 'id' => $sid, 'noun' => 'student',
@@ -583,8 +675,8 @@ if ($structureActive) {
             'level_pill' => $s['grade'] !== null ? 'Grade ' . $s['grade'] : 'Basic Education',
             'sub' => ($s['grade'] !== null ? 'Grade ' . $s['grade'] . ' · ' : '') . $s['level'],
             'level_text' => $s['level'],
-            'required' => $requiredTotal, 'completed' => $completed,
-            'progress' => $requiredTotal > 0 ? min(100, (int)round(($completed / $requiredTotal) * 100)) : 0,
+            'required' => $requiredForStudent, 'completed' => $completed,
+            'progress' => $requiredForStudent > 0 ? min(100, (int)round(($completed / $requiredForStudent) * 100)) : 0,
             'status' => $state, 'status_label' => $label, 'last_at' => $latest,
             'details' => ptk_build_details($studentTargetDefs, $contexts),
         ];
@@ -593,6 +685,8 @@ if ($structureActive) {
     // ── TEACHER PROGRESS (peer evaluations) ─────────────────────────
     $teacherContextMap = [];
     if ($hasPeriod && !empty($teachers) && !empty($teacherTargetDefs)) {
+        $peerPeriodIds = array_values(array_unique(array_filter([(int)$period_id_int, (int)$collegePeerPeriodId])));
+        $phPeriods = implode(',', array_fill(0, count($peerPeriodIds), '?'));
         $tids = array_map(fn($t) => (int)$t['id'], $teachers);
         $ph = implode(',', array_fill(0, count($tids), '?'));
         $peerGroupClause = ptk_has_column($mysqli, 'evaluation_tracker', 'peer_group')
@@ -601,12 +695,12 @@ if ($structureActive) {
         $peerRows = safe_rows($mysqli, "
             SELECT et.evaluator_id, et.target_user_id, et.status, et.submitted_at, et.updated_at
             FROM evaluation_tracker et
-            WHERE et.period_id=?
+            WHERE et.period_id IN ($phPeriods)
               AND et.evaluator_id IN ($ph)
               AND et.status IN ('submitted','approved','in_progress')
               AND (et.eval_type IN ('peer','faculty_peer','staff_peer')$peerGroupClause)
             ORDER BY et.updated_at DESC, et.id DESC
-        ", 'i' . str_repeat('i', count($tids)), array_merge([$period_id_int], $tids));
+        ", str_repeat('i', count($peerPeriodIds) + count($tids)), array_merge($peerPeriodIds, $tids));
 
         foreach ($peerRows as $row) {
             $key = ptk_teacher_context($row, $teacherTargetDefs);
@@ -625,8 +719,7 @@ if ($structureActive) {
 
     foreach ($teachers as $t) {
         $tid = (int)$t['id'];
-        $defs = $teacherTargetDefs;
-        unset($defs['faculty:' . $tid]);                 // nobody evaluates themselves
+        $defs = $teacherDefsFor($tid);                    // per-person; nobody evaluates themselves
         $required = count($defs);
         $contexts = $teacherContextMap[$tid] ?? [];
 
@@ -711,9 +804,9 @@ if ($structureActive) {
             'key' => 'f' . $mid, 'id' => $mid, 'noun' => 'staff member',
             'name' => $m['name'], 'photo' => $m['photo'],
             'grades' => [],
-            'level_pill' => 'Non-Teaching',
-            'sub' => $m['designation'] !== '' ? $m['designation'] : ($m['department'] !== '' ? $m['department'] : 'Non-Teaching Staff'),
-            'level_text' => 'Non-Teaching Staff',
+            'level_pill' => 'Staff',
+            'sub' => $m['designation'] !== '' ? $m['designation'] : ($m['department'] !== '' ? $m['department'] : 'Staff'),
+            'level_text' => 'Staff',
             'designation' => $m['designation'], 'department' => $m['department'],
             'required' => $required, 'completed' => $completed,
             'progress' => $required > 0 ? min(100, (int)round(($completed / $required) * 100)) : 0,
@@ -738,7 +831,7 @@ if ($tab === 'staff') {
     $stNone  = $stTotal - $stDone - $stProg;
     $pctOf   = fn($n) => ($stTotal > 0 ? (int)round($n / $stTotal * 100) : 0) . '% of staff';
     $cards = [
-        ['label' => 'Non-Teaching Staff', 'total' => $stTotal, 'completed' => $stDone, 'pending' => $stTotal - $stDone],
+        ['label' => 'Staff', 'total' => $stTotal, 'completed' => $stDone, 'pending' => $stTotal - $stDone],
         ['label' => 'Not Started', 'total' => $stNone, 'foot' => $pctOf($stNone)],
         ['label' => 'In Progress', 'total' => $stProg, 'foot' => $pctOf($stProg)],
         ['label' => 'Completed',   'total' => $stDone, 'foot' => $pctOf($stDone)],

@@ -208,7 +208,7 @@ function sq_validate($qs, $as, string $username): array {
     $qs = is_array($qs) ? $qs : [];
     $as = is_array($as) ? $as : [];
     $all = sq_questions();
-    $rows = []; $seenQ = []; $seenA = [];
+    $rows = []; $seenQ = [];
     for ($slot = 1; $slot <= 3; $slot++) {
         $k   = (string)($qs[$slot] ?? '');
         $raw = (string)($as[$slot] ?? '');
@@ -218,8 +218,36 @@ function sq_validate($qs, $as, string $username): array {
         $n = sq_normalize($raw);
         if (mb_strlen($n) < 3)           return ["Answer $slot is too short. Use at least 3 letters or numbers.", []];
         if (sq_is_weak($n, $username))   return ["Answer $slot is too easy to guess. Please be more specific.", []];
-        if (isset($seenA[$n]))           return ['Each answer must be different.', []];
-        $seenQ[$k] = 1; $seenA[$n] = 1;
+        $seenQ[$k] = 1;
+        $rows[] = ['slot' => $slot, 'key' => $k, 'hash' => password_hash($n, PASSWORD_DEFAULT)];
+    }
+    return [null, $rows];
+}
+
+// Like sq_validate(), for editing questions that are already saved. A slot whose question is unchanged
+// and whose answer box is left empty keeps its saved answer (answers are never shown, so the person
+// cannot retype it). Changing a question, or typing a new answer, requires a fresh valid answer.
+function sq_validate_update($qs, $as, string $username, array $existing): array {
+    $qs = is_array($qs) ? $qs : [];
+    $as = is_array($as) ? $as : [];
+    $all = sq_questions();
+    $rows = []; $seenQ = [];
+    for ($slot = 1; $slot <= 3; $slot++) {
+        $k   = (string)($qs[$slot] ?? '');
+        $raw = (string)($as[$slot] ?? '');
+        if (!isset($all[$k]))            return ["Please choose security question $slot.", []];
+        if (isset($seenQ[$k]))           return ['Please choose three different security questions.', []];
+        $seenQ[$k] = 1;
+        $kept = $existing[$slot] ?? null;
+        if (trim($raw) === '' && $kept && (string)$kept['question_key'] === $k && (string)($kept['answer_hash'] ?? '') !== '') {
+            $rows[] = ['slot' => $slot, 'key' => $k, 'hash' => (string)$kept['answer_hash']];
+            continue;
+        }
+        if (trim($raw) === '')           return ["Please enter an answer for question $slot.", []];
+        if (mb_strlen($raw) > 100)       return ["Answer $slot is too long (100 characters max).", []];
+        $n = sq_normalize($raw);
+        if (mb_strlen($n) < 3)           return ["Answer $slot is too short. Use at least 3 letters or numbers.", []];
+        if (sq_is_weak($n, $username))   return ["Answer $slot is too easy to guess. Please be more specific.", []];
         $rows[] = ['slot' => $slot, 'key' => $k, 'hash' => password_hash($n, PASSWORD_DEFAULT)];
     }
     return [null, $rows];

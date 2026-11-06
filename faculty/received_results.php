@@ -261,32 +261,6 @@ if (!function_exists('render_received_results')) {
 
 <?php if (!$byCat): ?><div class="empty-rep">No scored answers found for this selection.</div><?php endif; ?>
 
-<?php if ($c['evals']): ?>
-<div class="cat-section">
-    <div class="cat-title"><i class="fa-solid fa-users" style="font-size:10px"></i> Overall Average per Evaluator</div>
-    <table class="q-table">
-        <thead><tr><th style="width:44px">No.</th><th>Evaluator</th><th>Date Evaluated</th><th class="rating-col">Overall Average</th></tr></thead>
-        <tbody>
-        <?php foreach ($c['evals'] as $ei => $ev): $ec = rr_score_color($ev['score']); ?>
-        <tr>
-            <td class="q-num"><?= $ei + 1 ?></td>
-            <td>Anonymous Evaluator <?= $ei + 1 ?></td>
-            <td><?= $ev['ts'] ? $h(date('M d, Y', $ev['ts'])) : '—' ?></td>
-            <td class="rating-cell"><div class="rating-badge" style="border:1px solid <?= $ec ?>33"><span class="rating-num" style="color:<?= $ec ?>"><?= number_format($ev['score'], 2) ?></span></div></td>
-        </tr>
-        <?php endforeach; ?>
-        <?php if ($overall !== null): $oc = rr_score_color($overall); ?>
-        <tr style="background:var(--inner)">
-            <td></td>
-            <td colspan="2" style="font-weight:700;text-transform:uppercase;letter-spacing:.6px;font-size:12px">Combined Overall Average (all <?= count($c['evals']) ?> evaluators)</td>
-            <td class="rating-cell"><div class="rating-badge" style="border:1px solid <?= $oc ?>55"><span class="rating-num" style="color:<?= $oc ?>"><?= number_format($overall, 2) ?></span></div></td>
-        </tr>
-        <?php endif; ?>
-        </tbody>
-    </table>
-</div>
-<?php endif; ?>
-
 <?php if ($overall !== null): ?>
 <!-- RATING LEGEND: same card style as Total Score, placed right before it (satisfaction wording) -->
 <div class="avg-summary cum-legend">
@@ -329,9 +303,6 @@ if (!function_exists('render_received_results')) {
     </div>
 </div>
 
-<div class="print-row no-print">
-    <button type="button" class="btn-print" onclick="window.print()"><i class="fa-solid fa-print"></i> Print</button>
-</div>
 </div>
 <?php
     }

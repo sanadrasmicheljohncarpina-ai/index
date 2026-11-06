@@ -111,8 +111,7 @@ $teacherCount = 0; $staffCount = 0; $studentCount = 0;
 foreach (['teacher' => 'teacherCount', 'staff' => 'staffCount', 'student' => 'studentCount'] as $r => $var) {
     $cr = $mysqli->query(
         "SELECT COUNT(*) as c FROM users
-         WHERE role='" . $mysqli->real_escape_string($r) . "' AND is_active=1"
-    );
+                  WHERE role='" . $mysqli->real_escape_string($r) . "' AND is_active=1 AND account_status='approved'");
     if ($cr) $$var = (int)($cr->fetch_assoc()['c'] ?? 0);
 }
 $facultyCount = $teacherCount + $staffCount;
@@ -128,8 +127,9 @@ if ($dashboardPeriodId > 0) {
         "SELECT COUNT(DISTINCT et.evaluator_id) AS c
          FROM evaluation_tracker et
          INNER JOIN users u ON u.id = et.evaluator_id
-         WHERE et.period_id=? AND et.status='submitted' AND u.role='student' AND u.is_active=1"
-    );
+         WHERE et.period_id=? AND et.status='submitted' AND u.role='student' AND u.is_active=1 AND u.account_status='approved'"
+
+             );
     if ($subStmt) {
         $subStmt->bind_param('i', $dashboardPeriodId);
         $subStmt->execute();
